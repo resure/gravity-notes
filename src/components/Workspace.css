@@ -60,3 +60,7 @@
     height: 100%;
     padding: 24px;
 }
+
+.workspace__conflict {
+    padding: 12px 12px 0;
+}
