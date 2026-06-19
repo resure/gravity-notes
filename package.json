@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -30,12 +33,17 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@gravity-ui/eslint-config": "^4.3.1",
+    "@gravity-ui/prettier-config": "^1.1.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/wicg-file-system-access": "^2023.10.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
     "sass": "^1.83.0",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "typescript": "^5.9.2",
+    "vite": "^5.4.11",
+    "vitest": "^3.2.6"
   }
 }
