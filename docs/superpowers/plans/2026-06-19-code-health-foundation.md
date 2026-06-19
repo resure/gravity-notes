@@ -10,31 +10,32 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-19-code-health-foundation-design.md`
 
-**Note on TDD:** The storage code already exists, so its tests are *characterization tests* — they should PASS on first run, pinning current behavior. A failing characterization test means a real bug was found; stop and report it rather than editing the test to match.
+**Note on TDD:** The storage code already exists, so its tests are _characterization tests_ — they should PASS on first run, pinning current behavior. A failing characterization test means a real bug was found; stop and report it rather than editing the test to match.
 
 ---
 
 ## File overview
 
-| File | Responsibility | Action |
-| --- | --- | --- |
-| `package.json` | Dev deps, scripts, Node engines | Modify |
-| `.nvmrc` | Pin Node version for contributors | Create |
-| `.gitignore` | Ignore coverage output | Modify |
-| `prettier.config.js` | Re-export Gravity Prettier preset | Create |
-| `.prettierignore` | Exclude build/lock artifacts from Prettier | Create |
-| `eslint.config.js` | Flat ESLint config composing Gravity presets | Create |
-| `vite.config.ts` | Add Vitest `test` block | Modify |
-| `src/storage/fakeFileSystem.ts` | In-memory File System Access API fake for tests | Create |
-| `src/storage/fileSystemStore.test.ts` | Storage-layer test suite | Create |
-| `.github/workflows/ci.yml` | CI pipeline | Create |
-| `CLAUDE.md` | Document the new commands | Modify |
+| File                                  | Responsibility                                  | Action |
+| ------------------------------------- | ----------------------------------------------- | ------ |
+| `package.json`                        | Dev deps, scripts, Node engines                 | Modify |
+| `.nvmrc`                              | Pin Node version for contributors               | Create |
+| `.gitignore`                          | Ignore coverage output                          | Modify |
+| `prettier.config.js`                  | Re-export Gravity Prettier preset               | Create |
+| `.prettierignore`                     | Exclude build/lock artifacts from Prettier      | Create |
+| `eslint.config.js`                    | Flat ESLint config composing Gravity presets    | Create |
+| `vite.config.ts`                      | Add Vitest `test` block                         | Modify |
+| `src/storage/fakeFileSystem.ts`       | In-memory File System Access API fake for tests | Create |
+| `src/storage/fileSystemStore.test.ts` | Storage-layer test suite                        | Create |
+| `.github/workflows/ci.yml`            | CI pipeline                                     | Create |
+| `CLAUDE.md`                           | Document the new commands                       | Modify |
 
 ---
 
 ## Task 1: Add dev dependencies and pin Node
 
 **Files:**
+
 - Modify: `package.json` (`devDependencies`, `typescript` version, add `engines`)
 - Create: `.nvmrc`
 - Modify: `.gitignore`
@@ -115,6 +116,7 @@ git commit -m "chore: add lint/test tooling deps and pin node"
 ## Task 2: Configure ESLint + Prettier
 
 **Files:**
+
 - Create: `prettier.config.js`
 - Create: `.prettierignore`
 - Create: `eslint.config.js`
@@ -199,7 +201,7 @@ Expected: import statements get reordered/grouped per the Gravity convention; co
 - [ ] **Step 7: Verify lint is clean**
 
 Run: `npm run lint`
-Expected: exits 0 with **0 errors**. Warnings (e.g. `no-non-null-assertion` on `request.transaction!` and `document.getElementById('root')!`) are acceptable. If any *error* remains beyond the three handled overrides, fix it at the source or, only if it's a justified false positive, add a narrowly-scoped override block to `eslint.config.js` mirroring the style above.
+Expected: exits 0 with **0 errors**. Warnings (e.g. `no-non-null-assertion` on `request.transaction!` and `document.getElementById('root')!`) are acceptable. If any _error_ remains beyond the three handled overrides, fix it at the source or, only if it's a justified false positive, add a narrowly-scoped override block to `eslint.config.js` mirroring the style above.
 
 - [ ] **Step 8: Verify formatting check passes and the app still builds**
 
@@ -222,6 +224,7 @@ git commit -m "chore: add eslint + prettier via gravity shared configs"
 ## Task 3: Wire up Vitest
 
 **Files:**
+
 - Modify: `vite.config.ts`
 - Modify: `package.json` (add test scripts)
 
@@ -274,6 +277,7 @@ git commit -m "chore: add vitest runner config"
 ## Task 4: Cover the storage layer
 
 **Files:**
+
 - Create: `src/storage/fakeFileSystem.ts`
 - Create: `src/storage/fileSystemStore.test.ts`
 
@@ -548,6 +552,7 @@ git commit -m "test: cover FileSystemNoteStore via in-memory fs fake"
 ## Task 5: Add CI
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`
 
 - [ ] **Step 1: Create the workflow**
@@ -595,13 +600,14 @@ git commit -m "ci: run lint, format, typecheck, test, build on push/PR"
 ## Task 6: Document commands and final verification
 
 **Files:**
+
 - Modify: `CLAUDE.md` (Commands section)
 
 - [ ] **Step 1: Update the Commands section in `CLAUDE.md`**
 
 Replace the `## Commands` section (including the "being added" note) with:
 
-```markdown
+````markdown
 ## Commands
 
 ```bash
@@ -618,7 +624,9 @@ npm run format       # Prettier write (covers CSS/MD/JSON too)
 npm run format:check # Prettier check (used in CI)
 npm run typecheck    # tsc (noEmit)
 ```
-```
+````
+
+````
 
 - [ ] **Step 2: Final full verification**
 
@@ -630,7 +638,7 @@ Expected: clean install plus every check passing — the complete CI pipeline, g
 ```bash
 git add CLAUDE.md
 git commit -m "docs: document test/lint/format commands in CLAUDE.md"
-```
+````
 
 - [ ] **Step 4: Push and open a PR so CI runs**
 

@@ -28,17 +28,17 @@ Stand up testing, linting, formatting, and CI, and deliver real end-to-end cover
 
 ## Decisions (with rationale)
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Lint/format config | `@gravity-ui/eslint-config@^4` + `@gravity-ui/prettier-config@^1` | The whole app is Gravity UI; the shared flat-config is idiomatic, maintained, and batteries-included (react-hooks, jsx-a11y, import-order, security). |
-| ESLint major | Pin `eslint@^9` | The Gravity config targets the ESLint 9 ecosystem (`@eslint/js@^9`). ESLint 10 just shipped and is unverified against the config. |
-| TypeScript | Bump `^5.6.3` → `^5.9` | Satisfies the config's `typescript@^5.8.3` peer dependency. Low-risk minor bump. |
-| Test runner | Vitest | Native Vite integration; reuses the existing build pipeline and config. |
-| Storage testing | In-memory fake of the File System Access API | Tests the **real** store end-to-end (rename, unique-naming, sort), where bugs actually hide — not just extracted pure helpers. |
-| Test environment | `node` | Node 24 (local + CI) provides `DOMException` and `File` as globals, which the store/fake rely on. No DOM needed for storage tests. |
-| Node version | 24 (`.nvmrc` + CI), `engines.node >=22` | Matches the local dev environment; avoids "works on my machine" drift. |
-| Component/React testing | Deferred | Added in the Core UX slice when a component first needs it. Avoids standing up jsdom + Testing Library before it's used (YAGNI). |
-| Dependency trimming | Deferred to roadmap tail | Whether to keep Mermaid/LaTeX/`@diplodoc/file-extension` depends on the Richer-editing and Attachments decisions. |
+| Decision                | Choice                                                            | Rationale                                                                                                                                             |
+| ----------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lint/format config      | `@gravity-ui/eslint-config@^4` + `@gravity-ui/prettier-config@^1` | The whole app is Gravity UI; the shared flat-config is idiomatic, maintained, and batteries-included (react-hooks, jsx-a11y, import-order, security). |
+| ESLint major            | Pin `eslint@^9`                                                   | The Gravity config targets the ESLint 9 ecosystem (`@eslint/js@^9`). ESLint 10 just shipped and is unverified against the config.                     |
+| TypeScript              | Bump `^5.6.3` → `^5.9`                                            | Satisfies the config's `typescript@^5.8.3` peer dependency. Low-risk minor bump.                                                                      |
+| Test runner             | Vitest                                                            | Native Vite integration; reuses the existing build pipeline and config.                                                                               |
+| Storage testing         | In-memory fake of the File System Access API                      | Tests the **real** store end-to-end (rename, unique-naming, sort), where bugs actually hide — not just extracted pure helpers.                        |
+| Test environment        | `node`                                                            | Node 24 (local + CI) provides `DOMException` and `File` as globals, which the store/fake rely on. No DOM needed for storage tests.                    |
+| Node version            | 24 (`.nvmrc` + CI), `engines.node >=22`                           | Matches the local dev environment; avoids "works on my machine" drift.                                                                                |
+| Component/React testing | Deferred                                                          | Added in the Core UX slice when a component first needs it. Avoids standing up jsdom + Testing Library before it's used (YAGNI).                      |
+| Dependency trimming     | Deferred to roadmap tail                                          | Whether to keep Mermaid/LaTeX/`@diplodoc/file-extension` depends on the Richer-editing and Attachments decisions.                                     |
 
 ## Detailed design
 
