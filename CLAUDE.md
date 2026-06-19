@@ -72,14 +72,15 @@ Key modules:
 
 ## Roadmap & active work
 
-Improvements are being built as sequenced sub-projects, each with its own spec in
-`docs/superpowers/specs/`:
+Improvements are built as sequenced sub-projects, each with its own spec + plan in
+`docs/superpowers/`:
 
-1. **Code health foundation** (current) — Vitest + ESLint + Prettier + CI + storage tests.
-2. **Robustness & data safety** — external-edit detection before overwrite, reliable save-on-close.
-3. **Core UX & navigation** — search/filter, keyboard shortcuts, sort/pin, inline rename.
-4. **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
+1. ✅ **Code health foundation** (PR #1) — Vitest + ESLint + Prettier + CI + storage tests.
+2. ✅ **Robustness & data safety** (PR #2) — external-edit conflict detection, reliable save-on-close.
+3. ⬜ **Core UX & navigation** (next) — search/filter, keyboard shortcuts, sort/pin, inline rename; also
+   stands up component testing. Kickoff: `docs/superpowers/handoffs/2026-06-19-core-ux-kickoff.md`.
+4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
-5. **Image attachments** — paste/drop images, stored alongside notes.
+5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
 
 A tail dependency-trim pass removes any editor extensions left unused after (4)/(5).
