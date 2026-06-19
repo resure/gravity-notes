@@ -1,0 +1,33 @@
+.folder-gate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+    background-color: var(--g-color-base-background);
+}
+
+.folder-gate__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 440px;
+    padding: 32px;
+    text-align: center;
+}
+
+.folder-gate__icon {
+    color: var(--g-color-text-secondary);
+}
+
+.folder-gate__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.folder-gate__error {
+    margin-top: 4px;
+}
