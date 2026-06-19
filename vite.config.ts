@@ -20,6 +20,12 @@ export default defineConfig({
                     environment: 'jsdom',
                     include: ['src/**/*.test.tsx'],
                     setupFiles: ['./src/test/setup.ts'],
+                    server: {
+                        deps: {
+                            // Gravity's ESM imports `.css`; route it through Vite so jsdom doesn't choke.
+                            inline: [/@gravity-ui\//],
+                        },
+                    },
                 },
             },
         ],
