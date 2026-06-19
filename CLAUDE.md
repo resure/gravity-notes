@@ -1,0 +1,81 @@
+# CLAUDE.md
+
+Guidance for working in this repository.
+
+## What this is
+
+**Gravity Notes** — a local-first Markdown note-taking app. Notes are plain `.md` files in a folder the
+user picks on their own machine, read/written through the browser **File System Access API**. Built on
+the [Gravity UI](https://gravity-ui.com/) ecosystem, with `@gravity-ui/markdown-editor` as the
+WYSIWYG/Markdown editor.
+
+**Browser requirement:** a Chromium-based browser (Chrome/Edge). The File System Access API is
+unavailable in Firefox/Safari; those are a planned later phase (in-browser/IndexedDB backend).
+
+## Commands
+
+```bash
+npm install
+npm run dev      # Vite dev server (http://localhost:5173)
+npm run build    # type-check (tsc, noEmit) + production build
+npm run preview  # preview the production build
+```
+
+> Test / lint / format / CI tooling is being added as the first roadmap item — see
+> `docs/superpowers/specs/2026-06-19-code-health-foundation-design.md`. Once landed, this section gains
+> `npm test`, `npm run lint`, `npm run format:check`, and `npm run typecheck`. Update this file when it does.
+
+## Architecture
+
+```
+FolderGate ──▶ FileSystemNoteStore ──▶ useNotes() ──▶ NoteList + EditorPane
+(pick folder)   (.md files on disk)     (state + autosave)   (UI)
+```
+
+All persistence sits behind the **`NoteStore` interface** (`src/storage/types.ts`) — the key extension
+seam. One note = one `.md` file; the file name is the note id, the name without `.md` is the title.
+
+Key modules:
+
+- `src/storage/types.ts` — the `NoteStore` interface (storage-agnostic; no FS-specific types leak in).
+- `src/storage/fileSystemStore.ts` — `FileSystemNoteStore`, the File System Access API implementation.
+  Holds the trickiest logic: title sanitizing, unique-filename resolution, copy-then-delete rename
+  (the FS Access API has no atomic rename), list sorting.
+- `src/storage/handlePersistence.ts` — stashes the directory handle in IndexedDB so the folder survives
+  reloads; handles the per-session permission re-grant.
+- `src/hooks/useNotesFolder.ts` — folder picking + permission lifecycle (state machine:
+  `loading`/`unsupported`/`needs-folder`/`needs-permission`/`ready`).
+- `src/hooks/useNotes.ts` — note list, selection, and **debounced autosave** (500 ms). Editing is
+  deliberately decoupled from React state: keystrokes flow into a ref + timer, not `setState`, so the
+  markdown editor instance is never re-created mid-typing. Pending edits are flushed on
+  `visibilitychange` / `beforeunload`.
+- `src/components/` — `FolderGate` (pre-folder gate), `Workspace` (header + layout), `NoteList`
+  (sidebar with create/rename/delete), `EditorPane` (wraps the Gravity markdown editor; re-created per
+  note id).
+- `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence.
+- `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
+
+## Conventions
+
+- React 18 function components + hooks; TypeScript `strict` (plus `noUnusedLocals`/`noUnusedParameters`).
+- UI is **Gravity UI** (`@gravity-ui/uikit`, `@gravity-ui/icons`) — prefer its components over hand-rolled ones.
+- Code style follows the Gravity ecosystem (single quotes, sorted imports). Lint/format will be enforced
+  via `@gravity-ui/eslint-config` + `@gravity-ui/prettier-config` (see the spec above).
+- Errors surface to the user via the toaster (`onError` in `Workspace`); storage methods throw and
+  callers translate to toasts.
+- Keep new persistence behind `NoteStore` so alternative backends (Electron `fs`, HTTP API, IndexedDB)
+  stay drop-in.
+
+## Roadmap & active work
+
+Improvements are being built as sequenced sub-projects, each with its own spec in
+`docs/superpowers/specs/`:
+
+1. **Code health foundation** (current) — Vitest + ESLint + Prettier + CI + storage tests.
+2. **Robustness & data safety** — external-edit detection before overwrite, reliable save-on-close.
+3. **Core UX & navigation** — search/filter, keyboard shortcuts, sort/pin, inline rename.
+4. **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
+   code highlighting).
+5. **Image attachments** — paste/drop images, stored alongside notes.
+
+A tail dependency-trim pass removes any editor extensions left unused after (4)/(5).
