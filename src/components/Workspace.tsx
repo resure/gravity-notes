@@ -6,6 +6,7 @@ import {Button, Icon, Label, Text, type Theme, useToaster} from '@gravity-ui/uik
 import {type SaveState, useNotes} from '../hooks/useNotes';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 
+import {ConflictBanner} from './ConflictBanner';
 import {EditorPane} from './EditorPane';
 import {NoteList} from './NoteList';
 
@@ -24,6 +25,7 @@ const SAVE_LABEL: Record<SaveState, string> = {
     saving: 'Saving…',
     saved: 'Saved',
     error: 'Save failed',
+    conflict: 'Changed on disk',
 };
 
 export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder}: WorkspaceProps) {
@@ -86,11 +88,24 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
 
                 <main className="workspace__editor">
                     {notes.selectedNote ? (
-                        <EditorPane
-                            key={notes.selectedNote.id}
-                            note={notes.selectedNote}
-                            onChange={notes.edit}
-                        />
+                        <>
+                            {notes.conflict ? (
+                                <div className="workspace__conflict">
+                                    <ConflictBanner
+                                        deleted={notes.conflict.deleted}
+                                        onReload={() => void notes.reloadDisk()}
+                                        onKeepMine={() => void notes.keepMine()}
+                                        onSaveAsCopy={() => void notes.saveAsCopy()}
+                                        onDiscard={notes.discard}
+                                    />
+                                </div>
+                            ) : null}
+                            <EditorPane
+                                key={`${notes.selectedNote.id}:${notes.selectedNote.updatedAt}`}
+                                note={notes.selectedNote}
+                                onChange={notes.edit}
+                            />
+                        </>
                     ) : (
                         <div className="workspace__placeholder">
                             <Text variant="body-2" color="secondary">

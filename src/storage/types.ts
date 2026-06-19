@@ -36,8 +36,13 @@ export interface NoteStore {
      * @param title preferred title; the store resolves collisions (e.g. "Untitled 2").
      */
     create(title: string): Promise<NoteMeta>;
-    /** Persist the markdown body of an existing note. */
-    save(id: string, content: string): Promise<void>;
+    /**
+     * Persist the body of an existing note using optimistic concurrency, where
+     * `baseUpdatedAt` is the `updatedAt` the caller last saw for this note.
+     * Returns the note's new meta (with the post-write `updatedAt`); throws
+     * `ConflictError` if the file's on-disk `lastModified` differs from `baseUpdatedAt`.
+     */
+    save(id: string, content: string, baseUpdatedAt: number): Promise<NoteMeta>;
     /**
      * Rename a note. Returns the new meta (the id may change, e.g. for file-backed
      * stores where the id is derived from the file name).
@@ -45,4 +50,17 @@ export interface NoteStore {
     rename(id: string, nextTitle: string): Promise<NoteMeta>;
     /** Delete a note. */
     remove(id: string): Promise<void>;
+    /** Current `lastModified` for a note, or `null` if it no longer exists. */
+    stat(id: string): Promise<number | null>;
+}
+
+/** Thrown by {@link NoteStore.save} when the file changed on disk since the baseline. */
+export class ConflictError extends Error {
+    constructor(
+        readonly id: string,
+        readonly diskUpdatedAt: number,
+    ) {
+        super(`"${id}" changed on disk`);
+        this.name = 'ConflictError';
+    }
 }
