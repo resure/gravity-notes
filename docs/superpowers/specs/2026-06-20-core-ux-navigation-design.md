@@ -46,7 +46,7 @@ up the component/hook testing foundation (backfilling slice 2's untested conflic
 | Slice scope            | Defer sort + pin to slice 3b                                 | Pin/sort needs a metadata persistence layer + likely a `NoteStore` change. Isolating it keeps this PR UI-only and reviewable.     |
 | Search shape           | Inline sidebar filter; ⌘/Ctrl+K focuses the field           | Always-visible and discoverable; low-risk to build/test. A ⌘K command-palette overlay can come later — here ⌘K just focuses.       |
 | Search scope           | Title-only (case-insensitive substring), match-highlighted  | `list()` already carries titles; zero extra I/O, instant. The matcher is written so a body matcher can layer in later.            |
-| Shortcut clash policy  | Modifier combos = global + `preventDefault`; bare keys gated | Bare keys (↑/↓/Esc/Enter) only act when focus is outside the editor/inputs; modifier combos act globally. Verified in tests.       |
+| Shortcut clash policy  | Modifier combos global; list nav in the listbox; `?` gated   | `⌘/Ctrl` combos act globally (`preventDefault`). ↑/↓ navigation lives inside the NoteList listbox (roving tabindex); Esc/Enter are contextual to the focused field; the `?` help key fires only when focus is outside the editor/inputs. |
 | Shortcut discoverability | `?` (Shift+/) help dialog only                            | One place to learn the keys; no per-button tooltips. (The search field keeps a `⌘K` placeholder hint — free, standard.)           |
 | Inline rename commit   | Enter **or blur** commits; Esc cancels; empty/unchanged no-op | Finder/VSCode-style; least surprising. Reuses the store's title sanitizing + unique-filename collision handling.                 |
 | List a11y model        | Roving tabindex over `role="listbox"`/`option`              | Real keyboard nav replaces the stop-propagation hack; removes both slice-1 inline eslint-disables properly.                       |
@@ -71,16 +71,16 @@ hooks and components.
 
 **`useShortcuts.ts` (new)** — central keyboard handling.
 
-- Signature: `useShortcuts(actions: {focusSearch, createNote, toggleEditorMode, selectPrev,
-  selectNext, openHelp})`. Attaches a single `keydown` listener on `document` in an effect.
-- Command-modifier shortcuts (`⌘/Ctrl+K`, `⌘/Ctrl+J`, `⌘/Ctrl+/`) match regardless of focus and call
-  `event.preventDefault()`.
-- Focus-gated shortcuts — selection nav (`ArrowUp`/`ArrowDown`) **and** the help dialog (`?`, i.e.
-  `Shift+/`) — only fire when focus is **outside** the editor or a text input, guarded by checking the
-  active element (`contentEditable`, `INPUT`/`TEXTAREA`). This keeps arrow keys working as normal text
-  navigation and lets users type a literal `?` while editing.
-- `selectPrev`/`selectNext` are provided by `Workspace` and computed against `filteredNotes` (see
-  below), so navigation follows the visible, filtered order.
+- Signature: `useShortcuts(actions: {focusSearch, createNote, toggleEditorMode, openHelp})`. Attaches
+  a single `keydown` listener on `document` in an effect.
+- Command-modifier shortcuts (`⌘/Ctrl+K` focus search, `⌘/Ctrl+J` new note, `⌘/Ctrl+/` toggle editor
+  mode) match regardless of focus and call `event.preventDefault()`.
+- The help dialog (`?`, i.e. `Shift+/`) is **focus-gated** — it fires only when focus is **outside**
+  the editor or a text input (checked via the active element: `contentEditable`, `INPUT`/`TEXTAREA`),
+  so users can still type a literal `?` while editing.
+- List navigation (↑/↓) is **not** handled here — it lives inside the `NoteList` listbox (see below),
+  the standard a11y pattern, so DOM focus and selection stay in sync without cross-component focus
+  juggling.
 
 `useNotes.ts` is **unchanged** — selection, rename, create, and remove already exist; nav is derived
 in `Workspace`.
@@ -89,12 +89,15 @@ in `Workspace`.
 
 **`NoteList.tsx` (reworked)** — new props: `query`, `onQueryChange`, `searchInputRef`. Internals:
 
-- A Gravity `TextInput` search field at the top (placeholder `Search` with a `⌘K` hint, clearable),
-  wired to `query`/`onQueryChange`, with `ref={searchInputRef}` so ⌘K can focus it.
+- A Gravity `TextInput` search field at the top (placeholder `Search` with a `⌘K` hint, `hasClear`),
+  wired to `query`/`onQueryChange`, with `controlRef={searchInputRef}` so ⌘K can focus the inner
+  input. Pressing **Enter** in the field opens the first note in the filtered list (the top match);
+  **Esc** clears the query.
 - The list renders `role="listbox"`; each item is `role="option"` with `aria-selected`. Roving
-  tabindex: the selected (or first) item is `tabIndex=0`, the rest `-1`; ↑/↓ within the list move
-  selection and focus. This **replaces** the stop-propagation wrapper and removes its inline
-  eslint-disable.
+  tabindex: the selected (or first) item is `tabIndex=0`, the rest `-1`. The items container handles
+  `onKeyDown`: ↑/↓ move to the neighbor in the rendered (filtered) order — calling `onSelect` (which
+  opens it) and moving DOM focus to that item via an option-ref array; Enter/Space open the focused
+  item. This **replaces** the stop-propagation wrapper and removes its inline eslint-disable.
 - Match highlighting: the matched substring in each visible title is wrapped in `<mark>` (a small
   `highlightMatch(title, query)` helper returning React nodes).
 - **Inline rename:** local state `editingId`. Entering edit (double-click on the title, `F2` on the
@@ -121,18 +124,17 @@ the shortcut is additive.)
 - Calls `useNoteSearch(notes.notes)` → passes `query`, `onQueryChange`, `filteredNotes` to
   `NoteList`; holds the `searchInputRef` and an `editorRef` (to `EditorPane`).
 - Defines the shortcut actions: `focusSearch` (focus `searchInputRef`), `createNote`
-  (`notes.create`), `toggleEditorMode` (`editorRef.current?.toggleMode()`), `selectPrev`/`selectNext`
-  (find `selectedId` in `filteredNotes`, clamp, `notes.select(neighbor)`), `openHelp` (open the
-  dialog). Passes them to `useShortcuts`.
+  (`notes.create`), `toggleEditorMode` (`editorRef.current?.toggleMode()`), `openHelp` (open the
+  dialog). Passes them to `useShortcuts`. (List ↑/↓ navigation is internal to `NoteList`.)
 - Adds a `?` icon button to the header that also opens the help dialog, and renders `ShortcutsDialog`
   with its open state.
 
 ### Data flow
 
 ```
-search input ─▶ onQueryChange ─▶ useNoteSearch ─▶ filteredNotes ─▶ NoteList (render + ↑/↓ target)
-⌘K ─▶ focus searchInputRef        ⌘J ─▶ notes.create        ⌘/ ─▶ editorRef.toggleMode()
-↑/↓ ─▶ neighbor in filteredNotes ─▶ notes.select        ? ─▶ open ShortcutsDialog
+search input ─▶ onQueryChange ─▶ useNoteSearch ─▶ filteredNotes ─▶ NoteList (renders the list)
+⌘K ─▶ focus search    ⌘J ─▶ notes.create    ⌘/ ─▶ editorRef.toggleMode()    ? ─▶ open ShortcutsDialog
+NoteList ↑/↓ ─▶ neighbor in the rendered list ─▶ onSelect ─▶ notes.select   (Enter in search ─▶ top match)
 ```
 
 Filtering never changes selection or closes the open editor — a note filtered out of the list stays
@@ -157,12 +159,12 @@ workflow change needed.
 
 - `useNoteSearch.test.tsx` — empty/whitespace query returns all; case-insensitive substring match;
   no-match → empty; order preserved.
-- `useShortcuts.test.tsx` — each combo dispatches its action; bare arrow keys are suppressed when an
-  input/editor is focused but active otherwise; modifier combos call `preventDefault`.
-- `NoteList.test.tsx` — filter narrows the list and highlights matches; inline rename commit via
-  Enter and via blur, cancel via Esc, empty and unchanged are no-ops; keyboard nav (↑/↓ move
-  selection, Enter opens); delete confirmation; empty vs no-results states; `listbox`/`option` roles
-  present.
+- `useShortcuts.test.tsx` — each modifier combo dispatches its action and calls `preventDefault`; `?`
+  fires only when focus is outside inputs/editor (suppressed while an input is focused).
+- `NoteList.test.tsx` — typing in the search field calls `onQueryChange` and matched text is
+  highlighted; inline rename commit via Enter and via blur, cancel via Esc, empty and unchanged are
+  no-ops; listbox keyboard nav (↑/↓ call `onSelect` for the neighbor; Enter in search opens the top
+  match); delete confirmation; empty vs no-results states; `listbox`/`option` roles present.
 - `ShortcutsDialog.test.tsx` — renders all documented shortcuts.
 
 **Backfill (slice 2, flagged high-value in the handoff):**
