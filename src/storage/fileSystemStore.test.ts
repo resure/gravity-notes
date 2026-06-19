@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it} from 'vitest';
 
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
+import {ConflictError} from './types';
 
 describe('FileSystemNoteStore', () => {
     let dir: FakeDirectoryHandle;
@@ -48,7 +49,7 @@ describe('FileSystemNoteStore', () => {
         it('round-trips content through save', async () => {
             dir.seedFile('Ideas.md', 'old', 10);
 
-            await store.save('Ideas.md', 'new body');
+            await store.save('Ideas.md', 'new body', 10);
 
             expect((await store.get('Ideas.md')).content).toBe('new body');
         });
@@ -127,6 +128,61 @@ describe('FileSystemNoteStore', () => {
             await store.remove('Gone.md');
 
             await expect(store.get('Gone.md')).rejects.toThrow();
+        });
+    });
+
+    describe('save conflict detection', () => {
+        it('throws ConflictError when the file changed on disk since the baseline', async () => {
+            dir.seedFile('Note.md', 'original', 100);
+            dir.seedFile('Note.md', 'edited elsewhere', 250); // external edit bumps mtime
+
+            await expect(store.save('Note.md', 'my version', 100)).rejects.toBeInstanceOf(
+                ConflictError,
+            );
+            // The rejected save must not have touched the on-disk content.
+            expect((await store.get('Note.md')).content).toBe('edited elsewhere');
+        });
+
+        it('reports the current disk mtime on the conflict', async () => {
+            dir.seedFile('Note.md', 'a', 100);
+            dir.seedFile('Note.md', 'b', 250);
+
+            await expect(store.save('Note.md', 'c', 100)).rejects.toMatchObject({
+                name: 'ConflictError',
+                diskUpdatedAt: 250,
+            });
+        });
+
+        it('writes when the baseline matches the current disk mtime (keep-mine)', async () => {
+            dir.seedFile('Note.md', 'a', 100);
+            dir.seedFile('Note.md', 'b', 250);
+
+            const meta = await store.save('Note.md', 'mine', 250);
+
+            expect(meta.updatedAt).toBeGreaterThan(250);
+            expect((await store.get('Note.md')).content).toBe('mine');
+        });
+
+        it('returns the new mtime so the next save uses a fresh baseline', async () => {
+            dir.seedFile('Note.md', 'a', 100);
+
+            const first = await store.save('Note.md', 'b', 100);
+            const second = await store.save('Note.md', 'c', first.updatedAt ?? 0);
+
+            expect((await store.get('Note.md')).content).toBe('c');
+            expect(second.updatedAt).toBeGreaterThan(first.updatedAt ?? 0);
+        });
+    });
+
+    describe('stat', () => {
+        it('returns the current lastModified', async () => {
+            dir.seedFile('Note.md', 'x', 77);
+
+            expect(await store.stat('Note.md')).toBe(77);
+        });
+
+        it('returns null for a missing file', async () => {
+            expect(await store.stat('Ghost.md')).toBeNull();
         });
     });
 });
