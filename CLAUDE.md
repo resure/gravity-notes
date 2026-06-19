@@ -16,14 +16,18 @@ unavailable in Firefox/Safari; those are a planned later phase (in-browser/Index
 
 ```bash
 npm install
-npm run dev      # Vite dev server (http://localhost:5173)
-npm run build    # type-check (tsc, noEmit) + production build
-npm run preview  # preview the production build
-```
+npm run dev          # Vite dev server (http://localhost:5173)
+npm run build        # type-check (tsc, noEmit) + production build
+npm run preview      # preview the production build
 
-> Test / lint / format / CI tooling is being added as the first roadmap item — see
-> `docs/superpowers/specs/2026-06-19-code-health-foundation-design.md`. Once landed, this section gains
-> `npm test`, `npm run lint`, `npm run format:check`, and `npm run typecheck`. Update this file when it does.
+npm test             # run the Vitest suite once
+npm run test:watch   # watch mode
+npm run lint         # ESLint (Gravity flat config; also enforces Prettier on JS/TS)
+npm run lint:fix     # ESLint with autofix
+npm run format       # Prettier write (covers CSS/MD/JSON too)
+npm run format:check # Prettier check (used in CI)
+npm run typecheck    # tsc (noEmit)
+```
 
 ## Architecture
 
