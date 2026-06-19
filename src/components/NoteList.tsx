@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import type {KeyboardEvent as ReactKeyboardEvent} from 'react';
+import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
 import {Ellipsis, Pencil, Plus, TrashBin} from '@gravity-ui/icons';
 import {Button, Dialog, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
@@ -11,15 +11,35 @@ import './NoteList.css';
 export interface NoteListProps {
     notes: NoteMeta[];
     selectedId: string | null;
+    query: string;
+    onQueryChange: (query: string) => void;
+    searchInputRef: RefObject<HTMLInputElement>;
     onSelect: (id: string) => void;
     onCreate: () => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
 }
 
+function highlightMatch(title: string, query: string): ReactNode {
+    const q = query.trim();
+    if (!q) return title;
+    const idx = title.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return title;
+    return (
+        <>
+            {title.slice(0, idx)}
+            <mark className="note-list__match">{title.slice(idx, idx + q.length)}</mark>
+            {title.slice(idx + q.length)}
+        </>
+    );
+}
+
 export function NoteList({
     notes,
     selectedId,
+    query,
+    onQueryChange,
+    searchInputRef,
     onSelect,
     onCreate,
     onRename,
@@ -86,6 +106,16 @@ export function NoteList({
         }
     };
 
+    const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter' && notes.length > 0) {
+            event.preventDefault();
+            onSelect(notes[0].id);
+        } else if (event.key === 'Escape' && query) {
+            event.preventDefault();
+            onQueryChange('');
+        }
+    };
+
     return (
         <div className="note-list">
             <div className="note-list__header">
@@ -96,10 +126,25 @@ export function NoteList({
                 </Button>
             </div>
 
+            <div className="note-list__search">
+                <TextInput
+                    controlRef={searchInputRef}
+                    value={query}
+                    onUpdate={onQueryChange}
+                    placeholder="Search"
+                    hasClear
+                    onKeyDown={onSearchKeyDown}
+                />
+            </div>
+
             <div className="note-list__items" role="listbox" aria-label="Notes">
                 {notes.length === 0 ? (
                     <div className="note-list__empty">
-                        <Text color="secondary">No notes yet. Create your first one.</Text>
+                        <Text color="secondary">
+                            {query
+                                ? `No notes match “${query}”.`
+                                : 'No notes yet. Create your first one.'}
+                        </Text>
                     </div>
                 ) : (
                     notes.map((note) => {
@@ -144,7 +189,7 @@ export function NoteList({
                                 ) : (
                                     <>
                                         <Text className="note-list__title" ellipsis>
-                                            {note.title}
+                                            {highlightMatch(note.title, query)}
                                         </Text>
                                         <div className="note-list__actions">
                                             <DropdownMenu

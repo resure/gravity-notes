@@ -1,3 +1,5 @@
+import {createRef} from 'react';
+
 import {screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
@@ -17,6 +19,9 @@ function setup(overrides: Record<string, unknown> = {}) {
     const props = {
         notes: NOTES,
         selectedId: 'Alpha.md',
+        query: '',
+        onQueryChange: vi.fn(),
+        searchInputRef: createRef<HTMLInputElement>(),
         onSelect: vi.fn(),
         onCreate: vi.fn(),
         onRename: vi.fn(),
@@ -130,5 +135,41 @@ describe('NoteList — delete', () => {
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
         await user.click(screen.getByRole('button', {name: 'Delete'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
+    });
+});
+
+describe('NoteList — search', () => {
+    it('calls onQueryChange when typing in the search field', async () => {
+        const user = userEvent.setup();
+        const props = setup();
+        await user.type(screen.getByPlaceholderText('Search'), 'x');
+        expect(props.onQueryChange).toHaveBeenCalledWith('x');
+    });
+
+    it('highlights the matched substring in titles', () => {
+        setup({query: 'lph'});
+        const mark = document.querySelector('mark');
+        expect(mark?.textContent).toBe('lph');
+    });
+
+    it('shows a no-results message when filtered to empty with a query', () => {
+        setup({notes: [], query: 'zzz'});
+        expect(screen.getByText(/No notes match/)).toBeInTheDocument();
+    });
+
+    it('opens the top match on Enter in the search field', async () => {
+        const user = userEvent.setup();
+        const props = setup({query: 'a'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onSelect).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('clears the query on Escape in the search field', async () => {
+        const user = userEvent.setup();
+        const props = setup({query: 'beta'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Escape}');
+        expect(props.onQueryChange).toHaveBeenCalledWith('');
     });
 });
