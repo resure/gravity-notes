@@ -1,0 +1,60 @@
+/** The set of actions the global keyboard handler can invoke. */
+export type ShortcutAction = 'focusSearch' | 'createNote' | 'toggleEditorMode' | 'openHelp';
+
+/** How a globally-handled shortcut maps to a key event. */
+export interface GlobalBinding {
+    /** 'mod' = ⌘/Ctrl combo; 'bare' = the key alone (gated against typing surfaces). */
+    trigger: 'mod' | 'bare';
+    /** `event.key` to match (lower-cased for the 'mod' trigger). */
+    key: string;
+    /** Which action to fire. */
+    action: ShortcutAction;
+}
+
+/** One row of the keyboard-shortcut help sheet, and (optionally) its global binding. */
+export interface ShortcutDescriptor {
+    /** Gravity <Hotkey> value, e.g. 'mod+k'. */
+    keys: string;
+    /** Human description shown in the help dialog. */
+    description: string;
+    /** Help-dialog grouping. */
+    group: 'Navigation' | 'Editing' | 'General';
+    /** Present when the global handler (useShortcuts) owns this key; absent for list-scoped keys. */
+    global?: GlobalBinding;
+}
+
+/** Single source of truth for both the global handler and the help dialog. */
+export const SHORTCUTS: ShortcutDescriptor[] = [
+    {
+        keys: 'mod+k',
+        description: 'Focus search',
+        group: 'Navigation',
+        global: {trigger: 'mod', key: 'k', action: 'focusSearch'},
+    },
+    {keys: 'up', description: 'Previous note', group: 'Navigation'},
+    {keys: 'down', description: 'Next note', group: 'Navigation'},
+    {keys: 'enter', description: 'Open the focused note', group: 'Navigation'},
+    {keys: 'esc', description: 'Clear search', group: 'Navigation'},
+    {
+        keys: 'mod+j',
+        description: 'New note',
+        group: 'Editing',
+        global: {trigger: 'mod', key: 'j', action: 'createNote'},
+    },
+    {
+        keys: 'mod+/',
+        description: 'Toggle WYSIWYG / Markup',
+        group: 'Editing',
+        global: {trigger: 'mod', key: '/', action: 'toggleEditorMode'},
+    },
+    {keys: 'f2', description: 'Rename selected note', group: 'Editing'},
+    {
+        keys: '?',
+        description: 'Show this help',
+        group: 'General',
+        global: {trigger: 'bare', key: '?', action: 'openHelp'},
+    },
+];
+
+/** Help-dialog group order. */
+export const SHORTCUT_GROUPS: ShortcutDescriptor['group'][] = ['Navigation', 'Editing', 'General'];
