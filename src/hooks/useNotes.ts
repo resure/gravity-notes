@@ -1,6 +1,22 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-import {ConflictError, type Note, type NoteMeta, type NoteStore} from '../storage/types';
+import {
+    DEFAULT_METADATA,
+    reconcile,
+    withCreatedStamp,
+    withPinToggled,
+    withRemoved,
+    withRenamed,
+    withSortMode,
+} from '../storage/metadata';
+import {
+    ConflictError,
+    type Note,
+    type NoteMeta,
+    type NoteStore,
+    type NotesMetadata,
+    type SortMode,
+} from '../storage/types';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
@@ -17,6 +33,12 @@ export interface NoteConflict {
 
 export interface UseNotes {
     notes: NoteMeta[];
+    /** Folder metadata: active sort, pinned ids, created stamps. */
+    metadata: NotesMetadata;
+    /** Change the active sort mode (persisted). */
+    setSortMode(sort: SortMode): void;
+    /** Pin or unpin a note (persisted). */
+    togglePin(id: string): void;
     selectedId: string | null;
     /** Full content of the selected note (the editor's initial markup). */
     selectedNote: Note | null;
@@ -52,6 +74,36 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [saveState, setSaveState] = useState<SaveState>('idle');
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
+    const [metadata, setMetadata] = useState<NotesMetadata>(DEFAULT_METADATA);
+    /** Always-current metadata, so mutations never read a stale render closure. */
+    const metadataRef = useRef<NotesMetadata>(DEFAULT_METADATA);
+
+    const applyMetadata = useCallback((next: NotesMetadata) => {
+        metadataRef.current = next;
+        setMetadata(next);
+    }, []);
+
+    const persistMetadata = useCallback(
+        async (next: NotesMetadata) => {
+            applyMetadata(next);
+            try {
+                await store.writeMetadata(next);
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to save notes metadata');
+            }
+        },
+        [applyMetadata, store, onError],
+    );
+
+    const setSortMode = useCallback(
+        (sort: SortMode) => void persistMetadata(withSortMode(metadataRef.current, sort)),
+        [persistMetadata],
+    );
+
+    const togglePin = useCallback(
+        (id: string) => void persistMetadata(withPinToggled(metadataRef.current, id)),
+        [persistMetadata],
+    );
 
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** Latest unsaved edit, tagged with the note it belongs to. */
@@ -60,15 +112,19 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const baselineRef = useRef<number | null>(null);
 
     const refresh = useCallback(async () => {
-        setNotes(await store.list());
-    }, [store]);
+        const list = await store.list();
+        setNotes(list);
+        applyMetadata(
+            reconcile(
+                metadataRef.current,
+                list.map((n) => n.id),
+            ),
+        );
+    }, [store, applyMetadata]);
 
     const bumpInList = useCallback((id: string, updatedAt: number | undefined) => {
-        setNotes((prev) =>
-            [...prev]
-                .map((n) => (n.id === id ? {...n, updatedAt} : n))
-                .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)),
-        );
+        // Order is re-derived by orderNotes(); only the timestamp changes here.
+        setNotes((prev) => prev.map((n) => (n.id === id ? {...n, updatedAt} : n)));
     }, []);
 
     const flush = useCallback(async () => {
@@ -120,18 +176,24 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         await flush();
         try {
             const meta = await store.create('Untitled');
+            await persistMetadata(
+                withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
+            );
             await refresh();
             await select(meta.id);
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to create note');
         }
-    }, [flush, store, refresh, select, onError]);
+    }, [flush, store, persistMetadata, refresh, select, onError]);
 
     const rename = useCallback(
         async (id: string, nextTitle: string) => {
             await flush();
             try {
                 const meta = await store.rename(id, nextTitle);
+                if (meta.id !== id) {
+                    await persistMetadata(withRenamed(metadataRef.current, id, meta.id));
+                }
                 await refresh();
                 if (selectedId === id) {
                     await select(meta.id);
@@ -140,13 +202,14 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to rename note');
             }
         },
-        [flush, store, refresh, select, selectedId, onError],
+        [flush, store, persistMetadata, refresh, select, selectedId, onError],
     );
 
     const remove = useCallback(
         async (id: string) => {
             try {
                 await store.remove(id);
+                await persistMetadata(withRemoved(metadataRef.current, id));
                 if (pendingRef.current?.id === id) {
                     pendingRef.current = null;
                 }
@@ -160,7 +223,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to delete note');
             }
         },
-        [store, refresh, selectedId, onError],
+        [store, persistMetadata, refresh, selectedId, onError],
     );
 
     const edit = useCallback(
@@ -244,10 +307,24 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         void refresh();
     }, [refresh]);
 
-    // Initial load.
+    // Initial load: notes + metadata, reconciling any stale pinned/created ids.
     useEffect(() => {
-        void refresh();
-    }, [refresh]);
+        let cancelled = false;
+        void (async () => {
+            const [list, meta] = await Promise.all([store.list(), store.readMetadata()]);
+            if (cancelled) return;
+            setNotes(list);
+            applyMetadata(
+                reconcile(
+                    meta,
+                    list.map((n) => n.id),
+                ),
+            );
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [store, applyMetadata]);
 
     // Best-effort save when hidden; warn before unload if edits are unsaved.
     useEffect(() => {
@@ -298,6 +375,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     return {
         notes,
+        metadata,
+        setSortMode,
+        togglePin,
         selectedId,
         selectedNote,
         saveState,
