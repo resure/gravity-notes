@@ -38,7 +38,7 @@ export interface NotesMetadata {
   /** Active sort mode. */
   sort: SortMode;
   /** Pinned note ids. Treated as a membership set; array order is not significant. */
-  pinned: string[];
+  pinned: readonly string[];
   /** Note id → creation time (epoch ms), stamped on create. */
   created: Record<string, number>;
 }
@@ -780,7 +780,7 @@ Add the four props to `NoteListProps` (after `notes: NoteMeta[];`):
 ```ts
     sortMode: SortMode;
     onSortChange: (mode: SortMode) => void;
-    pinnedIds: string[];
+    pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
 ```
 
