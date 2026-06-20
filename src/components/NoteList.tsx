@@ -1,10 +1,10 @@
 import {useEffect, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
-import {Ellipsis, Pencil, Plus, TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
+import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
-import type {NoteMeta} from '../storage/types';
+import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
 
@@ -18,6 +18,10 @@ export interface NoteListProps {
     onCreate: () => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
+    sortMode: SortMode;
+    onSortChange: (mode: SortMode) => void;
+    pinnedIds: readonly string[];
+    onTogglePin: (id: string) => void;
 }
 
 function highlightMatch(title: string, query: string): ReactNode {
@@ -44,6 +48,10 @@ export function NoteList({
     onCreate,
     onRename,
     onDelete,
+    sortMode,
+    onSortChange,
+    pinnedIds,
+    onTogglePin,
 }: NoteListProps) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
@@ -106,6 +114,8 @@ export function NoteList({
         }
     };
 
+    const pinnedSet = new Set(pinnedIds);
+
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter' && notes.length > 0) {
             event.preventDefault();
@@ -120,10 +130,23 @@ export function NoteList({
         <div className="note-list">
             <div className="note-list__header">
                 <Text variant="subheader-2">Notes</Text>
-                <Button view="action" size="m" onClick={onCreate}>
-                    <Icon data={Plus} />
-                    New
-                </Button>
+                <div className="note-list__header-actions">
+                    <Select
+                        className="note-list__sort"
+                        size="m"
+                        value={[sortMode]}
+                        onUpdate={([next]) => onSortChange(next as SortMode)}
+                        options={[
+                            {value: 'updated', content: 'Updated'},
+                            {value: 'title', content: 'Title (A→Z)'},
+                            {value: 'created', content: 'Created'},
+                        ]}
+                    />
+                    <Button view="action" size="m" onClick={onCreate}>
+                        <Icon data={Plus} />
+                        New
+                    </Button>
+                </div>
             </div>
 
             <div className="note-list__search">
@@ -188,6 +211,13 @@ export function NoteList({
                                     />
                                 ) : (
                                     <>
+                                        {pinnedSet.has(note.id) ? (
+                                            <Icon
+                                                className="note-list__pin"
+                                                data={PinFill}
+                                                size={14}
+                                            />
+                                        ) : null}
                                         <Text className="note-list__title" ellipsis>
                                             {highlightMatch(note.title, query)}
                                         </Text>
@@ -207,6 +237,21 @@ export function NoteList({
                                                     </Button>
                                                 )}
                                                 items={[
+                                                    {
+                                                        text: pinnedSet.has(note.id)
+                                                            ? 'Unpin'
+                                                            : 'Pin to top',
+                                                        iconStart: (
+                                                            <Icon
+                                                                data={
+                                                                    pinnedSet.has(note.id)
+                                                                        ? PinSlash
+                                                                        : Pin
+                                                                }
+                                                            />
+                                                        ),
+                                                        action: () => onTogglePin(note.id),
+                                                    },
                                                     {
                                                         text: 'Rename',
                                                         iconStart: <Icon data={Pencil} />,

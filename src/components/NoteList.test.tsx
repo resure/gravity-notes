@@ -26,6 +26,10 @@ function setup(overrides: Record<string, unknown> = {}) {
         onCreate: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
+        sortMode: 'updated',
+        onSortChange: vi.fn(),
+        pinnedIds: [],
+        onTogglePin: vi.fn(),
         ...overrides,
     };
     renderWithProviders(<NoteList {...(props as NoteListProps)} />);
@@ -171,5 +175,43 @@ describe('NoteList — search', () => {
         screen.getByPlaceholderText('Search').focus();
         await user.keyboard('{Escape}');
         expect(props.onQueryChange).toHaveBeenCalledWith('');
+    });
+});
+
+describe('NoteList — sort control', () => {
+    it('changes the sort mode via the sort control', async () => {
+        const user = userEvent.setup();
+        const props = setup();
+        await user.click(screen.getByRole('combobox'));
+        await user.click(await screen.findByRole('option', {name: 'Title (A→Z)'}));
+        expect(props.onSortChange).toHaveBeenCalledWith('title');
+    });
+});
+
+describe('NoteList — pinning', () => {
+    it('shows a pin icon on pinned notes only', () => {
+        setup({pinnedIds: ['Alpha.md']});
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        expect(alpha.querySelector('.note-list__pin')).toBeTruthy();
+        expect(beta.querySelector('.note-list__pin')).toBeFalsy();
+    });
+
+    it('pins an unpinned note from the menu', async () => {
+        const user = userEvent.setup();
+        const props = setup();
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        await user.click(within(alpha).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Pin to top/}));
+        expect(props.onTogglePin).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('unpins a pinned note from the menu', async () => {
+        const user = userEvent.setup();
+        const props = setup({pinnedIds: ['Alpha.md']});
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        await user.click(within(alpha).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Unpin/}));
+        expect(props.onTogglePin).toHaveBeenCalledWith('Alpha.md');
     });
 });
