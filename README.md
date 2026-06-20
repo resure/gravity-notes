@@ -51,10 +51,34 @@ Key modules:
 - `src/components/` — `FolderGate`, `Workspace`, `NoteList`, `EditorPane`
 - `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
 
-### Roadmap
+### TODO
 
-The `NoteStore` interface is the seam for the planned next phases:
+UX tasks:
 
-- **Backend sync** — add an `ApiStore` implementing `NoteStore`.
-- **Electron desktop** — an `ElectronFsStore` over the real filesystem (no permission prompts).
+- i want to havesome kind of "preview" mode for notes OR clicking ESC first time removes cursor from editing area, clicking second time closes current opened the note. when cursor not in editing mode, pressing cursor arrows (up/down) should navigate us between notes
+- hotkeys for working with tabs?
+
+Design things:
+
+- let's make padding ABOVE editing area little smaller (but don't touch paddding on the left side)
+- saving indicator is too annoying
+- theme switcher should have distinct "system theme" option
+- let's pick different accent color instead of default yellow-orange
+- default line-height in editor is too big
+- i want lists to have short dashes instead of bullets - like in apple notes
+- sublime/vscode-like logic for tabs - just clicking on some note in the sidebar opens "ephereal" tab with italic tab name. Double click on note or any edits inside it makes that ephereal tab normal. When tab is ephereal clicking on another note in the sidebar just replaces ethereal tab with another one, instead of opening a new one (so there probably can only be one ethereal tab).
+- don't like current tabs layout with empty space above them, what ideas do you have on more compact layout? maybe collapse first and second panels into one. Also i want tabs to be little bigger in height.
+
+Bugs:
+
+- F2 hotkey doesn't work
+- cmd+k conflicts with inserting link in markdown editor
+- on trying to rename to existing note name - do nothing, don't try to generate number at the end of the note
+
+Backlog:
+
+- add plus button at the tabs pane, after it we should either open existing file or create a new one
+- Folders support
+- **Electron app**
 - **PWA** — manifest + service worker; an IndexedDB store as the default for non-Chromium browsers.
+- **Backend sync** — add an `ApiStore` implementing `NoteStore`.

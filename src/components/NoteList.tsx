@@ -133,6 +133,7 @@ export function NoteList({
                 <div className="note-list__header-actions">
                     <Select
                         className="note-list__sort"
+                        aria-label="Sort notes"
                         size="m"
                         value={[sortMode]}
                         onUpdate={([next]) => {

@@ -190,7 +190,14 @@ describe('FileSystemNoteStore', () => {
     describe('metadata', () => {
         it('returns defaults when the dotfile is absent', async () => {
             const meta = await store.readMetadata();
-            expect(meta).toEqual({version: 1, sort: 'updated', pinned: [], created: {}});
+            expect(meta).toEqual({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                open: [],
+                active: null,
+            });
             // A fresh object, never the shared DEFAULT_METADATA singleton.
             expect(meta).not.toBe(DEFAULT_METADATA);
         });
@@ -201,6 +208,8 @@ describe('FileSystemNoteStore', () => {
                 sort: 'title',
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
+                open: [],
+                active: null,
             });
             const meta = await store.readMetadata();
             expect(meta.sort).toBe('title');
@@ -211,12 +220,26 @@ describe('FileSystemNoteStore', () => {
         it('returns defaults when the dotfile is corrupt JSON', async () => {
             dir.seedFile('.gravity-notes.json', 'not json{', 10);
             const meta = await store.readMetadata();
-            expect(meta).toEqual({version: 1, sort: 'updated', pinned: [], created: {}});
+            expect(meta).toEqual({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                open: [],
+                active: null,
+            });
         });
 
         it('never surfaces the dotfile as a note', async () => {
             dir.seedFile('Real.md', 'hi', 1);
-            await store.writeMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
+            await store.writeMetadata({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                open: [],
+                active: null,
+            });
             const metas = await store.list();
             expect(metas.map((m) => m.id)).toEqual(['Real.md']);
         });

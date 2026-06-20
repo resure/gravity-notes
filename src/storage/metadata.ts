@@ -9,6 +9,8 @@ export const DEFAULT_METADATA: NotesMetadata = {
     sort: 'updated',
     pinned: [],
     created: {},
+    open: [],
+    active: null,
 };
 
 const SORT_MODES: readonly SortMode[] = ['updated', 'title', 'created'];
@@ -29,11 +31,16 @@ export function parseMetadata(raw: unknown): NotesMetadata {
             if (typeof value === 'number') created[id] = value;
         }
     }
-    return {version: 1, sort, pinned, created};
+    const open = Array.isArray(obj.open)
+        ? obj.open.filter((x): x is string => typeof x === 'string')
+        : [];
+    let active = typeof obj.active === 'string' ? obj.active : null;
+    if (active !== null && !open.includes(active)) active = null;
+    return {version: 1, sort, pinned, created, open, active};
 }
 
 function cloneDefault(): NotesMetadata {
-    return {version: 1, sort: 'updated', pinned: [], created: {}};
+    return {version: 1, sort: 'updated', pinned: [], created: {}, open: [], active: null};
 }
 
 export function withSortMode(meta: NotesMetadata, sort: SortMode): NotesMetadata {
@@ -45,6 +52,30 @@ export function withPinToggled(meta: NotesMetadata, id: string): NotesMetadata {
         ? meta.pinned.filter((p) => p !== id)
         : [...meta.pinned, id];
     return {...meta, pinned};
+}
+
+/** Open `id` as a tab (appending if new) and make it active. */
+export function withOpened(meta: NotesMetadata, id: string): NotesMetadata {
+    const open = meta.open.includes(id) ? meta.open : [...meta.open, id];
+    return {...meta, open, active: id};
+}
+
+/** Make an already-open tab active. */
+export function withActive(meta: NotesMetadata, id: string): NotesMetadata {
+    if (!meta.open.includes(id)) return meta;
+    return {...meta, active: id};
+}
+
+/** Close `id`; if it was active, activate the right neighbor, else the left, else nothing. */
+export function withClosed(meta: NotesMetadata, id: string): NotesMetadata {
+    const idx = meta.open.indexOf(id);
+    if (idx === -1) return meta;
+    const open = meta.open.filter((o) => o !== id);
+    let active = meta.active;
+    if (active === id) {
+        active = meta.open[idx + 1] ?? meta.open[idx - 1] ?? null;
+    }
+    return {...meta, open, active};
 }
 
 export function withCreatedStamp(meta: NotesMetadata, id: string, created: number): NotesMetadata {
@@ -60,13 +91,16 @@ export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): 
         created[newId] = created[oldId];
         delete created[oldId];
     }
-    return {...meta, pinned, created};
+    const open = meta.open.map((o) => (o === oldId ? newId : o));
+    const active = meta.active === oldId ? newId : meta.active;
+    return {...meta, pinned, created, open, active};
 }
 
 export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     const created = {...meta.created};
     delete created[id];
-    return {...meta, pinned: meta.pinned.filter((p) => p !== id), created};
+    const base = {...meta, pinned: meta.pinned.filter((p) => p !== id), created};
+    return withClosed(base, id);
 }
 
 /** Drop pinned/created entries whose id is no longer a live file (self-heals external deletes). */
@@ -76,7 +110,12 @@ export function reconcile(meta: NotesMetadata, liveIds: string[]): NotesMetadata
     for (const [id, time] of Object.entries(meta.created)) {
         if (live.has(id)) created[id] = time;
     }
-    return {...meta, pinned: meta.pinned.filter((id) => live.has(id)), created};
+    const open = meta.open.filter((id) => live.has(id));
+    // When the active note vanished, fall back to the first surviving tab. Unlike
+    // withClosed's neighbor preference, there's no meaningful "neighbor" after
+    // arbitrary external file-system churn.
+    const active = meta.active && live.has(meta.active) ? meta.active : (open[0] ?? null);
+    return {...meta, pinned: meta.pinned.filter((id) => live.has(id)), created, open, active};
 }
 
 /** Pure ordering: pinned notes first, each group sorted by the active sort. Does not mutate input. */
