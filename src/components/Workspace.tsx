@@ -1,14 +1,17 @@
-import {useCallback, useMemo} from 'react';
+import {useCallback, useMemo, useRef, useState} from 'react';
 
-import {Folder, Moon, Sun} from '@gravity-ui/icons';
+import {CircleQuestion, Folder, Moon, Sun} from '@gravity-ui/icons';
 import {Button, Icon, Label, Text, type Theme, useToaster} from '@gravity-ui/uikit';
 
+import {useNoteSearch} from '../hooks/useNoteSearch';
 import {type SaveState, useNotes} from '../hooks/useNotes';
+import {useShortcuts} from '../hooks/useShortcuts';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 
 import {ConflictBanner} from './ConflictBanner';
-import {EditorPane} from './EditorPane';
+import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList} from './NoteList';
+import {ShortcutsDialog} from './ShortcutsDialog';
 
 import './Workspace.css';
 
@@ -46,6 +49,18 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
     );
 
     const notes = useNotes(store, onError);
+    const {query, setQuery, filteredNotes} = useNoteSearch(notes.notes);
+
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const editorRef = useRef<EditorPaneHandle>(null);
+    const [helpOpen, setHelpOpen] = useState(false);
+
+    useShortcuts({
+        focusSearch: () => searchInputRef.current?.focus(),
+        createNote: () => void notes.create(),
+        toggleEditorMode: () => editorRef.current?.toggleMode(),
+        openHelp: () => setHelpOpen(true),
+    });
 
     return (
         <div className="workspace">
@@ -60,6 +75,14 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                     <Text color="secondary" className="workspace__save-state">
                         {SAVE_LABEL[notes.saveState]}
                     </Text>
+                    <Button
+                        view="flat"
+                        size="m"
+                        onClick={() => setHelpOpen(true)}
+                        title="Keyboard shortcuts (?)"
+                    >
+                        <Icon data={CircleQuestion} />
+                    </Button>
                     <Button view="flat" size="m" onClick={onChangeFolder} title="Change folder">
                         Change folder
                     </Button>
@@ -77,8 +100,11 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
             <div className="workspace__body">
                 <aside className="workspace__sidebar">
                     <NoteList
-                        notes={notes.notes}
+                        notes={filteredNotes}
                         selectedId={notes.selectedId}
+                        query={query}
+                        onQueryChange={setQuery}
+                        searchInputRef={searchInputRef}
                         onSelect={(id) => void notes.select(id)}
                         onCreate={() => void notes.create()}
                         onRename={(id, title) => void notes.rename(id, title)}
@@ -101,6 +127,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                                 </div>
                             ) : null}
                             <EditorPane
+                                ref={editorRef}
                                 key={`${notes.selectedNote.id}:${notes.selectedNote.updatedAt}`}
                                 note={notes.selectedNote}
                                 onChange={notes.edit}
@@ -115,6 +142,8 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                     )}
                 </main>
             </div>
+
+            <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
         </div>
     );
 }
