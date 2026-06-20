@@ -80,9 +80,10 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
 3. ✅ **Core UX & navigation — 3a** (PR #3) — title search/filter, keyboard shortcuts + help dialog,
    inline rename, list keyboard a11y; stood up jsdom + Testing Library component/hook testing.
    Spec: `docs/superpowers/specs/2026-06-20-core-ux-navigation-design.md`.
-   - ⬜ **Sort & pinning — 3b** (next) — sort modes + pinned notes; introduces the metadata-persistence
-     layer (the architectural decision deferred from 3a; touches the `NoteStore` interface).
-     Kickoff: `docs/superpowers/handoffs/2026-06-20-sort-pinning-kickoff.md`.
+   - ✅ **Sort & pinning — 3b** — sort modes (updated/title/created) + pinned notes, persisted in a
+     `.gravity-notes.json` folder dotfile via `NoteStore.readMetadata`/`writeMetadata`; ordering moved
+     to a pure `orderNotes`. Folds in the 3a help-dialog/shortcut-descriptor polish.
+     Spec: `docs/superpowers/specs/2026-06-20-sort-pinning-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
