@@ -58,3 +58,22 @@
 .note-list__item_selected .note-list__actions {
     opacity: 1;
 }
+
+.note-list__item:focus-visible {
+    outline: 2px solid var(--g-color-line-focus);
+    outline-offset: -2px;
+}
+
+.note-list__edit {
+    flex: 1;
+}
+
+.note-list__search {
+    padding: 8px 8px 0;
+}
+
+.note-list__match {
+    background-color: var(--g-color-base-warning-medium, rgba(255, 219, 77, 0.45));
+    border-radius: 2px;
+    padding: 0 1px;
+}
