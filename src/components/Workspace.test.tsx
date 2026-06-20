@@ -67,4 +67,32 @@ describe('Workspace tabs', () => {
             expect(screen.queryByRole('tab', {name: 'Alpha'})).not.toBeInTheDocument(),
         );
     });
+
+    it('re-activates an existing tab when its tab is clicked', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+
+        await user.click(screen.getByRole('option', {name: /Alpha/}));
+        await screen.findByRole('tab', {name: 'Alpha'});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await screen.findByRole('tab', {name: 'Beta'});
+        // Opening Beta second makes it active.
+        await waitFor(() =>
+            expect(screen.getByRole('tab', {name: 'Beta'})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+
+        // Clicking Alpha's tab re-activates it.
+        await user.click(screen.getByRole('tab', {name: 'Alpha'}));
+        await waitFor(() =>
+            expect(screen.getByRole('tab', {name: 'Alpha'})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        expect(screen.getByRole('tab', {name: 'Beta'})).toHaveAttribute('aria-selected', 'false');
+    });
 });

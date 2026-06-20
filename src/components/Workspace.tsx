@@ -61,12 +61,16 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
     const activeSaveState = notes.activeId
         ? (notes.saveStates.get(notes.activeId) ?? 'idle')
         : 'idle';
-    const tabs: TabDescriptor[] = notes.openIds.map((id) => ({
-        id,
-        title: notes.notes.find((n) => n.id === id)?.title ?? id.replace(/\.md$/i, ''),
-        unsaved: notes.saveStates.get(id) === 'saving',
-        conflict: notes.conflicts.has(id),
-    }));
+    const tabs: TabDescriptor[] = notes.openIds.map((id) => {
+        const saveState = notes.saveStates.get(id) ?? 'idle';
+        return {
+            id,
+            title: notes.notes.find((n) => n.id === id)?.title ?? id.replace(/\.md$/i, ''),
+            // A background tab whose save failed (error) has no banner, so surface it as unsaved too.
+            unsaved: saveState === 'saving' || saveState === 'error',
+            conflict: notes.conflicts.has(id),
+        };
+    });
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
