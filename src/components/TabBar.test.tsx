@@ -1,4 +1,4 @@
-import {screen} from '@testing-library/react';
+import {fireEvent, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -58,5 +58,14 @@ describe('TabBar', () => {
     it('shows a conflict indicator on conflicted tabs', () => {
         setup({tabs: [{id: 'Alpha.md', title: 'Alpha', unsaved: false, conflict: true}]});
         expect(screen.getByLabelText('Changed on disk')).toBeInTheDocument();
+    });
+
+    it('closes a tab on middle-click', () => {
+        const props = setup();
+        fireEvent(
+            screen.getByRole('tab', {name: 'Alpha'}),
+            new MouseEvent('auxclick', {button: 1, bubbles: true}),
+        );
+        expect(props.onClose).toHaveBeenCalledWith('Alpha.md');
     });
 });

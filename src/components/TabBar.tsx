@@ -35,6 +35,12 @@ export function TabBar({tabs, activeId, onActivate, onClose}: TabBarProps) {
                     <div
                         key={tab.id}
                         className={`tab-bar__tab${isActive ? ' tab-bar__tab_active' : ''}`}
+                        onAuxClick={(e) => {
+                            if (e.button === 1) {
+                                e.preventDefault();
+                                onClose(tab.id);
+                            }
+                        }}
                     >
                         {/* Marker is a sibling of the tab button so it stays out of the
                             tab's accessible name but remains its own labelled element. */}
