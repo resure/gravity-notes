@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it} from 'vitest';
 
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
+import {DEFAULT_METADATA} from './metadata';
 import {ConflictError} from './types';
 
 describe('FileSystemNoteStore', () => {
@@ -190,6 +191,8 @@ describe('FileSystemNoteStore', () => {
         it('returns defaults when the dotfile is absent', async () => {
             const meta = await store.readMetadata();
             expect(meta).toEqual({version: 1, sort: 'updated', pinned: [], created: {}});
+            // A fresh object, never the shared DEFAULT_METADATA singleton.
+            expect(meta).not.toBe(DEFAULT_METADATA);
         });
 
         it('round-trips metadata through write/read', async () => {
