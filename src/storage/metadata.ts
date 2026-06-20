@@ -3,13 +3,12 @@ import type {NoteMeta, NotesMetadata, SortMode} from './types';
 /** Sidecar file holding the folder's notes metadata. Not a `.md` file, so `list()` ignores it. */
 export const METADATA_FILENAME = '.gravity-notes.json';
 
-/** The metadata for a folder with no pins, no stamps, and the default sort. */
+/** The metadata for a folder with no pins, no stamps, the default sort, and nothing open. */
 export const DEFAULT_METADATA: NotesMetadata = {
     version: 1,
     sort: 'updated',
     pinned: [],
     created: {},
-    open: [],
     active: null,
 };
 
@@ -31,16 +30,12 @@ export function parseMetadata(raw: unknown): NotesMetadata {
             if (typeof value === 'number') created[id] = value;
         }
     }
-    const open = Array.isArray(obj.open)
-        ? obj.open.filter((x): x is string => typeof x === 'string')
-        : [];
-    let active = typeof obj.active === 'string' ? obj.active : null;
-    if (active !== null && !open.includes(active)) active = null;
-    return {version: 1, sort, pinned, created, open, active};
+    const active = typeof obj.active === 'string' ? obj.active : null;
+    return {version: 1, sort, pinned, created, active};
 }
 
 function cloneDefault(): NotesMetadata {
-    return {version: 1, sort: 'updated', pinned: [], created: {}, open: [], active: null};
+    return {version: 1, sort: 'updated', pinned: [], created: {}, active: null};
 }
 
 export function withSortMode(meta: NotesMetadata, sort: SortMode): NotesMetadata {
@@ -54,28 +49,9 @@ export function withPinToggled(meta: NotesMetadata, id: string): NotesMetadata {
     return {...meta, pinned};
 }
 
-/** Open `id` as a tab (appending if new) and make it active. */
-export function withOpened(meta: NotesMetadata, id: string): NotesMetadata {
-    const open = meta.open.includes(id) ? meta.open : [...meta.open, id];
-    return {...meta, open, active: id};
-}
-
-/** Make an already-open tab active. */
-export function withActive(meta: NotesMetadata, id: string): NotesMetadata {
-    if (!meta.open.includes(id)) return meta;
+/** Set the single open note (pass `null` to close). */
+export function withActive(meta: NotesMetadata, id: string | null): NotesMetadata {
     return {...meta, active: id};
-}
-
-/** Close `id`; if it was active, activate the right neighbor, else the left, else nothing. */
-export function withClosed(meta: NotesMetadata, id: string): NotesMetadata {
-    const idx = meta.open.indexOf(id);
-    if (idx === -1) return meta;
-    const open = meta.open.filter((o) => o !== id);
-    let active = meta.active;
-    if (active === id) {
-        active = meta.open[idx + 1] ?? meta.open[idx - 1] ?? null;
-    }
-    return {...meta, open, active};
 }
 
 export function withCreatedStamp(meta: NotesMetadata, id: string, created: number): NotesMetadata {
@@ -91,31 +67,30 @@ export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): 
         created[newId] = created[oldId];
         delete created[oldId];
     }
-    const open = meta.open.map((o) => (o === oldId ? newId : o));
     const active = meta.active === oldId ? newId : meta.active;
-    return {...meta, pinned, created, open, active};
+    return {...meta, pinned, created, active};
 }
 
 export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     const created = {...meta.created};
     delete created[id];
-    const base = {...meta, pinned: meta.pinned.filter((p) => p !== id), created};
-    return withClosed(base, id);
+    return {
+        ...meta,
+        pinned: meta.pinned.filter((p) => p !== id),
+        created,
+        active: meta.active === id ? null : meta.active,
+    };
 }
 
-/** Drop pinned/created entries whose id is no longer a live file (self-heals external deletes). */
+/** Drop pinned/created entries whose id is no longer a live file; null a dead active. Self-heals external deletes. */
 export function reconcile(meta: NotesMetadata, liveIds: string[]): NotesMetadata {
     const live = new Set(liveIds);
     const created: Record<string, number> = {};
     for (const [id, time] of Object.entries(meta.created)) {
         if (live.has(id)) created[id] = time;
     }
-    const open = meta.open.filter((id) => live.has(id));
-    // When the active note vanished, fall back to the first surviving tab. Unlike
-    // withClosed's neighbor preference, there's no meaningful "neighbor" after
-    // arbitrary external file-system churn.
-    const active = meta.active && live.has(meta.active) ? meta.active : (open[0] ?? null);
-    return {...meta, pinned: meta.pinned.filter((id) => live.has(id)), created, open, active};
+    const active = meta.active && live.has(meta.active) ? meta.active : null;
+    return {...meta, pinned: meta.pinned.filter((id) => live.has(id)), created, active};
 }
 
 /** Pure ordering: pinned notes first, each group sorted by the active sort. Does not mutate input. */
@@ -135,8 +110,6 @@ function comparatorFor(sort: SortMode, created: Readonly<Record<string, number>>
             return (a: NoteMeta, b: NoteMeta) => createdOf(b, created) - createdOf(a, created);
         case 'updated':
         default:
-            // 'updated' is the default; the union is exhaustive, so `default` is just
-            // the safe fall-through for any unexpected value (also sorts newest-first).
             return (a: NoteMeta, b: NoteMeta) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
     }
 }

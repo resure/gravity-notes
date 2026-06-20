@@ -7,26 +7,29 @@ import type {Note} from '../storage/types';
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
     toggleMode(): void;
+    /** Move keyboard focus into the editor. */
+    focus(): void;
 }
 
 interface EditorPaneProps {
     note: Note;
-    /** Whether this pane is the visible/active tab. Only the active pane autofocuses. */
-    active: boolean;
+    /** Focus the editor on (re)mount — true only when opened to edit (a "commit"); false for a browse preview. */
+    autofocus: boolean;
     onChange: (markup: string) => void;
+    /** Fired when an otherwise-unhandled Escape bubbles out of the editor (exit to the list). */
+    onEscape: () => void;
 }
 
 /**
- * Wraps the Gravity markdown editor for a single note.
- *
- * One pane is mounted per open tab; inactive panes are hidden by the parent but
- * stay mounted to preserve their cursor/scroll/undo state. The editor instance is
- * re-created whenever the note id (or its on-disk `updatedAt`) changes via the
- * `deps` argument, loading that note's markup as the initial value. Only the active
- * pane autofocuses, and it refocuses whenever it becomes active.
+ * Wraps the Gravity markdown editor for the single open note. The editor instance is
+ * re-created whenever the note id changes (via the `deps` argument), loading that note's
+ * markup. It focuses on (re)mount only when `autofocus` is set (a commit open); a browse
+ * preview mounts unfocused, leaving focus on the note list. Same-note commits focus via
+ * the `focus()` handle. An Escape that the editor itself does not consume bubbles to the
+ * wrapper and calls `onEscape`.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, active, onChange},
+    {note, autofocus, onChange, onEscape},
     ref,
 ) {
     const editor = useMarkdownEditor(
@@ -43,6 +46,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             toggleMode() {
                 editor.setEditorMode(editor.currentMode === 'wysiwyg' ? 'markup' : 'wysiwyg');
             },
+            focus() {
+                editor.focus();
+            },
         }),
         [editor],
     );
@@ -50,8 +56,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     useEffect(() => {
         const handleChange = () => {
             const value = editor.getValue();
-            // Ignore the no-op change emitted while the initial markup is loaded, so we
-            // don't rewrite the file (and bump it to the top of the list) on open.
+            // Ignore the no-op change emitted while the initial markup loads, so we don't
+            // rewrite the file (and bump it to the top of the list) on open.
             if (value !== note.content) {
                 onChange(value);
             }
@@ -62,10 +68,21 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         };
     }, [editor, note.content, onChange]);
 
-    // Focus when this pane becomes the active tab (and on initial mount-as-active).
+    // Focus only on (re)mount when this open was a commit. `editor` changes per note id.
     useEffect(() => {
-        if (active) editor.focus();
-    }, [active, editor]);
+        if (autofocus) editor.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on (re)mount; same-note commits use the focus() handle
+    }, [editor]);
 
-    return <MarkdownEditorView stickyToolbar autofocus={active} editor={editor} />;
+    return (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
+        <div
+            className="editor-pane"
+            onKeyDown={(event) => {
+                if (event.key === 'Escape') onEscape();
+            }}
+        >
+            <MarkdownEditorView stickyToolbar autofocus={autofocus} editor={editor} />
+        </div>
+    );
 });

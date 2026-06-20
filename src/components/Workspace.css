@@ -61,15 +61,10 @@
 .workspace__panes {
     flex: 1;
     min-height: 0;
-    position: relative;
 }
 
-.workspace__pane {
+.editor-pane {
     height: 100%;
-}
-
-.workspace__pane[hidden] {
-    display: none;
 }
 
 .workspace__placeholder {
