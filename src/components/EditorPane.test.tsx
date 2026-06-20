@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {render} from '@testing-library/react';
+import {fireEvent, render} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const {fakeEditor, setEditorMode, focus} = vi.hoisted(() => {
@@ -29,7 +29,7 @@ import {EditorPane, type EditorPaneHandle} from './EditorPane';
 
 const NOTE = {id: 'a.md', title: 'a', content: 'hello', updatedAt: 1};
 
-describe('EditorPane.toggleMode', () => {
+describe('EditorPane — toggleMode', () => {
     beforeEach(() => {
         fakeEditor.currentMode = 'wysiwyg';
         setEditorMode.mockClear();
@@ -37,37 +37,59 @@ describe('EditorPane.toggleMode', () => {
 
     it('switches to markup when currently in wysiwyg', () => {
         const ref = createRef<EditorPaneHandle>();
-        render(<EditorPane ref={ref} note={NOTE} active={true} onChange={() => {}} />);
+        render(
+            <EditorPane
+                ref={ref}
+                note={NOTE}
+                autofocus={false}
+                onChange={() => {}}
+                onEscape={() => {}}
+            />,
+        );
         ref.current?.toggleMode();
         expect(setEditorMode).toHaveBeenCalledWith('markup');
     });
-
-    it('switches to wysiwyg when currently in markup', () => {
-        fakeEditor.currentMode = 'markup';
-        const ref = createRef<EditorPaneHandle>();
-        render(<EditorPane ref={ref} note={NOTE} active={true} onChange={() => {}} />);
-        ref.current?.toggleMode();
-        expect(setEditorMode).toHaveBeenCalledWith('wysiwyg');
-    });
 });
 
-describe('EditorPane focus', () => {
+describe('EditorPane — focus', () => {
     beforeEach(() => focus.mockClear());
 
-    it('focuses the editor when mounted active', () => {
-        render(<EditorPane note={NOTE} active={true} onChange={() => {}} />);
+    it('focuses on mount when autofocus is true (a commit open)', () => {
+        render(<EditorPane note={NOTE} autofocus={true} onChange={() => {}} onEscape={() => {}} />);
         expect(focus).toHaveBeenCalled();
     });
 
-    it('does not focus the editor when mounted inactive', () => {
-        render(<EditorPane note={NOTE} active={false} onChange={() => {}} />);
+    it('does not focus on mount when autofocus is false (a preview open)', () => {
+        render(
+            <EditorPane note={NOTE} autofocus={false} onChange={() => {}} onEscape={() => {}} />,
+        );
         expect(focus).not.toHaveBeenCalled();
     });
 
-    it('focuses when the active prop flips from false to true', () => {
-        const {rerender} = render(<EditorPane note={NOTE} active={false} onChange={() => {}} />);
+    it('focuses via the imperative handle', () => {
+        const ref = createRef<EditorPaneHandle>();
+        render(
+            <EditorPane
+                ref={ref}
+                note={NOTE}
+                autofocus={false}
+                onChange={() => {}}
+                onEscape={() => {}}
+            />,
+        );
         expect(focus).not.toHaveBeenCalled();
-        rerender(<EditorPane note={NOTE} active={true} onChange={() => {}} />);
+        ref.current?.focus();
         expect(focus).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('EditorPane — escape', () => {
+    it('fires onEscape when Escape bubbles out of the editor', () => {
+        const onEscape = vi.fn();
+        const {container} = render(
+            <EditorPane note={NOTE} autofocus={false} onChange={() => {}} onEscape={onEscape} />,
+        );
+        fireEvent.keyDown(container.querySelector('.editor-pane')!, {key: 'Escape'});
+        expect(onEscape).toHaveBeenCalledTimes(1);
     });
 });

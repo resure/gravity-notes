@@ -39,60 +39,19 @@ function renderWorkspace() {
     return {dir};
 }
 
-describe('Workspace tabs', () => {
-    it('opens a sidebar note as a tab and adds a second tab', async () => {
-        const user = userEvent.setup();
+describe('Workspace — single note', () => {
+    it('shows the placeholder until a note is opened', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
-
-        await user.click(screen.getByRole('option', {name: /Alpha/}));
-        await waitFor(() =>
-            expect(screen.getByRole('tablist', {name: 'Open notes'})).toBeInTheDocument(),
-        );
-        expect(screen.getByRole('tab', {name: 'Alpha'})).toBeInTheDocument();
-
-        await user.click(screen.getByRole('option', {name: /Beta/}));
-        await waitFor(() => expect(screen.getByRole('tab', {name: 'Beta'})).toBeInTheDocument());
+        expect(screen.getByText(/Select a note/)).toBeInTheDocument();
     });
 
-    it('closes a tab from its close button', async () => {
+    it('opens a sidebar note into the editor with no tab strip', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         await user.click(screen.getByRole('option', {name: /Alpha/}));
-        await screen.findByRole('tab', {name: 'Alpha'});
-
-        await user.click(screen.getByRole('button', {name: 'Close Alpha'}));
-        await waitFor(() =>
-            expect(screen.queryByRole('tab', {name: 'Alpha'})).not.toBeInTheDocument(),
-        );
-    });
-
-    it('re-activates an existing tab when its tab is clicked', async () => {
-        const user = userEvent.setup();
-        renderWorkspace();
-        await screen.findByRole('option', {name: /Alpha/});
-
-        await user.click(screen.getByRole('option', {name: /Alpha/}));
-        await screen.findByRole('tab', {name: 'Alpha'});
-        await user.click(screen.getByRole('option', {name: /Beta/}));
-        await screen.findByRole('tab', {name: 'Beta'});
-        // Opening Beta second makes it active.
-        await waitFor(() =>
-            expect(screen.getByRole('tab', {name: 'Beta'})).toHaveAttribute(
-                'aria-selected',
-                'true',
-            ),
-        );
-
-        // Clicking Alpha's tab re-activates it.
-        await user.click(screen.getByRole('tab', {name: 'Alpha'}));
-        await waitFor(() =>
-            expect(screen.getByRole('tab', {name: 'Alpha'})).toHaveAttribute(
-                'aria-selected',
-                'true',
-            ),
-        );
-        expect(screen.getByRole('tab', {name: 'Beta'})).toHaveAttribute('aria-selected', 'false');
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     });
 });

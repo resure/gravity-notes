@@ -195,7 +195,6 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
-                open: [],
                 active: null,
             });
             // A fresh object, never the shared DEFAULT_METADATA singleton.
@@ -208,7 +207,6 @@ describe('FileSystemNoteStore', () => {
                 sort: 'title',
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
-                open: [],
                 active: null,
             });
             const meta = await store.readMetadata();
@@ -225,7 +223,6 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
-                open: [],
                 active: null,
             });
         });
@@ -237,7 +234,6 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
-                open: [],
                 active: null,
             });
             const metas = await store.list();
