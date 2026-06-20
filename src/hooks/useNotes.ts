@@ -247,6 +247,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const close = useCallback(
         async (id: string) => {
             await flush(id);
+            // flush() re-queues pending content if the save hit a conflict; closing the
+            // tab discards that content (and its timer) deliberately.
             clearTimer(id);
             pendingRef.current.delete(id);
             baselineRef.current.delete(id);
@@ -271,6 +273,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const rename = useCallback(
         async (id: string, nextTitle: string) => {
+            if (conflictsRef.current.has(id)) {
+                onError('Resolve the conflict before renaming this note.');
+                return;
+            }
             await flush(id);
             try {
                 const meta = await store.rename(id, nextTitle);
@@ -460,6 +466,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         };
     }, [store, applyMetadata]);
 
+    // Clear any pending autosave timers when the hook unmounts.
+    useEffect(() => {
+        const timers = timersRef.current;
+        return () => {
+            for (const t of timers.values()) clearTimeout(t);
+            timers.clear();
+        };
+    }, []);
+
     // Best-effort save when hidden; warn before unload if any tab has unsaved edits.
     useEffect(() => {
         const flushAll = () => {
@@ -467,8 +482,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         };
         const onHide = () => flushAll();
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            // Capture before flushing: flush() clears pending synchronously, so this
+            // must run first to know whether there were unsaved edits to warn about.
+            const hasUnsaved = pendingRef.current.size > 0 || conflictsRef.current.size > 0;
             flushAll();
-            if (pendingRef.current.size > 0 || conflictsRef.current.size > 0) {
+            if (hasUnsaved) {
                 event.preventDefault();
                 // eslint-disable-next-line no-param-reassign -- standard beforeunload idiom to trigger the browser's unsaved-changes prompt
                 event.returnValue = '';

@@ -247,4 +247,62 @@ describe('useNotes tabs', () => {
         expect(hook.result.current.activeId).toBe(id);
         expect((await store.readMetadata()).open).toEqual([id]);
     });
+
+    it('renames an open tab in place', async () => {
+        const {hook, store} = await setup((dir) => dir.seedFile('Old.md', 'x', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('Old.md');
+        });
+        await act(async () => {
+            await hook.result.current.rename('Old.md', 'New');
+        });
+        expect(hook.result.current.openIds).toEqual(['New.md']);
+        expect(hook.result.current.activeId).toBe('New.md');
+        expect(hook.result.current.openNotes.has('Old.md')).toBe(false);
+        expect(hook.result.current.openNotes.get('New.md')?.content).toBe('x');
+        expect((await store.readMetadata()).open).toEqual(['New.md']);
+    });
+
+    it('closes a tab when its note is removed', async () => {
+        const {hook} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        await act(async () => {
+            await hook.result.current.remove('B.md');
+        });
+        expect(hook.result.current.openIds).toEqual(['A.md']);
+        expect(hook.result.current.openNotes.has('B.md')).toBe(false);
+        expect(hook.result.current.saveStates.has('B.md')).toBe(false);
+    });
+
+    it('detects a conflict on a background (non-active) tab', async () => {
+        const {hook, dir} = await setup((seedDir) => {
+            seedDir.seedFile('A.md', 'a', 100);
+            seedDir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        // B is active; an external edit to the background tab A bumps its mtime.
+        dir.seedFile('A.md', 'a2', 999);
+        await act(async () => {
+            window.dispatchEvent(new Event('focus'));
+        });
+        await waitFor(() => expect(hook.result.current.conflicts.has('A.md')).toBe(true));
+        expect(hook.result.current.conflicts.has('B.md')).toBe(false);
+        expect(hook.result.current.activeId).toBe('B.md');
+    });
 });
