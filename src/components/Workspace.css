@@ -50,10 +50,26 @@
     flex: 1;
     min-width: 0;
     height: 100%;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     /* Give the editing area breathing room from the toolbar and edges. The
        markdown editor reads this for both the WYSIWYG and markup panes. */
     --g-md-editor-padding: 8px 16px;
+}
+
+.workspace__panes {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+.workspace__pane {
+    height: 100%;
+}
+
+.workspace__pane[hidden] {
+    display: none;
 }
 
 .workspace__placeholder {

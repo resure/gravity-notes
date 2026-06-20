@@ -13,6 +13,7 @@ import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
+import {TabBar, type TabDescriptor} from './TabBar';
 
 import './Workspace.css';
 
@@ -56,6 +57,17 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
     );
     const {query, setQuery, filteredNotes} = useNoteSearch(orderedNotes);
 
+    const activeConflict = notes.activeId ? (notes.conflicts.get(notes.activeId) ?? null) : null;
+    const activeSaveState = notes.activeId
+        ? (notes.saveStates.get(notes.activeId) ?? 'idle')
+        : 'idle';
+    const tabs: TabDescriptor[] = notes.openIds.map((id) => ({
+        id,
+        title: notes.notes.find((n) => n.id === id)?.title ?? id.replace(/\.md$/i, ''),
+        unsaved: notes.saveStates.get(id) === 'saving',
+        conflict: notes.conflicts.has(id),
+    }));
+
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
     const [helpOpen, setHelpOpen] = useState(false);
@@ -78,7 +90,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                 </div>
                 <div className="workspace__header-right">
                     <Text color="secondary" className="workspace__save-state">
-                        {SAVE_LABEL[notes.saveState]}
+                        {SAVE_LABEL[activeSaveState]}
                     </Text>
                     <Button
                         view="flat"
@@ -106,11 +118,11 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                 <aside className="workspace__sidebar">
                     <NoteList
                         notes={filteredNotes}
-                        selectedId={notes.selectedId}
+                        selectedId={notes.activeId}
                         query={query}
                         onQueryChange={setQuery}
                         searchInputRef={searchInputRef}
-                        onSelect={(id) => void notes.select(id)}
+                        onSelect={(id) => void notes.open(id)}
                         onCreate={() => void notes.create()}
                         onRename={(id, title) => void notes.rename(id, title)}
                         onDelete={(id) => void notes.remove(id)}
@@ -122,12 +134,18 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                 </aside>
 
                 <main className="workspace__editor">
-                    {notes.selectedNote ? (
+                    {notes.openIds.length > 0 ? (
                         <>
-                            {notes.conflict ? (
+                            <TabBar
+                                tabs={tabs}
+                                activeId={notes.activeId}
+                                onActivate={notes.activate}
+                                onClose={(id) => void notes.close(id)}
+                            />
+                            {activeConflict ? (
                                 <div className="workspace__conflict">
                                     <ConflictBanner
-                                        deleted={notes.conflict.deleted}
+                                        deleted={activeConflict.deleted}
                                         onReload={() => void notes.reloadDisk()}
                                         onKeepMine={() => void notes.keepMine()}
                                         onSaveAsCopy={() => void notes.saveAsCopy()}
@@ -135,12 +153,28 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                                     />
                                 </div>
                             ) : null}
-                            <EditorPane
-                                ref={editorRef}
-                                key={`${notes.selectedNote.id}:${notes.selectedNote.updatedAt}`}
-                                note={notes.selectedNote}
-                                onChange={notes.edit}
-                            />
+                            <div className="workspace__panes">
+                                {notes.openIds.map((id) => {
+                                    const note = notes.openNotes.get(id);
+                                    if (!note) return null;
+                                    const isActive = id === notes.activeId;
+                                    return (
+                                        <div
+                                            key={id}
+                                            className="workspace__pane"
+                                            hidden={!isActive}
+                                        >
+                                            <EditorPane
+                                                ref={isActive ? editorRef : undefined}
+                                                key={`${id}:${note.updatedAt}`}
+                                                note={note}
+                                                active={isActive}
+                                                onChange={(markup) => notes.edit(id, markup)}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </>
                     ) : (
                         <div className="workspace__placeholder">
