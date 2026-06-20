@@ -114,4 +114,40 @@ describe('useNoteNavigation', () => {
         });
         expect(result.current.editorAutofocus).toBe(true);
     });
+
+    it('browse resets editorAutofocus (a preview must not steal focus)', () => {
+        const deps = makeDeps();
+        const {result} = renderHook(() => useNoteNavigation(deps));
+        act(() => {
+            result.current.prepareCommit();
+        });
+        expect(result.current.editorAutofocus).toBe(true);
+        act(() => {
+            result.current.browse('A.md');
+        });
+        expect(result.current.editorAutofocus).toBe(false);
+    });
+
+    it('commit on the already-open note leaves editorAutofocus untouched', () => {
+        const deps = makeDeps({activeId: 'A.md'});
+        const {result} = renderHook(() => useNoteNavigation(deps));
+        expect(result.current.editorAutofocus).toBe(false);
+        act(() => {
+            result.current.commit('A.md');
+        });
+        expect(result.current.editorAutofocus).toBe(false);
+    });
+
+    it('unmount clears a pending preview timer (no leak / late open)', () => {
+        const deps = makeDeps();
+        const {result, unmount} = renderHook(() => useNoteNavigation(deps));
+        act(() => {
+            result.current.browse('A.md');
+        });
+        unmount();
+        act(() => {
+            vi.advanceTimersByTime(200);
+        });
+        expect(deps.open).not.toHaveBeenCalled();
+    });
 });
