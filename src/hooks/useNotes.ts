@@ -157,6 +157,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const open = useCallback(
         async (id: string) => {
+            // Flush the outgoing note before swapping. Note: if that note has an unresolved
+            // external conflict, flush() re-queues its content but the setConflict(null) below
+            // discards it — navigating away from a conflict abandons its unsaved edits, the same
+            // behavior as before tabs existed (see the design spec's conflict-on-navigate edge).
             await flush();
             try {
                 const loaded = await store.get(id);
@@ -175,12 +179,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const close = useCallback(async () => {
         await flush();
         pendingRef.current = null;
-        clearTimer();
         setNote(null);
         setConflict(null);
         setSaveState('idle');
         await persistMetadata(withActive(metadataRef.current, null));
-    }, [flush, clearTimer, persistMetadata]);
+    }, [flush, persistMetadata]);
 
     const create = useCallback(async (): Promise<string | null> => {
         await flush();

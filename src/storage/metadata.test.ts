@@ -105,6 +105,22 @@ describe('immutable transforms', () => {
         const unchanged = withCreatedStamp(stamped, 'B.md', 999);
         expect(unchanged.created['B.md']).toBe(200);
     });
+
+    it('withRenamed migrates pin membership and the created entry', () => {
+        const next = withRenamed(base, 'A.md', 'A2.md');
+        expect(next.pinned).toEqual(['A2.md']);
+        expect(next.created).toEqual({'A2.md': 1});
+    });
+
+    it('withRenamed is a no-op when the id is unchanged', () => {
+        expect(withRenamed(base, 'A.md', 'A.md')).toEqual(base);
+    });
+
+    it('withRemoved drops the id from pinned and created', () => {
+        const next = withRemoved(base, 'A.md');
+        expect(next.pinned).toEqual([]);
+        expect(next.created).toEqual({});
+    });
 });
 
 describe('active transforms', () => {

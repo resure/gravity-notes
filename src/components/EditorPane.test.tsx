@@ -89,7 +89,9 @@ describe('EditorPane — escape', () => {
         const {container} = render(
             <EditorPane note={NOTE} autofocus={false} onChange={() => {}} onEscape={onEscape} />,
         );
-        fireEvent.keyDown(container.querySelector('.editor-pane')!, {key: 'Escape'});
+        const pane = container.querySelector('.editor-pane');
+        if (!pane) throw new Error('editor-pane not rendered');
+        fireEvent.keyDown(pane, {key: 'Escape'});
         expect(onEscape).toHaveBeenCalledTimes(1);
     });
 });
