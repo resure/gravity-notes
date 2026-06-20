@@ -5,7 +5,7 @@ export type ShortcutAction = 'focusSearch' | 'createNote' | 'toggleEditorMode' |
 export interface GlobalBinding {
     /** 'mod' = ⌘/Ctrl combo; 'bare' = the key alone (gated against typing surfaces). */
     trigger: 'mod' | 'bare';
-    /** `event.key` to match (lower-cased for the 'mod' trigger). */
+    /** `event.key` to match. For the 'mod' trigger the comparison is case-insensitive. */
     key: string;
     /** Which action to fire. */
     action: ShortcutAction;

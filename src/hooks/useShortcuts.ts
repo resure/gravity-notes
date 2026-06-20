@@ -34,7 +34,7 @@ export function useShortcuts(actions: ShortcutActions): void {
                         mod &&
                         !event.shiftKey &&
                         !event.altKey &&
-                        event.key.toLowerCase() === binding.key
+                        event.key.toLowerCase() === binding.key.toLowerCase()
                     ) {
                         event.preventDefault();
                         actionsRef.current[binding.action]();
