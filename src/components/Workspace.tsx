@@ -175,8 +175,15 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                                         deleted={notes.conflict.deleted}
                                         onReload={() => void notes.reloadDisk()}
                                         onKeepMine={() => void notes.keepMine()}
-                                        onSaveAsCopy={() => void notes.saveAsCopy()}
-                                        onDiscard={notes.discard}
+                                        onSaveAsCopy={() =>
+                                            void notes.saveAsCopy().then((id) => {
+                                                if (id) nav.setSelected(id);
+                                            })
+                                        }
+                                        onDiscard={() => {
+                                            nav.setSelected(null);
+                                            notes.discard();
+                                        }}
                                     />
                                 </div>
                             ) : null}

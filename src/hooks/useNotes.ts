@@ -58,7 +58,7 @@ export interface UseNotes {
     /** Conflict resolvers (act on the open note). */
     reloadDisk(): Promise<void>;
     keepMine(): Promise<void>;
-    saveAsCopy(): Promise<void>;
+    saveAsCopy(): Promise<string | null>;
     discard(): void;
 }
 
@@ -298,8 +298,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         }
     }, [conflict, note, store, onError, bumpInList]);
 
-    const saveAsCopy = useCallback(async () => {
-        if (!conflict) return;
+    const saveAsCopy = useCallback(async (): Promise<string | null> => {
+        if (!conflict) return null;
         const content = pendingRef.current?.content ?? note?.content ?? '';
         const title = note?.title ?? 'Note';
         pendingRef.current = null;
@@ -312,9 +312,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             setConflict(null);
             await refresh();
             await open(copy.id);
+            return copy.id;
         } catch (err) {
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save a copy');
+            return null;
         }
     }, [conflict, note, store, refresh, open, persistMetadata, onError]);
 
