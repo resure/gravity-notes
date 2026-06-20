@@ -1,7 +1,7 @@
 # Multi-tab Editing — Design
 
 - **Date:** 2026-06-20
-- **Status:** Approved (pending final spec review)
+- **Status:** Implemented
 - **Sub-project:** Net-new feature, sequenced after Sort & Pinning (3b). Not part of the original
   1–5 roadmap; grew out of a request to "save the currently open notes across reloads."
 
@@ -78,14 +78,14 @@ handling, and without mutating note `.md` files.
 
 ```ts
 export interface NotesMetadata {
-    version: 1;
-    sort: SortMode;
-    pinned: readonly string[];
-    created: Readonly<Record<string, number>>;
-    /** Open tab ids, in tab (left-to-right) order. */
-    open: readonly string[];
-    /** Active tab id, or null when no tabs are open. Always an element of `open` when non-null. */
-    active: string | null;
+  version: 1;
+  sort: SortMode;
+  pinned: readonly string[];
+  created: Readonly<Record<string, number>>;
+  /** Open tab ids, in tab (left-to-right) order. */
+  open: readonly string[];
+  /** Active tab id, or null when no tabs are open. Always an element of `open` when non-null. */
+  active: string | null;
 }
 ```
 
@@ -114,13 +114,13 @@ Extend the existing helpers:
 
 The single-note state generalizes to per-id collections:
 
-| Today | Becomes |
-|---|---|
-| `selectedId: string \| null` | `openIds: string[]` + `activeId: string \| null` |
-| `selectedNote: Note \| null` | `openNotes: Map<string, Note>` (content for mounting each editor) |
-| `saveState: SaveState` | `saveStates: Map<string, SaveState>` |
-| `conflict: NoteConflict \| null` | `conflicts: Map<string, NoteConflict>` |
-| `pendingRef` / `baselineRef` / `timerRef` | the same, each a `Map<string, …>` keyed by id |
+| Today                                     | Becomes                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| `selectedId: string \| null`              | `openIds: string[]` + `activeId: string \| null`                  |
+| `selectedNote: Note \| null`              | `openNotes: Map<string, Note>` (content for mounting each editor) |
+| `saveState: SaveState`                    | `saveStates: Map<string, SaveState>`                              |
+| `conflict: NoteConflict \| null`          | `conflicts: Map<string, NoteConflict>`                            |
+| `pendingRef` / `baselineRef` / `timerRef` | the same, each a `Map<string, …>` keyed by id                     |
 
 `openIds` / `activeId` are derived from `metadata.open` / `metadata.active` (single source of truth),
 so tab mutations go through `persistMetadata(withOpened/…)` just like pins. `openNotes` and the
@@ -217,7 +217,7 @@ of one tab drops only that tab; the rest open normally.
 - Drag-to-reorder tabs, "preview" tabs (single-click preview / double-click pin, VS Code style),
   pinned tabs, or a max-tab cap / overflow menu (horizontal scroll suffices).
 - Per-window/per-device tab sets (the dotfile is per-folder and shared, consistent with sort/pins).
-- Restoring cursor/scroll position *across reloads* (only across in-session tab switches; reload
+- Restoring cursor/scroll position _across reloads_ (only across in-session tab switches; reload
   remounts editors fresh).
 
 ## Risks & mitigations

@@ -1,7 +1,7 @@
 .tab-bar {
     display: flex;
     align-items: stretch;
-flex-shrink: 0;
+    flex-shrink: 0;
     overflow-x: auto;
     border-bottom: 1px solid var(--g-color-line-generic);
     background-color: var(--g-color-base-background);
