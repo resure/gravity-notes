@@ -1,8 +1,9 @@
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
 import {CircleQuestion, Folder, Moon, Sun} from '@gravity-ui/icons';
 import {Button, Icon, Label, Text, type Theme, useToaster} from '@gravity-ui/uikit';
 
+import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {type SaveState, useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
@@ -11,7 +12,7 @@ import {orderNotes} from '../storage/metadata';
 
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
-import {NoteList} from './NoteList';
+import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 
 import './Workspace.css';
@@ -58,11 +59,51 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
+    const listRef = useRef<NoteListHandle>(null);
     const [helpOpen, setHelpOpen] = useState(false);
+
+    const nav = useNoteNavigation({
+        activeId: notes.activeId,
+        open: notes.open,
+        close: notes.close,
+        editorRef,
+        listRef,
+        searchInputRef,
+    });
+
+    // Land in the search box on first load (nvALT: ready to type); a restored note is previewed unfocused.
+    useEffect(() => {
+        searchInputRef.current?.focus();
+    }, []);
+
+    const handleCreate = useCallback(() => {
+        nav.prepareCommit(); // arm autofocus so the new note mounts focused
+        void (async () => {
+            const id = await notes.create();
+            if (id) nav.setSelected(id);
+        })();
+    }, [notes, nav]);
+
+    const handleDelete = useCallback(
+        (id: string) => {
+            const ids = filteredNotes.map((n) => n.id);
+            const idx = ids.indexOf(id);
+            const neighbor = ids[idx + 1] ?? ids[idx - 1] ?? null;
+            const wasActive = notes.activeId === id;
+            void (async () => {
+                await notes.remove(id);
+                if (wasActive) {
+                    if (neighbor) nav.browse(neighbor);
+                    else nav.setSelected(null);
+                }
+            })();
+        },
+        [filteredNotes, notes, nav],
+    );
 
     useShortcuts({
         focusSearch: () => searchInputRef.current?.focus(),
-        createNote: () => void notes.create(),
+        createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         openHelp: () => setHelpOpen(true),
     });
@@ -105,15 +146,18 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
             <div className="workspace__body">
                 <aside className="workspace__sidebar">
                     <NoteList
+                        ref={listRef}
                         notes={filteredNotes}
-                        selectedId={notes.activeId}
+                        selectedId={nav.selectedId}
                         query={query}
                         onQueryChange={setQuery}
                         searchInputRef={searchInputRef}
-                        onSelect={(id) => void notes.open(id)}
-                        onCreate={() => void notes.create()}
+                        onBrowse={nav.browse}
+                        onCommit={nav.commit}
+                        onEscapeList={nav.escapeList}
+                        onCreate={handleCreate}
                         onRename={(id, title) => void notes.rename(id, title)}
-                        onDelete={(id) => void notes.remove(id)}
+                        onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
                         onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
@@ -140,9 +184,9 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                                     ref={editorRef}
                                     key={`${notes.note.id}:${notes.note.updatedAt}`}
                                     note={notes.note}
-                                    autofocus={true}
+                                    autofocus={nav.editorAutofocus}
                                     onChange={notes.edit}
-                                    onEscape={() => void notes.close()}
+                                    onEscape={nav.escapeEditor}
                                 />
                             </div>
                         </>

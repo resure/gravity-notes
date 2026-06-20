@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
 import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
@@ -8,13 +8,23 @@ import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
 
+export interface NoteListHandle {
+    /** Move keyboard focus to the selected row (used when leaving the editor). */
+    focusSelected(): void;
+}
+
 export interface NoteListProps {
     notes: NoteMeta[];
     selectedId: string | null;
     query: string;
     onQueryChange: (query: string) => void;
     searchInputRef: RefObject<HTMLInputElement>;
-    onSelect: (id: string) => void;
+    /** Preview a note (move the highlight): arrow nav, single click, ↓/↑ from the search box. */
+    onBrowse: (id: string) => void;
+    /** Open a note for editing: Enter on a row, Enter in the search box (top match). */
+    onCommit: (id: string) => void;
+    /** Esc on a focused row (or in an empty search box): close the open note. */
+    onEscapeList: () => void;
     onCreate: () => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
@@ -38,21 +48,26 @@ function highlightMatch(title: string, query: string): ReactNode {
     );
 }
 
-export function NoteList({
-    notes,
-    selectedId,
-    query,
-    onQueryChange,
-    searchInputRef,
-    onSelect,
-    onCreate,
-    onRename,
-    onDelete,
-    sortMode,
-    onSortChange,
-    pinnedIds,
-    onTogglePin,
-}: NoteListProps) {
+export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
+    {
+        notes,
+        selectedId,
+        query,
+        onQueryChange,
+        searchInputRef,
+        onBrowse,
+        onCommit,
+        onEscapeList,
+        onCreate,
+        onRename,
+        onDelete,
+        sortMode,
+        onSortChange,
+        pinnedIds,
+        onTogglePin,
+    },
+    ref,
+) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<NoteMeta | null>(null);
@@ -68,6 +83,16 @@ export function NoteList({
     const focusableId =
         selectedId && notes.some((n) => n.id === selectedId) ? selectedId : (notes[0]?.id ?? null);
 
+    useImperativeHandle(
+        ref,
+        () => ({
+            focusSelected() {
+                if (focusableId) itemRefs.current.get(focusableId)?.focus();
+            },
+        }),
+        [focusableId],
+    );
+
     const startRename = (note: NoteMeta) => {
         setEditValue(note.title);
         setEditingId(note.id);
@@ -81,14 +106,17 @@ export function NoteList({
         }
     };
 
+    /** Move the highlight to a row, preview it, and keep DOM focus on the list. */
+    const browseRow = (id: string) => {
+        onBrowse(id);
+        itemRefs.current.get(id)?.focus();
+    };
+
     const moveSelection = (fromId: string, delta: number) => {
         const index = notes.findIndex((n) => n.id === fromId);
         if (index === -1) return;
         const next = notes[Math.min(Math.max(index + delta, 0), notes.length - 1)];
-        if (next && next.id !== fromId) {
-            onSelect(next.id);
-            itemRefs.current.get(next.id)?.focus();
-        }
+        if (next && next.id !== fromId) browseRow(next.id);
     };
 
     const onItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, note: NoteMeta) => {
@@ -103,9 +131,12 @@ export function NoteList({
                 moveSelection(note.id, -1);
                 break;
             case 'Enter':
-            case ' ':
                 event.preventDefault();
-                onSelect(note.id);
+                onCommit(note.id);
+                break;
+            case 'Escape':
+                event.preventDefault();
+                onEscapeList();
                 break;
             case 'F2':
                 event.preventDefault();
@@ -119,10 +150,23 @@ export function NoteList({
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter' && notes.length > 0) {
             event.preventDefault();
-            onSelect(notes[0].id);
-        } else if (event.key === 'Escape' && query) {
+            onCommit(notes[0].id);
+        } else if (event.key === 'Escape') {
             event.preventDefault();
-            onQueryChange('');
+            if (query) onQueryChange('');
+            else onEscapeList();
+        } else if (event.key === 'ArrowDown' && notes.length > 0) {
+            event.preventDefault();
+            const target =
+                selectedId && notes.some((n) => n.id === selectedId) ? selectedId : notes[0].id;
+            browseRow(target);
+        } else if (event.key === 'ArrowUp' && notes.length > 0) {
+            event.preventDefault();
+            const target =
+                selectedId && notes.some((n) => n.id === selectedId)
+                    ? selectedId
+                    : notes[notes.length - 1].id;
+            browseRow(target);
         }
     };
 
@@ -168,7 +212,7 @@ export function NoteList({
                     <div className="note-list__empty">
                         <Text color="secondary">
                             {query
-                                ? `No notes match “${query}”.`
+                                ? `No notes match "${query}".`
                                 : 'No notes yet. Create your first one.'}
                         </Text>
                     </div>
@@ -191,7 +235,7 @@ export function NoteList({
                                 role="option"
                                 aria-selected={selected}
                                 tabIndex={tabbable ? 0 : -1}
-                                onClick={() => onSelect(note.id)}
+                                onClick={() => onBrowse(note.id)}
                                 onDoubleClick={() => startRename(note)}
                                 onKeyDown={(e) => onItemKeyDown(e, note)}
                             >
@@ -282,8 +326,7 @@ export function NoteList({
                 <Dialog.Header caption="Delete note" />
                 <Dialog.Body>
                     <Text>
-                        Delete “{deleting?.title}”? This permanently removes the file from your
-                        folder.
+                        {`Delete "${deleting?.title}"? This permanently removes the file from your folder.`}
                     </Text>
                 </Dialog.Body>
                 <Dialog.Footer
@@ -299,4 +342,4 @@ export function NoteList({
             </Dialog>
         </div>
     );
-}
+});
