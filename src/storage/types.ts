@@ -26,6 +26,21 @@ export interface Note extends NoteMeta {
     content: string;
 }
 
+/** How the note list is ordered. */
+export type SortMode = 'updated' | 'title' | 'created';
+
+/** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
+export interface NotesMetadata {
+    /** Schema version for forward-compatibility. */
+    version: 1;
+    /** Active sort mode. */
+    sort: SortMode;
+    /** Pinned note ids. Treated as a membership set; array order is not significant. */
+    pinned: readonly string[];
+    /** Note id → creation time (epoch ms), stamped on create. */
+    created: Record<string, number>;
+}
+
 export interface NoteStore {
     /** List all notes, typically sorted by most-recently-updated. */
     list(): Promise<NoteMeta[]>;
