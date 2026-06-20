@@ -79,6 +79,10 @@ describe('useNotes conflict resolvers', () => {
         expect(hook.result.current.selectedId).toBe('Note (conflicted copy).md');
         expect((await store.get('Note (conflicted copy).md')).content).toBe('my edits');
         expect((await store.get('Note.md')).content).toBe('disk v2');
+        // The copy is a new note created in-app, so it gets a created stamp.
+        expect((await store.readMetadata()).created['Note (conflicted copy).md']).toBeGreaterThan(
+            0,
+        );
     });
 
     it('discard clears the conflict and the selection', async () => {
@@ -113,7 +117,10 @@ describe('useNotes metadata', () => {
     });
 
     it('persists the sort mode', async () => {
-        const {hook, store} = await setup();
+        // Seed a note so we can wait for the initial load (notes + metadata) to settle
+        // before mutating — otherwise the mount effect could reset state after setSortMode.
+        const {hook, store} = await setup((dir) => dir.seedFile('Note.md', 'x', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
         await act(async () => {
             hook.result.current.setSortMode('title');
         });

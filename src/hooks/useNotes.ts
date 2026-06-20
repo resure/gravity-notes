@@ -285,6 +285,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         try {
             const copy = await store.create(`${title} (conflicted copy)`);
             await store.save(copy.id, content, copy.updatedAt ?? 0);
+            await persistMetadata(
+                withCreatedStamp(metadataRef.current, copy.id, copy.updatedAt ?? 0),
+            );
             setConflict(null);
             await refresh();
             await select(copy.id);
@@ -292,7 +295,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save a copy');
         }
-    }, [conflict, selectedNote, store, refresh, select, onError]);
+    }, [conflict, selectedNote, store, refresh, select, onError, persistMetadata]);
 
     const discard = useCallback(() => {
         pendingRef.current = null;
