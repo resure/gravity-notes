@@ -182,7 +182,7 @@ describe('NoteList — sort control', () => {
     it('changes the sort mode via the sort control', async () => {
         const user = userEvent.setup();
         const props = setup();
-        await user.click(screen.getByRole('combobox'));
+        await user.click(screen.getByRole('combobox', {name: 'Sort notes'}));
         await user.click(await screen.findByRole('option', {name: 'Title (A→Z)'}));
         expect(props.onSortChange).toHaveBeenCalledWith('title');
     });
