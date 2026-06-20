@@ -67,6 +67,10 @@ export interface NoteStore {
     remove(id: string): Promise<void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
+    /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */
+    readMetadata(): Promise<NotesMetadata>;
+    /** Persist the folder's notes metadata. */
+    writeMetadata(meta: NotesMetadata): Promise<void>;
 }
 
 /** Thrown by {@link NoteStore.save} when the file changed on disk since the baseline. */
