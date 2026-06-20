@@ -135,7 +135,9 @@ export function NoteList({
                         className="note-list__sort"
                         size="m"
                         value={[sortMode]}
-                        onUpdate={([next]) => onSortChange(next as SortMode)}
+                        onUpdate={([next]) => {
+                            if (next) onSortChange(next as SortMode);
+                        }}
                         options={[
                             {value: 'updated', content: 'Updated'},
                             {value: 'title', content: 'Title (A→Z)'},
@@ -216,6 +218,7 @@ export function NoteList({
                                                 className="note-list__pin"
                                                 data={PinFill}
                                                 size={14}
+                                                aria-hidden
                                             />
                                         ) : null}
                                         <Text className="note-list__title" ellipsis>
