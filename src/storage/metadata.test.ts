@@ -7,9 +7,7 @@ import {
     parseMetadata,
     reconcile,
     withActive,
-    withClosed,
     withCreatedStamp,
-    withOpened,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -57,14 +55,23 @@ describe('parseMetadata', () => {
         );
     });
 
-    it('does not share references with DEFAULT_METADATA', () => {
-        const parsed = parseMetadata({});
-        expect(parsed.pinned).not.toBe(DEFAULT_METADATA.pinned);
-        expect(parsed.created).not.toBe(DEFAULT_METADATA.created);
+    it('defaults active to null when absent', () => {
+        const parsed = parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
+        expect(parsed.active).toBeNull();
     });
 
-    it('does not share references with DEFAULT_METADATA on the happy path', () => {
-        const parsed = parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
+    it('keeps a valid active id and nulls a non-string one', () => {
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}, active: 'B.md'})
+                .active,
+        ).toBe('B.md');
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}, active: 7}).active,
+        ).toBeNull();
+    });
+
+    it('does not share references with DEFAULT_METADATA', () => {
+        const parsed = parseMetadata({});
         expect(parsed.pinned).not.toBe(DEFAULT_METADATA.pinned);
         expect(parsed.created).not.toBe(DEFAULT_METADATA.created);
     });
@@ -76,7 +83,6 @@ describe('immutable transforms', () => {
         sort: 'updated',
         pinned: ['A.md'],
         created: {'A.md': 1},
-        open: ['A.md'],
         active: 'A.md',
     } as const;
 
@@ -99,51 +105,68 @@ describe('immutable transforms', () => {
         const unchanged = withCreatedStamp(stamped, 'B.md', 999);
         expect(unchanged.created['B.md']).toBe(200);
     });
+});
 
-    it('withRenamed migrates pin membership and the created entry', () => {
+describe('active transforms', () => {
+    const base = {
+        version: 1,
+        sort: 'updated',
+        pinned: [],
+        created: {},
+        active: 'A.md',
+    } as const;
+
+    it('withActive sets the active id', () => {
+        expect(withActive(base, 'B.md').active).toBe('B.md');
+    });
+
+    it('withActive(null) clears the active id', () => {
+        expect(withActive(base, null).active).toBeNull();
+    });
+
+    it('withRenamed remaps the active id', () => {
         const next = withRenamed(base, 'A.md', 'A2.md');
-        expect(next.pinned).toEqual(['A2.md']);
-        expect(next.created).toEqual({'A2.md': 1});
+        expect(next.active).toBe('A2.md');
     });
 
-    it('withRenamed is a no-op when the id is unchanged', () => {
-        expect(withRenamed(base, 'A.md', 'A.md')).toEqual(base);
+    it('withRenamed leaves a non-active id alone', () => {
+        const next = withRenamed({...base, active: 'B.md'}, 'A.md', 'A2.md');
+        expect(next.active).toBe('B.md');
     });
 
-    it('withRemoved drops the id from pinned and created', () => {
-        const next = withRemoved(base, 'A.md');
-        expect(next.pinned).toEqual([]);
-        expect(next.created).toEqual({});
+    it('withRemoved clears active when the removed id was active', () => {
+        expect(withRemoved(base, 'A.md').active).toBeNull();
+    });
+
+    it('withRemoved keeps active when removing a different id', () => {
+        expect(withRemoved(base, 'Z.md').active).toBe('A.md');
     });
 });
 
 describe('reconcile', () => {
-    it('drops pinned and created entries for ids that are not live', () => {
+    it('drops pinned/created entries for ids that are not live and clears a dead active', () => {
         const meta = {
             version: 1,
             sort: 'updated',
             pinned: ['A.md', 'ghost.md'],
             created: {'A.md': 1, 'ghost.md': 2},
-            open: [],
-            active: null,
+            active: 'ghost.md',
         } as const;
         const next = reconcile(meta, ['A.md', 'B.md']);
         expect(next.pinned).toEqual(['A.md']);
         expect(next.created).toEqual({'A.md': 1});
+        expect(next.active).toBeNull();
     });
 
-    it('drops everything when no ids are live', () => {
+    it('keeps a live active id', () => {
         const meta = {
             version: 1,
             sort: 'updated',
-            pinned: ['A.md'],
-            created: {'A.md': 1},
-            open: [],
-            active: null,
+            pinned: [],
+            created: {},
+            active: 'A.md',
         } as const;
-        const next = reconcile(meta, []);
-        expect(next.pinned).toEqual([]);
-        expect(next.created).toEqual({});
+        expect(reconcile(meta, ['A.md']).active).toBe('A.md');
     });
 });
 
@@ -155,8 +178,11 @@ describe('orderNotes', () => {
     ];
 
     it('sorts by updated (newest first) by default', () => {
-        const meta = {...DEFAULT_METADATA};
-        expect(orderNotes(notes, meta).map((n) => n.id)).toEqual(['B.md', 'C.md', 'A.md']);
+        expect(orderNotes(notes, {...DEFAULT_METADATA}).map((n) => n.id)).toEqual([
+            'B.md',
+            'C.md',
+            'A.md',
+        ]);
     });
 
     it('sorts by title A→Z', () => {
@@ -166,13 +192,11 @@ describe('orderNotes', () => {
 
     it('sorts by created (newest first), falling back to updatedAt when unstamped', () => {
         const meta = {...DEFAULT_METADATA, sort: 'created' as const, created: {'A.md': 999}};
-        // A has an explicit created of 999 (newest); B and C fall back to updatedAt 300/200.
         expect(orderNotes(notes, meta).map((n) => n.id)).toEqual(['A.md', 'B.md', 'C.md']);
     });
 
     it('keeps pinned notes on top, each group sorted by the active sort', () => {
         const meta = {...DEFAULT_METADATA, sort: 'title' as const, pinned: ['C.md']};
-        // C is pinned (alone on top); the rest are alphabetical.
         expect(orderNotes(notes, meta).map((n) => n.id)).toEqual(['C.md', 'A.md', 'B.md']);
     });
 
@@ -180,120 +204,5 @@ describe('orderNotes', () => {
         const input = [...notes];
         orderNotes(input, {...DEFAULT_METADATA, sort: 'title'});
         expect(input.map((n) => n.id)).toEqual(['B.md', 'A.md', 'C.md']);
-    });
-});
-
-describe('parseMetadata — open tabs', () => {
-    it('defaults open/active when absent', () => {
-        const parsed = parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
-        expect(parsed.open).toEqual([]);
-        expect(parsed.active).toBeNull();
-    });
-
-    it('keeps a valid open list and active id, dropping non-strings', () => {
-        const parsed = parseMetadata({
-            version: 1,
-            sort: 'updated',
-            pinned: [],
-            created: {},
-            open: ['A.md', 7, 'B.md'],
-            active: 'B.md',
-        });
-        expect(parsed.open).toEqual(['A.md', 'B.md']);
-        expect(parsed.active).toBe('B.md');
-    });
-
-    it('clears active when it is not in open', () => {
-        const parsed = parseMetadata({
-            version: 1,
-            sort: 'updated',
-            pinned: [],
-            created: {},
-            open: ['A.md'],
-            active: 'ghost.md',
-        });
-        expect(parsed.active).toBeNull();
-    });
-});
-
-describe('tab transforms', () => {
-    const base = {
-        version: 1,
-        sort: 'updated',
-        pinned: [],
-        created: {},
-        open: ['A.md', 'B.md'],
-        active: 'A.md',
-    } as const;
-
-    it('withOpened appends a new id and activates it', () => {
-        const next = withOpened(base, 'C.md');
-        expect(next.open).toEqual(['A.md', 'B.md', 'C.md']);
-        expect(next.active).toBe('C.md');
-    });
-
-    it('withOpened only activates an already-open id (no duplicate)', () => {
-        const next = withOpened(base, 'B.md');
-        expect(next.open).toEqual(['A.md', 'B.md']);
-        expect(next.active).toBe('B.md');
-    });
-
-    it('withActive sets the active id', () => {
-        expect(withActive(base, 'B.md').active).toBe('B.md');
-    });
-
-    it('withActive is a no-op for an id that is not open', () => {
-        expect(withActive(base, 'ghost.md')).toEqual(base);
-    });
-
-    it('withClosed removes the id and activates the right neighbor when closing active', () => {
-        const next = withClosed(base, 'A.md');
-        expect(next.open).toEqual(['B.md']);
-        expect(next.active).toBe('B.md');
-    });
-
-    it('withClosed activates the left neighbor when closing the last (active) tab', () => {
-        const next = withClosed({...base, active: 'B.md'}, 'B.md');
-        expect(next.open).toEqual(['A.md']);
-        expect(next.active).toBe('A.md');
-    });
-
-    it('withClosed leaves active null when closing the only tab', () => {
-        const next = withClosed(
-            {version: 1, sort: 'updated', pinned: [], created: {}, open: ['A.md'], active: 'A.md'},
-            'A.md',
-        );
-        expect(next.open).toEqual([]);
-        expect(next.active).toBeNull();
-    });
-
-    it('withClosed keeps active when closing a non-active tab', () => {
-        const next = withClosed(base, 'B.md');
-        expect(next.open).toEqual(['A.md']);
-        expect(next.active).toBe('A.md');
-    });
-
-    it('withRenamed remaps open entries and active', () => {
-        const next = withRenamed(base, 'A.md', 'A2.md');
-        expect(next.open).toEqual(['A2.md', 'B.md']);
-        expect(next.active).toBe('A2.md');
-    });
-
-    it('withRemoved drops the id from open and reactivates a neighbor', () => {
-        const next = withRemoved(base, 'A.md');
-        expect(next.open).toEqual(['B.md']);
-        expect(next.active).toBe('B.md');
-    });
-
-    it('reconcile drops open ids that are not live and clamps active', () => {
-        const next = reconcile(base, ['B.md']);
-        expect(next.open).toEqual(['B.md']);
-        expect(next.active).toBe('B.md');
-    });
-
-    it('reconcile clamps active to null when nothing is live', () => {
-        const next = reconcile(base, []);
-        expect(next.open).toEqual([]);
-        expect(next.active).toBeNull();
     });
 });
