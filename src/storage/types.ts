@@ -38,7 +38,7 @@ export interface NotesMetadata {
     /** Pinned note ids. Treated as a membership set; array order is not significant. */
     pinned: readonly string[];
     /** Note id → creation time (epoch ms), stamped on create. */
-    created: Record<string, number>;
+    created: Readonly<Record<string, number>>;
 }
 
 export interface NoteStore {

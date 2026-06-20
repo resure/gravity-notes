@@ -59,6 +59,12 @@ describe('parseMetadata', () => {
         expect(parsed.pinned).not.toBe(DEFAULT_METADATA.pinned);
         expect(parsed.created).not.toBe(DEFAULT_METADATA.created);
     });
+
+    it('does not share references with DEFAULT_METADATA on the happy path', () => {
+        const parsed = parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
+        expect(parsed.pinned).not.toBe(DEFAULT_METADATA.pinned);
+        expect(parsed.created).not.toBe(DEFAULT_METADATA.created);
+    });
 });
 
 describe('immutable transforms', () => {
@@ -112,6 +118,18 @@ describe('reconcile', () => {
         const next = reconcile(meta, ['A.md', 'B.md']);
         expect(next.pinned).toEqual(['A.md']);
         expect(next.created).toEqual({'A.md': 1});
+    });
+
+    it('drops everything when no ids are live', () => {
+        const meta = {
+            version: 1,
+            sort: 'updated',
+            pinned: ['A.md'],
+            created: {'A.md': 1},
+        } as const;
+        const next = reconcile(meta, []);
+        expect(next.pinned).toEqual([]);
+        expect(next.created).toEqual({});
     });
 });
 

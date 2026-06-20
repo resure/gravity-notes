@@ -88,7 +88,7 @@ export function orderNotes(notes: NoteMeta[], meta: NotesMetadata): NoteMeta[] {
     return [...pinned, ...rest];
 }
 
-function comparatorFor(sort: SortMode, created: Record<string, number>) {
+function comparatorFor(sort: SortMode, created: Readonly<Record<string, number>>) {
     switch (sort) {
         case 'title':
             return (a: NoteMeta, b: NoteMeta) => a.title.localeCompare(b.title);
@@ -96,10 +96,12 @@ function comparatorFor(sort: SortMode, created: Record<string, number>) {
             return (a: NoteMeta, b: NoteMeta) => createdOf(b, created) - createdOf(a, created);
         case 'updated':
         default:
+            // 'updated' is the default; the union is exhaustive, so `default` is just
+            // the safe fall-through for any unexpected value (also sorts newest-first).
             return (a: NoteMeta, b: NoteMeta) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
     }
 }
 
-function createdOf(note: NoteMeta, created: Record<string, number>): number {
+function createdOf(note: NoteMeta, created: Readonly<Record<string, number>>): number {
     return created[note.id] ?? note.updatedAt ?? 0;
 }
