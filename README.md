@@ -12,6 +12,7 @@ own computer.
 - Debounced **autosave** to disk
 - Light / dark theme toggle
 - Your notes are plain `.md` files in a folder you pick — no lock-in
+- Keyboard-first navigation (nvALT / Notational Velocity style): arrow to preview, Enter to edit, Esc to step back
 
 ## Requirements
 
@@ -53,17 +54,18 @@ Key modules:
 
 ### TODO
 
-Design things:
+Small design things:
 
 - let's make padding ABOVE editing area little smaller (but don't touch paddding on the left side)
 - theme switcher should have distinct "system theme" option
 - let's pick different accent color instead of default yellow-orange
-- default line-height in editor is too big
+- default line-height in editor is TOO big
 - i want lists to have short dashes instead of bullets - like in apple notes
-- sublime/vscode-like logic for tabs - just clicking on some note in the sidebar opens "ephereal" tab with italic tab name. Double click on note or any edits inside it makes that ephereal tab normal. When tab is ephereal clicking on another note in the sidebar just replaces ethereal tab with another one, instead of opening a new one (so there probably can only be one ethereal tab).
-- don't like current tabs layout with empty space above them, what ideas do you have on more compact layout? maybe collapse first and second panels into one. Also i want tabs to be little bigger in height.
 - let's add at least small paddings around panel with editor buttons
 - checklists are not beautiful, let's add at least some padding between checkbox itself and it's corresponding text
+- editor buttons flicker when i change tabs - let's hide it completely? including that settings button at the top left of the editor
+
+### Backlog
 
 UX tasks:
 
@@ -75,12 +77,9 @@ Bugs:
 - F2 hotkey doesn't work
 - cmd+k conflicts with inserting link in markdown editor
 - on trying to rename to existing note name - do nothing, don't try to generate number at the end of the note
-- editor buttons flicker when i change tabs - let's hide it completely? including that settings button at the top left of the editor
 
-Backlog:
+Other things:
 
-- i'm not sure that we really need tabs... looks like they duplicate notes list in some ways. do we realy need them?
-- add plus button at the tabs pane, after it we should either open existing file or create a new one
 - let's make saving manual, not automatic. But we probably want to keep some kind of "buffer" file (that we WILL automatically save to) so if app crashes or something happens we can restore content. On actual save we can just delete that temporary file.
 - Folders support
 - **Electron app**

@@ -84,10 +84,11 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      `.gravity-notes.json` folder dotfile via `NoteStore.readMetadata`/`writeMetadata`; ordering moved
      to a pure `orderNotes`. Folds in the 3a help-dialog/shortcut-descriptor polish.
      Spec: `docs/superpowers/specs/2026-06-20-sort-pinning-design.md`.
-   - ✅ **Multi-tab editing** — open notes as switchable editor tabs, persisted in the
-     `.gravity-notes.json` dotfile (`open`/`active`) and restored on reload; per-tab autosave +
-     conflict detection (a `TabBar` + a mounted editor stack). Net-new feature sequenced after 3b.
-     Spec: `docs/superpowers/specs/2026-06-20-multi-tab-editing-design.md`.
+   - ✅ **Multi-tab editing** (superseded) — shipped then reverted; see below.
+   - ✅ **Remove tabs + nvALT navigation** — reverted multi-tab to a single-pane
+     Notational-Velocity model: one open note persisted as `metadata.active`, a
+     `useNoteNavigation` hook for arrow-to-preview / Enter-to-edit / Esc-to-step-back.
+     Spec: `docs/superpowers/specs/2026-06-20-remove-tabs-nvalt-navigation-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
