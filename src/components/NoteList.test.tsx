@@ -200,6 +200,17 @@ describe('NoteList — search', () => {
         screen.getByPlaceholderText('Search').focus();
         await user.keyboard('{ArrowDown}');
         expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+        expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
+    });
+
+    it('enters the list at the last row on ArrowUp from the search field', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: null});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{ArrowUp}');
+        // With no selection, ArrowUp targets the last row (notes = [Alpha, Beta]).
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+        expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
     });
 
     it('clears the query on Escape when the search field has text', async () => {

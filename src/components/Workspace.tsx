@@ -98,6 +98,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                 }
             })();
         },
+        // eslint wants the whole `notes`/`nav` objects here, not their members.
         [filteredNotes, notes, nav],
     );
 
