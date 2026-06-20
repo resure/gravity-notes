@@ -11,19 +11,22 @@ export interface EditorPaneHandle {
 
 interface EditorPaneProps {
     note: Note;
+    /** Whether this pane is the visible/active tab. Only the active pane autofocuses. */
+    active: boolean;
     onChange: (markup: string) => void;
 }
 
 /**
  * Wraps the Gravity markdown editor for a single note.
  *
- * The editor instance is re-created whenever the note id changes (the `deps`
- * argument), loading that note's markup as the initial value. Content edits are
- * reported back via the `change` event, serialized with `getValue()`. The parent
- * can flip editing modes through the imperative `toggleMode` handle.
+ * One pane is mounted per open tab; inactive panes are hidden by the parent but
+ * stay mounted to preserve their cursor/scroll/undo state. The editor instance is
+ * re-created whenever the note id (or its on-disk `updatedAt`) changes via the
+ * `deps` argument, loading that note's markup as the initial value. Only the active
+ * pane autofocuses, and it refocuses whenever it becomes active.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, onChange},
+    {note, active, onChange},
     ref,
 ) {
     const editor = useMarkdownEditor(
@@ -59,5 +62,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         };
     }, [editor, note.content, onChange]);
 
-    return <MarkdownEditorView stickyToolbar autofocus editor={editor} />;
+    // Focus when this pane becomes the active tab (and on initial mount-as-active).
+    useEffect(() => {
+        if (active) editor.focus();
+    }, [active, editor]);
+
+    return <MarkdownEditorView stickyToolbar autofocus={active} editor={editor} />;
 });
