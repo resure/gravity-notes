@@ -39,6 +39,10 @@ export interface NotesMetadata {
     pinned: readonly string[];
     /** Note id → creation time (epoch ms), stamped on create. */
     created: Readonly<Record<string, number>>;
+    /** Open tab ids, in tab (left-to-right) order. */
+    open: readonly string[];
+    /** Active tab id, or null when no tabs are open. Always an element of `open` when non-null. */
+    active: string | null;
 }
 
 export interface NoteStore {
