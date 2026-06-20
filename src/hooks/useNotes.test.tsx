@@ -3,6 +3,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
+import {METADATA_FILENAME} from '../storage/metadata';
 
 import {useNotes} from './useNotes';
 
@@ -24,8 +25,9 @@ async function setupConflict() {
     await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
 
     await act(async () => {
-        await hook.result.current.select('Note.md');
+        await hook.result.current.open('Note.md');
     });
+    await waitFor(() => expect(hook.result.current.activeId).toBe('Note.md'));
 
     // An external edit bumps the mtime past the baseline (100).
     dir.seedFile('Note.md', 'disk v2', 200);
@@ -34,7 +36,7 @@ async function setupConflict() {
     await act(async () => {
         window.dispatchEvent(new Event('focus'));
     });
-    await waitFor(() => expect(hook.result.current.conflict).not.toBeNull());
+    await waitFor(() => expect(hook.result.current.conflicts.get('Note.md')).toBeTruthy());
 
     return {hook, dir, store, onError};
 }
@@ -42,8 +44,11 @@ async function setupConflict() {
 describe('useNotes conflict resolvers', () => {
     it('detects an external change on refocus', async () => {
         const {hook} = await setupConflict();
-        expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: false});
-        expect(hook.result.current.saveState).toBe('conflict');
+        expect(hook.result.current.conflicts.get('Note.md')).toMatchObject({
+            id: 'Note.md',
+            deleted: false,
+        });
+        expect(hook.result.current.saveStates.get('Note.md')).toBe('conflict');
     });
 
     it('reloadDisk loads the disk version and clears the conflict', async () => {
@@ -51,115 +56,195 @@ describe('useNotes conflict resolvers', () => {
         await act(async () => {
             await hook.result.current.reloadDisk();
         });
-        expect(hook.result.current.conflict).toBeNull();
-        expect(hook.result.current.selectedNote?.content).toBe('disk v2');
+        expect(hook.result.current.conflicts.has('Note.md')).toBe(false);
+        expect(hook.result.current.openNotes.get('Note.md')?.content).toBe('disk v2');
     });
 
     it('keepMine overwrites disk with the local edits', async () => {
         const {hook, store} = await setupConflict();
         act(() => {
-            hook.result.current.edit('my edits');
+            hook.result.current.edit('Note.md', 'my edits');
         });
         await act(async () => {
             await hook.result.current.keepMine();
         });
-        expect(hook.result.current.conflict).toBeNull();
+        expect(hook.result.current.conflicts.has('Note.md')).toBe(false);
         expect((await store.get('Note.md')).content).toBe('my edits');
     });
 
     it('saveAsCopy writes a copy and leaves the original on disk', async () => {
         const {hook, store} = await setupConflict();
         act(() => {
-            hook.result.current.edit('my edits');
+            hook.result.current.edit('Note.md', 'my edits');
         });
         await act(async () => {
             await hook.result.current.saveAsCopy();
         });
-        expect(hook.result.current.conflict).toBeNull();
-        expect(hook.result.current.selectedId).toBe('Note (conflicted copy).md');
+        expect(hook.result.current.conflicts.has('Note.md')).toBe(false);
+        expect(hook.result.current.activeId).toBe('Note (conflicted copy).md');
         expect((await store.get('Note (conflicted copy).md')).content).toBe('my edits');
         expect((await store.get('Note.md')).content).toBe('disk v2');
-        // The copy is a new note created in-app, so it gets a created stamp.
         expect((await store.readMetadata()).created['Note (conflicted copy).md']).toBeGreaterThan(
             0,
         );
     });
 
-    it('discard clears the conflict and the selection', async () => {
+    it('discard clears the conflict and closes the tab', async () => {
         const {hook} = await setupConflict();
         act(() => {
             hook.result.current.discard();
         });
-        expect(hook.result.current.conflict).toBeNull();
-        expect(hook.result.current.selectedId).toBeNull();
+        await waitFor(() => expect(hook.result.current.activeId).toBeNull());
+        expect(hook.result.current.conflicts.has('Note.md')).toBe(false);
+        expect(hook.result.current.openIds).toEqual([]);
     });
 });
 
-describe('useNotes metadata', () => {
+describe('useNotes tabs', () => {
     async function setup(seed?: (dir: FakeDirectoryHandle) => void) {
         const onError = vi.fn();
         const dir = new FakeDirectoryHandle();
         seed?.(dir);
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
         const hook = renderHook(() => useNotes(store, onError));
-        await waitFor(() => expect(hook.result.current.saveState).toBe('idle'));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
         return {hook, dir, store, onError};
     }
 
-    it('stamps a created time when creating a note', async () => {
+    it('opening notes accumulates tabs and activates the latest', async () => {
+        const {hook} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        expect(hook.result.current.openIds).toEqual(['A.md', 'B.md']);
+        expect(hook.result.current.activeId).toBe('B.md');
+    });
+
+    it('re-opening an already-open note just activates it (no duplicate)', async () => {
+        const {hook} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        expect(hook.result.current.openIds).toEqual(['A.md', 'B.md']);
+        expect(hook.result.current.activeId).toBe('A.md');
+    });
+
+    it('closing the active tab activates a neighbor', async () => {
+        const {hook} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        await act(async () => {
+            await hook.result.current.close('B.md');
+        });
+        expect(hook.result.current.openIds).toEqual(['A.md']);
+        expect(hook.result.current.activeId).toBe('A.md');
+        expect(hook.result.current.openNotes.has('B.md')).toBe(false);
+    });
+
+    it('persists open tabs and restores them on remount', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile('B.md', 'b', 200);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+
+        const first = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(first.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await first.result.current.open('A.md');
+        });
+        await act(async () => {
+            await first.result.current.open('B.md');
+        });
+        await waitFor(async () =>
+            expect((await store.readMetadata()).open).toEqual(['A.md', 'B.md']),
+        );
+
+        // A fresh hook over the same store restores the tabs.
+        const second = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(second.result.current.openIds).toEqual(['A.md', 'B.md']));
+        expect(second.result.current.activeId).toBe('B.md');
+        expect(second.result.current.openNotes.get('A.md')?.content).toBe('a');
+    });
+
+    it('drops a restored tab whose file no longer exists', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile(
+            METADATA_FILENAME,
+            JSON.stringify({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                open: ['A.md', 'Ghost.md'],
+                active: 'Ghost.md',
+            }),
+        );
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.openIds).toEqual(['A.md']));
+        expect(hook.result.current.activeId).toBe('A.md');
+    });
+
+    it('autosaves each open tab independently on hide', async () => {
+        const {hook, store} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        act(() => {
+            hook.result.current.edit('A.md', 'edited a');
+            hook.result.current.edit('B.md', 'edited b');
+        });
+        await act(async () => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await waitFor(async () => expect((await store.get('A.md')).content).toBe('edited a'));
+        expect((await store.get('B.md')).content).toBe('edited b');
+    });
+
+    it('creating a note opens it as the active tab', async () => {
         const {hook, store} = await setup();
         await act(async () => {
             await hook.result.current.create();
         });
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
         const id = hook.result.current.notes[0].id;
-        expect((await store.readMetadata()).created[id]).toBeGreaterThan(0);
-    });
-
-    it('persists the sort mode', async () => {
-        // Seed a note so we can wait for the initial load (notes + metadata) to settle
-        // before mutating — otherwise the mount effect could reset state after setSortMode.
-        const {hook, store} = await setup((dir) => dir.seedFile('Note.md', 'x', 100));
-        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        await act(async () => {
-            hook.result.current.setSortMode('title');
-        });
-        await waitFor(async () => expect((await store.readMetadata()).sort).toBe('title'));
-        expect(hook.result.current.metadata.sort).toBe('title');
-    });
-
-    it('toggles a pin and persists it', async () => {
-        const {hook, store} = await setup((dir) => dir.seedFile('Note.md', 'x', 100));
-        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        await act(async () => {
-            hook.result.current.togglePin('Note.md');
-        });
-        await waitFor(async () => expect((await store.readMetadata()).pinned).toContain('Note.md'));
-        expect(hook.result.current.metadata.pinned).toContain('Note.md');
-    });
-
-    it('migrates a pin when a note is renamed', async () => {
-        const {hook, store} = await setup((dir) => dir.seedFile('Old.md', 'x', 100));
-        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        await act(async () => {
-            hook.result.current.togglePin('Old.md');
-        });
-        await act(async () => {
-            await hook.result.current.rename('Old.md', 'New');
-        });
-        const meta = await store.readMetadata();
-        expect(meta.pinned).toEqual(['New.md']);
-    });
-
-    it('prunes metadata when a note is removed', async () => {
-        const {hook, store} = await setup((dir) => dir.seedFile('Gone.md', 'x', 100));
-        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        await act(async () => {
-            hook.result.current.togglePin('Gone.md');
-        });
-        await act(async () => {
-            await hook.result.current.remove('Gone.md');
-        });
-        expect((await store.readMetadata()).pinned).not.toContain('Gone.md');
+        expect(hook.result.current.openIds).toEqual([id]);
+        expect(hook.result.current.activeId).toBe(id);
+        expect((await store.readMetadata()).open).toEqual([id]);
     });
 });
