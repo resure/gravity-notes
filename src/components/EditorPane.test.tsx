@@ -63,4 +63,11 @@ describe('EditorPane focus', () => {
         render(<EditorPane note={NOTE} active={false} onChange={() => {}} />);
         expect(focus).not.toHaveBeenCalled();
     });
+
+    it('focuses when the active prop flips from false to true', () => {
+        const {rerender} = render(<EditorPane note={NOTE} active={false} onChange={() => {}} />);
+        expect(focus).not.toHaveBeenCalled();
+        rerender(<EditorPane note={NOTE} active={true} onChange={() => {}} />);
+        expect(focus).toHaveBeenCalledTimes(1);
+    });
 });
