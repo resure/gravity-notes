@@ -51,6 +51,9 @@
     min-width: 0;
     height: 100%;
     overflow: auto;
+    /* Give the editing area breathing room from the toolbar and edges. The
+       markdown editor reads this for both the WYSIWYG and markup panes. */
+    --g-md-editor-padding: 8px 16px;
 }
 
 .workspace__placeholder {
