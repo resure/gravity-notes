@@ -1,17 +1,23 @@
 import {screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
+import {SHORTCUTS} from '../shortcuts';
 import {renderWithProviders} from '../test/render';
 
 import {ShortcutsDialog} from './ShortcutsDialog';
 
 describe('ShortcutsDialog', () => {
-    it('lists the documented shortcuts when open', () => {
+    it('renders a row for every shortcut in the descriptor', () => {
         renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
-        expect(screen.getByText('Focus search')).toBeInTheDocument();
-        expect(screen.getByText('New note')).toBeInTheDocument();
-        expect(screen.getByText('Toggle WYSIWYG / Markup')).toBeInTheDocument();
-        expect(screen.getByText('Show this help')).toBeInTheDocument();
+        for (const shortcut of SHORTCUTS) {
+            expect(screen.getByText(shortcut.description)).toBeInTheDocument();
+        }
+    });
+
+    it('includes the previously-missing rows', () => {
+        renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
+        expect(screen.getByText('Open the focused note')).toBeInTheDocument();
+        expect(screen.getByText('Clear search')).toBeInTheDocument();
     });
 
     it('renders nothing when closed', () => {

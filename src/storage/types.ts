@@ -26,6 +26,21 @@ export interface Note extends NoteMeta {
     content: string;
 }
 
+/** How the note list is ordered. */
+export type SortMode = 'updated' | 'title' | 'created';
+
+/** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
+export interface NotesMetadata {
+    /** Schema version for forward-compatibility. */
+    version: 1;
+    /** Active sort mode. */
+    sort: SortMode;
+    /** Pinned note ids. Treated as a membership set; array order is not significant. */
+    pinned: readonly string[];
+    /** Note id → creation time (epoch ms), stamped on create. */
+    created: Readonly<Record<string, number>>;
+}
+
 export interface NoteStore {
     /** List all notes, typically sorted by most-recently-updated. */
     list(): Promise<NoteMeta[]>;
@@ -52,6 +67,10 @@ export interface NoteStore {
     remove(id: string): Promise<void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
+    /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */
+    readMetadata(): Promise<NotesMetadata>;
+    /** Persist the folder's notes metadata. */
+    writeMetadata(meta: NotesMetadata): Promise<void>;
 }
 
 /** Thrown by {@link NoteStore.save} when the file changed on disk since the baseline. */

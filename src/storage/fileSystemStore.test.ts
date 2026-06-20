@@ -2,6 +2,7 @@ import {beforeEach, describe, expect, it} from 'vitest';
 
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
+import {DEFAULT_METADATA} from './metadata';
 import {ConflictError} from './types';
 
 describe('FileSystemNoteStore', () => {
@@ -183,6 +184,41 @@ describe('FileSystemNoteStore', () => {
 
         it('returns null for a missing file', async () => {
             expect(await store.stat('Ghost.md')).toBeNull();
+        });
+    });
+
+    describe('metadata', () => {
+        it('returns defaults when the dotfile is absent', async () => {
+            const meta = await store.readMetadata();
+            expect(meta).toEqual({version: 1, sort: 'updated', pinned: [], created: {}});
+            // A fresh object, never the shared DEFAULT_METADATA singleton.
+            expect(meta).not.toBe(DEFAULT_METADATA);
+        });
+
+        it('round-trips metadata through write/read', async () => {
+            await store.writeMetadata({
+                version: 1,
+                sort: 'title',
+                pinned: ['Ideas.md'],
+                created: {'Ideas.md': 123},
+            });
+            const meta = await store.readMetadata();
+            expect(meta.sort).toBe('title');
+            expect(meta.pinned).toEqual(['Ideas.md']);
+            expect(meta.created).toEqual({'Ideas.md': 123});
+        });
+
+        it('returns defaults when the dotfile is corrupt JSON', async () => {
+            dir.seedFile('.gravity-notes.json', 'not json{', 10);
+            const meta = await store.readMetadata();
+            expect(meta).toEqual({version: 1, sort: 'updated', pinned: [], created: {}});
+        });
+
+        it('never surfaces the dotfile as a note', async () => {
+            dir.seedFile('Real.md', 'hi', 1);
+            await store.writeMetadata({version: 1, sort: 'updated', pinned: [], created: {}});
+            const metas = await store.list();
+            expect(metas.map((m) => m.id)).toEqual(['Real.md']);
         });
     });
 });

@@ -7,6 +7,7 @@ import {useNoteSearch} from '../hooks/useNoteSearch';
 import {type SaveState, useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
+import {orderNotes} from '../storage/metadata';
 
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
@@ -49,7 +50,11 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
     );
 
     const notes = useNotes(store, onError);
-    const {query, setQuery, filteredNotes} = useNoteSearch(notes.notes);
+    const orderedNotes = useMemo(
+        () => orderNotes(notes.notes, notes.metadata),
+        [notes.notes, notes.metadata],
+    );
+    const {query, setQuery, filteredNotes} = useNoteSearch(orderedNotes);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
@@ -109,6 +114,10 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                         onCreate={() => void notes.create()}
                         onRename={(id, title) => void notes.rename(id, title)}
                         onDelete={(id) => void notes.remove(id)}
+                        sortMode={notes.metadata.sort}
+                        onSortChange={notes.setSortMode}
+                        pinnedIds={notes.metadata.pinned}
+                        onTogglePin={notes.togglePin}
                     />
                 </aside>
 
