@@ -247,7 +247,6 @@ export function Workspace({
                                     preview={previewMode}
                                     onChange={notes.edit}
                                     onEscape={nav.escapeEditor}
-                                    onExitPreview={() => setPreviewMode(false)}
                                 />
                             </div>
                         </>

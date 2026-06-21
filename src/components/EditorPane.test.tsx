@@ -110,9 +110,8 @@ describe('EditorPane — preview', () => {
         expect(container.querySelector('.note-preview')).toBeTruthy();
     });
 
-    it('exits preview (not the list) on Escape while previewing', () => {
+    it('goes to the list (keeping preview) on Escape while previewing', () => {
         const onEscape = vi.fn();
-        const onExitPreview = vi.fn();
         const {container} = render(
             <EditorPane
                 note={NOTE}
@@ -120,13 +119,11 @@ describe('EditorPane — preview', () => {
                 preview
                 onChange={() => {}}
                 onEscape={onEscape}
-                onExitPreview={onExitPreview}
             />,
         );
         const pane = container.querySelector('.editor-pane');
         if (!pane) throw new Error('editor-pane not rendered');
         fireEvent.keyDown(pane, {key: 'Escape'});
-        expect(onExitPreview).toHaveBeenCalledTimes(1);
-        expect(onEscape).not.toHaveBeenCalled();
+        expect(onEscape).toHaveBeenCalledTimes(1);
     });
 });

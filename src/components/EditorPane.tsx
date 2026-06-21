@@ -24,8 +24,6 @@ interface EditorPaneProps {
     onChange: (markup: string) => void;
     /** Fired when an otherwise-unhandled Escape bubbles out of the editor (exit to the list). */
     onEscape: () => void;
-    /** Esc while previewing: leave preview (back to editing). */
-    onExitPreview?: () => void;
 }
 
 /**
@@ -36,7 +34,7 @@ interface EditorPaneProps {
  * preview is owned by Workspace so it carries across note switches.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, autofocus, preview = false, onChange, onEscape, onExitPreview},
+    {note, autofocus, preview = false, onChange, onEscape},
     ref,
 ) {
     const editor = useMarkdownEditor(
@@ -102,9 +100,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             className="editor-pane"
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
-                // Esc steps out of preview first (back to editing), then out to the list.
-                if (preview) onExitPreview?.();
-                else onEscape();
+                // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
+                onEscape();
             }}
         >
             {preview ? (
