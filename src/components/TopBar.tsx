@@ -1,16 +1,16 @@
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
-import {ChevronDown, CircleQuestion, Folder, Plus} from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
+import {CircleQuestion, Folder} from '@gravity-ui/icons';
+import {Button, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
-import type {NoteMeta, SortMode} from '../storage/types';
+import type {NoteMeta} from '../storage/types';
 
 import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 
 import './TopBar.css';
 
 export interface TopBarProps {
-    /** Folder menu (the folder name doubles as the app menu). */
+    /** Folder name doubles as the "change folder" button (left zone, over the sidebar). */
     folderName: string | null;
     onChangeFolder: () => void;
     onOpenHelp: () => void;
@@ -30,14 +30,12 @@ export interface TopBarProps {
     onEscapeList: () => void;
     /** Enter the list at a row: preview it and move DOM focus onto it (↓/↑ from search). */
     onEnterList: (id: string) => void;
-    sortMode: SortMode;
-    onSortChange: (mode: SortMode) => void;
 }
 
 /**
- * The slim nvALT top bar: a wide search box that finds-or-creates, flanked by the folder
- * menu (left) and sort + New (right). Owns the search keyboard model; the list itself lives
- * in `NoteList`, reached through the callbacks (`onEnterList` previews + focuses a row).
+ * The slim nvALT top bar. A left zone (sidebar-width) carries the folder button so the wide
+ * "search or create" box lines up with the editor; theme + help sit at the far right. Owns
+ * the search keyboard model; the list lives in `NoteList` (sort + New now sit above it).
  */
 export function TopBar({
     folderName,
@@ -55,8 +53,6 @@ export function TopBar({
     onCreate,
     onEscapeList,
     onEnterList,
-    sortMode,
-    onSortChange,
 }: TopBarProps) {
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
@@ -91,61 +87,37 @@ export function TopBar({
 
     return (
         <header className="topbar">
-            <DropdownMenu
-                renderSwitcher={(props) => (
-                    <Button {...props} view="flat" size="l" className="topbar__folder">
-                        <Icon data={Folder} size={16} />
-                        <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
-                        <Icon data={ChevronDown} size={16} />
-                    </Button>
-                )}
-                items={[
-                    {
-                        text: 'Change folder',
-                        iconStart: <Icon data={Folder} />,
-                        action: onChangeFolder,
-                    },
-                    {
-                        text: 'Keyboard shortcuts',
-                        iconStart: <Icon data={CircleQuestion} />,
-                        action: onOpenHelp,
-                    },
-                ]}
-            />
+            <div className="topbar__folder-zone">
+                <Button
+                    view="flat"
+                    size="l"
+                    className="topbar__folder"
+                    onClick={onChangeFolder}
+                    title="Change folder"
+                >
+                    <Icon data={Folder} size={16} />
+                    <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
+                </Button>
+            </div>
 
-            <TextInput
-                className="topbar__search"
-                controlRef={searchInputRef}
-                value={query}
-                onUpdate={onQueryChange}
-                placeholder="Search or create a note…"
-                hasClear
-                onKeyDown={onSearchKeyDown}
-            />
-
-            <Text color="secondary" className="topbar__save">
-                {saveLabel}
-            </Text>
-            <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-            <Select
-                className="topbar__sort"
-                aria-label="Sort notes"
-                size="m"
-                width={132}
-                value={[sortMode]}
-                onUpdate={([next]) => {
-                    if (next) onSortChange(next as SortMode);
-                }}
-                options={[
-                    {value: 'updated', content: 'Updated'},
-                    {value: 'title', content: 'Title (A→Z)'},
-                    {value: 'created', content: 'Created'},
-                ]}
-            />
-            <Button view="action" size="m" onClick={() => onCreate()}>
-                <Icon data={Plus} />
-                New
-            </Button>
+            <div className="topbar__main">
+                <TextInput
+                    className="topbar__search"
+                    controlRef={searchInputRef}
+                    value={query}
+                    onUpdate={onQueryChange}
+                    placeholder="Search or create a note…"
+                    hasClear
+                    onKeyDown={onSearchKeyDown}
+                />
+                <Text color="secondary" className="topbar__save">
+                    {saveLabel}
+                </Text>
+                <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
+                <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (?)">
+                    <Icon data={CircleQuestion} />
+                </Button>
+            </div>
         </header>
     );
 }

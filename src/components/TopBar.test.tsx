@@ -33,8 +33,6 @@ function setup(overrides: Record<string, unknown> = {}) {
         onCreate: vi.fn(),
         onEscapeList: vi.fn(),
         onEnterList: vi.fn(),
-        sortMode: 'updated',
-        onSortChange: vi.fn(),
         ...overrides,
     };
     renderWithProviders(<TopBar {...(props as TopBarProps)} />);
@@ -119,26 +117,17 @@ describe('TopBar — search keyboard model', () => {
 });
 
 describe('TopBar — controls', () => {
-    it('creates an untitled note from the New button', async () => {
-        const user = userEvent.setup();
-        const {props} = setup();
-        await user.click(screen.getByRole('button', {name: /New/}));
-        expect(props.onCreate).toHaveBeenCalledWith();
-    });
-
-    it('changes the sort mode via the sort control', async () => {
-        const user = userEvent.setup();
-        const {props} = setup();
-        await user.click(screen.getByRole('combobox', {name: 'Sort notes'}));
-        await user.click(await screen.findByRole('option', {name: 'Title (A→Z)'}));
-        expect(props.onSortChange).toHaveBeenCalledWith('title');
-    });
-
-    it('triggers change folder from the folder menu', async () => {
+    it('changes folder from the folder button', async () => {
         const user = userEvent.setup();
         const {props} = setup({folderName: 'my-notes'});
         await user.click(screen.getByRole('button', {name: /my-notes/}));
-        await user.click(await screen.findByRole('menuitem', {name: /Change folder/}));
         expect(props.onChangeFolder).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens help from the help button', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: /Keyboard shortcuts/}));
+        expect(props.onOpenHelp).toHaveBeenCalledTimes(1);
     });
 });

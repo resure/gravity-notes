@@ -23,8 +23,11 @@ function setup(overrides: Record<string, unknown> = {}) {
         onBrowse: vi.fn(),
         onCommit: vi.fn(),
         onEscapeList: vi.fn(),
+        onCreate: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
+        sortMode: 'updated',
+        onSortChange: vi.fn(),
         pinnedIds: [],
         onTogglePin: vi.fn(),
         ...overrides,
@@ -229,6 +232,23 @@ describe('NoteList — search display', () => {
     it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
         expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();
+    });
+});
+
+describe('NoteList — toolbar', () => {
+    it('creates an untitled note from the New button', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: /New/}));
+        expect(props.onCreate).toHaveBeenCalledWith();
+    });
+
+    it('changes the sort mode via the sort control', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('combobox', {name: 'Sort notes'}));
+        await user.click(await screen.findByRole('option', {name: 'Title (A→Z)'}));
+        expect(props.onSortChange).toHaveBeenCalledWith('title');
     });
 });
 

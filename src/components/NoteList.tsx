@@ -1,10 +1,10 @@
 import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
-import {Ellipsis, Pencil, Pin, PinFill, PinSlash, TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
+import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
-import type {NoteMeta} from '../storage/types';
+import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
 
@@ -30,8 +30,12 @@ export interface NoteListProps {
     onCommit: (id: string) => void;
     /** Esc on a focused row: close the open note and return to search. */
     onEscapeList: () => void;
+    /** New-note button above the list (creates an Untitled note). */
+    onCreate: (title?: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
+    sortMode: SortMode;
+    onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
 }
@@ -59,8 +63,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onBrowse,
         onCommit,
         onEscapeList,
+        onCreate,
         onRename,
         onDelete,
+        sortMode,
+        onSortChange,
         pinnedIds,
         onTogglePin,
     },
@@ -175,6 +182,28 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     return (
         <div className="note-list">
+            <div className="note-list__toolbar">
+                <Select
+                    className="note-list__sort"
+                    aria-label="Sort notes"
+                    size="m"
+                    width="max"
+                    value={[sortMode]}
+                    onUpdate={([next]) => {
+                        if (next) onSortChange(next as SortMode);
+                    }}
+                    options={[
+                        {value: 'updated', content: 'Updated'},
+                        {value: 'title', content: 'Title (A→Z)'},
+                        {value: 'created', content: 'Created'},
+                    ]}
+                />
+                <Button view="action" size="m" onClick={() => onCreate()}>
+                    <Icon data={Plus} />
+                    New
+                </Button>
+            </div>
+
             <div className="note-list__items" role="listbox" aria-label="Notes">
                 {notes.length === 0 ? (
                     <div className="note-list__empty">

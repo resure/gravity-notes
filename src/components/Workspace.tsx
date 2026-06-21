@@ -190,8 +190,6 @@ export function Workspace({
                 onCreate={handleCreate}
                 onEscapeList={nav.escapeList}
                 onEnterList={enterList}
-                sortMode={notes.metadata.sort}
-                onSortChange={notes.setSortMode}
             />
 
             <div className="workspace__body">
@@ -205,8 +203,11 @@ export function Workspace({
                         onBrowse={nav.browse}
                         onCommit={nav.commit}
                         onEscapeList={nav.escapeList}
+                        onCreate={handleCreate}
                         onRename={handleRename}
                         onDelete={handleDelete}
+                        sortMode={notes.metadata.sort}
+                        onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
                         onTogglePin={notes.togglePin}
                     />

@@ -6,6 +6,21 @@
     background-color: var(--g-color-base-background);
 }
 
+/* Filter + New, above the list. */
+.note-list__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--g-color-line-generic);
+    flex-shrink: 0;
+}
+
+.note-list__sort {
+    flex: 1;
+    min-width: 0;
+}
+
 .note-list__items {
     flex: 1;
     overflow-y: auto;

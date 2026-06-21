@@ -1,25 +1,44 @@
 .topbar {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
+    align-items: stretch;
     border-bottom: 1px solid var(--g-color-line-generic);
     flex-shrink: 0;
 }
 
-/* The folder name doubles as the app menu trigger. */
+/* Left zone spans the sidebar width so the search box (in the main zone) lines up with the
+   editor below; its border continues the sidebar divider up through the bar. */
+.topbar__folder-zone {
+    box-sizing: border-box;
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    border-right: 1px solid var(--g-color-line-generic);
+}
+
 .topbar__folder {
     gap: 6px;
+    max-width: 100%;
 }
 
 .topbar__folder-name {
-    max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* The search is the hero: it fills all the space between the folder menu and the controls. */
+.topbar__main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* 16px left matches the editor's content padding, so the search aligns with the note text. */
+    padding: 6px 12px 6px 16px;
+}
+
+/* The search is the hero: it fills the space up to the theme + help controls. */
 .topbar__search {
     flex: 1;
     min-width: 0;
@@ -27,11 +46,5 @@
 
 .topbar__save {
     flex-shrink: 0;
-    min-width: 56px;
-    text-align: right;
     white-space: nowrap;
-}
-
-.topbar__sort {
-    flex-shrink: 0;
 }

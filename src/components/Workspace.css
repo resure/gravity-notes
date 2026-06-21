@@ -1,4 +1,6 @@
 .workspace {
+    /* Shared by the sidebar and the top bar's folder zone so the search lines up with the editor. */
+    --sidebar-width: 280px;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -12,7 +14,7 @@
 }
 
 .workspace__sidebar {
-    width: 280px;
+    width: var(--sidebar-width);
     flex-shrink: 0;
     height: 100%;
     min-height: 0;
