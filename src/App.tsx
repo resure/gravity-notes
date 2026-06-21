@@ -1,8 +1,7 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 
 import {
     MobileProvider,
-    Theme,
     ThemeProvider,
     Toaster,
     ToasterComponent,
@@ -10,6 +9,7 @@ import {
 } from '@gravity-ui/uikit';
 
 import {FolderGate} from './components/FolderGate';
+import type {ThemePref} from './components/ThemeSwitcher';
 import {Workspace} from './components/Workspace';
 import {useNotesFolder} from './hooks/useNotesFolder';
 
@@ -17,33 +17,29 @@ const toaster = new Toaster();
 
 const THEME_KEY = 'gravity-notes:theme';
 
-function initialTheme(): Theme {
+function initialTheme(): ThemePref {
     const saved = localStorage.getItem(THEME_KEY);
-    return saved === 'dark' || saved === 'light' ? saved : 'light';
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
 }
 
 export function App() {
-    const [theme, setTheme] = useState<Theme>(initialTheme);
+    const [themePref, setThemePref] = useState<ThemePref>(initialTheme);
     const folder = useNotesFolder();
 
     useEffect(() => {
-        localStorage.setItem(THEME_KEY, theme);
-    }, [theme]);
-
-    const toggleTheme = useCallback(() => {
-        setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
-    }, []);
+        localStorage.setItem(THEME_KEY, themePref);
+    }, [themePref]);
 
     return (
-        <ThemeProvider theme={theme}>
+        <ThemeProvider theme={themePref}>
             <MobileProvider>
                 <ToasterProvider toaster={toaster}>
                     {folder.state === 'ready' && folder.dir ? (
                         <Workspace
                             dir={folder.dir}
                             folderName={folder.folderName}
-                            theme={theme}
-                            onToggleTheme={toggleTheme}
+                            themePref={themePref}
+                            onChangeThemePref={setThemePref}
                             onChangeFolder={() => void folder.forgetFolder()}
                         />
                     ) : (

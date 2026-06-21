@@ -31,8 +31,8 @@ function renderWorkspace() {
         <Workspace
             dir={asDirectoryHandle(dir)}
             folderName="notes"
-            theme="light"
-            onToggleTheme={vi.fn()}
+            themePref="light"
+            onChangeThemePref={vi.fn()}
             onChangeFolder={vi.fn()}
         />,
     );

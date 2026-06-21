@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
-import {CircleQuestion, Folder, Moon, Sun} from '@gravity-ui/icons';
-import {Button, Icon, Label, Text, type Theme, useToaster} from '@gravity-ui/uikit';
+import {CircleQuestion, Folder} from '@gravity-ui/icons';
+import {Button, Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
 
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -14,14 +14,15 @@ import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
+import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 
 import './Workspace.css';
 
 interface WorkspaceProps {
     dir: FileSystemDirectoryHandle;
     folderName: string | null;
-    theme: Theme;
-    onToggleTheme: () => void;
+    themePref: ThemePref;
+    onChangeThemePref: (pref: ThemePref) => void;
     onChangeFolder: () => void;
 }
 
@@ -33,7 +34,13 @@ const SAVE_LABEL: Record<SaveState, string> = {
     conflict: 'Changed on disk',
 };
 
-export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder}: WorkspaceProps) {
+export function Workspace({
+    dir,
+    folderName,
+    themePref,
+    onChangeThemePref,
+    onChangeFolder,
+}: WorkspaceProps) {
     const store = useMemo(() => new FileSystemNoteStore(dir), [dir]);
     const {add} = useToaster();
 
@@ -136,14 +143,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                     <Button view="flat" size="m" onClick={onChangeFolder} title="Change folder">
                         Change folder
                     </Button>
-                    <Button
-                        view="flat"
-                        size="m"
-                        onClick={onToggleTheme}
-                        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-                    >
-                        <Icon data={theme === 'dark' ? Sun : Moon} />
-                    </Button>
+                    <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
                 </div>
             </header>
 
