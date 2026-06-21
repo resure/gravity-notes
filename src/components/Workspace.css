@@ -11,6 +11,8 @@
     display: flex;
     flex: 1;
     min-height: 0;
+    /* Anchors the absolutely-positioned collapsed-sidebar overlay (see below). */
+    position: relative;
 }
 
 .workspace__sidebar {
@@ -57,7 +59,25 @@
     padding: 12px 12px 0;
 }
 
-/* Collapsed: the sidebar is simply hidden (kept mounted) and the editor fills the width. */
+/* Collapsed: the sidebar leaves the flow as an off-screen overlay so the editor fills the width.
+   It stays mounted, but visibility:hidden keeps it out of the tab order until peeked. */
 .workspace__body_collapsed .workspace__sidebar {
-    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+        transform 0.15s ease,
+        visibility 0.15s ease;
+    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Peeked (⌘⇧'): slide the overlay in and make it focusable. The rule sits AFTER the collapsed
+   rule so its transform/visibility win at equal specificity. */
+.workspace__body_peeked .workspace__sidebar {
+    transform: translateX(0);
+    visibility: visible;
 }
