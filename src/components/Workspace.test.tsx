@@ -467,4 +467,29 @@ describe('Workspace — nvALT navigation', () => {
         );
         expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
+
+    it("⌘⇧' focuses the list when it peeks", async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        // The peek moved DOM focus onto a note row (the first, since nothing was selected yet).
+        await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
+    });
+
+    it('⌘J browsing keeps the peek open', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        // ⌘J previews (browses) — it must NOT close the peek; only commit/Esc/click-outside do.
+        fireEvent.keyDown(document, {key: 'j', metaKey: true});
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        expect(document.querySelector('.workspace__body_peeked')).not.toBeNull();
+    });
 });
