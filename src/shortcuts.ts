@@ -3,6 +3,7 @@ export type ShortcutAction =
     | 'createNote'
     | 'selectNextNote'
     | 'selectPrevNote'
+    | 'toggleSidebar'
     | 'toggleEditorMode'
     | 'togglePreview'
     | 'openHelp'
@@ -59,6 +60,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses
     // the search box).
     {keys: 'esc esc', description: 'Focus search', group: 'Navigation'},
+    {
+        keys: "mod+'",
+        description: 'Toggle the sidebar',
+        group: 'Navigation',
+        global: {trigger: 'mod', key: "'", action: 'toggleSidebar'},
+    },
     {
         keys: 'mod+enter',
         description: 'New note',

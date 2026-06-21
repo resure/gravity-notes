@@ -8,6 +8,7 @@ function makeActions(): ShortcutActions {
         createNote: vi.fn(),
         selectNextNote: vi.fn(),
         selectPrevNote: vi.fn(),
+        toggleSidebar: vi.fn(),
         toggleEditorMode: vi.fn(),
         togglePreview: vi.fn(),
         openHelp: vi.fn(),
@@ -124,5 +125,22 @@ describe('useShortcuts', () => {
         input.focus();
         press({key: 'F2'});
         expect(actions.renameSelected).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggles the sidebar on ctrl+apostrophe', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: "'", ctrlKey: true});
+        expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
+    });
+
+    it('still toggles the sidebar on ctrl+apostrophe while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: "'", ctrlKey: true});
+        expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 });
