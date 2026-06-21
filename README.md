@@ -54,34 +54,28 @@ Key modules:
 
 ### TODO
 
-Small design things:
+pressing cmd+\\ should move focus to the notes list (and pressing enter after that should close sidebar and place cursor in the editor again)
 
-- let's make padding ABOVE editing area little smaller (but don't touch paddding on the left side)
-- theme switcher should have distinct "system theme" option
-- let's pick different accent color instead of default yellow-orange
-- default line-height in editor is TOO big
-- i want lists to have short dashes instead of bullets - like in apple notes
-- let's add at least small paddings around panel with editor buttons
-- checklists are not beautiful, let's add at least some padding between checkbox itself and it's corresponding text
-- editor buttons flicker when i change tabs - let's hide it completely? including that settings button at the top left of the editor
+- current "saving/saved" text is a little too annoying. let's add a dot indicator to the right of the folder selector. it should slowly blink in saving and be solid when file is saved. but overall should not be too visible. on hovering mouse over it it should explain what it does
+- let's move sidebar button to the right, near theme switcher. Also add tooltip on hovering that button with hints about both sidebar hotkeys
+- remove double-click renaming note ability, we already have enough ways for renaming notes
+
+what other nvalt ideas do you suggest to add?
+
+### Next up
+
+- Let's create favicon / logo for our project. It should be minimalistic, maybe just grey circle or something like that?
+- Let's add Safari (non-chromium) browser support. Probably should ask where to store notes on start, like excalidraw?
+- Wiki-style links between notes
+- Media attachments, with separate view for files management (and preview)
+- Make preview styling similar to editing mode style
+- remove unused extensions/deps for now
+- script for packaging it into one html file? can we gzip assets?
+
 
 ### Backlog
 
-UX tasks:
-
-- i want to have some kind of "preview" mode for notes OR clicking ESC first time removes cursor from editing area, clicking second time closes current opened the note. when cursor not in editing mode, pressing cursor arrows (up/down) should navigate us between notes
-- hotkeys for working with tabs?
-
-Bugs:
-
-- F2 hotkey doesn't work
-- cmd+k conflicts with inserting link in markdown editor
-- on trying to rename to existing note name - do nothing, don't try to generate number at the end of the note
-
-Other things:
-
-- let's make saving manual, not automatic. But we probably want to keep some kind of "buffer" file (that we WILL automatically save to) so if app crashes or something happens we can restore content. On actual save we can just delete that temporary file.
-- Folders support
-- **Electron app**
-- **PWA** — manifest + service worker; an IndexedDB store as the default for non-Chromium browsers.
-- **Backend sync** — add an `ApiStore` implementing `NoteStore`.
+- PWA
+- Trash bin for deleted notes
+- Versioning / snapshots (with manual snapshopts?)
+- Backend sync — add an `ApiStore` implementing `NoteStore`
