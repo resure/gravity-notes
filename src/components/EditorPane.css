@@ -24,9 +24,32 @@
     line-height: 1.2;
 }
 
-/* Headers hug the content they title: keep the (good) top margin, shrink the bottom. */
+/* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
+   so bigger headings get more space above them (the editor's default is uniform). */
 .editor-pane .g-md-editor.ProseMirror.yfm :where(h1, h2, h3, h4, h5, h6) {
     margin-bottom: 4px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h1 {
+    margin-top: 28px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h2 {
+    margin-top: 22px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h3 {
+    margin-top: 18px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h4 {
+    margin-top: 14px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h5,
+.editor-pane .g-md-editor.ProseMirror.yfm h6 {
+    margin-top: 10px;
+}
+
+/* No empty gap when a heading (or any block) opens the note — the editor's top padding
+   already provides the space above the first line. */
+.editor-pane .g-md-editor.ProseMirror.yfm > :first-child {
+    margin-top: 0;
 }
 
 /* Apple-Notes-style short dashes for bullet lists. */
