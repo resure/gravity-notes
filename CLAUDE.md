@@ -103,6 +103,10 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      +1px line-height & tighter checklist spacing, a trailing blank line on save (`canonicalBody`), and
      neutral-grey dark theming with readable code blocks.
      Spec: `docs/superpowers/specs/2026-06-21-ux-polish-batch-design.md`.
+   - ✅ **Sidebar toggle + editor scroll** — replaced the sidebar hover-peek with an always-visible
+     top-bar `LayoutSideContent` toggle + a ⌘' shortcut (collapsed simply hides it); unpinned the note
+     title so it scrolls with the content, with ~300px of end-of-note scroll room.
+     Spec: `docs/superpowers/specs/2026-06-21-sidebar-toggle-editor-scroll-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
