@@ -176,9 +176,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 event.preventDefault();
                 onCommit(notes[0].id);
             } else if (query.trim()) {
-                // nvALT: no note matches the query → create one titled with it.
+                // nvALT: no note matches the query → create one titled with it, then clear
+                // the search so the new note is visible and the box is ready for the next find.
                 event.preventDefault();
                 onCreate(query.trim());
+                onQueryChange('');
             }
         } else if (event.key === 'Escape') {
             event.preventDefault();
@@ -240,8 +242,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 {notes.length === 0 ? (
                     <div className="note-list__empty">
                         <Text color="secondary">
-                            {query
-                                ? `No notes match "${query}".`
+                            {query.trim()
+                                ? `No match — press Enter to create "${query.trim()}"`
                                 : 'No notes yet. Create your first one.'}
                         </Text>
                     </div>

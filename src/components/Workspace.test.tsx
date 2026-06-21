@@ -117,8 +117,10 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Alpha/});
         const search = screen.getByPlaceholderText('Search');
         await user.type(search, 'Zzz Notes{Enter}');
-        // No existing note matches "Zzz Notes", so Enter creates it.
+        // No existing note matches "Zzz Notes", so Enter creates it...
         await screen.findByRole('option', {name: /Zzz Notes/});
+        // ...and the search box is cleared afterward.
+        expect(screen.getByPlaceholderText('Search')).toHaveValue('');
     });
 
     it('closes the open note on Escape in an empty search box', async () => {

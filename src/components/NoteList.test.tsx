@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, screen, within} from '@testing-library/react';
+import {act, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -207,7 +207,9 @@ describe('NoteList — delete', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        await screen.findByRole('button', {name: 'Delete'});
+        const dialog = await screen.findByRole('dialog');
+        // Wait until the dialog has grabbed focus, else Enter races its focus trap.
+        await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
         await user.keyboard('{Enter}');
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
     });
@@ -227,9 +229,9 @@ describe('NoteList — search', () => {
         expect(mark?.textContent).toBe('lph');
     });
 
-    it('shows a no-results message when filtered to empty with a query', () => {
+    it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
-        expect(screen.getByText(/No notes match/)).toBeInTheDocument();
+        expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();
     });
 
     it('commits the top match on Enter in the search field', async () => {
@@ -246,6 +248,7 @@ describe('NoteList — search', () => {
         screen.getByPlaceholderText('Search').focus();
         await user.keyboard('{Enter}');
         expect(props.onCreate).toHaveBeenCalledWith('Groceries');
+        expect(props.onQueryChange).toHaveBeenCalledWith('');
     });
 
     it('does not create on Enter when the query is blank and nothing matches', async () => {
