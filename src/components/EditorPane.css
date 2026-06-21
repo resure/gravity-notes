@@ -52,6 +52,21 @@
     margin-top: 0;
 }
 
+/* The body sits under the title; it owns the editor's own scroll. The title (in NoteTitle.css)
+   is pinned above it. Horizontal padding here matches the title so the two left edges align. */
+.editor-pane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.editor-pane__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
 /* Apple-Notes-style short dashes for bullet lists. */
 .editor-pane .g-md-editor ul > li::marker {
     content: '–  ';
