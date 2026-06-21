@@ -122,6 +122,12 @@ describe('NoteList — focus handle', () => {
         ref.current?.focusSelected();
         expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
     });
+
+    it('focusSelected() falls back to the search box when the list is empty', () => {
+        const {ref, props} = setup({notes: [], selectedId: null});
+        ref.current?.focusSelected();
+        expect(props.searchInputRef.current).toHaveFocus();
+    });
 });
 
 describe('NoteList — inline rename', () => {
@@ -240,6 +246,15 @@ describe('NoteList — search', () => {
         screen.getByPlaceholderText('Search').focus();
         await user.keyboard('{Enter}');
         expect(props.onCommit).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('re-opens the selected note on Enter when the search box is empty', async () => {
+        const user = userEvent.setup();
+        // Beta is selected though Alpha is the top row; with no query, Enter re-opens Beta.
+        const {props} = setup({query: '', selectedId: 'Beta.md'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCommit).toHaveBeenCalledWith('Beta.md');
     });
 
     it('creates a note titled with the query on Enter when nothing matches (nvALT)', async () => {

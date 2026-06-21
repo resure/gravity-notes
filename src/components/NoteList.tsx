@@ -105,14 +105,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         ref,
         () => ({
             focusSelected() {
-                if (focusableId) itemRefs.current.get(focusableId)?.focus();
+                const row = focusableId ? itemRefs.current.get(focusableId) : undefined;
+                // Fall back to the search box when there's no row (e.g. an empty result set),
+                // so Esc from a lost-focus spot still lands somewhere useful.
+                if (row) row.focus();
+                else searchInputRef.current?.focus();
             },
             startRename(id: string) {
                 const note = notes.find((n) => n.id === id);
                 if (note) beginRename(note);
             },
         }),
-        [focusableId, notes],
+        [focusableId, notes, searchInputRef],
     );
 
     const confirmDelete = () => {
@@ -174,7 +178,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         if (event.key === 'Enter') {
             if (notes.length > 0) {
                 event.preventDefault();
-                onCommit(notes[0].id);
+                // With no active query, re-open the previously selected note (e.g. after Esc-Esc
+                // back to search); with a query, open the top match (nvALT).
+                const target =
+                    !query.trim() && selectedId && notes.some((n) => n.id === selectedId)
+                        ? selectedId
+                        : notes[0].id;
+                onCommit(target);
             } else if (query.trim()) {
                 // nvALT: no note matches the query → create one titled with it, then clear
                 // the search so the new note is visible and the box is ready for the next find.
