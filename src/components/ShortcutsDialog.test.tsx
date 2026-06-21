@@ -16,7 +16,9 @@ describe('ShortcutsDialog', () => {
 
     it('includes the previously-missing rows', () => {
         renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
-        expect(screen.getByText('Edit the selected note')).toBeInTheDocument();
+        expect(
+            screen.getByText('Edit the selected note (in the title → jump to the body)'),
+        ).toBeInTheDocument();
         expect(screen.getByText('Editor → list, then close (or clear search)')).toBeInTheDocument();
     });
 
