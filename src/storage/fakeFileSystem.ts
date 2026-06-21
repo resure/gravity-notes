@@ -29,6 +29,14 @@ class FakeFileHandle {
             async text() {
                 return file.content;
             },
+            // Minimal Blob.slice stand-in: only the prefix read in list() is exercised.
+            slice(start?: number, end?: number) {
+                return {
+                    async text() {
+                        return file.content.slice(start, end);
+                    },
+                };
+            },
         };
     }
 

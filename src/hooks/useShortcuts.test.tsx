@@ -7,6 +7,7 @@ function makeActions(): ShortcutActions {
     return {
         createNote: vi.fn(),
         toggleEditorMode: vi.fn(),
+        togglePreview: vi.fn(),
         openHelp: vi.fn(),
         renameSelected: vi.fn(),
     };
@@ -35,6 +36,20 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: '/', metaKey: true});
         expect(actions.toggleEditorMode).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggles preview on mod+shift+p', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'p', metaKey: true, shiftKey: true});
+        expect(actions.togglePreview).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not toggle preview on mod+p without shift', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'p', metaKey: true});
+        expect(actions.togglePreview).not.toHaveBeenCalled();
     });
 
     it('opens help on ? when focus is outside inputs', () => {

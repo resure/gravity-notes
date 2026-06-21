@@ -9,8 +9,10 @@ import type {NoteMeta, SortMode} from '../storage/types';
 import './NoteList.css';
 
 export interface NoteListHandle {
-    /** Move keyboard focus to the selected row (used when leaving the editor). */
+    /** Move keyboard focus to the selected row, or the search box if the list is empty. */
     focusSelected(): void;
+    /** Move keyboard focus to a specific row (used when ↓/↑ enters the list from search). */
+    focusRow(id: string): void;
     /** Begin inline-renaming the given note (used by the global F2 shortcut). */
     startRename(id: string): void;
 }
@@ -18,15 +20,17 @@ export interface NoteListHandle {
 export interface NoteListProps {
     notes: NoteMeta[];
     selectedId: string | null;
+    /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
-    onQueryChange: (query: string) => void;
+    /** Shared with the top bar's search box; focused when the list is empty. */
     searchInputRef: RefObject<HTMLInputElement>;
-    /** Preview a note (move the highlight): arrow nav, single click, ↓/↑ from the search box. */
+    /** Preview a note (move the highlight): arrow/vim nav, single click. */
     onBrowse: (id: string) => void;
-    /** Open a note for editing: Enter on a row, Enter in the search box (top match). */
+    /** Open a note for editing (Enter on a row). */
     onCommit: (id: string) => void;
-    /** Esc on a focused row (or in an empty search box): close the open note. */
+    /** Esc on a focused row: close the open note and return to search. */
     onEscapeList: () => void;
+    /** New-note button above the list (creates an Untitled note). */
     onCreate: (title?: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
@@ -50,12 +54,25 @@ function highlightMatch(title: string, query: string): ReactNode {
     );
 }
 
+/** Compact list date: time for today, "Jun 20" within the year, otherwise a full date. */
+function formatNoteDate(ts: number | undefined): string {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+        return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+    if (d.getFullYear() === now.getFullYear()) {
+        return d.toLocaleDateString([], {month: 'short', day: 'numeric'});
+    }
+    return d.toLocaleDateString([], {year: 'numeric', month: 'short', day: 'numeric'});
+}
+
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
         notes,
         selectedId,
         query,
-        onQueryChange,
         searchInputRef,
         onBrowse,
         onCommit,
@@ -110,6 +127,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 // so Esc from a lost-focus spot still lands somewhere useful.
                 if (row) row.focus();
                 else searchInputRef.current?.focus();
+            },
+            focusRow(id: string) {
+                itemRefs.current.get(id)?.focus();
             },
             startRename(id: string) {
                 const note = notes.find((n) => n.id === id);
@@ -174,78 +194,28 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const pinnedSet = new Set(pinnedIds);
 
-    const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter') {
-            if (notes.length > 0) {
-                event.preventDefault();
-                // With no active query, re-open the previously selected note (e.g. after Esc-Esc
-                // back to search); with a query, open the top match (nvALT).
-                const target =
-                    !query.trim() && selectedId && notes.some((n) => n.id === selectedId)
-                        ? selectedId
-                        : notes[0].id;
-                onCommit(target);
-            } else if (query.trim()) {
-                // nvALT: no note matches the query → create one titled with it, then clear
-                // the search so the new note is visible and the box is ready for the next find.
-                event.preventDefault();
-                onCreate(query.trim());
-                onQueryChange('');
-            }
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            if (query) onQueryChange('');
-            else onEscapeList();
-        } else if (event.key === 'ArrowDown' && notes.length > 0) {
-            event.preventDefault();
-            const target =
-                selectedId && notes.some((n) => n.id === selectedId) ? selectedId : notes[0].id;
-            browseRow(target);
-        } else if (event.key === 'ArrowUp' && notes.length > 0) {
-            event.preventDefault();
-            const target =
-                selectedId && notes.some((n) => n.id === selectedId)
-                    ? selectedId
-                    : notes[notes.length - 1].id;
-            browseRow(target);
-        }
-    };
-
     return (
         <div className="note-list">
-            <div className="note-list__header">
-                <Text variant="subheader-2">Notes</Text>
-                <div className="note-list__header-actions">
-                    <Select
-                        className="note-list__sort"
-                        aria-label="Sort notes"
-                        size="m"
-                        value={[sortMode]}
-                        onUpdate={([next]) => {
-                            if (next) onSortChange(next as SortMode);
-                        }}
-                        options={[
-                            {value: 'updated', content: 'Updated'},
-                            {value: 'title', content: 'Title (A→Z)'},
-                            {value: 'created', content: 'Created'},
-                        ]}
-                    />
-                    <Button view="action" size="m" onClick={() => onCreate()}>
-                        <Icon data={Plus} />
-                        New
-                    </Button>
-                </div>
-            </div>
-
-            <div className="note-list__search">
-                <TextInput
-                    controlRef={searchInputRef}
-                    value={query}
-                    onUpdate={onQueryChange}
-                    placeholder="Search"
-                    hasClear
-                    onKeyDown={onSearchKeyDown}
+            <div className="note-list__toolbar">
+                <Select
+                    className="note-list__sort"
+                    aria-label="Sort notes"
+                    size="m"
+                    width="max"
+                    value={[sortMode]}
+                    onUpdate={([next]) => {
+                        if (next) onSortChange(next as SortMode);
+                    }}
+                    options={[
+                        {value: 'updated', content: 'Updated'},
+                        {value: 'title', content: 'Title (A→Z)'},
+                        {value: 'created', content: 'Created'},
+                    ]}
                 />
+                <Button view="action" size="m" onClick={() => onCreate()}>
+                    <Icon data={Plus} />
+                    New
+                </Button>
             </div>
 
             <div className="note-list__items" role="listbox" aria-label="Notes">
@@ -299,61 +269,82 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                     />
                                 ) : (
                                     <>
-                                        {pinnedSet.has(note.id) ? (
-                                            <Icon
-                                                className="note-list__pin"
-                                                data={PinFill}
-                                                size={14}
-                                                aria-hidden
-                                            />
-                                        ) : null}
-                                        <Text className="note-list__title" ellipsis>
-                                            {highlightMatch(note.title, query)}
-                                        </Text>
-                                        <div className="note-list__actions">
-                                            <DropdownMenu
-                                                renderSwitcher={(props) => (
-                                                    <Button
-                                                        {...props}
-                                                        view="flat"
-                                                        size="s"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            props.onClick?.(e);
-                                                        }}
-                                                    >
-                                                        <Icon data={Ellipsis} />
-                                                    </Button>
-                                                )}
-                                                items={[
-                                                    {
-                                                        text: pinnedSet.has(note.id)
-                                                            ? 'Unpin'
-                                                            : 'Pin to top',
-                                                        iconStart: (
-                                                            <Icon
-                                                                data={
-                                                                    pinnedSet.has(note.id)
-                                                                        ? PinSlash
-                                                                        : Pin
-                                                                }
-                                                            />
-                                                        ),
-                                                        action: () => onTogglePin(note.id),
-                                                    },
-                                                    {
-                                                        text: 'Rename',
-                                                        iconStart: <Icon data={Pencil} />,
-                                                        action: () => beginRename(note),
-                                                    },
-                                                    {
-                                                        text: 'Delete',
-                                                        theme: 'danger',
-                                                        iconStart: <Icon data={TrashBin} />,
-                                                        action: () => setDeleting(note),
-                                                    },
-                                                ]}
-                                            />
+                                        <div className="note-list__row">
+                                            {pinnedSet.has(note.id) ? (
+                                                <Icon
+                                                    className="note-list__pin"
+                                                    data={PinFill}
+                                                    size={14}
+                                                    aria-hidden
+                                                />
+                                            ) : null}
+                                            <Text className="note-list__title" ellipsis>
+                                                {highlightMatch(note.title, query)}
+                                            </Text>
+                                            <div className="note-list__actions">
+                                                <DropdownMenu
+                                                    renderSwitcher={(props) => (
+                                                        <Button
+                                                            {...props}
+                                                            view="flat"
+                                                            size="s"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                props.onClick?.(e);
+                                                            }}
+                                                        >
+                                                            <Icon data={Ellipsis} />
+                                                        </Button>
+                                                    )}
+                                                    items={[
+                                                        {
+                                                            text: pinnedSet.has(note.id)
+                                                                ? 'Unpin'
+                                                                : 'Pin to top',
+                                                            iconStart: (
+                                                                <Icon
+                                                                    data={
+                                                                        pinnedSet.has(note.id)
+                                                                            ? PinSlash
+                                                                            : Pin
+                                                                    }
+                                                                />
+                                                            ),
+                                                            action: () => onTogglePin(note.id),
+                                                        },
+                                                        {
+                                                            text: 'Rename',
+                                                            iconStart: <Icon data={Pencil} />,
+                                                            action: () => beginRename(note),
+                                                        },
+                                                        {
+                                                            text: 'Delete',
+                                                            theme: 'danger',
+                                                            iconStart: <Icon data={TrashBin} />,
+                                                            action: () => setDeleting(note),
+                                                        },
+                                                    ]}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="note-list__meta">
+                                            <Text
+                                                variant="caption-2"
+                                                color="secondary"
+                                                className="note-list__date"
+                                            >
+                                                {formatNoteDate(note.updatedAt)}
+                                            </Text>
+                                            {note.preview ? (
+                                                <Text
+                                                    variant="caption-2"
+                                                    color="secondary"
+                                                    className="note-list__preview"
+                                                    ellipsis
+                                                >
+                                                    {note.preview}
+                                                </Text>
+                                            ) : null}
                                         </div>
                                     </>
                                 )}

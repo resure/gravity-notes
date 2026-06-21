@@ -35,7 +35,7 @@ export function useShortcuts(actions: ShortcutActions): void {
                 if (binding.trigger === 'mod') {
                     if (
                         mod &&
-                        !event.shiftKey &&
+                        (binding.shift ? event.shiftKey : !event.shiftKey) &&
                         !event.altKey &&
                         event.key.toLowerCase() === binding.key.toLowerCase()
                     ) {

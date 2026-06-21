@@ -1,36 +1,10 @@
 .workspace {
+    /* Shared by the sidebar and the top bar's folder zone so the search lines up with the editor. */
+    --sidebar-width: 280px;
     display: flex;
     flex-direction: column;
     height: 100%;
     background-color: var(--g-color-base-background);
-}
-
-.workspace__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
-}
-
-.workspace__brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-}
-
-.workspace__header-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.workspace__save-state {
-    min-width: 64px;
-    text-align: right;
 }
 
 .workspace__body {
@@ -40,7 +14,7 @@
 }
 
 .workspace__sidebar {
-    width: 280px;
+    width: var(--sidebar-width);
     flex-shrink: 0;
     height: 100%;
     min-height: 0;

@@ -95,3 +95,35 @@ describe('EditorPane — escape', () => {
         expect(onEscape).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('EditorPane — preview', () => {
+    it('renders the read-only preview when preview is true', () => {
+        const {container} = render(
+            <EditorPane
+                note={NOTE}
+                autofocus={false}
+                preview
+                onChange={() => {}}
+                onEscape={() => {}}
+            />,
+        );
+        expect(container.querySelector('.note-preview')).toBeTruthy();
+    });
+
+    it('goes to the list (keeping preview) on Escape while previewing', () => {
+        const onEscape = vi.fn();
+        const {container} = render(
+            <EditorPane
+                note={NOTE}
+                autofocus={false}
+                preview
+                onChange={() => {}}
+                onEscape={onEscape}
+            />,
+        );
+        const pane = container.querySelector('.editor-pane');
+        if (!pane) throw new Error('editor-pane not rendered');
+        fireEvent.keyDown(pane, {key: 'Escape'});
+        expect(onEscape).toHaveBeenCalledTimes(1);
+    });
+});

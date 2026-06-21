@@ -1,5 +1,10 @@
 /** The set of actions the global keyboard handler can invoke. */
-export type ShortcutAction = 'createNote' | 'toggleEditorMode' | 'openHelp' | 'renameSelected';
+export type ShortcutAction =
+    | 'createNote'
+    | 'toggleEditorMode'
+    | 'togglePreview'
+    | 'openHelp'
+    | 'renameSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
@@ -9,6 +14,8 @@ export interface GlobalBinding {
     key: string;
     /** Which action to fire. */
     action: ShortcutAction;
+    /** For a 'mod' binding, also require Shift (default: Shift must be absent). */
+    shift?: boolean;
     /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod→true, bare→false. */
     inTyping?: boolean;
 }
@@ -45,6 +52,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Toggle WYSIWYG / Markup',
         group: 'Editing',
         global: {trigger: 'mod', key: '/', action: 'toggleEditorMode'},
+    },
+    {
+        keys: 'mod+shift+p',
+        description: 'Toggle read-only preview',
+        group: 'Editing',
+        global: {trigger: 'mod', key: 'p', action: 'togglePreview', shift: true},
     },
     {
         keys: 'f2',
