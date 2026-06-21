@@ -6,6 +6,8 @@ import {type ShortcutActions, useShortcuts} from './useShortcuts';
 function makeActions(): ShortcutActions {
     return {
         createNote: vi.fn(),
+        selectNextNote: vi.fn(),
+        selectPrevNote: vi.fn(),
         toggleEditorMode: vi.fn(),
         togglePreview: vi.fn(),
         openHelp: vi.fn(),
@@ -24,10 +26,25 @@ describe('useShortcuts', () => {
         document.body.innerHTML = '';
     });
 
-    it('creates a note on ctrl+j', () => {
+    it('selects the next note on ctrl+j', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         press({key: 'j', ctrlKey: true});
+        expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
+        expect(actions.createNote).not.toHaveBeenCalled();
+    });
+
+    it('selects the previous note on ctrl+k', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'k', ctrlKey: true});
+        expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates a note on ctrl+enter', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'Enter', ctrlKey: true});
         expect(actions.createNote).toHaveBeenCalledTimes(1);
     });
 
@@ -76,17 +93,27 @@ describe('useShortcuts', () => {
         press({key: 'j', ctrlKey: true});
         press({key: 'j', ctrlKey: true, repeat: true});
         press({key: 'j', ctrlKey: true, repeat: true});
-        expect(actions.createNote).toHaveBeenCalledTimes(1);
+        expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
     });
 
-    it('still creates a note on ctrl+j while typing in an input', () => {
+    it('still navigates on ctrl+j while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
         press({key: 'j', ctrlKey: true});
-        expect(actions.createNote).toHaveBeenCalledTimes(1);
+        expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('still navigates on ctrl+k while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'k', ctrlKey: true});
+        expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
     });
 
     it('renames the selected note on F2, even while typing in an input', () => {
