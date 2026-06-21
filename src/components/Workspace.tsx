@@ -108,7 +108,7 @@ export function Workspace({
 
     const handleCreate = useCallback(
         (title?: string) => {
-            nav.prepareCommit(); // arm autofocus so the new note mounts focused
+            nav.prepareCreate(); // arm the title to focus + select on the new note's mount
             void (async () => {
                 const id = await notes.create(title);
                 if (id) nav.setSelected(id);
@@ -153,6 +153,20 @@ export function Workspace({
                 // keyboard focus is stranded on <body>.
                 nav.setSelected(newId ?? id);
                 setPendingListFocus(true);
+            })();
+        },
+        [notes, nav],
+    );
+
+    // Rename from the in-editor title. Unlike the list rename, focus stays in the editor, so
+    // we only move the list cursor to the new id (and only when the renamed note is still the
+    // open one — an unmount-time commit of a note we've since left must not hijack selection).
+    const handleEditorRename = useCallback(
+        (id: string, title: string) => {
+            const wasActive = notes.activeId === id;
+            void (async () => {
+                const newId = await notes.rename(id, title);
+                if (wasActive && newId && newId !== id) nav.setSelected(newId);
             })();
         },
         [notes, nav],
@@ -241,11 +255,12 @@ export function Workspace({
                             <div className="workspace__panes">
                                 <EditorPane
                                     ref={editorRef}
-                                    key={`${notes.note.id}:${notes.note.updatedAt}`}
+                                    key={notes.sessionId}
                                     note={notes.note}
-                                    autofocus={nav.editorAutofocus}
+                                    autofocus={nav.autofocus}
                                     preview={previewMode}
                                     onChange={notes.edit}
+                                    onRename={handleEditorRename}
                                     onEscape={nav.escapeEditor}
                                 />
                             </div>

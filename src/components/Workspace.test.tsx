@@ -7,6 +7,7 @@ vi.mock('@gravity-ui/markdown-editor', () => ({
         currentMode: 'wysiwyg',
         setEditorMode: vi.fn(),
         focus: vi.fn(),
+        moveCursor: vi.fn(),
         getValue: () => '',
         on: () => {},
         off: () => {},
@@ -214,7 +215,9 @@ describe('Workspace — nvALT navigation', () => {
             ),
         );
         await user.keyboard('{F2}');
-        expect(await screen.findByDisplayValue('Beta')).toBeInTheDocument();
+        // Scope to the list to avoid matching the NoteTitle field in the editor pane.
+        const list = screen.getByRole('listbox', {name: 'Notes'});
+        expect(await within(list).findByDisplayValue('Beta')).toBeInTheDocument();
     });
 
     it('keeps keyboard focus on the note after an F2 rename', async () => {
@@ -229,7 +232,9 @@ describe('Workspace — nvALT navigation', () => {
             ),
         );
         await user.keyboard('{F2}');
-        const input = await screen.findByDisplayValue('Beta');
+        // Scope to the list to avoid matching the NoteTitle field in the editor pane.
+        const list = screen.getByRole('listbox', {name: 'Notes'});
+        const input = await within(list).findByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, 'Renamed{Enter}');
         const renamed = await screen.findByRole('option', {name: /Renamed/});
@@ -245,5 +250,34 @@ describe('Workspace — nvALT navigation', () => {
         screen.getByRole('button', {name: /notes/i}).focus();
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
+    });
+
+    it('shows the open note title in an editable field', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveValue('Beta'));
+    });
+
+    it('renames the file when the title is edited and committed', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        const title = await screen.findByLabelText('Note title');
+        await user.clear(title);
+        await user.type(title, 'Beta Renamed');
+        // Commit by blurring to the search box (no note switch).
+        await user.click(screen.getByPlaceholderText(/Search/));
+        await screen.findByRole('option', {name: /Beta Renamed/});
+    });
+
+    it('focuses the title when creating a note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveFocus());
     });
 });
