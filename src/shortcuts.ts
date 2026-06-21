@@ -4,6 +4,7 @@ export type ShortcutAction =
     | 'selectNextNote'
     | 'selectPrevNote'
     | 'toggleSidebar'
+    | 'peekSidebar'
     | 'toggleEditorMode'
     | 'togglePreview'
     | 'openHelp'
@@ -65,6 +66,13 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Toggle the sidebar',
         group: 'Navigation',
         global: {trigger: 'mod', key: "'", action: 'toggleSidebar'},
+    },
+    {
+        keys: "mod+shift+'",
+        description: 'Peek the collapsed sidebar',
+        group: 'Navigation',
+        // Shift+' emits '"' in event.key — keep `key` the double-quote, not the apostrophe.
+        global: {trigger: 'mod', key: '"', action: 'peekSidebar', shift: true},
     },
     {
         keys: 'mod+enter',

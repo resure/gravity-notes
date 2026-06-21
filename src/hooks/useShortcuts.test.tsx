@@ -9,6 +9,7 @@ function makeActions(): ShortcutActions {
         selectNextNote: vi.fn(),
         selectPrevNote: vi.fn(),
         toggleSidebar: vi.fn(),
+        peekSidebar: vi.fn(),
         toggleEditorMode: vi.fn(),
         togglePreview: vi.fn(),
         openHelp: vi.fn(),
@@ -142,5 +143,21 @@ describe('useShortcuts', () => {
         input.focus();
         press({key: "'", ctrlKey: true});
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
+    });
+
+    it('peeks the sidebar on ctrl+shift+doublequote (and does not toggle)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        // Shift+apostrophe emits the double-quote character; that + shift is the ⌘⇧' binding.
+        press({key: '"', ctrlKey: true, shiftKey: true});
+        expect(actions.peekSidebar).toHaveBeenCalledTimes(1);
+        expect(actions.toggleSidebar).not.toHaveBeenCalled();
+    });
+
+    it('does not peek the sidebar on ctrl+apostrophe without shift', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: "'", ctrlKey: true});
+        expect(actions.peekSidebar).not.toHaveBeenCalled();
     });
 });
