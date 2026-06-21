@@ -10,17 +10,19 @@
     outline: none;
     background: transparent;
     margin: 0;
-    padding: 12px var(--editor-gutter, 16px) 4px;
+    /* Left edge sits a hair (2px) right of the body's gutter — optically aligns the large
+       title with the body text. Right/top/bottom as before. */
+    padding: 12px var(--editor-gutter, 16px) 4px calc(var(--editor-gutter, 16px) + 2px);
     color: var(--g-color-text-primary);
     font-family: inherit;
     font-size: 1.6rem;
-    font-weight: 600;
+    font-weight: 500;
     line-height: 1.25;
 }
 
 .note-title::placeholder {
     color: var(--g-color-text-secondary);
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .note-title[readonly] {
