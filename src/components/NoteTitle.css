@@ -1,0 +1,30 @@
+/* The note title: a borderless, heading-styled input sitting between an h1 and an h2.
+   Left/right padding uses the shared --editor-gutter (set on .workspace__editor, the same
+   value the editor body uses) so the title and the first body line share a left edge. The
+   top gap gives it breathing room under the top bar; the body adds its own gap below. */
+.note-title {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    background: transparent;
+    margin: 0;
+    /* Left edge sits a hair (2px) right of the body's gutter — optically aligns the large
+       title with the body text. Right/top/bottom as before. */
+    padding: 12px var(--editor-gutter, 16px) 4px calc(var(--editor-gutter, 16px) + 2px);
+    color: var(--g-color-text-primary);
+    font-family: inherit;
+    font-size: 1.6rem;
+    font-weight: 500;
+    line-height: 1.25;
+}
+
+.note-title::placeholder {
+    color: var(--g-color-text-secondary);
+    font-weight: 500;
+}
+
+.note-title[readonly] {
+    cursor: default;
+}

@@ -89,6 +89,11 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      Notational-Velocity model: one open note persisted as `metadata.active`, a
      `useNoteNavigation` hook for arrow-to-preview / Enter-to-edit / Esc-to-step-back.
      Spec: `docs/superpowers/specs/2026-06-20-remove-tabs-nvalt-navigation-design.md`.
+   - ✅ **In-editor note title field** — editable title (= the file name) atop the open note;
+     rename-on-leave/Enter, native title↔body cursor handoff (Enter/↓ down, ↑ on the first line up),
+     and the body editor decoupled from the file-name id via a stable `useNotes.sessionId` so a rename
+     never remounts it. `NameCollisionError` surfaces rename-onto-existing as a toast.
+     Spec: `docs/superpowers/specs/2026-06-21-note-title-field-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.

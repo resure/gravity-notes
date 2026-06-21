@@ -12,6 +12,7 @@ import {
 } from '../storage/metadata';
 import {
     ConflictError,
+    NameCollisionError,
     type Note,
     type NoteMeta,
     type NoteStore,
@@ -36,6 +37,11 @@ export interface UseNotes {
     notes: NoteMeta[];
     /** Folder metadata: active sort, pinned ids, created stamps, the open note. */
     metadata: NotesMetadata;
+    /**
+     * Bumps when fresh content is loaded into the editor (open / disk-reload / restore). The
+     * body editor keys off this so a rename — which changes the id in place — never remounts it.
+     */
+    sessionId: number;
     setSortMode(sort: SortMode): void;
     togglePin(id: string): void;
     /** The single open note's id (mirrors `metadata.active`), or null. */
@@ -76,6 +82,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
     const [metadata, setMetadata] = useState<NotesMetadata>(DEFAULT_METADATA);
     const metadataRef = useRef<NotesMetadata>(DEFAULT_METADATA);
+    const [sessionId, setSessionId] = useState(0);
+    const sessionRef = useRef(0);
+    const bumpSession = useCallback(() => {
+        sessionRef.current += 1;
+        setSessionId(sessionRef.current);
+    }, []);
 
     const applyMetadata = useCallback((next: NotesMetadata) => {
         metadataRef.current = next;
@@ -167,6 +179,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 const loaded = await store.get(id);
                 baselineRef.current = loaded.updatedAt ?? null;
                 setNote(loaded);
+                bumpSession();
                 setConflict(null);
                 setSaveState('idle');
                 await persistMetadata(withActive(metadataRef.current, id));
@@ -174,7 +187,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to open note');
             }
         },
-        [flush, store, persistMetadata, onError],
+        [flush, store, persistMetadata, onError, bumpSession],
     );
 
     const close = useCallback(async () => {
@@ -221,15 +234,25 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 }
                 await refresh();
                 if (wasActive && meta.id !== id) {
-                    // Reload under the new id so the editor remounts cleanly (new key).
-                    const reloaded = await store.get(meta.id);
-                    baselineRef.current = reloaded.updatedAt ?? null;
-                    setNote(reloaded);
+                    // Update the open note's identity in place — same content, same editor
+                    // instance (no sessionId bump), so the caret/focus survives the rename.
+                    baselineRef.current = meta.updatedAt ?? null;
+                    setNote((prev) =>
+                        prev && prev.id === id
+                            ? {...prev, id: meta.id, title: meta.title, updatedAt: meta.updatedAt}
+                            : prev,
+                    );
+                    // The guard at the top blocks renaming the open note while it's conflicted;
+                    // clear defensively so a successful rename always lands in a clean state.
                     setConflict(null);
                     setSaveState('idle');
                 }
                 return meta.id;
             } catch (err) {
+                if (err instanceof NameCollisionError) {
+                    onError(err.message);
+                    return null;
+                }
                 onError(err instanceof Error ? err.message : 'Failed to rename note');
                 return null;
             }
@@ -279,14 +302,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         try {
             const loaded = await store.get(id);
             baselineRef.current = loaded.updatedAt ?? null;
-            setNote(loaded); // new updatedAt remounts the editor with disk content
+            setNote(loaded); // new content remounts the editor with disk content
+            bumpSession();
             setConflict(null);
             setSaveState('idle');
             bumpInList(id, loaded.updatedAt);
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to reload note');
         }
-    }, [conflict, store, onError, bumpInList, clearTimer]);
+    }, [conflict, store, onError, bumpInList, clearTimer, bumpSession]);
 
     const keepMine = useCallback(async () => {
         if (!conflict || conflict.deleted) return;
@@ -361,6 +385,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             if (loaded) {
                 baselineRef.current = loaded.updatedAt ?? null;
                 setNote(loaded);
+                bumpSession();
             }
             if (reconciled.active !== meta.active) {
                 void store.writeMetadata(reconciled); // heal the dotfile if active vanished
@@ -369,7 +394,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         return () => {
             cancelled = true;
         };
-    }, [store, applyMetadata]);
+    }, [store, applyMetadata, bumpSession]);
 
     // Clear any pending autosave timer when the hook unmounts.
     useEffect(() => {
@@ -424,6 +449,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     return {
         notes,
         metadata,
+        sessionId,
         setSortMode,
         togglePin,
         activeId: metadata.active,

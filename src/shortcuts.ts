@@ -36,7 +36,11 @@ export interface ShortcutDescriptor {
 export const SHORTCUTS: ShortcutDescriptor[] = [
     {keys: 'up', description: 'Preview previous note (or k)', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note (or j)', group: 'Navigation'},
-    {keys: 'enter', description: 'Edit the selected note', group: 'Navigation'},
+    {
+        keys: 'enter',
+        description: 'Edit the selected note (in the title → jump to the body)',
+        group: 'Navigation',
+    },
     {keys: 'esc', description: 'Editor → list, then close (or clear search)', group: 'Navigation'},
     // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses
     // the search box). ⌘K is deliberately left to the editor's insert-link command.

@@ -16,12 +16,12 @@ export interface NoteNavigationDeps {
 export interface UseNoteNavigation {
     /** The list cursor: the highlighted row, which is also the previewed/open note. */
     selectedId: string | null;
-    /** Whether the next editor (re)mount should grab focus (true after a commit). */
-    editorAutofocus: boolean;
+    /** Focus intent for the next editor (re)mount: the body (a commit), the title (a new note), or none. */
+    autofocus: 'body' | 'title' | null;
     /** Set the cursor without previewing (used after deleting the last note). */
     setSelected(id: string | null): void;
-    /** Arm the editor to focus on its next mount (used before creating a note). */
-    prepareCommit(): void;
+    /** Arm the title to focus + select on the next mount (used before creating a note). */
+    prepareCreate(): void;
     /** Move the highlight and preview the note immediately; focus stays in the list. */
     browse(id: string): void;
     /** Open the note for editing and focus the editor. */
@@ -44,7 +44,7 @@ export interface UseNoteNavigation {
 export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const {activeId, editorRef, listRef, searchInputRef} = deps;
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [editorAutofocus, setEditorAutofocus] = useState(false);
+    const [autofocus, setAutofocus] = useState<'body' | 'title' | null>(null);
 
     // Read open/close through refs so the callbacks stay stable and never call a stale closure.
     const openRef = useRef(deps.open);
@@ -64,7 +64,7 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const browse = useCallback(
         (id: string) => {
             setCursor(id);
-            setEditorAutofocus(false);
+            setAutofocus(null);
             void openRef.current(id);
         },
         [setCursor],
@@ -76,7 +76,7 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
             if (id === activeId) {
                 editorRef.current?.focus();
             } else {
-                setEditorAutofocus(true);
+                setAutofocus('body');
                 void openRef.current(id);
             }
         },
@@ -98,7 +98,7 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
         setCursor(null);
     }, [setCursor]);
 
-    const prepareCommit = useCallback(() => setEditorAutofocus(true), []);
+    const prepareCreate = useCallback(() => setAutofocus('title'), []);
 
     // Sync the cursor to the restored open note once, on first load (see cursorTouchedRef).
     useEffect(() => {
@@ -110,9 +110,9 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
 
     return {
         selectedId,
-        editorAutofocus,
+        autofocus,
         setSelected: setCursor,
-        prepareCommit,
+        prepareCreate,
         browse,
         commit,
         escapeEditor,

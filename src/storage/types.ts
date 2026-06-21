@@ -64,7 +64,8 @@ export interface NoteStore {
     save(id: string, content: string, baseUpdatedAt: number): Promise<NoteMeta>;
     /**
      * Rename a note. Returns the new meta (the id may change, e.g. for file-backed
-     * stores where the id is derived from the file name).
+     * stores where the id is derived from the file name). Throws {@link NameCollisionError}
+     * when the target name is already taken by another note.
      */
     rename(id: string, nextTitle: string): Promise<NoteMeta>;
     /** Delete a note. */
@@ -85,5 +86,16 @@ export class ConflictError extends Error {
     ) {
         super(`"${id}" changed on disk`);
         this.name = 'ConflictError';
+    }
+}
+
+/** Thrown by {@link NoteStore.rename} when the target name is already taken by another note. */
+export class NameCollisionError extends Error {
+    constructor(
+        readonly id: string,
+        readonly name: string,
+    ) {
+        super(`A note named "${name}" already exists`);
+        this.name = 'NameCollisionError';
     }
 }
