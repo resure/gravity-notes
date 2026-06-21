@@ -1,5 +1,5 @@
 import {act, renderHook} from '@testing-library/react';
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {type NoteNavigationDeps, useNoteNavigation} from './useNoteNavigation';
 
@@ -16,40 +16,29 @@ function makeDeps(over: Partial<NoteNavigationDeps> = {}): NoteNavigationDeps {
 }
 
 describe('useNoteNavigation', () => {
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => vi.useRealTimers());
-
-    it('browse updates the cursor instantly and previews after the debounce', () => {
+    it('browse updates the cursor and previews the note immediately', () => {
         const deps = makeDeps();
         const {result} = renderHook(() => useNoteNavigation(deps));
         act(() => {
             result.current.browse('A.md');
         });
         expect(result.current.selectedId).toBe('A.md');
-        expect(deps.open).not.toHaveBeenCalled();
-        act(() => {
-            vi.advanceTimersByTime(150);
-        });
         expect(deps.open).toHaveBeenCalledWith('A.md');
     });
 
-    it('rapid browse only previews the note settled on', () => {
+    it('rapid browse previews each note immediately (no debounce)', () => {
         const deps = makeDeps();
         const {result} = renderHook(() => useNoteNavigation(deps));
         act(() => {
             result.current.browse('A.md');
         });
         act(() => {
-            vi.advanceTimersByTime(100);
-        });
-        act(() => {
             result.current.browse('B.md');
         });
-        act(() => {
-            vi.advanceTimersByTime(150);
-        });
-        expect(deps.open).toHaveBeenCalledTimes(1);
-        expect(deps.open).toHaveBeenCalledWith('B.md');
+        expect(deps.open).toHaveBeenCalledTimes(2);
+        expect(deps.open).toHaveBeenNthCalledWith(1, 'A.md');
+        expect(deps.open).toHaveBeenNthCalledWith(2, 'B.md');
+        expect(result.current.selectedId).toBe('B.md');
     });
 
     it('commit on a not-yet-open note opens it with autofocus', () => {
@@ -136,18 +125,5 @@ describe('useNoteNavigation', () => {
             result.current.commit('A.md');
         });
         expect(result.current.editorAutofocus).toBe(false);
-    });
-
-    it('unmount clears a pending preview timer (no leak / late open)', () => {
-        const deps = makeDeps();
-        const {result, unmount} = renderHook(() => useNoteNavigation(deps));
-        act(() => {
-            result.current.browse('A.md');
-        });
-        unmount();
-        act(() => {
-            vi.advanceTimersByTime(200);
-        });
-        expect(deps.open).not.toHaveBeenCalled();
     });
 });

@@ -214,9 +214,11 @@ describe('useNotes — conflict resolvers', () => {
         act(() => {
             hook.result.current.edit('my edits');
         });
+        let copyId: string | null = null;
         await act(async () => {
-            await hook.result.current.saveAsCopy();
+            copyId = await hook.result.current.saveAsCopy();
         });
+        expect(copyId).toBe('Note (conflicted copy).md');
         expect(hook.result.current.conflict).toBeNull();
         expect(hook.result.current.activeId).toBe('Note (conflicted copy).md');
         expect((await store.get('Note (conflicted copy).md')).content).toBe('my edits');

@@ -5,10 +5,10 @@ import {type ShortcutActions, useShortcuts} from './useShortcuts';
 
 function makeActions(): ShortcutActions {
     return {
-        focusSearch: vi.fn(),
         createNote: vi.fn(),
         toggleEditorMode: vi.fn(),
         openHelp: vi.fn(),
+        renameSelected: vi.fn(),
     };
 }
 
@@ -21,14 +21,6 @@ function press(init: KeyboardEventInit): KeyboardEvent {
 describe('useShortcuts', () => {
     afterEach(() => {
         document.body.innerHTML = '';
-    });
-
-    it('focuses search on mod+k and prevents default', () => {
-        const actions = makeActions();
-        renderHook(() => useShortcuts(actions));
-        const event = press({key: 'k', metaKey: true});
-        expect(actions.focusSearch).toHaveBeenCalledTimes(1);
-        expect(event.defaultPrevented).toBe(true);
     });
 
     it('creates a note on ctrl+j', () => {
@@ -70,5 +62,25 @@ describe('useShortcuts', () => {
         press({key: 'j', ctrlKey: true, repeat: true});
         press({key: 'j', ctrlKey: true, repeat: true});
         expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('still creates a note on ctrl+j while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'j', ctrlKey: true});
+        expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('renames the selected note on F2, even while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'F2'});
+        expect(actions.renameSelected).toHaveBeenCalledTimes(1);
     });
 });

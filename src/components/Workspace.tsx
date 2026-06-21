@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
-import {CircleQuestion, Folder, Moon, Sun} from '@gravity-ui/icons';
-import {Button, Icon, Label, Text, type Theme, useToaster} from '@gravity-ui/uikit';
+import {CircleQuestion, Folder} from '@gravity-ui/icons';
+import {Button, Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
 
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -14,14 +14,15 @@ import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
+import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 
 import './Workspace.css';
 
 interface WorkspaceProps {
     dir: FileSystemDirectoryHandle;
     folderName: string | null;
-    theme: Theme;
-    onToggleTheme: () => void;
+    themePref: ThemePref;
+    onChangeThemePref: (pref: ThemePref) => void;
     onChangeFolder: () => void;
 }
 
@@ -33,7 +34,13 @@ const SAVE_LABEL: Record<SaveState, string> = {
     conflict: 'Changed on disk',
 };
 
-export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder}: WorkspaceProps) {
+export function Workspace({
+    dir,
+    folderName,
+    themePref,
+    onChangeThemePref,
+    onChangeFolder,
+}: WorkspaceProps) {
     const store = useMemo(() => new FileSystemNoteStore(dir), [dir]);
     const {add} = useToaster();
 
@@ -61,6 +68,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
     const editorRef = useRef<EditorPaneHandle>(null);
     const listRef = useRef<NoteListHandle>(null);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [pendingListFocus, setPendingListFocus] = useState(false);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -76,13 +84,36 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
         searchInputRef.current?.focus();
     }, []);
 
-    const handleCreate = useCallback(() => {
-        nav.prepareCommit(); // arm autofocus so the new note mounts focused
-        void (async () => {
-            const id = await notes.create();
-            if (id) nav.setSelected(id);
-        })();
-    }, [notes, nav]);
+    // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
+    // bar, the document body), send it back to the note list so keyboard nav resumes.
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            const el = document.activeElement;
+            // The editor, the list (rows + search), and open dialogs handle Esc themselves.
+            if (
+                el instanceof HTMLElement &&
+                el.closest('.editor-pane, .note-list, [role="dialog"]')
+            ) {
+                return;
+            }
+            event.preventDefault();
+            listRef.current?.focusSelected();
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    const handleCreate = useCallback(
+        (title?: string) => {
+            nav.prepareCommit(); // arm autofocus so the new note mounts focused
+            void (async () => {
+                const id = await notes.create(title);
+                if (id) nav.setSelected(id);
+            })();
+        },
+        [notes, nav],
+    );
 
     const handleDelete = useCallback(
         (id: string) => {
@@ -102,11 +133,34 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
         [filteredNotes, notes, nav],
     );
 
+    const handleRename = useCallback(
+        (id: string, title: string) => {
+            void (async () => {
+                const newId = await notes.rename(id, title);
+                // Re-select the resulting id and flag a focus restore — the rename input
+                // unmounted (and the row may have remounted under a new id), so without this
+                // keyboard focus is stranded on <body>.
+                nav.setSelected(newId ?? id);
+                setPendingListFocus(true);
+            })();
+        },
+        [notes, nav],
+    );
+
+    // After a rename settles (list + selection updated), return focus to the selected row.
+    useEffect(() => {
+        if (!pendingListFocus) return;
+        listRef.current?.focusSelected();
+        setPendingListFocus(false);
+    }, [pendingListFocus, filteredNotes, nav.selectedId]);
+
     useShortcuts({
-        focusSearch: () => searchInputRef.current?.focus(),
         createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         openHelp: () => setHelpOpen(true),
+        renameSelected: () => {
+            if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
+        },
     });
 
     return (
@@ -133,14 +187,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                     <Button view="flat" size="m" onClick={onChangeFolder} title="Change folder">
                         Change folder
                     </Button>
-                    <Button
-                        view="flat"
-                        size="m"
-                        onClick={onToggleTheme}
-                        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-                    >
-                        <Icon data={theme === 'dark' ? Sun : Moon} />
-                    </Button>
+                    <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
                 </div>
             </header>
 
@@ -157,7 +204,7 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                         onCommit={nav.commit}
                         onEscapeList={nav.escapeList}
                         onCreate={handleCreate}
-                        onRename={(id, title) => void notes.rename(id, title)}
+                        onRename={handleRename}
                         onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
                         onSortChange={notes.setSortMode}
@@ -175,8 +222,15 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
                                         deleted={notes.conflict.deleted}
                                         onReload={() => void notes.reloadDisk()}
                                         onKeepMine={() => void notes.keepMine()}
-                                        onSaveAsCopy={() => void notes.saveAsCopy()}
-                                        onDiscard={notes.discard}
+                                        onSaveAsCopy={() =>
+                                            void notes.saveAsCopy().then((id) => {
+                                                if (id) nav.setSelected(id);
+                                            })
+                                        }
+                                        onDiscard={() => {
+                                            nav.setSelected(null);
+                                            notes.discard();
+                                        }}
                                     />
                                 </div>
                             ) : null}

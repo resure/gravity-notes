@@ -4,6 +4,8 @@ import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor
 
 import type {Note} from '../storage/types';
 
+import './EditorPane.css';
+
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
     toggleMode(): void;
@@ -82,7 +84,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 if (event.key === 'Escape') onEscape();
             }}
         >
-            <MarkdownEditorView stickyToolbar autofocus={autofocus} editor={editor} />
+            <MarkdownEditorView
+                settingsVisible={false}
+                stickyToolbar={false}
+                autofocus={autofocus}
+                editor={editor}
+            />
         </div>
     );
 });

@@ -11,6 +11,8 @@ import './NoteList.css';
 export interface NoteListHandle {
     /** Move keyboard focus to the selected row (used when leaving the editor). */
     focusSelected(): void;
+    /** Begin inline-renaming the given note (used by the global F2 shortcut). */
+    startRename(id: string): void;
 }
 
 export interface NoteListProps {
@@ -25,7 +27,7 @@ export interface NoteListProps {
     onCommit: (id: string) => void;
     /** Esc on a focused row (or in an empty search box): close the open note. */
     onEscapeList: () => void;
-    onCreate: () => void;
+    onCreate: (title?: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
@@ -83,19 +85,43 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const focusableId =
         selectedId && notes.some((n) => n.id === selectedId) ? selectedId : (notes[0]?.id ?? null);
 
+    // When an inline rename ends (commit or cancel), return keyboard focus to the list so
+    // arrow-nav continues — the input unmounts first, otherwise focus is stranded on <body>.
+    // Done in an effect (after the unmount), not synchronously, so a cancel doesn't blur-commit.
+    const wasEditingRef = useRef(false);
+    useEffect(() => {
+        if (wasEditingRef.current && editingId === null && focusableId) {
+            itemRefs.current.get(focusableId)?.focus();
+        }
+        wasEditingRef.current = editingId !== null;
+    }, [editingId, focusableId]);
+
+    const beginRename = (note: NoteMeta) => {
+        setEditValue(note.title);
+        setEditingId(note.id);
+    };
+
     useImperativeHandle(
         ref,
         () => ({
             focusSelected() {
-                if (focusableId) itemRefs.current.get(focusableId)?.focus();
+                const row = focusableId ? itemRefs.current.get(focusableId) : undefined;
+                // Fall back to the search box when there's no row (e.g. an empty result set),
+                // so Esc from a lost-focus spot still lands somewhere useful.
+                if (row) row.focus();
+                else searchInputRef.current?.focus();
+            },
+            startRename(id: string) {
+                const note = notes.find((n) => n.id === id);
+                if (note) beginRename(note);
             },
         }),
-        [focusableId],
+        [focusableId, notes, searchInputRef],
     );
 
-    const startRename = (note: NoteMeta) => {
-        setEditValue(note.title);
-        setEditingId(note.id);
+    const confirmDelete = () => {
+        if (deleting) onDelete(deleting.id);
+        setDeleting(null);
     };
 
     const commitRename = (note: NoteMeta) => {
@@ -121,15 +147,20 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, note: NoteMeta) => {
         if (editingId === note.id) return;
+        // Bare j/k mirror the arrow keys (vim-style). Guarded against modifiers so ⌘J
+        // (new note) still falls through to the global shortcut handler.
+        const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
+        if (event.key === 'ArrowDown' || (bare && event.key === 'j')) {
+            event.preventDefault();
+            moveSelection(note.id, 1);
+            return;
+        }
+        if (event.key === 'ArrowUp' || (bare && event.key === 'k')) {
+            event.preventDefault();
+            moveSelection(note.id, -1);
+            return;
+        }
         switch (event.key) {
-            case 'ArrowDown':
-                event.preventDefault();
-                moveSelection(note.id, 1);
-                break;
-            case 'ArrowUp':
-                event.preventDefault();
-                moveSelection(note.id, -1);
-                break;
             case 'Enter':
                 event.preventDefault();
                 onCommit(note.id);
@@ -138,19 +169,29 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 event.preventDefault();
                 onEscapeList();
                 break;
-            case 'F2':
-                event.preventDefault();
-                startRename(note);
-                break;
         }
     };
 
     const pinnedSet = new Set(pinnedIds);
 
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter' && notes.length > 0) {
-            event.preventDefault();
-            onCommit(notes[0].id);
+        if (event.key === 'Enter') {
+            if (notes.length > 0) {
+                event.preventDefault();
+                // With no active query, re-open the previously selected note (e.g. after Esc-Esc
+                // back to search); with a query, open the top match (nvALT).
+                const target =
+                    !query.trim() && selectedId && notes.some((n) => n.id === selectedId)
+                        ? selectedId
+                        : notes[0].id;
+                onCommit(target);
+            } else if (query.trim()) {
+                // nvALT: no note matches the query → create one titled with it, then clear
+                // the search so the new note is visible and the box is ready for the next find.
+                event.preventDefault();
+                onCreate(query.trim());
+                onQueryChange('');
+            }
         } else if (event.key === 'Escape') {
             event.preventDefault();
             if (query) onQueryChange('');
@@ -189,7 +230,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                             {value: 'created', content: 'Created'},
                         ]}
                     />
-                    <Button view="action" size="m" onClick={onCreate}>
+                    <Button view="action" size="m" onClick={() => onCreate()}>
                         <Icon data={Plus} />
                         New
                     </Button>
@@ -211,8 +252,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 {notes.length === 0 ? (
                     <div className="note-list__empty">
                         <Text color="secondary">
-                            {query
-                                ? `No notes match "${query}".`
+                            {query.trim()
+                                ? `No match — press Enter to create "${query.trim()}"`
                                 : 'No notes yet. Create your first one.'}
                         </Text>
                     </div>
@@ -236,7 +277,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 aria-selected={selected}
                                 tabIndex={tabbable ? 0 : -1}
                                 onClick={() => !editing && browseRow(note.id)}
-                                onDoubleClick={() => startRename(note)}
+                                onDoubleClick={() => beginRename(note)}
                                 onKeyDown={(e) => onItemKeyDown(e, note)}
                             >
                                 {editing ? (
@@ -303,7 +344,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                                     {
                                                         text: 'Rename',
                                                         iconStart: <Icon data={Pencil} />,
-                                                        action: () => startRename(note),
+                                                        action: () => beginRename(note),
                                                     },
                                                     {
                                                         text: 'Delete',
@@ -322,21 +363,25 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 )}
             </div>
 
-            <Dialog open={deleting !== null} onClose={() => setDeleting(null)} size="s">
+            <Dialog
+                open={deleting !== null}
+                onClose={() => setDeleting(null)}
+                onEnterKeyDown={confirmDelete}
+                size="s"
+            >
                 <Dialog.Header caption="Delete note" />
                 <Dialog.Body>
                     <Text>
-                        {`Delete "${deleting?.title}"? This permanently removes the file from your folder.`}
+                        {deleting
+                            ? `Delete "${deleting.title}"? This permanently removes the file from your folder.`
+                            : ''}
                     </Text>
                 </Dialog.Body>
                 <Dialog.Footer
                     textButtonApply="Delete"
                     textButtonCancel="Cancel"
                     propsButtonApply={{view: 'outlined-danger'}}
-                    onClickButtonApply={() => {
-                        if (deleting) onDelete(deleting.id);
-                        setDeleting(null);
-                    }}
+                    onClickButtonApply={confirmDelete}
                     onClickButtonCancel={() => setDeleting(null)}
                 />
             </Dialog>

@@ -1,9 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import type {RefObject} from 'react';
 
-/** The list cursor previews after this idle delay, so holding an arrow stays smooth. */
-const PREVIEW_DELAY = 150;
-
 export interface NoteNavigationDeps {
     /** The currently open note id (from `useNotes`), or null. */
     activeId: string | null;
@@ -17,7 +14,7 @@ export interface NoteNavigationDeps {
 }
 
 export interface UseNoteNavigation {
-    /** The list cursor (drives the row highlight); updates instantly, leads `activeId` during the preview debounce. */
+    /** The list cursor: the highlighted row, which is also the previewed/open note. */
     selectedId: string | null;
     /** Whether the next editor (re)mount should grab focus (true after a commit). */
     editorAutofocus: boolean;
@@ -25,7 +22,7 @@ export interface UseNoteNavigation {
     setSelected(id: string | null): void;
     /** Arm the editor to focus on its next mount (used before creating a note). */
     prepareCommit(): void;
-    /** Move the highlight and (debounced) preview the note; focus stays in the list. */
+    /** Move the highlight and preview the note immediately; focus stays in the list. */
     browse(id: string): void;
     /** Open the note for editing and focus the editor. */
     commit(id: string): void;
@@ -37,16 +34,15 @@ export interface UseNoteNavigation {
 
 /**
  * Keyboard-first browse/edit navigation for the single-pane note app. Owns the list
- * cursor (`selectedId`, instant) and a debounced preview that loads the highlighted note
- * into the editor without stealing focus. `commit` focuses the editor; `escapeEditor` /
- * `escapeList` walk focus back down (editor → list → search + close). Storage stays in
- * `useNotes`; this hook only sequences intent + focus.
+ * cursor (`selectedId`) and previews the highlighted note in the editor immediately,
+ * without stealing focus. `commit` focuses the editor; `escapeEditor` / `escapeList`
+ * walk focus back down (editor → list → search + close). Storage stays in `useNotes`;
+ * this hook only sequences intent + focus.
  */
 export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const {activeId, editorRef, listRef, searchInputRef} = deps;
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [editorAutofocus, setEditorAutofocus] = useState(false);
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Read open/close through refs so the callbacks stay stable and never call a stale closure.
     const openRef = useRef(deps.open);
@@ -54,29 +50,14 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const closeRef = useRef(deps.close);
     closeRef.current = deps.close;
 
-    const cancelPreview = useCallback(() => {
-        if (timerRef.current) {
-            clearTimeout(timerRef.current);
-            timerRef.current = null;
-        }
+    const browse = useCallback((id: string) => {
+        setSelectedId(id);
+        setEditorAutofocus(false);
+        void openRef.current(id);
     }, []);
-
-    const browse = useCallback(
-        (id: string) => {
-            setSelectedId(id);
-            setEditorAutofocus(false);
-            cancelPreview();
-            timerRef.current = setTimeout(() => {
-                timerRef.current = null;
-                void openRef.current(id);
-            }, PREVIEW_DELAY);
-        },
-        [cancelPreview],
-    );
 
     const commit = useCallback(
         (id: string) => {
-            cancelPreview();
             setSelectedId(id);
             if (id === activeId) {
                 editorRef.current?.focus();
@@ -85,7 +66,7 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
                 void openRef.current(id);
             }
         },
-        [activeId, cancelPreview, editorRef],
+        [activeId, editorRef],
     );
 
     const escapeEditor = useCallback(() => {
@@ -93,10 +74,9 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     }, [listRef]);
 
     const escapeList = useCallback(() => {
-        cancelPreview();
         void closeRef.current();
         searchInputRef.current?.focus();
-    }, [cancelPreview, searchInputRef]);
+    }, [searchInputRef]);
 
     const prepareCommit = useCallback(() => setEditorAutofocus(true), []);
 
@@ -104,9 +84,6 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     useEffect(() => {
         if (selectedId === null && activeId !== null) setSelectedId(activeId);
     }, [activeId, selectedId]);
-
-    // Clear a pending preview timer on unmount.
-    useEffect(() => cancelPreview, [cancelPreview]);
 
     return {
         selectedId,

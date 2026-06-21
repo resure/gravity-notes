@@ -31,8 +31,8 @@ function renderWorkspace() {
         <Workspace
             dir={asDirectoryHandle(dir)}
             folderName="notes"
-            theme="light"
-            onToggleTheme={vi.fn()}
+            themePref="light"
+            onChangeThemePref={vi.fn()}
             onChangeFolder={vi.fn()}
         />,
     );
@@ -111,6 +111,18 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
+    it('creates a note titled with the query when Enter finds no match (nvALT)', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        const search = screen.getByPlaceholderText('Search');
+        await user.type(search, 'Zzz Notes{Enter}');
+        // No existing note matches "Zzz Notes", so Enter creates it...
+        await screen.findByRole('option', {name: /Zzz Notes/});
+        // ...and the search box is cleared afterward.
+        expect(screen.getByPlaceholderText('Search')).toHaveValue('');
+    });
+
     it('closes the open note on Escape in an empty search box', async () => {
         const user = userEvent.setup();
         renderWorkspace();
@@ -120,5 +132,50 @@ describe('Workspace — nvALT navigation', () => {
         await user.click(screen.getByPlaceholderText('Search'));
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByText(/Select a note/)).toBeInTheDocument());
+    });
+
+    it('F2 renames the selected note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{F2}');
+        expect(await screen.findByDisplayValue('Beta')).toBeInTheDocument();
+    });
+
+    it('keeps keyboard focus on the note after an F2 rename', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{F2}');
+        const input = await screen.findByDisplayValue('Beta');
+        await user.clear(input);
+        await user.type(input, 'Renamed{Enter}');
+        const renamed = await screen.findByRole('option', {name: /Renamed/});
+        await waitFor(() => expect(renamed).toHaveAttribute('aria-selected', 'true'));
+        await waitFor(() => expect(renamed).toHaveFocus());
+    });
+
+    it('Escape from the top bar refocuses the note list', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        // Focus a header button (simulates losing focus to the top bar).
+        screen.getByRole('button', {name: 'Change folder'}).focus();
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
     });
 });

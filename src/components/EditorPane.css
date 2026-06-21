@@ -1,0 +1,71 @@
+/* Markdown-first surface: hide the formatting toolbar strip + the settings gear.
+   (Selectors target the shipped @gravity-ui/markdown-editor classes.) */
+.editor-pane .g-md-editor-sticky,
+.editor-pane .g-md-toolbar {
+    display: none;
+}
+
+/* The editor keeps its "has toolbar" modifier (which pads the content 16px top/bottom)
+   even though we hid the toolbar — bring the top gap down to a small, comfortable value. */
+.editor-pane .g-md-wysiwyg-editor_toolbar .yfm-editor {
+    padding-top: 8px;
+}
+
+/* Apple-Notes-style rhythm: tighter line-height + minimal paragraph spacing. The content
+   typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm classes outrank
+   it so these win without !important. */
+.editor-pane .g-md-editor.ProseMirror.yfm {
+    line-height: 1.2;
+}
+
+.editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
+    margin-top: 0;
+    margin-bottom: 1px;
+    line-height: 1.2;
+}
+
+/* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
+   so bigger headings get more space above them (the editor's default is uniform). */
+.editor-pane .g-md-editor.ProseMirror.yfm :where(h1, h2, h3, h4, h5, h6) {
+    margin-bottom: 4px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h1 {
+    margin-top: 28px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h2 {
+    margin-top: 22px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h3 {
+    margin-top: 18px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h4 {
+    margin-top: 14px;
+}
+.editor-pane .g-md-editor.ProseMirror.yfm h5,
+.editor-pane .g-md-editor.ProseMirror.yfm h6 {
+    margin-top: 10px;
+}
+
+/* No empty gap when a heading (or any block) opens the note — the editor's top padding
+   already provides the space above the first line. */
+.editor-pane .g-md-editor.ProseMirror.yfm > :first-child {
+    margin-top: 0;
+}
+
+/* Apple-Notes-style short dashes for bullet lists. */
+.editor-pane .g-md-editor ul > li::marker {
+    content: '–  ';
+}
+
+/* …but not on checklist rows — the checkbox replaces the bullet. The editor renders
+   checkboxes as a .g-md-checkbox div inside ordinary <ul> items (no GFM task-list class). */
+.editor-pane .g-md-editor ul > li:has(.g-md-checkbox)::marker {
+    content: '';
+}
+
+/* Breathing room between a checklist checkbox and its label. The editor ships
+   `.yfm-editor .g-md-checkbox__input { margin-right: 5px }`; the extra `.g-md-editor`
+   here outranks it so the wider gap wins regardless of stylesheet order. */
+.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox'] {
+    margin-right: 10px;
+}

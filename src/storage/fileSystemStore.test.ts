@@ -54,6 +54,33 @@ describe('FileSystemNoteStore', () => {
 
             expect((await store.get('Ideas.md')).content).toBe('new body');
         });
+
+        it('writes a trailing newline and strips it back off on read', async () => {
+            dir.seedFile('Ideas.md', 'x', 10);
+
+            await store.save('Ideas.md', 'no newline', 10);
+
+            // The file on disk ends with exactly one newline...
+            const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
+            expect(await onDisk.text()).toBe('no newline\n');
+            // ...while get() returns the canonical body the editor round-trips (no trailing newline).
+            expect((await store.get('Ideas.md')).content).toBe('no newline');
+        });
+
+        it('collapses multiple trailing newlines to a single one on save', async () => {
+            dir.seedFile('Ideas.md', 'x', 10);
+
+            await store.save('Ideas.md', 'body\n\n\n', 10);
+
+            const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
+            expect(await onDisk.text()).toBe('body\n');
+        });
+
+        it('strips trailing newlines from the body on read', async () => {
+            dir.seedFile('Ideas.md', 'seeded\n\n', 10);
+
+            expect((await store.get('Ideas.md')).content).toBe('seeded');
+        });
     });
 
     describe('create', () => {
@@ -111,14 +138,27 @@ describe('FileSystemNoteStore', () => {
             expect((await store.get('New.md')).content).toBe('keep me');
             await expect(store.get('Old.md')).rejects.toThrow();
         });
+    });
 
-        it('resolves collisions when renaming onto an existing title', async () => {
-            dir.seedFile('Old.md', 'a', 5);
-            dir.seedFile('Taken.md', 'b', 6);
+    describe('rename — collisions', () => {
+        it('renames to a free name', async () => {
+            dir.seedFile('Old.md', 'body', 100);
+            const meta = await store.rename('Old.md', 'New');
+            expect(meta.id).toBe('New.md');
+            expect((await store.get('New.md')).content).toBe('body');
+            expect(await store.stat('Old.md')).toBeNull();
+        });
 
+        it('is a no-op when the target name is taken by another note', async () => {
+            dir.seedFile('Old.md', 'mine', 100);
+            dir.seedFile('Taken.md', 'theirs', 200);
             const meta = await store.rename('Old.md', 'Taken');
-
-            expect(meta.id).toBe('Taken 2.md');
+            // Unchanged: same id/title, no auto-numbered "Taken 2.md", both files intact.
+            expect(meta.id).toBe('Old.md');
+            expect(await store.stat('Old.md')).not.toBeNull();
+            expect(await store.stat('Taken 2.md')).toBeNull();
+            expect((await store.get('Old.md')).content).toBe('mine');
+            expect((await store.get('Taken.md')).content).toBe('theirs');
         });
     });
 

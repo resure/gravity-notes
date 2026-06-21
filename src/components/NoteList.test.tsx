@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {screen, within} from '@testing-library/react';
+import {act, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -70,6 +70,30 @@ describe('NoteList — list & a11y', () => {
         expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
     });
 
+    it('browses the next note on j (vim-style)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Alpha.md'});
+        screen.getByRole('option', {name: /Alpha/}).focus();
+        await user.keyboard('j');
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('browses the previous note on k (vim-style)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Beta.md'});
+        screen.getByRole('option', {name: /Beta/}).focus();
+        await user.keyboard('k');
+        expect(props.onBrowse).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('ignores j with a modifier so ⌘J stays the new-note shortcut', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Alpha.md'});
+        screen.getByRole('option', {name: /Alpha/}).focus();
+        await user.keyboard('{Meta>}j{/Meta}');
+        expect(props.onBrowse).not.toHaveBeenCalled();
+    });
+
     it('commits the focused note on Enter', async () => {
         const user = userEvent.setup();
         const {props} = setup({selectedId: 'Alpha.md'});
@@ -98,14 +122,21 @@ describe('NoteList — focus handle', () => {
         ref.current?.focusSelected();
         expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
     });
+
+    it('focusSelected() falls back to the search box when the list is empty', () => {
+        const {ref, props} = setup({notes: [], selectedId: null});
+        ref.current?.focusSelected();
+        expect(props.searchInputRef.current).toHaveFocus();
+    });
 });
 
 describe('NoteList — inline rename', () => {
-    it('renames via F2 and commits on Enter', async () => {
+    it('renames via the startRename handle and commits on Enter', async () => {
         const user = userEvent.setup();
-        const {props} = setup({selectedId: 'Alpha.md'});
-        screen.getByRole('option', {name: /Alpha/}).focus();
-        await user.keyboard('{F2}');
+        const {ref, props} = setup({selectedId: 'Alpha.md'});
+        act(() => {
+            ref.current?.startRename('Alpha.md');
+        });
         const input = screen.getByDisplayValue('Alpha');
         await user.clear(input);
         await user.type(input, 'Renamed{Enter}');
@@ -134,6 +165,16 @@ describe('NoteList — inline rename', () => {
         await user.type(input, 'Nope{Escape}');
         expect(props.onRename).not.toHaveBeenCalled();
         expect(screen.getByText('Beta')).toBeInTheDocument();
+    });
+
+    it('restores focus to the row after cancelling a rename', async () => {
+        const user = userEvent.setup();
+        const {ref} = setup({selectedId: 'Alpha.md'});
+        act(() => {
+            ref.current?.startRename('Alpha.md');
+        });
+        await user.type(screen.getByDisplayValue('Alpha'), '{Escape}');
+        expect(screen.getByRole('option', {name: /Alpha/})).toHaveFocus();
     });
 
     it('is a no-op when the title is unchanged', async () => {
@@ -165,6 +206,19 @@ describe('NoteList — delete', () => {
         await user.click(screen.getByRole('button', {name: 'Delete'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
     });
+
+    it('deletes on Enter in the confirmation dialog', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
+        const dialog = await screen.findByRole('dialog');
+        // Wait until the dialog has grabbed focus, else Enter races its focus trap.
+        await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+        await user.keyboard('{Enter}');
+        expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
+    });
 });
 
 describe('NoteList — search', () => {
@@ -181,9 +235,9 @@ describe('NoteList — search', () => {
         expect(mark?.textContent).toBe('lph');
     });
 
-    it('shows a no-results message when filtered to empty with a query', () => {
+    it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
-        expect(screen.getByText(/No notes match/)).toBeInTheDocument();
+        expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();
     });
 
     it('commits the top match on Enter in the search field', async () => {
@@ -192,6 +246,32 @@ describe('NoteList — search', () => {
         screen.getByPlaceholderText('Search').focus();
         await user.keyboard('{Enter}');
         expect(props.onCommit).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('re-opens the selected note on Enter when the search box is empty', async () => {
+        const user = userEvent.setup();
+        // Beta is selected though Alpha is the top row; with no query, Enter re-opens Beta.
+        const {props} = setup({query: '', selectedId: 'Beta.md'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCommit).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('creates a note titled with the query on Enter when nothing matches (nvALT)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({notes: [], query: 'Groceries'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCreate).toHaveBeenCalledWith('Groceries');
+        expect(props.onQueryChange).toHaveBeenCalledWith('');
+    });
+
+    it('does not create on Enter when the query is blank and nothing matches', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({notes: [], query: '   '});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCreate).not.toHaveBeenCalled();
     });
 
     it('enters the list on ArrowDown from the search field', async () => {

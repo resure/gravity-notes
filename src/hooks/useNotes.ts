@@ -49,16 +49,17 @@ export interface UseNotes {
     open(id: string): Promise<void>;
     /** Close the open note (placeholder). */
     close(): Promise<void>;
-    /** Create a new empty note, open it, and return its id (null on failure). */
-    create(): Promise<string | null>;
-    rename(id: string, nextTitle: string): Promise<void>;
+    /** Create a new note (titled, or "Untitled"), open it, and return its id (null on failure). */
+    create(title?: string): Promise<string | null>;
+    /** Rename a note; returns the resulting id (unchanged on a no-op/collision, null on error). */
+    rename(id: string, nextTitle: string): Promise<string | null>;
     remove(id: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
     /** Conflict resolvers (act on the open note). */
     reloadDisk(): Promise<void>;
     keepMine(): Promise<void>;
-    saveAsCopy(): Promise<void>;
+    saveAsCopy(): Promise<string | null>;
     discard(): void;
 }
 
@@ -185,27 +186,30 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         await persistMetadata(withActive(metadataRef.current, null));
     }, [flush, persistMetadata]);
 
-    const create = useCallback(async (): Promise<string | null> => {
-        await flush();
-        try {
-            const meta = await store.create('Untitled');
-            await persistMetadata(
-                withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
-            );
-            await refresh();
-            await open(meta.id);
-            return meta.id;
-        } catch (err) {
-            onError(err instanceof Error ? err.message : 'Failed to create note');
-            return null;
-        }
-    }, [flush, store, persistMetadata, refresh, open, onError]);
+    const create = useCallback(
+        async (title?: string): Promise<string | null> => {
+            await flush();
+            try {
+                const meta = await store.create(title?.trim() || 'Untitled');
+                await persistMetadata(
+                    withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
+                );
+                await refresh();
+                await open(meta.id);
+                return meta.id;
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to create note');
+                return null;
+            }
+        },
+        [flush, store, persistMetadata, refresh, open, onError],
+    );
 
     const rename = useCallback(
-        async (id: string, nextTitle: string) => {
+        async (id: string, nextTitle: string): Promise<string | null> => {
             if (conflict?.id === id) {
                 onError('Resolve the conflict before renaming this note.');
-                return;
+                return null;
             }
             await flush();
             try {
@@ -224,8 +228,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setConflict(null);
                     setSaveState('idle');
                 }
+                return meta.id;
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to rename note');
+                return null;
             }
         },
         [conflict, flush, store, persistMetadata, refresh, onError],
@@ -298,8 +304,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         }
     }, [conflict, note, store, onError, bumpInList]);
 
-    const saveAsCopy = useCallback(async () => {
-        if (!conflict) return;
+    const saveAsCopy = useCallback(async (): Promise<string | null> => {
+        if (!conflict) return null;
         const content = pendingRef.current?.content ?? note?.content ?? '';
         const title = note?.title ?? 'Note';
         pendingRef.current = null;
@@ -312,9 +318,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             setConflict(null);
             await refresh();
             await open(copy.id);
+            return copy.id;
         } catch (err) {
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save a copy');
+            return null;
         }
     }, [conflict, note, store, refresh, open, persistMetadata, onError]);
 

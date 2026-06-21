@@ -53,9 +53,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Give the editing area breathing room from the toolbar and edges. The
-       markdown editor reads this for both the WYSIWYG and markup panes. */
-    --g-md-editor-padding: 8px 16px;
+    /* Smaller gap above the first line; left/right/bottom unchanged. The markdown
+       editor reads this custom property for both the WYSIWYG and markup panes. */
+    --g-md-editor-padding: 4px 16px 8px 16px;
 }
 
 .workspace__panes {
