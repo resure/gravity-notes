@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {screen} from '@testing-library/react';
+import {fireEvent, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -114,6 +114,14 @@ describe('TopBar — search keyboard model', () => {
         screen.getByPlaceholderText(SEARCH).focus();
         await user.keyboard('{Escape}');
         expect(props.onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('⌘Enter does not trigger the search action — lets the global new-note shortcut fire', () => {
+        const {props} = setup({query: 'Alpha', notes: NOTES});
+        const input = screen.getByPlaceholderText(SEARCH);
+        fireEvent.keyDown(input, {key: 'Enter', metaKey: true});
+        expect(props.onCommit).not.toHaveBeenCalled();
+        expect(props.onCreate).not.toHaveBeenCalled();
     });
 });
 

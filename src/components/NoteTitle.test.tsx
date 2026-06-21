@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {render, screen} from '@testing-library/react';
+import {fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -41,6 +41,23 @@ describe('NoteTitle', () => {
         await user.type(input, 'New');
         await user.tab();
         expect(onCommit).toHaveBeenCalledWith('New');
+    });
+
+    it('⌘Enter does not call onEnter — lets the global new-note shortcut bubble', () => {
+        const onEnter = vi.fn();
+        render(
+            <NoteTitle
+                title="X"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={onEnter}
+                onEscape={noop}
+            />,
+        );
+        const input = screen.getByLabelText('Note title');
+        input.focus();
+        fireEvent.keyDown(input, {key: 'Enter', metaKey: true});
+        expect(onEnter).not.toHaveBeenCalled();
     });
 
     it('Enter opens a line atop the body; ArrowDown moves to the body start', async () => {

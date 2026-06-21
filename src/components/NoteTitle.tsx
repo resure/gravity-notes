@@ -88,7 +88,7 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
     }, []);
 
     const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
             event.preventDefault();
             onEnter(); // open a new line atop the body → focuses it → blur commits
         } else if (event.key === 'ArrowDown') {

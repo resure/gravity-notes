@@ -333,4 +333,26 @@ describe('Workspace — nvALT navigation', () => {
             expect(screen.getByRole('option', {name: /Untitled/})).toBeInTheDocument(),
         );
     });
+
+    it('⌘K clamps at the first row — does not wrap to the last', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        // updated-desc order is [Beta, Alpha]; click Beta (the first row) to select it.
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        // ⌘K at the top should clamp — Beta should still be selected.
+        await user.keyboard('{Meta>}k{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+    });
 });

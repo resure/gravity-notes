@@ -182,6 +182,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         }
         switch (event.key) {
             case 'Enter':
+                if (!bare) break; // ⌘/Ctrl+Enter is the global new-note shortcut — let it bubble
                 event.preventDefault();
                 onCommit(note.id);
                 break;
@@ -258,7 +259,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         onUpdate={setEditValue}
                                         onBlur={() => commitRename(note)}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
+                                            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
                                                 e.preventDefault();
                                                 commitRename(note);
                                             } else if (e.key === 'Escape') {

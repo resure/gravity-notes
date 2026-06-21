@@ -85,7 +85,7 @@ describe('NoteList — list & a11y', () => {
         expect(props.onBrowse).toHaveBeenCalledWith('Alpha.md');
     });
 
-    it('ignores j with a modifier so ⌘J stays the new-note shortcut', async () => {
+    it('ignores j with a modifier so ⌘J bubbles to the global handler', async () => {
         const user = userEvent.setup();
         const {props} = setup({selectedId: 'Alpha.md'});
         screen.getByRole('option', {name: /Alpha/}).focus();
