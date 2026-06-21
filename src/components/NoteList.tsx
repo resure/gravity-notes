@@ -339,7 +339,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 <Dialog.Header caption="Delete note" />
                 <Dialog.Body>
                     <Text>
-                        {`Delete "${deleting?.title}"? This permanently removes the file from your folder.`}
+                        {deleting
+                            ? `Delete "${deleting.title}"? This permanently removes the file from your folder.`
+                            : ''}
                     </Text>
                 </Dialog.Body>
                 <Dialog.Footer

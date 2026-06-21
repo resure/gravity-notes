@@ -156,4 +156,14 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(renamed).toHaveAttribute('aria-selected', 'true'));
         await waitFor(() => expect(renamed).toHaveFocus());
     });
+
+    it('Escape from the top bar refocuses the note list', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        // Focus a header button (simulates losing focus to the top bar).
+        screen.getByRole('button', {name: 'Change folder'}).focus();
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
+    });
 });

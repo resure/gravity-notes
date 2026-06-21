@@ -84,6 +84,26 @@ export function Workspace({
         searchInputRef.current?.focus();
     }, []);
 
+    // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
+    // bar, the document body), send it back to the note list so keyboard nav resumes.
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            const el = document.activeElement;
+            // The editor, the list (rows + search), and open dialogs handle Esc themselves.
+            if (
+                el instanceof HTMLElement &&
+                el.closest('.editor-pane, .note-list, [role="dialog"]')
+            ) {
+                return;
+            }
+            event.preventDefault();
+            listRef.current?.focusSelected();
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, []);
+
     const handleCreate = useCallback(() => {
         nav.prepareCommit(); // arm autofocus so the new note mounts focused
         void (async () => {
