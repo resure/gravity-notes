@@ -60,10 +60,11 @@
     opacity: 1;
 }
 
-/* Mark the keyboard-focused row with a stronger fill instead of an outline border. */
+/* Mark the keyboard-focused row with a stronger fill instead of an outline border —
+   a step darker than the selection-hover tint so the focused note clearly stands out. */
 .note-list__item:focus-visible {
     outline: none;
-    background-color: var(--g-color-base-selection-hover);
+    background-color: var(--g-color-private-blue-250);
 }
 
 .note-list__edit {
