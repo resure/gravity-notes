@@ -5,6 +5,12 @@
     display: none;
 }
 
+/* The editor keeps its "has toolbar" modifier (which pads the content 16px top/bottom)
+   even though we hid the toolbar — bring the top gap back down to ~8px total. */
+.editor-pane .g-md-wysiwyg-editor_toolbar .yfm-editor {
+    padding-top: 4px;
+}
+
 /* Calmer reading rhythm. */
 .editor-pane .g-md-editor {
     line-height: 1.45;
@@ -21,7 +27,9 @@
     content: '';
 }
 
-/* Breathing room between a checklist checkbox and its label (editor ships ~5px). */
-.editor-pane .g-md-checkbox__input[type='checkbox'] {
-    margin-inline-end: 8px;
+/* Breathing room between a checklist checkbox and its label. The editor ships
+   `.yfm-editor .g-md-checkbox__input { margin-right: 5px }`; the extra `.g-md-editor`
+   here outranks it so the wider gap wins regardless of stylesheet order. */
+.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox'] {
+    margin-right: 10px;
 }
