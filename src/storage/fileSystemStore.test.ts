@@ -54,6 +54,33 @@ describe('FileSystemNoteStore', () => {
 
             expect((await store.get('Ideas.md')).content).toBe('new body');
         });
+
+        it('writes a trailing newline and strips it back off on read', async () => {
+            dir.seedFile('Ideas.md', 'x', 10);
+
+            await store.save('Ideas.md', 'no newline', 10);
+
+            // The file on disk ends with exactly one newline...
+            const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
+            expect(await onDisk.text()).toBe('no newline\n');
+            // ...while get() returns the canonical body the editor round-trips (no trailing newline).
+            expect((await store.get('Ideas.md')).content).toBe('no newline');
+        });
+
+        it('collapses multiple trailing newlines to a single one on save', async () => {
+            dir.seedFile('Ideas.md', 'x', 10);
+
+            await store.save('Ideas.md', 'body\n\n\n', 10);
+
+            const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
+            expect(await onDisk.text()).toBe('body\n');
+        });
+
+        it('strips trailing newlines from the body on read', async () => {
+            dir.seedFile('Ideas.md', 'seeded\n\n', 10);
+
+            expect((await store.get('Ideas.md')).content).toBe('seeded');
+        });
     });
 
     describe('create', () => {
