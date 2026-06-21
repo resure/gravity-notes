@@ -188,8 +188,9 @@ export function Workspace({
                 selectedId={nav.selectedId}
                 onCommit={nav.commit}
                 onCreate={handleCreate}
-                onEscapeList={nav.escapeList}
+                onClose={nav.closeFromSearch}
                 onEnterList={enterList}
+                onFocusList={() => listRef.current?.focusSelected()}
             />
 
             <div className="workspace__body">
@@ -202,7 +203,7 @@ export function Workspace({
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
                         onCommit={nav.commit}
-                        onEscapeList={nav.escapeList}
+                        onEscapeList={nav.escapeToSearch}
                         onCreate={handleCreate}
                         onRename={handleRename}
                         onDelete={handleDelete}

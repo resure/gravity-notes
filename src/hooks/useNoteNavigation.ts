@@ -28,15 +28,17 @@ export interface UseNoteNavigation {
     commit(id: string): void;
     /** Leave the editor: return focus to the selected list row (the note stays open). */
     escapeEditor(): void;
-    /** Close the open note and move focus to the search box. */
-    escapeList(): void;
+    /** Leave the list for the search box; the open note stays open. */
+    escapeToSearch(): void;
+    /** From the search box: close the open note and clear the cursor. */
+    closeFromSearch(): void;
 }
 
 /**
  * Keyboard-first browse/edit navigation for the single-pane note app. Owns the list
  * cursor (`selectedId`) and previews the highlighted note in the editor immediately,
- * without stealing focus. `commit` focuses the editor; `escapeEditor` / `escapeList`
- * walk focus back down (editor → list → search + close). Storage stays in `useNotes`;
+ * without stealing focus. `commit` focuses the editor; the Esc ladder walks focus back
+ * (editor → list → search), and a final Esc in the search box closes + deselects. Storage stays in `useNotes`;
  * this hook only sequences intent + focus.
  */
 export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
@@ -50,15 +52,27 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const closeRef = useRef(deps.close);
     closeRef.current = deps.close;
 
-    const browse = useCallback((id: string) => {
+    // The cursor auto-syncs to a restored open note exactly once, on startup; after any
+    // deliberate change we stop, so a search-box close stays cleared instead of snapping
+    // back to the still-closing note.
+    const cursorTouchedRef = useRef(false);
+    const setCursor = useCallback((id: string | null) => {
+        cursorTouchedRef.current = true;
         setSelectedId(id);
-        setEditorAutofocus(false);
-        void openRef.current(id);
     }, []);
+
+    const browse = useCallback(
+        (id: string) => {
+            setCursor(id);
+            setEditorAutofocus(false);
+            void openRef.current(id);
+        },
+        [setCursor],
+    );
 
     const commit = useCallback(
         (id: string) => {
-            setSelectedId(id);
+            setCursor(id);
             if (id === activeId) {
                 editorRef.current?.focus();
             } else {
@@ -66,33 +80,43 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
                 void openRef.current(id);
             }
         },
-        [activeId, editorRef],
+        [activeId, editorRef, setCursor],
     );
 
     const escapeEditor = useCallback(() => {
         listRef.current?.focusSelected();
     }, [listRef]);
 
-    const escapeList = useCallback(() => {
-        void closeRef.current();
+    const escapeToSearch = useCallback(() => {
         searchInputRef.current?.focus();
     }, [searchInputRef]);
 
+    // A final Esc in the search box closes the note and clears the cursor, so the next
+    // arrow lands on the first row rather than the note we just left.
+    const closeFromSearch = useCallback(() => {
+        void closeRef.current();
+        setCursor(null);
+    }, [setCursor]);
+
     const prepareCommit = useCallback(() => setEditorAutofocus(true), []);
 
-    // Sync the cursor to the restored open note on first load.
+    // Sync the cursor to the restored open note once, on first load (see cursorTouchedRef).
     useEffect(() => {
-        if (selectedId === null && activeId !== null) setSelectedId(activeId);
+        if (!cursorTouchedRef.current && selectedId === null && activeId !== null) {
+            cursorTouchedRef.current = true;
+            setSelectedId(activeId);
+        }
     }, [activeId, selectedId]);
 
     return {
         selectedId,
         editorAutofocus,
-        setSelected: setSelectedId,
+        setSelected: setCursor,
         prepareCommit,
         browse,
         commit,
         escapeEditor,
-        escapeList,
+        escapeToSearch,
+        closeFromSearch,
     };
 }

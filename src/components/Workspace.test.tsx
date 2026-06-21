@@ -134,6 +134,40 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(screen.getByText(/Select a note/)).toBeInTheDocument());
     });
 
+    it('Esc on a list row moves to search without closing the note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        // Esc from the focused row lands in the search box; the note stays open.
+        screen.getByRole('option', {name: /Beta/}).focus();
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(screen.getByPlaceholderText(/Search/)).toHaveFocus());
+        expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument();
+    });
+
+    it('Esc in the search box clears the selection so ArrowDown picks the first note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        // Open Alpha (the 2nd row; updated order is [Beta, Alpha]).
+        await user.click(screen.getByRole('option', {name: /Alpha/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        // Esc in the empty search box closes the note and clears the cursor.
+        screen.getByPlaceholderText(/Search/).focus();
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(screen.getByText(/Select a note/)).toBeInTheDocument());
+        // So ArrowDown now selects the first row (Beta), not the note we left (Alpha).
+        await user.keyboard('{ArrowDown}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+    });
+
     it('F2 renames the selected note', async () => {
         const user = userEvent.setup();
         renderWorkspace();

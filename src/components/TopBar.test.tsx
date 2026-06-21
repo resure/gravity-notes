@@ -31,8 +31,9 @@ function setup(overrides: Record<string, unknown> = {}) {
         selectedId: 'Alpha.md',
         onCommit: vi.fn(),
         onCreate: vi.fn(),
-        onEscapeList: vi.fn(),
+        onClose: vi.fn(),
         onEnterList: vi.fn(),
+        onFocusList: vi.fn(),
         ...overrides,
     };
     renderWithProviders(<TopBar {...(props as TopBarProps)} />);
@@ -55,13 +56,13 @@ describe('TopBar — search keyboard model', () => {
         expect(props.onCommit).toHaveBeenCalledWith('Alpha.md');
     });
 
-    it('re-opens the selected note on Enter when the box is empty', async () => {
+    it('focuses the selected row on Enter when the box is empty (no editor jump)', async () => {
         const user = userEvent.setup();
-        // Beta is selected though Alpha is the top row; with no query, Enter re-opens Beta.
         const {props} = setup({query: '', selectedId: 'Beta.md'});
         screen.getByPlaceholderText(SEARCH).focus();
         await user.keyboard('{Enter}');
-        expect(props.onCommit).toHaveBeenCalledWith('Beta.md');
+        expect(props.onFocusList).toHaveBeenCalledTimes(1);
+        expect(props.onCommit).not.toHaveBeenCalled();
     });
 
     it('creates a note and clears the query on Enter when nothing matches', async () => {
@@ -104,15 +105,15 @@ describe('TopBar — search keyboard model', () => {
         screen.getByPlaceholderText(SEARCH).focus();
         await user.keyboard('{Escape}');
         expect(props.onQueryChange).toHaveBeenCalledWith('');
-        expect(props.onEscapeList).not.toHaveBeenCalled();
+        expect(props.onClose).not.toHaveBeenCalled();
     });
 
-    it('escapes the list on Escape when the box is empty', async () => {
+    it('closes the note on Escape when the box is empty', async () => {
         const user = userEvent.setup();
         const {props} = setup({query: ''});
         screen.getByPlaceholderText(SEARCH).focus();
         await user.keyboard('{Escape}');
-        expect(props.onEscapeList).toHaveBeenCalledTimes(1);
+        expect(props.onClose).toHaveBeenCalledTimes(1);
     });
 });
 

@@ -72,15 +72,28 @@ describe('useNoteNavigation', () => {
         expect(focusSelected).toHaveBeenCalledTimes(1);
     });
 
-    it('escapeList closes the note and focuses the search box', () => {
+    it('escapeToSearch focuses the search box and keeps the note open', () => {
         const focus = vi.fn();
         const deps = makeDeps({searchInputRef: {current: {focus}}});
         const {result} = renderHook(() => useNoteNavigation(deps));
         act(() => {
-            result.current.escapeList();
+            result.current.escapeToSearch();
         });
-        expect(deps.close).toHaveBeenCalledTimes(1);
         expect(focus).toHaveBeenCalledTimes(1);
+        expect(deps.close).not.toHaveBeenCalled();
+    });
+
+    it('closeFromSearch closes the note and clears the cursor (no re-sync)', () => {
+        const deps = makeDeps({activeId: 'A.md'});
+        const {result} = renderHook(() => useNoteNavigation(deps));
+        // The cursor syncs to the restored note on mount...
+        expect(result.current.selectedId).toBe('A.md');
+        act(() => {
+            result.current.closeFromSearch();
+        });
+        // ...and a search-box close clears it (not re-synced from the lingering activeId).
+        expect(deps.close).toHaveBeenCalledTimes(1);
+        expect(result.current.selectedId).toBeNull();
     });
 
     it('syncs the cursor to the restored open note', () => {

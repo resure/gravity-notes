@@ -27,9 +27,12 @@ export interface TopBarProps {
     selectedId: string | null;
     onCommit: (id: string) => void;
     onCreate: (title?: string) => void;
-    onEscapeList: () => void;
+    /** Final Esc in the (empty) search box: close the open note and clear the cursor. */
+    onClose: () => void;
     /** Enter the list at a row: preview it and move DOM focus onto it (↓/↑ from search). */
     onEnterList: (id: string) => void;
+    /** Enter on an empty box: move focus onto the previously selected note's row. */
+    onFocusList: () => void;
 }
 
 /**
@@ -51,22 +54,28 @@ export function TopBar({
     selectedId,
     onCommit,
     onCreate,
-    onEscapeList,
+    onClose,
     onEnterList,
+    onFocusList,
 }: TopBarProps) {
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
 
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
-            if (notes.length > 0) {
+            if (!query.trim()) {
+                // Empty box: step onto the previously selected note's row (don't jump to the
+                // editor). Nothing to do when no note is selected.
+                if (inList(selectedId)) {
+                    event.preventDefault();
+                    onFocusList();
+                }
+            } else if (notes.length > 0) {
+                // A query that matches: open the top match (nvALT).
                 event.preventDefault();
-                // With no active query, re-open the previously selected note (e.g. after Esc-Esc
-                // back to search); with a query, open the top match (nvALT).
-                const target = !query.trim() && inList(selectedId) ? selectedId : notes[0].id;
-                onCommit(target);
-            } else if (query.trim()) {
-                // nvALT: no note matches the query → create one titled with it, then clear the
+                onCommit(notes[0].id);
+            } else {
+                // A query that matches nothing: create a note titled with it, then clear the
                 // search so the new note is visible and the box is ready for the next find.
                 event.preventDefault();
                 onCreate(query.trim());
@@ -75,7 +84,7 @@ export function TopBar({
         } else if (event.key === 'Escape') {
             event.preventDefault();
             if (query) onQueryChange('');
-            else onEscapeList();
+            else onClose();
         } else if (event.key === 'ArrowDown' && notes.length > 0) {
             event.preventDefault();
             onEnterList(inList(selectedId) ? selectedId : notes[0].id);
