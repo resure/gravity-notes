@@ -111,14 +111,27 @@ describe('FileSystemNoteStore', () => {
             expect((await store.get('New.md')).content).toBe('keep me');
             await expect(store.get('Old.md')).rejects.toThrow();
         });
+    });
 
-        it('resolves collisions when renaming onto an existing title', async () => {
-            dir.seedFile('Old.md', 'a', 5);
-            dir.seedFile('Taken.md', 'b', 6);
+    describe('rename — collisions', () => {
+        it('renames to a free name', async () => {
+            dir.seedFile('Old.md', 'body', 100);
+            const meta = await store.rename('Old.md', 'New');
+            expect(meta.id).toBe('New.md');
+            expect((await store.get('New.md')).content).toBe('body');
+            expect(await store.stat('Old.md')).toBeNull();
+        });
 
+        it('is a no-op when the target name is taken by another note', async () => {
+            dir.seedFile('Old.md', 'mine', 100);
+            dir.seedFile('Taken.md', 'theirs', 200);
             const meta = await store.rename('Old.md', 'Taken');
-
-            expect(meta.id).toBe('Taken 2.md');
+            // Unchanged: same id/title, no auto-numbered "Taken 2.md", both files intact.
+            expect(meta.id).toBe('Old.md');
+            expect(await store.stat('Old.md')).not.toBeNull();
+            expect(await store.stat('Taken 2.md')).toBeNull();
+            expect((await store.get('Old.md')).content).toBe('mine');
+            expect((await store.get('Taken.md')).content).toBe('theirs');
         });
     });
 
