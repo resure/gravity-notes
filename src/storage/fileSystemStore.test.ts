@@ -36,6 +36,22 @@ describe('FileSystemNoteStore', () => {
 
             expect(metas.map((m) => m.id)).toEqual(['note.md']);
         });
+
+        it('includes a plain-text body preview (first line, markup stripped)', async () => {
+            dir.seedFile('Note.md', '## My heading\n\nbody text', 100);
+
+            const [meta] = await store.list();
+
+            expect(meta.preview).toBe('My heading');
+        });
+
+        it('strips bullets and inline emphasis from the preview', async () => {
+            dir.seedFile('Note.md', '- **Buy** milk and *eggs*', 100);
+
+            const [meta] = await store.list();
+
+            expect(meta.preview).toBe('Buy milk and eggs');
+        });
     });
 
     describe('get and save', () => {

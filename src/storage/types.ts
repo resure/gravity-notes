@@ -18,6 +18,8 @@ export interface NoteMeta {
     title: string;
     /** Last-modified time in epoch milliseconds, when the backend can provide it. */
     updatedAt?: number;
+    /** Short plain-text snippet of the body, for the list preview (Apple-Notes style). */
+    preview?: string;
 }
 
 /** A full note, including its markdown body. */

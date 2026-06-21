@@ -32,14 +32,36 @@
     text-align: center;
 }
 
-/* Full-width, flat rows (no inset, no radius); the selection/hover fill spans edge to
-   edge, while the horizontal padding keeps the text aligned with the search + header. */
+/* Apple-Notes-style two-line cell: title row + a meta row (date · snippet). Full-width,
+   flat (no inset/radius); horizontal padding keeps text aligned with the toolbar above. */
 .note-list__item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 16px;
+    cursor: pointer;
+}
+
+.note-list__row {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 8px 16px;
-    cursor: pointer;
+}
+
+.note-list__meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.note-list__date {
+    flex-shrink: 0;
+}
+
+.note-list__preview {
+    flex: 1;
+    min-width: 0;
 }
 
 .note-list__item:hover {

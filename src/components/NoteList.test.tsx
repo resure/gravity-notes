@@ -113,6 +113,13 @@ describe('NoteList — list & a11y', () => {
         setup({notes: []});
         expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
     });
+
+    it('shows a body preview snippet and a formatted date', () => {
+        const when = new Date(2020, 0, 15).getTime(); // an old year → the date shows it
+        setup({notes: [{id: 'A.md', title: 'A', updatedAt: when, preview: 'Grocery list'}]});
+        expect(screen.getByText('Grocery list')).toBeInTheDocument();
+        expect(screen.getByText(/2020/)).toBeInTheDocument();
+    });
 });
 
 describe('NoteList — focus handle', () => {
