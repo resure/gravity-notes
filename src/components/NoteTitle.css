@@ -1,6 +1,7 @@
 /* The note title: a borderless, heading-styled input sitting between an h1 and an h2.
-   Left/right padding is matched to the editor body in EditorPane.css so the title and the
-   first body line align. */
+   Left/right padding uses the shared --editor-gutter (set on .workspace__editor, the same
+   value the editor body uses) so the title and the first body line share a left edge. The
+   top gap gives it breathing room under the top bar; the body adds its own gap below. */
 .note-title {
     display: block;
     width: 100%;
@@ -9,7 +10,7 @@
     outline: none;
     background: transparent;
     margin: 0;
-    padding: 4px 0 6px;
+    padding: 12px var(--editor-gutter, 16px) 4px;
     color: var(--g-color-text-primary);
     font-family: inherit;
     font-size: 1.6rem;

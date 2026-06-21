@@ -27,9 +27,11 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Smaller gap above the first line; left/right/bottom unchanged. The markdown
-       editor reads this custom property for both the WYSIWYG and markup panes. */
-    --g-md-editor-padding: 4px 16px 8px 16px;
+    /* The horizontal gutter shared by the editor body (via --g-md-editor-padding, read by both
+       the WYSIWYG and markup panes) and the note title, so their left edges line up. */
+    --editor-gutter: 16px;
+    /* Smaller gap above the first line; left/right use the shared gutter, bottom unchanged. */
+    --g-md-editor-padding: 4px var(--editor-gutter) 8px var(--editor-gutter);
 }
 
 .workspace__panes {

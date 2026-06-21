@@ -53,7 +53,8 @@
 }
 
 /* The body sits under the title; it owns the editor's own scroll. The title (in NoteTitle.css)
-   is pinned above it. Horizontal padding here matches the title so the two left edges align. */
+   is pinned above it. The title and the editor body share the --editor-gutter horizontal
+   padding (set on .workspace__editor) so their left edges align. */
 .editor-pane {
     display: flex;
     flex-direction: column;
