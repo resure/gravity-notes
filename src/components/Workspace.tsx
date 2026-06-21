@@ -126,6 +126,26 @@ export function Workspace({
         [nav],
     );
 
+    // ⌘J / ⌘K: browse to the next / previous note in the current list, from anywhere. Mirrors
+    // ↓/↑ in the list (preview + focus the row); clamps at the ends; picks the first/last when
+    // nothing is selected yet.
+    const browseRelative = useCallback(
+        (delta: number) => {
+            const ids = filteredNotes.map((n) => n.id);
+            if (ids.length === 0) return;
+            const current = nav.selectedId;
+            let index: number;
+            if (current && ids.includes(current)) {
+                index = Math.min(Math.max(ids.indexOf(current) + delta, 0), ids.length - 1);
+            } else {
+                index = delta > 0 ? 0 : ids.length - 1;
+            }
+            const target = ids[index];
+            if (target) enterList(target);
+        },
+        [filteredNotes, nav, enterList],
+    );
+
     const handleDelete = useCallback(
         (id: string) => {
             const ids = filteredNotes.map((n) => n.id);
@@ -181,6 +201,8 @@ export function Workspace({
 
     useShortcuts({
         createNote: handleCreate,
+        selectNextNote: () => browseRelative(1),
+        selectPrevNote: () => browseRelative(-1),
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),

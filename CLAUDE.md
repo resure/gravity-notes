@@ -94,6 +94,10 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      and the body editor decoupled from the file-name id via a stable `useNotes.sessionId` so a rename
      never remounts it. `NameCollisionError` surfaces rename-onto-existing as a toast.
      Spec: `docs/superpowers/specs/2026-06-21-note-title-field-design.md`.
+   - ✅ **Global ⌘J/⌘K navigation** — ⌘J/⌘K browse next/prev from anywhere (preview semantics, via a
+     `browseRelative` helper); insert-link relocated to ⇧⌘K through the editor's `linkKey` option; new-
+     note moved to ⌘Enter. All descriptor-driven through `SHORTCUTS`.
+     Spec: `docs/superpowers/specs/2026-06-21-nav-shortcuts-cmd-jk-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.

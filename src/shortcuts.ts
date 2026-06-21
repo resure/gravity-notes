@@ -1,6 +1,8 @@
 /** The set of actions the global keyboard handler can invoke. */
 export type ShortcutAction =
     | 'createNote'
+    | 'selectNextNote'
+    | 'selectPrevNote'
     | 'toggleEditorMode'
     | 'togglePreview'
     | 'openHelp'
@@ -37,19 +39,31 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     {keys: 'up', description: 'Preview previous note (or k)', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note (or j)', group: 'Navigation'},
     {
+        keys: 'mod+j',
+        description: 'Preview next note (works while editing)',
+        group: 'Navigation',
+        global: {trigger: 'mod', key: 'j', action: 'selectNextNote'},
+    },
+    {
+        keys: 'mod+k',
+        description: 'Preview previous note (works while editing)',
+        group: 'Navigation',
+        global: {trigger: 'mod', key: 'k', action: 'selectPrevNote'},
+    },
+    {
         keys: 'enter',
         description: 'Edit the selected note (in the title → jump to the body)',
         group: 'Navigation',
     },
     {keys: 'esc', description: 'Editor → list, then close (or clear search)', group: 'Navigation'},
     // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses
-    // the search box). ⌘K is deliberately left to the editor's insert-link command.
+    // the search box).
     {keys: 'esc esc', description: 'Focus search', group: 'Navigation'},
     {
-        keys: 'mod+j',
+        keys: 'mod+enter',
         description: 'New note',
         group: 'Editing',
-        global: {trigger: 'mod', key: 'j', action: 'createNote'},
+        global: {trigger: 'mod', key: 'Enter', action: 'createNote'},
     },
     {
         keys: 'mod+/',
@@ -63,6 +77,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
         global: {trigger: 'mod', key: 'p', action: 'togglePreview', shift: true},
     },
+    {keys: 'mod+shift+k', description: 'Insert link (in the editor)', group: 'Editing'},
     {
         keys: 'f2',
         description: 'Rename selected note',

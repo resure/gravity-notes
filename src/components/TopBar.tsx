@@ -62,7 +62,7 @@ export function TopBar({
         Boolean(id) && notes.some((n) => n.id === id);
 
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
             if (!query.trim()) {
                 // Empty box: step onto the previously selected note's row (don't jump to the
                 // editor). Nothing to do when no note is selected.
