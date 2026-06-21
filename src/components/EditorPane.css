@@ -11,9 +11,17 @@
     padding-top: 4px;
 }
 
-/* Calmer reading rhythm. */
-.editor-pane .g-md-editor {
-    line-height: 1.45;
+/* Apple-Notes-style rhythm: tighter line-height + minimal paragraph spacing. The content
+   typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm classes outrank
+   it so these win without !important. */
+.editor-pane .g-md-editor.ProseMirror.yfm {
+    line-height: 1.3;
+}
+
+.editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
+    margin-top: 0;
+    margin-bottom: 4px;
+    line-height: 1.3;
 }
 
 /* Apple-Notes-style short dashes for bullet lists. */
