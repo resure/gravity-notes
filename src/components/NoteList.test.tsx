@@ -176,6 +176,17 @@ describe('NoteList — delete', () => {
         await user.click(screen.getByRole('button', {name: 'Delete'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
     });
+
+    it('deletes on Enter in the confirmation dialog', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
+        await screen.findByRole('button', {name: 'Delete'});
+        await user.keyboard('{Enter}');
+        expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
+    });
 });
 
 describe('NoteList — search', () => {

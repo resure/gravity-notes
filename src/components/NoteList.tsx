@@ -115,6 +115,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         [focusableId, notes],
     );
 
+    const confirmDelete = () => {
+        if (deleting) onDelete(deleting.id);
+        setDeleting(null);
+    };
+
     const commitRename = (note: NoteMeta) => {
         const next = editValue.trim();
         setEditingId(null);
@@ -335,7 +340,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 )}
             </div>
 
-            <Dialog open={deleting !== null} onClose={() => setDeleting(null)} size="s">
+            <Dialog
+                open={deleting !== null}
+                onClose={() => setDeleting(null)}
+                onEnterKeyDown={confirmDelete}
+                size="s"
+            >
                 <Dialog.Header caption="Delete note" />
                 <Dialog.Body>
                     <Text>
@@ -348,10 +358,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     textButtonApply="Delete"
                     textButtonCancel="Cancel"
                     propsButtonApply={{view: 'outlined-danger'}}
-                    onClickButtonApply={() => {
-                        if (deleting) onDelete(deleting.id);
-                        setDeleting(null);
-                    }}
+                    onClickButtonApply={confirmDelete}
                     onClickButtonCancel={() => setDeleting(null)}
                 />
             </Dialog>
