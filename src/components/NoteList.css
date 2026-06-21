@@ -37,8 +37,8 @@
 .note-list__item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 16px;
+    gap: 1px;
+    padding: 5px 16px;
     cursor: pointer;
 }
 
