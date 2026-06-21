@@ -98,6 +98,11 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      `browseRelative` helper); insert-link relocated to ⇧⌘K through the editor's `linkKey` option; new-
      note moved to ⌘Enter. All descriptor-driven through `SHORTCUTS`.
      Spec: `docs/superpowers/specs/2026-06-21-nav-shortcuts-cmd-jk-design.md`.
+   - ✅ **UX polish batch** — 24h/`DD.MM.YY` list time, full-width search with the folder button on the
+     right, amber links, a collapsible sidebar (hover-peek overlay + pin toggle, localStorage-persisted),
+     +1px line-height & tighter checklist spacing, a trailing blank line on save (`canonicalBody`), and
+     neutral-grey dark theming with readable code blocks.
+     Spec: `docs/superpowers/specs/2026-06-21-ux-polish-batch-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
