@@ -368,21 +368,16 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Alpha/});
         const toggle = screen.getByLabelText('Toggle sidebar');
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
-        // Expanded → the toggle reads as pressed.
-        expect(toggle.getAttribute('aria-pressed')).toBe('true');
         await user.click(toggle);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
         expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('true');
-        // Collapsed → the toggle reads as not pressed.
-        expect(toggle.getAttribute('aria-pressed')).toBe('false');
         await user.click(toggle);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
         );
         expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
-        expect(toggle.getAttribute('aria-pressed')).toBe('true');
     });
 
     it("toggles the sidebar with ⌘'", async () => {

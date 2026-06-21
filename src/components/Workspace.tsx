@@ -227,7 +227,6 @@ export function Workspace({
                 onOpenHelp={() => setHelpOpen(true)}
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
-                collapsed={collapsed}
                 onToggleCollapsed={toggleCollapsed}
                 saveLabel={SAVE_LABEL[notes.saveState]}
                 query={query}

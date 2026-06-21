@@ -16,8 +16,6 @@ export interface TopBarProps {
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    /** Whether the notes sidebar is collapsed. */
-    collapsed: boolean;
     /** Toggle the sidebar collapsed/docked. */
     onToggleCollapsed: () => void;
     /** Transient save-status label (empty when idle). */
@@ -50,7 +48,6 @@ export function TopBar({
     onOpenHelp,
     themePref,
     onChangeThemePref,
-    collapsed,
     onToggleCollapsed,
     saveLabel,
     query,
@@ -103,9 +100,7 @@ export function TopBar({
     return (
         <header className="topbar">
             {/* "Toggle sidebar" (not "…notes…") so the label doesn't match the folder
-                button's /notes/i query in Workspace.test. `selected` (not a raw
-                aria-pressed, which Gravity's Button overwrites with its own) is what
-                renders aria-pressed — pressed = sidebar shown. */}
+                button's /notes/i query in Workspace.test. */}
             <Button
                 view="flat"
                 size="m"
@@ -113,7 +108,6 @@ export function TopBar({
                 onClick={onToggleCollapsed}
                 aria-label="Toggle sidebar"
                 title="Toggle sidebar (⌘')"
-                selected={!collapsed}
             >
                 <Icon data={LayoutSideContent} />
             </Button>
