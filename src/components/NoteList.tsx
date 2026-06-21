@@ -143,15 +143,20 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, note: NoteMeta) => {
         if (editingId === note.id) return;
+        // Bare j/k mirror the arrow keys (vim-style). Guarded against modifiers so ⌘J
+        // (new note) still falls through to the global shortcut handler.
+        const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
+        if (event.key === 'ArrowDown' || (bare && event.key === 'j')) {
+            event.preventDefault();
+            moveSelection(note.id, 1);
+            return;
+        }
+        if (event.key === 'ArrowUp' || (bare && event.key === 'k')) {
+            event.preventDefault();
+            moveSelection(note.id, -1);
+            return;
+        }
         switch (event.key) {
-            case 'ArrowDown':
-                event.preventDefault();
-                moveSelection(note.id, 1);
-                break;
-            case 'ArrowUp':
-                event.preventDefault();
-                moveSelection(note.id, -1);
-                break;
             case 'Enter':
                 event.preventDefault();
                 onCommit(note.id);

@@ -27,8 +27,8 @@ export interface ShortcutDescriptor {
 
 /** Single source of truth for both the global handler and the help dialog. */
 export const SHORTCUTS: ShortcutDescriptor[] = [
-    {keys: 'up', description: 'Preview previous note', group: 'Navigation'},
-    {keys: 'down', description: 'Preview next note', group: 'Navigation'},
+    {keys: 'up', description: 'Preview previous note (or k)', group: 'Navigation'},
+    {keys: 'down', description: 'Preview next note (or j)', group: 'Navigation'},
     {keys: 'enter', description: 'Edit the selected note', group: 'Navigation'},
     {keys: 'esc', description: 'Editor → list, then close (or clear search)', group: 'Navigation'},
     // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses

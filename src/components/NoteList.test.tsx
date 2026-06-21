@@ -70,6 +70,30 @@ describe('NoteList — list & a11y', () => {
         expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
     });
 
+    it('browses the next note on j (vim-style)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Alpha.md'});
+        screen.getByRole('option', {name: /Alpha/}).focus();
+        await user.keyboard('j');
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('browses the previous note on k (vim-style)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Beta.md'});
+        screen.getByRole('option', {name: /Beta/}).focus();
+        await user.keyboard('k');
+        expect(props.onBrowse).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('ignores j with a modifier so ⌘J stays the new-note shortcut', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({selectedId: 'Alpha.md'});
+        screen.getByRole('option', {name: /Alpha/}).focus();
+        await user.keyboard('{Meta>}j{/Meta}');
+        expect(props.onBrowse).not.toHaveBeenCalled();
+    });
+
     it('commits the focused note on Enter', async () => {
         const user = userEvent.setup();
         const {props} = setup({selectedId: 'Alpha.md'});
