@@ -27,7 +27,7 @@ export interface NoteListProps {
     onCommit: (id: string) => void;
     /** Esc on a focused row (or in an empty search box): close the open note. */
     onEscapeList: () => void;
-    onCreate: () => void;
+    onCreate: (title?: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
@@ -171,9 +171,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const pinnedSet = new Set(pinnedIds);
 
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter' && notes.length > 0) {
-            event.preventDefault();
-            onCommit(notes[0].id);
+        if (event.key === 'Enter') {
+            if (notes.length > 0) {
+                event.preventDefault();
+                onCommit(notes[0].id);
+            } else if (query.trim()) {
+                // nvALT: no note matches the query → create one titled with it.
+                event.preventDefault();
+                onCreate(query.trim());
+            }
         } else if (event.key === 'Escape') {
             event.preventDefault();
             if (query) onQueryChange('');
@@ -212,7 +218,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                             {value: 'created', content: 'Created'},
                         ]}
                     />
-                    <Button view="action" size="m" onClick={onCreate}>
+                    <Button view="action" size="m" onClick={() => onCreate()}>
                         <Icon data={Plus} />
                         New
                     </Button>

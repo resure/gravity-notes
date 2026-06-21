@@ -111,6 +111,16 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
+    it('creates a note titled with the query when Enter finds no match (nvALT)', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        const search = screen.getByPlaceholderText('Search');
+        await user.type(search, 'Zzz Notes{Enter}');
+        // No existing note matches "Zzz Notes", so Enter creates it.
+        await screen.findByRole('option', {name: /Zzz Notes/});
+    });
+
     it('closes the open note on Escape in an empty search box', async () => {
         const user = userEvent.setup();
         renderWorkspace();

@@ -240,6 +240,22 @@ describe('NoteList — search', () => {
         expect(props.onCommit).toHaveBeenCalledWith('Alpha.md');
     });
 
+    it('creates a note titled with the query on Enter when nothing matches (nvALT)', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({notes: [], query: 'Groceries'});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCreate).toHaveBeenCalledWith('Groceries');
+    });
+
+    it('does not create on Enter when the query is blank and nothing matches', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({notes: [], query: '   '});
+        screen.getByPlaceholderText('Search').focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCreate).not.toHaveBeenCalled();
+    });
+
     it('enters the list on ArrowDown from the search field', async () => {
         const user = userEvent.setup();
         const {props} = setup({selectedId: 'Beta.md'});

@@ -104,13 +104,16 @@ export function Workspace({
         return () => document.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const handleCreate = useCallback(() => {
-        nav.prepareCommit(); // arm autofocus so the new note mounts focused
-        void (async () => {
-            const id = await notes.create();
-            if (id) nav.setSelected(id);
-        })();
-    }, [notes, nav]);
+    const handleCreate = useCallback(
+        (title?: string) => {
+            nav.prepareCommit(); // arm autofocus so the new note mounts focused
+            void (async () => {
+                const id = await notes.create(title);
+                if (id) nav.setSelected(id);
+            })();
+        },
+        [notes, nav],
+    );
 
     const handleDelete = useCallback(
         (id: string) => {
