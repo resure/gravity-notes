@@ -18,7 +18,7 @@
 .note-list__items {
     flex: 1;
     overflow-y: auto;
-    padding: 8px;
+    padding: 0;
 }
 
 .note-list__empty {
@@ -26,12 +26,13 @@
     text-align: center;
 }
 
+/* Full-width, flat rows (no inset, no radius); the selection/hover fill spans edge to
+   edge, while the horizontal padding keeps the text aligned with the search + header. */
 .note-list__item {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: 8px 16px;
     cursor: pointer;
 }
 
@@ -69,7 +70,7 @@
 }
 
 .note-list__search {
-    padding: 8px 8px 0;
+    padding: 8px 16px 12px;
 }
 
 .note-list__match {
