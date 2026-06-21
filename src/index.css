@@ -4,3 +4,18 @@ body,
     height: 100%;
     margin: 0;
 }
+
+/* Accent: blue instead of Gravity's default yellow-orange. The private blue scale
+   resolves per-theme, so this serves both light and dark. (Visual — smoke-tested.) */
+.g-root {
+    --g-color-base-brand: var(--g-color-private-blue-550-solid);
+    --g-color-base-brand-hover: var(--g-color-private-blue-600-solid);
+    --g-color-base-selection: var(--g-color-private-blue-150);
+    --g-color-base-selection-hover: var(--g-color-private-blue-200);
+    --g-color-line-brand: var(--g-color-private-blue-550-solid);
+    --g-color-text-brand: var(--g-color-private-blue-600-solid);
+    --g-color-text-brand-heavy: var(--g-color-private-blue-700-solid);
+    --g-color-text-link: var(--g-color-private-blue-550-solid);
+    --g-color-text-link-hover: var(--g-color-private-blue-700-solid);
+    --g-color-text-link-visited: var(--g-color-private-blue-700-solid);
+}
