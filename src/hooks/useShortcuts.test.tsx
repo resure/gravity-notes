@@ -71,4 +71,24 @@ describe('useShortcuts', () => {
         press({key: 'j', ctrlKey: true, repeat: true});
         expect(actions.createNote).toHaveBeenCalledTimes(1);
     });
+
+    it('does not focus search on mod+k while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'k', metaKey: true});
+        expect(actions.focusSearch).not.toHaveBeenCalled();
+    });
+
+    it('still creates a note on ctrl+j while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'j', ctrlKey: true});
+        expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
 });

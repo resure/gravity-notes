@@ -3,12 +3,14 @@ export type ShortcutAction = 'focusSearch' | 'createNote' | 'toggleEditorMode' |
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
-    /** 'mod' = ⌘/Ctrl combo; 'bare' = the key alone (gated against typing surfaces). */
+    /** 'mod' = ⌘/Ctrl combo; 'bare' = the key alone. */
     trigger: 'mod' | 'bare';
     /** `event.key` to match. For the 'mod' trigger the comparison is case-insensitive. */
     key: string;
     /** Which action to fire. */
     action: ShortcutAction;
+    /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod→true, bare→false. */
+    inTyping?: boolean;
 }
 
 /** One row of the keyboard-shortcut help sheet, and (optionally) its global binding. */
@@ -29,7 +31,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         keys: 'mod+k',
         description: 'Focus search',
         group: 'Navigation',
-        global: {trigger: 'mod', key: 'k', action: 'focusSearch'},
+        global: {trigger: 'mod', key: 'k', action: 'focusSearch', inTyping: false},
     },
     {keys: 'up', description: 'Preview previous note', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note', group: 'Navigation'},

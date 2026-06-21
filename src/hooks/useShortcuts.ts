@@ -27,8 +27,11 @@ export function useShortcuts(actions: ShortcutActions): void {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.repeat) return; // a held key shouldn't fire the action repeatedly
             const mod = event.metaKey || event.ctrlKey;
+            const typing = isTypingTarget(document.activeElement);
             for (const {global: binding} of SHORTCUTS) {
                 if (!binding) continue;
+                const allowInTyping = binding.inTyping ?? binding.trigger === 'mod';
+                if (typing && !allowInTyping) continue;
                 if (binding.trigger === 'mod') {
                     if (
                         mod &&
@@ -40,7 +43,7 @@ export function useShortcuts(actions: ShortcutActions): void {
                         actionsRef.current[binding.action]();
                         return;
                     }
-                } else if (event.key === binding.key && !isTypingTarget(document.activeElement)) {
+                } else if (event.key === binding.key) {
                     event.preventDefault();
                     actionsRef.current[binding.action]();
                     return;
