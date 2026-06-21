@@ -10,12 +10,18 @@
     line-height: 1.45;
 }
 
-/* Apple-Notes-style short dashes for bullet lists (leave task lists alone). */
-.editor-pane .g-md-editor ul:not(.contains-task-list) > li::marker {
+/* Apple-Notes-style short dashes for bullet lists. */
+.editor-pane .g-md-editor ul > li::marker {
     content: '–  ';
 }
 
-/* Breathing room between a checklist checkbox and its label. */
-.editor-pane .g-md-editor li.task-list-item > input[type='checkbox'] {
+/* …but not on checklist rows — the checkbox replaces the bullet. The editor renders
+   checkboxes as a .g-md-checkbox div inside ordinary <ul> items (no GFM task-list class). */
+.editor-pane .g-md-editor ul > li:has(.g-md-checkbox)::marker {
+    content: '';
+}
+
+/* Breathing room between a checklist checkbox and its label (editor ships ~5px). */
+.editor-pane .g-md-checkbox__input[type='checkbox'] {
     margin-inline-end: 8px;
 }
