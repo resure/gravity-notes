@@ -1,0 +1,27 @@
+/* The note title: a borderless, heading-styled input sitting between an h1 and an h2.
+   Left/right padding is matched to the editor body in EditorPane.css so the title and the
+   first body line align. */
+.note-title {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    background: transparent;
+    margin: 0;
+    padding: 4px 0 6px;
+    color: var(--g-color-text-primary);
+    font-family: inherit;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.note-title::placeholder {
+    color: var(--g-color-text-secondary);
+    font-weight: 600;
+}
+
+.note-title[readonly] {
+    cursor: default;
+}
