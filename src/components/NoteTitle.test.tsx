@@ -39,7 +39,7 @@ describe('NoteTitle', () => {
         const input = screen.getByLabelText('Note title');
         await user.clear(input);
         await user.type(input, 'New');
-        await user.tab();
+        fireEvent.blur(input);
         expect(onCommit).toHaveBeenCalledWith('New');
     });
 
@@ -80,6 +80,25 @@ describe('NoteTitle', () => {
         expect(onLeaveToBody).not.toHaveBeenCalled();
         await user.keyboard('{ArrowDown}');
         expect(onLeaveToBody).toHaveBeenCalledTimes(1);
+    });
+
+    it('Tab moves to the body start; Shift+Tab is left to default traversal', () => {
+        const onLeaveToBody = vi.fn();
+        render(
+            <NoteTitle
+                title="X"
+                onCommit={noop}
+                onLeaveToBody={onLeaveToBody}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
+        const input = screen.getByLabelText('Note title');
+        input.focus();
+        fireEvent.keyDown(input, {key: 'Tab'});
+        expect(onLeaveToBody).toHaveBeenCalledTimes(1);
+        fireEvent.keyDown(input, {key: 'Tab', shiftKey: true});
+        expect(onLeaveToBody).toHaveBeenCalledTimes(1); // unchanged — Shift+Tab not intercepted
     });
 
     it('Escape reverts the draft and steps out', async () => {

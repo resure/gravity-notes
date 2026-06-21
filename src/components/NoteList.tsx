@@ -250,7 +250,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 aria-selected={selected}
                                 tabIndex={tabbable ? 0 : -1}
                                 onClick={() => !editing && browseRow(note.id)}
-                                onDoubleClick={() => beginRename(note)}
                                 onKeyDown={(e) => onItemKeyDown(e, note)}
                             >
                                 {editing ? (

@@ -60,7 +60,9 @@
 }
 
 /* Collapsed: the sidebar leaves the flow as an off-screen overlay so the editor fills the width.
-   It stays mounted, but visibility:hidden keeps it out of the tab order until peeked. */
+   It stays mounted, but visibility:hidden keeps it out of the tab order until peeked. The
+   visibility change is delayed (0s duration, 0.15s delay) so on CLOSE the sidebar stays visible
+   through the slide-out and only then hides. */
 .workspace__body_collapsed .workspace__sidebar {
     position: absolute;
     left: 0;
@@ -71,13 +73,18 @@
     visibility: hidden;
     transition:
         transform 0.15s ease,
-        visibility 0.15s ease;
+        visibility 0s linear 0.15s;
     box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
 }
 
-/* Peeked (⌘⇧'): slide the overlay in and make it focusable. The rule sits AFTER the collapsed
-   rule so its transform/visibility win at equal specificity. */
+/* Peeked (⌘\): slide the overlay in and make it focusable. visibility flips to visible
+   IMMEDIATELY (0s, no delay) — animating/delaying it would leave the row unfocusable at the
+   instant the peek effect calls .focus(), stranding the cursor in the editor. The rule sits AFTER
+   the collapsed rule so its transform/visibility win at equal specificity. */
 .workspace__body_peeked .workspace__sidebar {
     transform: translateX(0);
     visibility: visible;
+    transition:
+        transform 0.15s ease,
+        visibility 0s linear 0s;
 }

@@ -47,13 +47,13 @@ describe('Workspace — nvALT navigation', () => {
         localStorage.removeItem('gravity-notes:sidebar-collapsed');
     });
 
-    // Collapse the sidebar, then fire ⌘\ to peek it. Resolves once the peek class is present.
+    // Collapse the sidebar, then fire ⌘' to peek it. Resolves once the peek class is present.
     async function collapseThenPeek(user: ReturnType<typeof userEvent.setup>) {
         await user.click(screen.getByLabelText('Toggle sidebar'));
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
-        fireEvent.keyDown(document, {key: '\\', metaKey: true});
+        fireEvent.keyDown(document, {key: "'", metaKey: true});
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
         );
@@ -392,12 +392,11 @@ describe('Workspace — nvALT navigation', () => {
         expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
     });
 
-    it("toggles the sidebar with ⌘'", async () => {
-        const user = userEvent.setup();
+    it('toggles the sidebar with ⌘\\', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
-        await user.keyboard("{Meta>}'{/Meta}");
+        fireEvent.keyDown(document, {key: '\\', metaKey: true});
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
@@ -410,7 +409,7 @@ describe('Workspace — nvALT navigation', () => {
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
     });
 
-    it('⌘\\ peeks the collapsed sidebar', async () => {
+    it("⌘' peeks the collapsed sidebar", async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
@@ -418,11 +417,11 @@ describe('Workspace — nvALT navigation', () => {
         expect(document.querySelector('.workspace__body_peeked')).not.toBeNull();
     });
 
-    it('⌘\\ does nothing while the sidebar is docked', async () => {
+    it("⌘' does nothing while the sidebar is docked", async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
-        fireEvent.keyDown(document, {key: '\\', metaKey: true});
+        fireEvent.keyDown(document, {key: "'", metaKey: true});
         expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
 
@@ -455,19 +454,19 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
     });
 
-    it("docking with ⌘' clears the peek", async () => {
+    it('docking with ⌘\\ clears the peek', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         await collapseThenPeek(user);
-        await user.keyboard("{Meta>}'{/Meta}");
+        fireEvent.keyDown(document, {key: '\\', metaKey: true});
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
         );
         expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
 
-    it('⌘\\ focuses the list when it peeks', async () => {
+    it("⌘' focuses the list when it peeks", async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
@@ -490,5 +489,23 @@ describe('Workspace — nvALT navigation', () => {
             ),
         );
         expect(document.querySelector('.workspace__body_peeked')).not.toBeNull();
+    });
+
+    it("a second ⌘' commits the selected note and closes the peek", async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await collapseThenPeek(user);
+        // Browse to a row so a note is selected, then a second ⌘' commits it (like Enter) + closes.
+        fireEvent.keyDown(document, {key: 'j', metaKey: true});
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        fireEvent.keyDown(document, {key: "'", metaKey: true});
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
     });
 });

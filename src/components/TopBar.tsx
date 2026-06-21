@@ -1,8 +1,9 @@
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
 import {CircleQuestion, Folder, LayoutSideContent} from '@gravity-ui/icons';
-import {Button, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {Button, Icon, TextInput, Tooltip} from '@gravity-ui/uikit';
 
+import type {SaveState} from '../hooks/useNotes';
 import type {NoteMeta} from '../storage/types';
 
 import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
@@ -18,8 +19,8 @@ export interface TopBarProps {
     onChangeThemePref: (pref: ThemePref) => void;
     /** Toggle the sidebar collapsed/docked. */
     onToggleCollapsed: () => void;
-    /** Transient save-status label (empty when idle). */
-    saveLabel: string;
+    /** Autosave status, surfaced as a small dot beside the folder button. */
+    saveState: SaveState;
     /** Search box (nvALT find-or-create) and its keyboard coordination with the list. */
     query: string;
     onQueryChange: (query: string) => void;
@@ -37,6 +38,15 @@ export interface TopBarProps {
     onFocusList: () => void;
 }
 
+/** Hover text for the autosave status dot, by state. */
+const STATUS_TEXT: Record<SaveState, string> = {
+    idle: 'All changes saved',
+    saving: 'Saving…',
+    saved: 'All changes saved',
+    error: "Save failed — changes aren't on disk",
+    conflict: 'This note changed on disk',
+};
+
 /**
  * The slim nvALT top bar: a full-width "search or create" box fills from the left, with the
  * folder button, theme switcher, and help on the right. Owns the search keyboard model; the
@@ -49,7 +59,7 @@ export function TopBar({
     themePref,
     onChangeThemePref,
     onToggleCollapsed,
-    saveLabel,
+    saveState,
     query,
     onQueryChange,
     searchInputRef,
@@ -99,18 +109,6 @@ export function TopBar({
 
     return (
         <header className="topbar">
-            {/* "Toggle sidebar" (not "…notes…") so the label doesn't match the folder
-                button's /notes/i query in Workspace.test. */}
-            <Button
-                view="flat"
-                size="m"
-                className="topbar__sidebar-toggle"
-                onClick={onToggleCollapsed}
-                aria-label="Toggle sidebar"
-                title="Toggle sidebar (⌘')"
-            >
-                <Icon data={LayoutSideContent} />
-            </Button>
             <TextInput
                 className="topbar__search"
                 controlRef={searchInputRef}
@@ -120,9 +118,6 @@ export function TopBar({
                 hasClear
                 onKeyDown={onSearchKeyDown}
             />
-            <Text color="secondary" className="topbar__save">
-                {saveLabel}
-            </Text>
             <Button
                 view="flat"
                 size="m"
@@ -134,8 +129,36 @@ export function TopBar({
                 <Icon data={Folder} size={16} />
                 <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
             </Button>
+            <Tooltip content={STATUS_TEXT[saveState]} placement="bottom">
+                <div
+                    className={`topbar__status-dot topbar__status-dot_${saveState}`}
+                    role="status"
+                    aria-label={STATUS_TEXT[saveState]}
+                />
+            </Tooltip>
+            {/* aria-label "Toggle sidebar" (not "…notes…") so it doesn't match the folder
+                button's /notes/i query in Workspace.test. */}
+            <Tooltip
+                content={
+                    <>
+                        <div>{'Toggle sidebar — ⌘\\'}</div>
+                        <div>{"Peek / focus list — ⌘'"}</div>
+                    </>
+                }
+                placement="bottom"
+            >
+                <Button
+                    view="flat"
+                    size="m"
+                    className="topbar__sidebar-toggle"
+                    onClick={onToggleCollapsed}
+                    aria-label="Toggle sidebar"
+                >
+                    <Icon data={LayoutSideContent} />
+                </Button>
+            </Tooltip>
             <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-            <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (?)">
+            <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (⌘/)">
                 <Icon data={CircleQuestion} />
             </Button>
         </header>

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:single": "tsc && vite build --mode singlefile",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -21,11 +22,6 @@
   "dependencies": {
     "@diplodoc/cut-extension": "^1.0.0",
     "@diplodoc/file-extension": "^0.2.1",
-    "@diplodoc/folding-headings-extension": "^0.1.0",
-    "@diplodoc/html-extension": "^2.3.2",
-    "@diplodoc/latex-extension": "^1.0.3",
-    "@diplodoc/mermaid-extension": "^2.0.0",
-    "@diplodoc/quote-link-extension": "^0.1.3",
     "@diplodoc/tabs-extension": "^3.5.1",
     "@diplodoc/transform": "^4.43.0",
     "@gravity-ui/components": "^4.20.2",
@@ -52,9 +48,9 @@
     "eslint": "^9.18.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.4.2",
-    "sass": "^1.83.0",
     "typescript": "^5.9.2",
     "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.0",
     "vitest": "^3.2.6"
   }
 }

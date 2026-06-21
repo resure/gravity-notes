@@ -50,11 +50,19 @@ describe('useShortcuts', () => {
         expect(actions.createNote).toHaveBeenCalledTimes(1);
     });
 
-    it('toggles editor mode on mod+/', () => {
+    it('toggles editor mode on mod+shift+semicolon', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: ';', metaKey: true, shiftKey: true});
+        expect(actions.toggleEditorMode).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not toggle editor mode on mod+/ (that is help)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         press({key: '/', metaKey: true});
-        expect(actions.toggleEditorMode).toHaveBeenCalledTimes(1);
+        expect(actions.toggleEditorMode).not.toHaveBeenCalled();
+        expect(actions.openHelp).toHaveBeenCalledTimes(1);
     });
 
     it('toggles preview on mod+shift+p', () => {
@@ -71,22 +79,22 @@ describe('useShortcuts', () => {
         expect(actions.togglePreview).not.toHaveBeenCalled();
     });
 
-    it('opens help on ? when focus is outside inputs', () => {
+    it('opens help on mod+/', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        const event = press({key: '?'});
+        const event = press({key: '/', metaKey: true});
         expect(actions.openHelp).toHaveBeenCalledTimes(1);
         expect(event.defaultPrevented).toBe(true);
     });
 
-    it('does not open help on ? while typing in an input', () => {
+    it('opens help on mod+/ even while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
-        press({key: '?'});
-        expect(actions.openHelp).not.toHaveBeenCalled();
+        press({key: '/', metaKey: true});
+        expect(actions.openHelp).toHaveBeenCalledTimes(1);
     });
 
     it('ignores auto-repeat so a held key fires once', () => {
@@ -128,35 +136,35 @@ describe('useShortcuts', () => {
         expect(actions.renameSelected).toHaveBeenCalledTimes(1);
     });
 
-    it('toggles the sidebar on ctrl+apostrophe', () => {
+    it('toggles the sidebar on ctrl+backslash', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: "'", ctrlKey: true});
+        press({key: '\\', ctrlKey: true});
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 
-    it('still toggles the sidebar on ctrl+apostrophe while typing in an input', () => {
+    it('still toggles the sidebar on ctrl+backslash while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
-        press({key: "'", ctrlKey: true});
+        press({key: '\\', ctrlKey: true});
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 
-    it('peeks the sidebar on ctrl+backslash (and does not toggle)', () => {
+    it('peeks the sidebar on ctrl+apostrophe (and does not toggle)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: '\\', ctrlKey: true});
+        press({key: "'", ctrlKey: true});
         expect(actions.peekSidebar).toHaveBeenCalledTimes(1);
         expect(actions.toggleSidebar).not.toHaveBeenCalled();
     });
 
-    it('does not peek the sidebar on ctrl+apostrophe (that is the toggle)', () => {
+    it('does not peek the sidebar on ctrl+backslash (that is the toggle)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: "'", ctrlKey: true});
+        press({key: '\\', ctrlKey: true});
         expect(actions.peekSidebar).not.toHaveBeenCalled();
     });
 });

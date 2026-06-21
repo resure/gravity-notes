@@ -46,6 +46,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         {
             md: {html: false},
             initial: {markup: note.content, mode: 'wysiwyg'},
+            // Keep intentionally-blank lines through the WYSIWYG round-trip. Without this the
+            // serializer drops empty paragraphs (Markdown can't represent a bare blank line), so
+            // saving a note strips the blank lines the user typed for spacing. With it, an empty
+            // row is serialized as a `&nbsp;` line so the gap survives save/reload.
+            experimental: {preserveEmptyRows: true},
             // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
             wysiwygConfig: {extensionOptions: {link: {linkKey: 'Mod-Shift-k'}}},
         },
@@ -150,10 +155,20 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 onEnter={enterToBody}
                 onEscape={onEscape}
             />
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures ArrowUp to hand off to the title; the editor inside is the interactive element */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
             <div
                 ref={bodyRef}
                 className="editor-pane__body"
+                onMouseDown={(event) => {
+                    // Click in the empty area around/below the editor (its bottom padding, or the
+                    // body grown taller than a short note) → drop the caret at the very end.
+                    // Clicks on the editable content itself fall through to the editor.
+                    if (preview) return;
+                    if ((event.target as HTMLElement).closest('.g-md-editor')) return;
+                    event.preventDefault();
+                    editor.moveCursor('end');
+                    editor.focus();
+                }}
                 onKeyDown={(event) => {
                     // Body → title handoffs. Ignore preview and the editor's own modifier combos.
                     if (preview || event.metaKey || event.ctrlKey || event.altKey) return;

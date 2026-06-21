@@ -52,30 +52,22 @@ Key modules:
 - `src/components/` — `FolderGate`, `Workspace`, `NoteList`, `EditorPane`
 - `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
 
-### TODO
-
-pressing cmd+\\ should move focus to the notes list (and pressing enter after that should close sidebar and place cursor in the editor again)
-
-- current "saving/saved" text is a little too annoying. let's add a dot indicator to the right of the folder selector. it should slowly blink in saving and be solid when file is saved. but overall should not be too visible. on hovering mouse over it it should explain what it does
-- let's move sidebar button to the right, near theme switcher. Also add tooltip on hovering that button with hints about both sidebar hotkeys
-- remove double-click renaming note ability, we already have enough ways for renaming notes
-
-what other nvalt ideas do you suggest to add?
-
 ### Next up
 
-- Let's create favicon / logo for our project. It should be minimalistic, maybe just grey circle or something like that?
-- Let's add Safari (non-chromium) browser support. Probably should ask where to store notes on start, like excalidraw?
-- Wiki-style links between notes
-- Media attachments, with separate view for files management (and preview)
-- Make preview styling similar to editing mode style
-- remove unused extensions/deps for now
-- script for packaging it into one html file? can we gzip assets?
-
+- Safari (non-chromium) browser support. Probably should ask where to store notes on start, like excalidraw?
 
 ### Backlog
 
-- PWA
+- Full-text search + ranking
+- ESC key behaviour imrovement with closed sidebar
+- Fullscreen mode?
+- PWA improvements
 - Trash bin for deleted notes
+- Media attachments, with separate view for files management (and preview)
+- Wiki-style links between notes, backlinks
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
+- Tab-to-complete in the search box
+- Tags?
+- Daily notes
+- Recent-note history (cmd+[] - back/forward through visited notes)

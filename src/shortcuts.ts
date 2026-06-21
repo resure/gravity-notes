@@ -62,16 +62,16 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     // the search box).
     {keys: 'esc esc', description: 'Focus search', group: 'Navigation'},
     {
-        keys: "mod+'",
+        keys: 'mod+\\',
         description: 'Toggle the sidebar',
         group: 'Navigation',
-        global: {trigger: 'mod', key: "'", action: 'toggleSidebar'},
+        global: {trigger: 'mod', key: '\\', action: 'toggleSidebar'},
     },
     {
-        keys: 'mod+\\',
-        description: 'Peek the collapsed sidebar',
+        keys: "mod+'",
+        description: 'Peek the sidebar / focus the list (again to close)',
         group: 'Navigation',
-        global: {trigger: 'mod', key: '\\', action: 'peekSidebar'},
+        global: {trigger: 'mod', key: "'", action: 'peekSidebar'},
     },
     {
         keys: 'mod+enter',
@@ -80,10 +80,10 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         global: {trigger: 'mod', key: 'Enter', action: 'createNote'},
     },
     {
-        keys: 'mod+/',
+        keys: 'mod+shift+;',
         description: 'Toggle WYSIWYG / Markup',
         group: 'Editing',
-        global: {trigger: 'mod', key: '/', action: 'toggleEditorMode'},
+        global: {trigger: 'mod', key: ';', action: 'toggleEditorMode', shift: true},
     },
     {
         keys: 'mod+shift+p',
@@ -99,10 +99,10 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         global: {trigger: 'bare', key: 'F2', action: 'renameSelected', inTyping: true},
     },
     {
-        keys: '?',
+        keys: 'mod+/',
         description: 'Show this help',
         group: 'General',
-        global: {trigger: 'bare', key: '?', action: 'openHelp'},
+        global: {trigger: 'mod', key: '/', action: 'openHelp'},
     },
 ];
 

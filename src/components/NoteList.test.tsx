@@ -171,6 +171,13 @@ describe('NoteList — focus handle', () => {
 });
 
 describe('NoteList — inline rename', () => {
+    // Double-click no longer renames; the context-menu "Rename" item is the mouse path.
+    async function openRename(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+        const row = screen.getByRole('option', {name});
+        await user.click(within(row).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
+    }
+
     it('renames via the startRename handle and commits on Enter', async () => {
         const user = userEvent.setup();
         const {ref, props} = setup({selectedId: 'Alpha.md'});
@@ -184,10 +191,10 @@ describe('NoteList — inline rename', () => {
         expect(props.onRename).toHaveBeenCalledTimes(1);
     });
 
-    it('commits a rename on blur', async () => {
+    it('renames from the context menu and commits on blur', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, 'Beta 2');
@@ -199,7 +206,7 @@ describe('NoteList — inline rename', () => {
     it('cancels a rename on Escape', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, 'Nope{Escape}');
@@ -220,7 +227,7 @@ describe('NoteList — inline rename', () => {
     it('is a no-op when the title is unchanged', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         await user.type(screen.getByDisplayValue('Beta'), '{Enter}');
         expect(props.onRename).not.toHaveBeenCalled();
     });
@@ -228,11 +235,18 @@ describe('NoteList — inline rename', () => {
     it('is a no-op when the title is emptied', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, '{Enter}');
         expect(props.onRename).not.toHaveBeenCalled();
+    });
+
+    it('does not start a rename on double-click', async () => {
+        const user = userEvent.setup();
+        setup();
+        await user.dblClick(screen.getByText('Beta'));
+        expect(screen.queryByDisplayValue('Beta')).toBeNull();
     });
 });
 

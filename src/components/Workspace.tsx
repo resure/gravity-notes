@@ -4,7 +4,7 @@ import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
-import {type SaveState, useNotes} from '../hooks/useNotes';
+import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {orderNotes} from '../storage/metadata';
@@ -27,14 +27,6 @@ interface WorkspaceProps {
 }
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
-
-const SAVE_LABEL: Record<SaveState, string> = {
-    idle: '',
-    saving: 'Saving…',
-    saved: 'Saved',
-    error: 'Save failed',
-    conflict: 'Changed on disk',
-};
 
 export function Workspace({
     dir,
@@ -238,7 +230,15 @@ export function Workspace({
         selectPrevNote: () => browseRelative(-1),
         toggleSidebar: toggleCollapsed,
         peekSidebar: () => {
-            if (collapsed) setPeeked(true);
+            if (!collapsed) return; // docked: no-op
+            if (peeked) {
+                // Second press mirrors Enter on a focused row: commit the selected note
+                // (opens it + moves focus to the editor), then close the overlay.
+                if (nav.selectedId) nav.commit(nav.selectedId);
+                setPeeked(false);
+            } else {
+                setPeeked(true);
+            }
         },
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
@@ -257,7 +257,7 @@ export function Workspace({
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
                 onToggleCollapsed={toggleCollapsed}
-                saveLabel={SAVE_LABEL[notes.saveState]}
+                saveState={notes.saveState}
                 query={query}
                 onQueryChange={setQuery}
                 searchInputRef={searchInputRef}

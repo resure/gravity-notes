@@ -13,9 +13,44 @@
     min-width: 0;
 }
 
-.topbar__save {
+/* Low-key autosave indicator: faint solid at rest, a slow blink while saving, and a
+   distinct color when something actually needs attention (error / on-disk conflict). */
+.topbar__status-dot {
+    margin-right: 5px;
+    width: 10px;
+    height: 10px;
     flex-shrink: 0;
-    white-space: nowrap;
+    border-radius: 50%;
+    background-color: var(--g-color-text-hint);
+    opacity: 0.4;
+    transition:
+        opacity 0.2s ease,
+        background-color 0.2s ease;
+}
+
+.topbar__status-dot_saving {
+    opacity: 1;
+    animation: topbar-status-blink 1.4s ease-in-out infinite;
+}
+
+.topbar__status-dot_error {
+    background-color: var(--g-color-text-danger);
+    opacity: 1;
+}
+
+.topbar__status-dot_conflict {
+    background-color: var(--g-color-text-warning);
+    opacity: 1;
+}
+
+@keyframes topbar-status-blink {
+    0%,
+    100% {
+        opacity: 0.85;
+    }
+    50% {
+        opacity: 0.2;
+    }
 }
 
 .topbar__folder {
