@@ -3,7 +3,7 @@ import {beforeEach, describe, expect, it} from 'vitest';
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
 import {DEFAULT_METADATA} from './metadata';
-import {ConflictError} from './types';
+import {ConflictError, NameCollisionError} from './types';
 
 describe('FileSystemNoteStore', () => {
     let dir: FakeDirectoryHandle;
@@ -173,16 +173,24 @@ describe('FileSystemNoteStore', () => {
             expect(await store.stat('Old.md')).toBeNull();
         });
 
-        it('is a no-op when the target name is taken by another note', async () => {
+        it('throws NameCollisionError when the target name is taken by another note', async () => {
             dir.seedFile('Old.md', 'mine', 100);
             dir.seedFile('Taken.md', 'theirs', 200);
-            const meta = await store.rename('Old.md', 'Taken');
-            // Unchanged: same id/title, no auto-numbered "Taken 2.md", both files intact.
-            expect(meta.id).toBe('Old.md');
+            await expect(store.rename('Old.md', 'Taken')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Both files are left intact; no auto-numbered "Taken 2.md".
             expect(await store.stat('Old.md')).not.toBeNull();
             expect(await store.stat('Taken 2.md')).toBeNull();
             expect((await store.get('Old.md')).content).toBe('mine');
             expect((await store.get('Taken.md')).content).toBe('theirs');
+        });
+
+        it('returns the new file mtime so the next save has a fresh baseline', async () => {
+            dir.seedFile('Old.md', 'body', 100);
+            const meta = await store.rename('Old.md', 'New');
+            const disk = await store.stat('New.md');
+            expect(meta.updatedAt).toBe(disk);
         });
     });
 
