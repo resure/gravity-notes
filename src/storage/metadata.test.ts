@@ -206,6 +206,11 @@ describe('orderNotes', () => {
         expect(orderNotes(notes, meta).map((n) => n.title)).toEqual(['Alpha', 'Beta', 'Charlie']);
     });
 
+    it('sorts by title Z→A', () => {
+        const meta = {...DEFAULT_METADATA, sort: 'title-desc' as const};
+        expect(orderNotes(notes, meta).map((n) => n.title)).toEqual(['Charlie', 'Beta', 'Alpha']);
+    });
+
     it('sorts by created (newest first), falling back to updatedAt when unstamped', () => {
         const meta = {...DEFAULT_METADATA, sort: 'created' as const, created: {'A.md': 999}};
         expect(orderNotes(notes, meta).map((n) => n.id)).toEqual(['A.md', 'B.md', 'C.md']);

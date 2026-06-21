@@ -19,9 +19,9 @@ body,
     --g-color-text-brand: var(--g-color-private-black-900-solid);
     --g-color-text-brand-heavy: var(--g-color-private-black-1000-solid);
     --g-color-text-brand-contrast: var(--g-color-private-white-1000-solid);
-    --g-color-text-link: var(--g-color-private-black-900-solid);
-    --g-color-text-link-hover: var(--g-color-private-black-1000-solid);
-    --g-color-text-link-visited: var(--g-color-private-black-700-solid);
+    --g-color-text-link: #c2650f;
+    --g-color-text-link-hover: #9e520c;
+    --g-color-text-link-visited: #8a4a12;
     --note-list-focus-bg: var(--g-color-private-black-250);
 }
 
@@ -34,8 +34,21 @@ body,
     --g-color-text-brand: var(--g-color-private-white-1000-solid);
     --g-color-text-brand-heavy: var(--g-color-private-white-1000-solid);
     --g-color-text-brand-contrast: var(--g-color-private-black-1000-solid);
-    --g-color-text-link: var(--g-color-private-white-1000-solid);
-    --g-color-text-link-hover: var(--g-color-private-white-850-solid);
-    --g-color-text-link-visited: var(--g-color-private-white-700-solid);
+    --g-color-text-link: #e08a2b;
+    --g-color-text-link-hover: #f0a050;
+    --g-color-text-link-visited: #c2752a;
     --note-list-focus-bg: var(--g-color-private-white-250);
+    /* Neutralize the warm cast of the dark base surfaces toward grey. Tuned live. */
+    --g-color-base-background: #1f1f1f;
+    --g-color-base-generic: #2a2a2a;
+    --g-color-base-generic-hover: #333333;
+}
+
+/* Code text was washing out in dark mode; force a readable foreground on inline + fenced code
+   (both the WYSIWYG body and the read-only .yfm preview). Background left as-is. Tuned live. */
+.g-root_theme_dark .g-md-editor code,
+.g-root_theme_dark .g-md-editor pre,
+.g-root_theme_dark .note-preview .yfm code,
+.g-root_theme_dark .note-preview .yfm pre {
+    color: var(--g-color-text-primary);
 }

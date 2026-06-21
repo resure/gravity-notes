@@ -1,50 +1,66 @@
 .topbar {
     display: flex;
-    align-items: stretch;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
     border-bottom: 1px solid var(--g-color-line-generic);
     flex-shrink: 0;
 }
 
-/* Left zone spans the sidebar width so the search box (in the main zone) lines up with the
-   editor below; its border continues the sidebar divider up through the bar. */
-.topbar__folder-zone {
-    box-sizing: border-box;
-    width: var(--sidebar-width);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    padding: 6px 8px;
-    border-right: 1px solid var(--g-color-line-generic);
-}
-
-.topbar__folder {
-    gap: 6px;
-    max-width: 100%;
-}
-
-.topbar__folder-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.topbar__main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    /* 16px left matches the editor's content padding, so the search aligns with the note text. */
-    padding: 6px 12px 6px 16px;
-}
-
-/* The search is the hero: it fills the space up to the theme + help controls. */
+/* The search is the hero: it fills from the left up to the right-hand controls. */
 .topbar__search {
     flex: 1;
     min-width: 0;
 }
 
-.topbar__save {
+/* Low-key autosave indicator: faint solid at rest, a slow blink while saving, and a
+   distinct color when something actually needs attention (error / on-disk conflict). */
+.topbar__status-dot {
+    margin-right: 5px;
+    width: 10px;
+    height: 10px;
     flex-shrink: 0;
+    border-radius: 50%;
+    background-color: var(--g-color-text-hint);
+    opacity: 0.4;
+    transition:
+        opacity 0.2s ease,
+        background-color 0.2s ease;
+}
+
+.topbar__status-dot_saving {
+    opacity: 1;
+    animation: topbar-status-blink 1.4s ease-in-out infinite;
+}
+
+.topbar__status-dot_error {
+    background-color: var(--g-color-text-danger);
+    opacity: 1;
+}
+
+.topbar__status-dot_conflict {
+    background-color: var(--g-color-text-warning);
+    opacity: 1;
+}
+
+@keyframes topbar-status-blink {
+    0%,
+    100% {
+        opacity: 0.85;
+    }
+    50% {
+        opacity: 0.2;
+    }
+}
+
+.topbar__folder {
+    gap: 6px;
+    flex-shrink: 0;
+    max-width: 220px;
+}
+
+.topbar__folder-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }

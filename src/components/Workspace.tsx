@@ -4,7 +4,7 @@ import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
-import {type SaveState, useNotes} from '../hooks/useNotes';
+import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {orderNotes} from '../storage/metadata';
@@ -26,13 +26,7 @@ interface WorkspaceProps {
     onChangeFolder: () => void;
 }
 
-const SAVE_LABEL: Record<SaveState, string> = {
-    idle: '',
-    saving: 'Saving…',
-    saved: 'Saved',
-    error: 'Save failed',
-    conflict: 'Changed on disk',
-};
+const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
 
 export function Workspace({
     dir,
@@ -71,6 +65,37 @@ export function Workspace({
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Read-only preview mode, kept here so it persists as the open note changes.
     const [previewMode, setPreviewMode] = useState(false);
+    const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
+    useEffect(() => {
+        localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+    }, [collapsed]);
+    const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
+
+    // Transient overlay reveal of the collapsed sidebar (⌘⇧'); not persisted. Only meaningful
+    // while collapsed — the invariant effect clears it whenever the sidebar is docked.
+    const [peeked, setPeeked] = useState(false);
+    useEffect(() => {
+        if (!collapsed && peeked) setPeeked(false);
+    }, [collapsed, peeked]);
+    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately.
+    useEffect(() => {
+        if (peeked) listRef.current?.focusSelected();
+    }, [peeked]);
+    // While peeked, a mousedown anywhere outside the sidebar closes it (e.g. clicking the editor).
+    useEffect(() => {
+        if (!peeked) return undefined;
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target;
+            if (
+                target instanceof Node &&
+                !document.querySelector('.workspace__sidebar')?.contains(target)
+            ) {
+                setPeeked(false);
+            }
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        return () => document.removeEventListener('mousedown', onPointerDown);
+    }, [peeked]);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -203,6 +228,18 @@ export function Workspace({
         createNote: handleCreate,
         selectNextNote: () => browseRelative(1),
         selectPrevNote: () => browseRelative(-1),
+        toggleSidebar: toggleCollapsed,
+        peekSidebar: () => {
+            if (!collapsed) return; // docked: no-op
+            if (peeked) {
+                // Second press mirrors Enter on a focused row: commit the selected note
+                // (opens it + moves focus to the editor), then close the overlay.
+                if (nav.selectedId) nav.commit(nav.selectedId);
+                setPeeked(false);
+            } else {
+                setPeeked(true);
+            }
+        },
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
@@ -219,7 +256,8 @@ export function Workspace({
                 onOpenHelp={() => setHelpOpen(true)}
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
-                saveLabel={SAVE_LABEL[notes.saveState]}
+                onToggleCollapsed={toggleCollapsed}
+                saveState={notes.saveState}
                 query={query}
                 onQueryChange={setQuery}
                 searchInputRef={searchInputRef}
@@ -232,7 +270,13 @@ export function Workspace({
                 onFocusList={() => listRef.current?.focusSelected()}
             />
 
-            <div className="workspace__body">
+            <div
+                className={
+                    'workspace__body' +
+                    (collapsed ? ' workspace__body_collapsed' : '') +
+                    (collapsed && peeked ? ' workspace__body_peeked' : '')
+                }
+            >
                 <aside className="workspace__sidebar">
                     <NoteList
                         ref={listRef}
@@ -241,8 +285,14 @@ export function Workspace({
                         query={query}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
-                        onCommit={nav.commit}
-                        onEscapeList={nav.escapeToSearch}
+                        onCommit={(id) => {
+                            nav.commit(id);
+                            setPeeked(false);
+                        }}
+                        onEscapeList={() => {
+                            setPeeked(false);
+                            nav.escapeToSearch();
+                        }}
                         onCreate={handleCreate}
                         onRename={handleRename}
                         onDelete={handleDelete}

@@ -19,7 +19,7 @@ interface NoteTitleProps {
     readOnly?: boolean;
     /** Commit a rename. Fired on blur (and on unmount if still dirty). */
     onCommit: (nextTitle: string) => void;
-    /** Move the caret to the start of the existing body (↓). */
+    /** Move the caret to the start of the existing body (↓ or Tab). */
     onLeaveToBody: () => void;
     /** Open a fresh empty line at the top of the body and move the caret to it (Enter). */
     onEnter: () => void;
@@ -91,9 +91,10 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
         if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
             event.preventDefault();
             onEnter(); // open a new line atop the body → focuses it → blur commits
-        } else if (event.key === 'ArrowDown') {
+        } else if (event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)) {
             event.preventDefault();
-            onLeaveToBody(); // caret to the body start → focuses it → blur commits
+            // caret to the body start → focuses it → blur commits (Tab mirrors ↓ into the body)
+            onLeaveToBody();
         } else if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation(); // don't double-fire the editor pane's Esc handler

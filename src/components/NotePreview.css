@@ -4,7 +4,57 @@
     outline: none;
 }
 
-/* Match the editor's content inset so toggling edit/preview doesn't shift the text. */
+/* Match the editor's content inset (same horizontal gutter) so toggling edit/preview doesn't
+   shift the text. */
 .note-preview__body {
-    padding: 8px 16px 16px;
+    padding: 8px var(--editor-gutter, 16px) 16px;
+}
+
+/* Mirror the editor's Apple-Notes rhythm (see EditorPane.css) onto the diplodoc-rendered preview
+   HTML so read-only preview looks like the WYSIWYG surface. Both are `.yfm` content; the editor
+   overrides live on its ProseMirror node, so the same rules are duplicated here for the static
+   HTML. The doubled `.note-preview__body.yfm` outranks the base `.yfm` typography without
+   !important; `:where(...)` keeps element specificity at zero so these win. */
+.note-preview__body.yfm {
+    line-height: 1.25;
+}
+
+.note-preview__body.yfm :where(p, li) {
+    margin-top: 0;
+    margin-bottom: 1px;
+    line-height: 1.3;
+}
+
+.note-preview__body.yfm :where(h1, h2, h3, h4, h5, h6) {
+    margin-bottom: 4px;
+}
+.note-preview__body.yfm h1 {
+    margin-top: 28px;
+}
+.note-preview__body.yfm h2 {
+    margin-top: 22px;
+}
+.note-preview__body.yfm h3 {
+    margin-top: 18px;
+}
+.note-preview__body.yfm h4 {
+    margin-top: 14px;
+}
+.note-preview__body.yfm h5,
+.note-preview__body.yfm h6 {
+    margin-top: 10px;
+}
+
+/* No empty gap above the first block — the body's top padding already spaces it. */
+.note-preview__body.yfm > :first-child {
+    margin-top: 0;
+}
+
+/* Apple-Notes-style short dashes for bullet lists, matching the editor. */
+.note-preview__body.yfm ul > li::marker {
+    content: '–  ';
+}
+/* …but not on task-list rows — the checkbox replaces the bullet. */
+.note-preview__body.yfm ul > li:has(input[type='checkbox'])::marker {
+    content: '';
 }

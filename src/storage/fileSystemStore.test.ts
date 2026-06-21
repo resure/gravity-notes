@@ -79,25 +79,35 @@ describe('FileSystemNoteStore', () => {
             expect((await store.get('Ideas.md')).content).toBe('new body');
         });
 
-        it('writes a trailing newline and strips it back off on read', async () => {
+        it('ends the saved file with a blank line and strips it back off on read', async () => {
             dir.seedFile('Ideas.md', 'x', 10);
 
             await store.save('Ideas.md', 'no newline', 10);
 
-            // The file on disk ends with exactly one newline...
+            // The file on disk ends with a real blank line (two newlines)...
             const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
-            expect(await onDisk.text()).toBe('no newline\n');
+            expect(await onDisk.text()).toBe('no newline\n\n');
             // ...while get() returns the canonical body the editor round-trips (no trailing newline).
             expect((await store.get('Ideas.md')).content).toBe('no newline');
         });
 
-        it('collapses multiple trailing newlines to a single one on save', async () => {
+        it('writes a blank line even for an empty body', async () => {
+            dir.seedFile('Empty.md', 'x', 10);
+
+            await store.save('Empty.md', '', 10);
+
+            const onDisk = await (await dir.getFileHandle('Empty.md')).getFile();
+            expect(await onDisk.text()).toBe('\n\n');
+            expect((await store.get('Empty.md')).content).toBe('');
+        });
+
+        it('normalizes any trailing newlines to a single blank line on save', async () => {
             dir.seedFile('Ideas.md', 'x', 10);
 
             await store.save('Ideas.md', 'body\n\n\n', 10);
 
             const onDisk = await (await dir.getFileHandle('Ideas.md')).getFile();
-            expect(await onDisk.text()).toBe('body\n');
+            expect(await onDisk.text()).toBe('body\n\n');
         });
 
         it('strips trailing newlines from the body on read', async () => {
@@ -163,16 +173,16 @@ describe('FileSystemNoteStore', () => {
             await expect(store.get('Old.md')).rejects.toThrow();
         });
 
-        it('writes the canonical single trailing newline to the renamed file', async () => {
+        it('writes the canonical trailing blank line to the renamed file', async () => {
             dir.seedFile('Old.md', 'body', 5);
 
             await store.rename('Old.md', 'New');
 
-            // store.get() strips trailing newlines, so read the raw file: a rename must leave it
-            // in the same "exactly one trailing newline" shape save() produces.
+            // store.get() strips trailing newlines (so read the raw file): a rename must leave it
+            // in the same canonical "blank line at EOF" shape save() produces.
             const handle = await dir.getFileHandle('New.md');
             const raw = await (await handle.getFile()).text();
-            expect(raw).toBe('body\n');
+            expect(raw).toBe('body\n\n');
         });
     });
 

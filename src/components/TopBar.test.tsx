@@ -23,7 +23,8 @@ function setup(overrides: Record<string, unknown> = {}) {
         onOpenHelp: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
-        saveLabel: '',
+        onToggleCollapsed: vi.fn(),
+        saveState: 'idle',
         query: '',
         onQueryChange: vi.fn(),
         searchInputRef: createRef<HTMLInputElement>(),
@@ -138,5 +139,12 @@ describe('TopBar — controls', () => {
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: /Keyboard shortcuts/}));
         expect(props.onOpenHelp).toHaveBeenCalledTimes(1);
+    });
+
+    it('reflects the autosave state on the status dot', () => {
+        setup({saveState: 'saving'});
+        const dot = screen.getByRole('status');
+        expect(dot).toHaveClass('topbar__status-dot_saving');
+        expect(dot).toHaveAttribute('aria-label', 'Saving…');
     });
 });

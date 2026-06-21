@@ -54,18 +54,20 @@ function highlightMatch(title: string, query: string): ReactNode {
     );
 }
 
-/** Compact list date: time for today, "Jun 20" within the year, otherwise a full date. */
-function formatNoteDate(ts: number | undefined): string {
+/** Compact list date: 24-hour time for today, otherwise `DD.MM.YY`. Exported for unit tests. */
+export function formatNoteDate(ts: number | undefined): string {
     if (!ts) return '';
     const d = new Date(ts);
     const now = new Date();
     if (d.toDateString() === now.toDateString()) {
-        return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
     }
-    if (d.getFullYear() === now.getFullYear()) {
-        return d.toLocaleDateString([], {month: 'short', day: 'numeric'});
-    }
-    return d.toLocaleDateString([], {year: 'numeric', month: 'short', day: 'numeric'});
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear() % 100).padStart(2, '0');
+    return `${dd}.${mo}.${yy}`;
 }
 
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
@@ -210,6 +212,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     options={[
                         {value: 'updated', content: 'Updated'},
                         {value: 'title', content: 'Title (A→Z)'},
+                        {value: 'title-desc', content: 'Title (Z→A)'},
                         {value: 'created', content: 'Created'},
                     ]}
                 />
@@ -248,7 +251,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 aria-selected={selected}
                                 tabIndex={tabbable ? 0 : -1}
                                 onClick={() => !editing && browseRow(note.id)}
-                                onDoubleClick={() => beginRename(note)}
                                 onKeyDown={(e) => onItemKeyDown(e, note)}
                             >
                                 {editing ? (

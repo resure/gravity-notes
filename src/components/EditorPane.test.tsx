@@ -225,7 +225,7 @@ describe('EditorPane — title ↔ body handoff', () => {
         const input = screen.getByLabelText('Note title');
         await user.clear(input);
         await user.type(input, 'Renamed');
-        await user.tab();
+        fireEvent.blur(input);
         expect(onRename).toHaveBeenCalledWith('a.md', 'Renamed');
     });
 });

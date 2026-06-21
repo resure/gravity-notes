@@ -1,8 +1,9 @@
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
-import {CircleQuestion, Folder} from '@gravity-ui/icons';
-import {Button, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {CircleQuestion, Folder, LayoutSideContent} from '@gravity-ui/icons';
+import {Button, Icon, TextInput, Tooltip} from '@gravity-ui/uikit';
 
+import type {SaveState} from '../hooks/useNotes';
 import type {NoteMeta} from '../storage/types';
 
 import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
@@ -10,14 +11,16 @@ import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 import './TopBar.css';
 
 export interface TopBarProps {
-    /** Folder name doubles as the "change folder" button (left zone, over the sidebar). */
+    /** Folder name doubles as the "change folder" button (in the top bar's right controls). */
     folderName: string | null;
     onChangeFolder: () => void;
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    /** Transient save-status label (empty when idle). */
-    saveLabel: string;
+    /** Toggle the sidebar collapsed/docked. */
+    onToggleCollapsed: () => void;
+    /** Autosave status, surfaced as a small dot beside the folder button. */
+    saveState: SaveState;
     /** Search box (nvALT find-or-create) and its keyboard coordination with the list. */
     query: string;
     onQueryChange: (query: string) => void;
@@ -35,10 +38,19 @@ export interface TopBarProps {
     onFocusList: () => void;
 }
 
+/** Hover text for the autosave status dot, by state. */
+const STATUS_TEXT: Record<SaveState, string> = {
+    idle: 'All changes saved',
+    saving: 'Saving…',
+    saved: 'All changes saved',
+    error: "Save failed — changes aren't on disk",
+    conflict: 'This note changed on disk',
+};
+
 /**
- * The slim nvALT top bar. A left zone (sidebar-width) carries the folder button so the wide
- * "search or create" box lines up with the editor; theme + help sit at the far right. Owns
- * the search keyboard model; the list lives in `NoteList` (sort + New now sit above it).
+ * The slim nvALT top bar: a full-width "search or create" box fills from the left, with the
+ * folder button, theme switcher, and help on the right. Owns the search keyboard model; the
+ * list lives in `NoteList` (sort + New now sit above it).
  */
 export function TopBar({
     folderName,
@@ -46,7 +58,8 @@ export function TopBar({
     onOpenHelp,
     themePref,
     onChangeThemePref,
-    saveLabel,
+    onToggleCollapsed,
+    saveState,
     query,
     onQueryChange,
     searchInputRef,
@@ -96,37 +109,58 @@ export function TopBar({
 
     return (
         <header className="topbar">
-            <div className="topbar__folder-zone">
+            <TextInput
+                className="topbar__search"
+                controlRef={searchInputRef}
+                value={query}
+                onUpdate={onQueryChange}
+                placeholder="Search or create a note…"
+                hasClear
+                onKeyDown={onSearchKeyDown}
+            />
+            <Button
+                view="flat"
+                size="m"
+                width="auto"
+                className="topbar__folder"
+                onClick={onChangeFolder}
+                title="Change folder"
+            >
+                <Icon data={Folder} size={16} />
+                <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
+            </Button>
+            <Tooltip content={STATUS_TEXT[saveState]} placement="bottom">
+                <div
+                    className={`topbar__status-dot topbar__status-dot_${saveState}`}
+                    role="status"
+                    aria-label={STATUS_TEXT[saveState]}
+                />
+            </Tooltip>
+            {/* aria-label "Toggle sidebar" (not "…notes…") so it doesn't match the folder
+                button's /notes/i query in Workspace.test. */}
+            <Tooltip
+                content={
+                    <>
+                        <div>{'Toggle sidebar — ⌘\\'}</div>
+                        <div>{"Peek / focus list — ⌘'"}</div>
+                    </>
+                }
+                placement="bottom"
+            >
                 <Button
                     view="flat"
-                    size="l"
-                    className="topbar__folder"
-                    onClick={onChangeFolder}
-                    title="Change folder"
+                    size="m"
+                    className="topbar__sidebar-toggle"
+                    onClick={onToggleCollapsed}
+                    aria-label="Toggle sidebar"
                 >
-                    <Icon data={Folder} size={16} />
-                    <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
+                    <Icon data={LayoutSideContent} />
                 </Button>
-            </div>
-
-            <div className="topbar__main">
-                <TextInput
-                    className="topbar__search"
-                    controlRef={searchInputRef}
-                    value={query}
-                    onUpdate={onQueryChange}
-                    placeholder="Search or create a note…"
-                    hasClear
-                    onKeyDown={onSearchKeyDown}
-                />
-                <Text color="secondary" className="topbar__save">
-                    {saveLabel}
-                </Text>
-                <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-                <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (?)">
-                    <Icon data={CircleQuestion} />
-                </Button>
-            </div>
+            </Tooltip>
+            <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
+            <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (⌘/)">
+                <Icon data={CircleQuestion} />
+            </Button>
         </header>
     );
 }

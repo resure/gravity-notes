@@ -2,12 +2,12 @@ import {createRef} from 'react';
 
 import {act, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
 
-import {NoteList, type NoteListHandle, type NoteListProps} from './NoteList';
+import {NoteList, type NoteListHandle, type NoteListProps, formatNoteDate} from './NoteList';
 
 const NOTES: NoteMeta[] = [
     {id: 'Alpha.md', title: 'Alpha', updatedAt: 3},
@@ -36,6 +36,38 @@ function setup(overrides: Record<string, unknown> = {}) {
     renderWithProviders(<NoteList ref={ref} {...(props as NoteListProps)} />);
     return {props, ref};
 }
+
+describe('formatNoteDate', () => {
+    // Freeze "now" so the today-vs-other-day branch can't flip if a test crosses midnight.
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 5, 21, 14, 0, 0)); // 21 Jun 2026
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('shows 24-hour time for today', () => {
+        const today = new Date();
+        today.setHours(14, 32, 0, 0);
+        expect(formatNoteDate(today.getTime())).toBe('14:32');
+    });
+
+    it('zero-pads the morning hours', () => {
+        const today = new Date();
+        today.setHours(9, 5, 0, 0);
+        expect(formatNoteDate(today.getTime())).toBe('09:05');
+    });
+
+    it('shows DD.MM.YY for any other day', () => {
+        const past = new Date(2024, 0, 5, 9, 0, 0); // 5 Jan 2024
+        expect(formatNoteDate(past.getTime())).toBe('05.01.24');
+    });
+
+    it('returns an empty string when there is no timestamp', () => {
+        expect(formatNoteDate(undefined)).toBe('');
+    });
+});
 
 describe('NoteList — list & a11y', () => {
     it('renders notes as a listbox of options', () => {
@@ -115,10 +147,10 @@ describe('NoteList — list & a11y', () => {
     });
 
     it('shows a body preview snippet and a formatted date', () => {
-        const when = new Date(2020, 0, 15).getTime(); // an old year → the date shows it
+        const when = new Date(2020, 0, 15).getTime(); // 15 Jan 2020 → renders as 15.01.20
         setup({notes: [{id: 'A.md', title: 'A', updatedAt: when, preview: 'Grocery list'}]});
         expect(screen.getByText('Grocery list')).toBeInTheDocument();
-        expect(screen.getByText(/2020/)).toBeInTheDocument();
+        expect(screen.getByText('15.01.20')).toBeInTheDocument();
     });
 });
 
@@ -139,6 +171,13 @@ describe('NoteList — focus handle', () => {
 });
 
 describe('NoteList — inline rename', () => {
+    // Double-click no longer renames; the context-menu "Rename" item is the mouse path.
+    async function openRename(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+        const row = screen.getByRole('option', {name});
+        await user.click(within(row).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
+    }
+
     it('renames via the startRename handle and commits on Enter', async () => {
         const user = userEvent.setup();
         const {ref, props} = setup({selectedId: 'Alpha.md'});
@@ -152,10 +191,10 @@ describe('NoteList — inline rename', () => {
         expect(props.onRename).toHaveBeenCalledTimes(1);
     });
 
-    it('commits a rename on blur', async () => {
+    it('renames from the context menu and commits on blur', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, 'Beta 2');
@@ -167,7 +206,7 @@ describe('NoteList — inline rename', () => {
     it('cancels a rename on Escape', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, 'Nope{Escape}');
@@ -188,7 +227,7 @@ describe('NoteList — inline rename', () => {
     it('is a no-op when the title is unchanged', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         await user.type(screen.getByDisplayValue('Beta'), '{Enter}');
         expect(props.onRename).not.toHaveBeenCalled();
     });
@@ -196,11 +235,18 @@ describe('NoteList — inline rename', () => {
     it('is a no-op when the title is emptied', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.dblClick(screen.getByText('Beta'));
+        await openRename(user, /Beta/);
         const input = screen.getByDisplayValue('Beta');
         await user.clear(input);
         await user.type(input, '{Enter}');
         expect(props.onRename).not.toHaveBeenCalled();
+    });
+
+    it('does not start a rename on double-click', async () => {
+        const user = userEvent.setup();
+        setup();
+        await user.dblClick(screen.getByText('Beta'));
+        expect(screen.queryByDisplayValue('Beta')).toBeNull();
     });
 });
 

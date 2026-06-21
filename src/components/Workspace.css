@@ -1,5 +1,5 @@
 .workspace {
-    /* Shared by the sidebar and the top bar's folder zone so the search lines up with the editor. */
+    /* Width of the notes sidebar. */
     --sidebar-width: 280px;
     display: flex;
     flex-direction: column;
@@ -11,6 +11,8 @@
     display: flex;
     flex: 1;
     min-height: 0;
+    /* Anchors the absolutely-positioned collapsed-sidebar overlay (see below). */
+    position: relative;
 }
 
 .workspace__sidebar {
@@ -30,8 +32,10 @@
     /* The horizontal gutter shared by the editor body (via --g-md-editor-padding, read by both
        the WYSIWYG and markup panes) and the note title, so their left edges line up. */
     --editor-gutter: 16px;
-    /* Smaller gap above the first line; left/right use the shared gutter, bottom unchanged. */
-    --g-md-editor-padding: 4px var(--editor-gutter) 8px var(--editor-gutter);
+    /* Small gap above the first line; left/right use the shared gutter; ~300px bottom room so
+       you can write near the end and scroll past the last line (the padding is inside the
+       editor content, so clicking it lands the caret at the end). */
+    --g-md-editor-padding: 4px var(--editor-gutter) 300px var(--editor-gutter);
 }
 
 .workspace__panes {
@@ -53,4 +57,34 @@
 
 .workspace__conflict {
     padding: 12px 12px 0;
+}
+
+/* Collapsed: the sidebar leaves the flow as an off-screen overlay so the editor fills the width.
+   It stays mounted, but visibility:hidden keeps it out of the tab order until peeked. The
+   visibility change is delayed (0s duration, 0.15s delay) so on CLOSE the sidebar stays visible
+   through the slide-out and only then hides. */
+.workspace__body_collapsed .workspace__sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+        transform 0.15s ease,
+        visibility 0s linear 0.15s;
+    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+}
+
+/* Peeked (⌘\): slide the overlay in and make it focusable. visibility flips to visible
+   IMMEDIATELY (0s, no delay) — animating/delaying it would leave the row unfocusable at the
+   instant the peek effect calls .focus(), stranding the cursor in the editor. The rule sits AFTER
+   the collapsed rule so its transform/visibility win at equal specificity. */
+.workspace__body_peeked .workspace__sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+        transform 0.15s ease,
+        visibility 0s linear 0s;
 }

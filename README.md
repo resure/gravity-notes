@@ -52,36 +52,23 @@ Key modules:
 - `src/components/` — `FolderGate`, `Workspace`, `NoteList`, `EditorPane`
 - `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
 
-### TODO
+### Next up
 
-Small design things:
-
-- let's make padding ABOVE editing area little smaller (but don't touch paddding on the left side)
-- theme switcher should have distinct "system theme" option
-- let's pick different accent color instead of default yellow-orange
-- default line-height in editor is TOO big
-- i want lists to have short dashes instead of bullets - like in apple notes
-- let's add at least small paddings around panel with editor buttons
-- checklists are not beautiful, let's add at least some padding between checkbox itself and it's corresponding text
-- editor buttons flicker when i change tabs - let's hide it completely? including that settings button at the top left of the editor
+- Safari (non-chromium) browser support. Probably should ask where to store notes on start, like excalidraw?
 
 ### Backlog
 
-UX tasks:
-
-- i want to have some kind of "preview" mode for notes OR clicking ESC first time removes cursor from editing area, clicking second time closes current opened the note. when cursor not in editing mode, pressing cursor arrows (up/down) should navigate us between notes
-- hotkeys for working with tabs?
-
-Bugs:
-
-- F2 hotkey doesn't work
-- cmd+k conflicts with inserting link in markdown editor
-- on trying to rename to existing note name - do nothing, don't try to generate number at the end of the note
-
-Other things:
-
-- let's make saving manual, not automatic. But we probably want to keep some kind of "buffer" file (that we WILL automatically save to) so if app crashes or something happens we can restore content. On actual save we can just delete that temporary file.
-- Folders support
-- **Electron app**
-- **PWA** — manifest + service worker; an IndexedDB store as the default for non-Chromium browsers.
-- **Backend sync** — add an `ApiStore` implementing `NoteStore`.
+- Full-text search + ranking
+- ESC key behaviour imrovement with closed sidebar
+- Fullscreen mode?
+- PWA improvements
+- Mobile view
+- Trash bin for deleted notes
+- Media attachments, with separate view for files management (and preview)
+- Wiki-style links between notes, backlinks
+- Versioning / snapshots (with manual snapshopts?)
+- Backend sync — add an `ApiStore` implementing `NoteStore`
+- Tab-to-complete in the search box
+- Tags?
+- Daily notes
+- Recent-note history (cmd+[] - back/forward through visited notes)
