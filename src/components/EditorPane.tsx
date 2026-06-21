@@ -46,6 +46,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         {
             md: {html: false},
             initial: {markup: note.content, mode: 'wysiwyg'},
+            // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
+            wysiwygConfig: {extensionOptions: {link: {linkKey: 'Mod-Shift-k'}}},
         },
         [],
     );
