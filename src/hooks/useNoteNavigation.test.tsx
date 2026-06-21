@@ -41,14 +41,14 @@ describe('useNoteNavigation', () => {
         expect(result.current.selectedId).toBe('B.md');
     });
 
-    it('commit on a not-yet-open note opens it with autofocus', () => {
+    it('commit on a not-yet-open note opens it with body autofocus', () => {
         const deps = makeDeps({activeId: null});
         const {result} = renderHook(() => useNoteNavigation(deps));
         act(() => {
             result.current.commit('A.md');
         });
         expect(deps.open).toHaveBeenCalledWith('A.md');
-        expect(result.current.editorAutofocus).toBe(true);
+        expect(result.current.autofocus).toBe('body');
     });
 
     it('commit on the already-open note focuses the editor without reopening', () => {
@@ -107,36 +107,36 @@ describe('useNoteNavigation', () => {
         expect(result.current.selectedId).toBe('A.md');
     });
 
-    it('prepareCommit arms editor autofocus for the next mount', () => {
+    it('prepareCreate arms title autofocus for the next mount', () => {
         const deps = makeDeps();
         const {result} = renderHook(() => useNoteNavigation(deps));
-        expect(result.current.editorAutofocus).toBe(false);
+        expect(result.current.autofocus).toBeNull();
         act(() => {
-            result.current.prepareCommit();
+            result.current.prepareCreate();
         });
-        expect(result.current.editorAutofocus).toBe(true);
+        expect(result.current.autofocus).toBe('title');
     });
 
-    it('browse resets editorAutofocus (a preview must not steal focus)', () => {
+    it('browse clears autofocus (a preview must not steal focus)', () => {
         const deps = makeDeps();
         const {result} = renderHook(() => useNoteNavigation(deps));
         act(() => {
-            result.current.prepareCommit();
+            result.current.prepareCreate();
         });
-        expect(result.current.editorAutofocus).toBe(true);
+        expect(result.current.autofocus).toBe('title');
         act(() => {
             result.current.browse('A.md');
         });
-        expect(result.current.editorAutofocus).toBe(false);
+        expect(result.current.autofocus).toBeNull();
     });
 
-    it('commit on the already-open note leaves editorAutofocus untouched', () => {
+    it('commit on the already-open note leaves autofocus untouched', () => {
         const deps = makeDeps({activeId: 'A.md'});
         const {result} = renderHook(() => useNoteNavigation(deps));
-        expect(result.current.editorAutofocus).toBe(false);
+        expect(result.current.autofocus).toBeNull();
         act(() => {
             result.current.commit('A.md');
         });
-        expect(result.current.editorAutofocus).toBe(false);
+        expect(result.current.autofocus).toBeNull();
     });
 });
