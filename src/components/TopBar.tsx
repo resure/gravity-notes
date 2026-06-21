@@ -10,7 +10,7 @@ import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 import './TopBar.css';
 
 export interface TopBarProps {
-    /** Folder name doubles as the "change folder" button (left zone, over the sidebar). */
+    /** Folder name doubles as the "change folder" button (in the top bar's right controls). */
     folderName: string | null;
     onChangeFolder: () => void;
     onOpenHelp: () => void;
@@ -36,9 +36,9 @@ export interface TopBarProps {
 }
 
 /**
- * The slim nvALT top bar. A left zone (sidebar-width) carries the folder button so the wide
- * "search or create" box lines up with the editor; theme + help sit at the far right. Owns
- * the search keyboard model; the list lives in `NoteList` (sort + New now sit above it).
+ * The slim nvALT top bar: a full-width "search or create" box fills from the left, with the
+ * folder button, theme switcher, and help on the right. Owns the search keyboard model; the
+ * list lives in `NoteList` (sort + New now sit above it).
  */
 export function TopBar({
     folderName,
@@ -96,37 +96,33 @@ export function TopBar({
 
     return (
         <header className="topbar">
-            <div className="topbar__folder-zone">
-                <Button
-                    view="flat"
-                    size="l"
-                    className="topbar__folder"
-                    onClick={onChangeFolder}
-                    title="Change folder"
-                >
-                    <Icon data={Folder} size={16} />
-                    <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
-                </Button>
-            </div>
-
-            <div className="topbar__main">
-                <TextInput
-                    className="topbar__search"
-                    controlRef={searchInputRef}
-                    value={query}
-                    onUpdate={onQueryChange}
-                    placeholder="Search or create a note…"
-                    hasClear
-                    onKeyDown={onSearchKeyDown}
-                />
-                <Text color="secondary" className="topbar__save">
-                    {saveLabel}
-                </Text>
-                <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-                <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (?)">
-                    <Icon data={CircleQuestion} />
-                </Button>
-            </div>
+            <TextInput
+                className="topbar__search"
+                controlRef={searchInputRef}
+                value={query}
+                onUpdate={onQueryChange}
+                placeholder="Search or create a note…"
+                hasClear
+                onKeyDown={onSearchKeyDown}
+            />
+            <Text color="secondary" className="topbar__save">
+                {saveLabel}
+            </Text>
+            <Button
+                view="flat"
+                size="m"
+                width="auto"
+                className="topbar__folder"
+                onClick={onChangeFolder}
+                title="Change folder"
+            >
+                <Icon data={Folder} size={16} />
+                <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
+            </Button>
+            <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
+            <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (?)">
+                <Icon data={CircleQuestion} />
+            </Button>
         </header>
     );
 }

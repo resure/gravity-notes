@@ -1,5 +1,5 @@
 .workspace {
-    /* Shared by the sidebar and the top bar's folder zone so the search lines up with the editor. */
+    /* Width of the notes sidebar. */
     --sidebar-width: 280px;
     display: flex;
     flex-direction: column;
