@@ -1,0 +1,21 @@
+/* Markdown-first surface: hide the formatting toolbar strip + the settings gear.
+   (Selectors target the shipped @gravity-ui/markdown-editor classes.) */
+.editor-pane .g-md-editor-sticky,
+.editor-pane .g-md-toolbar {
+    display: none;
+}
+
+/* Calmer reading rhythm. */
+.editor-pane .g-md-editor {
+    line-height: 1.45;
+}
+
+/* Apple-Notes-style short dashes for bullet lists (leave task lists alone). */
+.editor-pane .g-md-editor ul:not(.contains-task-list) > li::marker {
+    content: '–  ';
+}
+
+/* Breathing room between a checklist checkbox and its label. */
+.editor-pane .g-md-editor li.task-list-item > input[type='checkbox'] {
+    margin-inline-end: 8px;
+}
