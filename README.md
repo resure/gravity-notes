@@ -59,16 +59,22 @@ Key modules:
 ### Backlog
 
 - Full-text search + ranking
+- Tab-to-complete in the search box
+
 - ESC key behaviour imrovement with closed sidebar
 - Fullscreen mode?
+
 - PWA improvements
 - Mobile view
+
+- Wiki-style links between notes, backlinks
+- Recent-note history (cmd+[] - back/forward through visited notes)
+
 - Trash bin for deleted notes
 - Media attachments, with separate view for files management (and preview)
-- Wiki-style links between notes, backlinks
+
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
-- Tab-to-complete in the search box
+
 - Tags?
 - Daily notes
-- Recent-note history (cmd+[] - back/forward through visited notes)
