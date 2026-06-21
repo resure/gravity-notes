@@ -11,8 +11,8 @@ body,
    the inverted fill. --note-list-focus-bg is a custom step-darker tint for the focused row.
    (Visual — smoke-tested.) */
 .g-root_theme_light {
-    --g-color-base-brand: var(--g-color-private-black-900-solid);
-    --g-color-base-brand-hover: var(--g-color-private-black-800-solid);
+    --g-color-base-brand: var(--g-color-private-black-600-solid);
+    --g-color-base-brand-hover: var(--g-color-private-black-700-solid);
     --g-color-base-selection: var(--g-color-private-black-150);
     --g-color-base-selection-hover: var(--g-color-private-black-200);
     --g-color-line-brand: var(--g-color-private-black-900-solid);
