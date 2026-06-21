@@ -65,7 +65,8 @@
     left: 0;
     top: 0;
     bottom: 0;
-    z-index: 10;
+    /* Above the reveal strip so a peeked panel isn't covered by it at the left edge. */
+    z-index: 11;
     transform: translateX(-100%);
     transition: transform 0.15s ease;
     box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
@@ -83,7 +84,7 @@
     top: 0;
     bottom: 0;
     width: 10px;
-    z-index: 11;
+    z-index: 10;
     padding: 0;
     border: none;
     cursor: pointer;

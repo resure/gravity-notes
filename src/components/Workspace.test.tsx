@@ -379,4 +379,15 @@ describe('Workspace — nvALT navigation', () => {
         renderWorkspace();
         await screen.findByLabelText('Show notes');
     });
+
+    it('re-docks the sidebar from the pin toggle', async () => {
+        const user = userEvent.setup();
+        localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
+        renderWorkspace();
+        await screen.findByLabelText('Show notes'); // starts collapsed
+        await user.click(screen.getByLabelText('Pin sidebar'));
+        // Docked again: the reveal handle is gone and the state is cleared.
+        await waitFor(() => expect(screen.queryByLabelText('Show notes')).not.toBeInTheDocument());
+        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
+    });
 });
