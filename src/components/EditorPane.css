@@ -15,13 +15,13 @@
    typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm classes outrank
    it so these win without !important. */
 .editor-pane .g-md-editor.ProseMirror.yfm {
-    line-height: 1.2;
+    line-height: 1.25;
 }
 
 .editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.2;
+    line-height: 1.25;
 }
 
 /* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
@@ -79,9 +79,16 @@
     content: '';
 }
 
-/* Breathing room between a checklist checkbox and its label. The editor ships
-   `.yfm-editor .g-md-checkbox__input { margin-right: 5px }`; the extra `.g-md-editor`
-   here outranks it so the wider gap wins regardless of stylesheet order. */
+/* Breathing room between a checklist checkbox and its label, plus vertical centering against
+   the first text line. */
 .editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox'] {
     margin-right: 10px;
+    margin-top: 0;
+    vertical-align: middle;
+}
+
+/* Checklist rows should indent like the dashed (bulleted) lists — the checkbox box adds extra
+   width, so pull the row's content left to match. Tuned live against a bulleted list. */
+.editor-pane .g-md-editor ul > li:has(.g-md-checkbox) {
+    margin-left: -2px;
 }
