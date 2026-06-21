@@ -23,6 +23,8 @@ function setup(overrides: Record<string, unknown> = {}) {
         onOpenHelp: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
+        collapsed: false,
+        onToggleCollapsed: vi.fn(),
         saveLabel: '',
         query: '',
         onQueryChange: vi.fn(),

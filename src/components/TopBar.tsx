@@ -1,6 +1,6 @@
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
-import {CircleQuestion, Folder} from '@gravity-ui/icons';
+import {CircleQuestion, Folder, LayoutSideContent} from '@gravity-ui/icons';
 import {Button, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
 import type {NoteMeta} from '../storage/types';
@@ -16,6 +16,10 @@ export interface TopBarProps {
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
+    /** Whether the notes sidebar is collapsed. */
+    collapsed: boolean;
+    /** Toggle the sidebar collapsed/docked. */
+    onToggleCollapsed: () => void;
     /** Transient save-status label (empty when idle). */
     saveLabel: string;
     /** Search box (nvALT find-or-create) and its keyboard coordination with the list. */
@@ -46,6 +50,8 @@ export function TopBar({
     onOpenHelp,
     themePref,
     onChangeThemePref,
+    collapsed,
+    onToggleCollapsed,
     saveLabel,
     query,
     onQueryChange,
@@ -96,6 +102,17 @@ export function TopBar({
 
     return (
         <header className="topbar">
+            <Button
+                view="flat"
+                size="m"
+                className="topbar__sidebar-toggle"
+                onClick={onToggleCollapsed}
+                aria-label="Toggle sidebar"
+                title="Toggle sidebar (⌘')"
+                aria-pressed={!collapsed}
+            >
+                <Icon data={LayoutSideContent} />
+            </Button>
             <TextInput
                 className="topbar__search"
                 controlRef={searchInputRef}

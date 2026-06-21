@@ -1,17 +1,7 @@
 import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
-import {
-    ChevronLeft,
-    ChevronRight,
-    Ellipsis,
-    Pencil,
-    Pin,
-    PinFill,
-    PinSlash,
-    Plus,
-    TrashBin,
-} from '@gravity-ui/icons';
+import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
 import type {NoteMeta, SortMode} from '../storage/types';
@@ -48,10 +38,6 @@ export interface NoteListProps {
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
-    /** Whether the sidebar is collapsed (changes the toolbar toggle's icon/label). */
-    collapsed: boolean;
-    /** Toggle the sidebar between docked and collapsed. */
-    onToggleCollapsed: () => void;
 }
 
 function highlightMatch(title: string, query: string): ReactNode {
@@ -100,8 +86,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSortChange,
         pinnedIds,
         onTogglePin,
-        collapsed,
-        onToggleCollapsed,
     },
     ref,
 ) {
@@ -216,16 +200,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     return (
         <div className="note-list">
             <div className="note-list__toolbar">
-                <Button
-                    view="flat"
-                    size="m"
-                    className="note-list__collapse"
-                    onClick={onToggleCollapsed}
-                    aria-label={collapsed ? 'Pin sidebar' : 'Collapse sidebar'}
-                    title={collapsed ? 'Pin sidebar' : 'Collapse sidebar'}
-                >
-                    <Icon data={collapsed ? ChevronRight : ChevronLeft} />
-                </Button>
                 <Select
                     className="note-list__sort"
                     aria-label="Sort notes"

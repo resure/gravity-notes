@@ -362,32 +362,38 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('collapses the sidebar and persists it', async () => {
+    it('toggles the sidebar from the top bar and persists it', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
-        // Docked: no reveal handle.
-        expect(screen.queryByLabelText('Show notes')).not.toBeInTheDocument();
-        await user.click(screen.getByLabelText('Collapse sidebar'));
-        // Collapsed: the left-edge reveal handle appears and the state is persisted.
-        await screen.findByLabelText('Show notes');
+        expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
+        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
         expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('true');
+        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
+        );
+        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
+    });
+
+    it("toggles the sidebar with ⌘'", async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
+        await user.keyboard("{Meta>}'{/Meta}");
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
     });
 
     it('restores the collapsed sidebar from localStorage', async () => {
         localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
         renderWorkspace();
-        await screen.findByLabelText('Show notes');
-    });
-
-    it('re-docks the sidebar from the pin toggle', async () => {
-        const user = userEvent.setup();
-        localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
-        renderWorkspace();
-        await screen.findByLabelText('Show notes'); // starts collapsed
-        await user.click(screen.getByLabelText('Pin sidebar'));
-        // Docked again: the reveal handle is gone and the state is cleared.
-        await waitFor(() => expect(screen.queryByLabelText('Show notes')).not.toBeInTheDocument());
-        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
+        await screen.findByRole('option', {name: /Alpha/});
+        expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
     });
 });

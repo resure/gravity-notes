@@ -210,6 +210,7 @@ export function Workspace({
         createNote: handleCreate,
         selectNextNote: () => browseRelative(1),
         selectPrevNote: () => browseRelative(-1),
+        toggleSidebar: toggleCollapsed,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
@@ -226,6 +227,8 @@ export function Workspace({
                 onOpenHelp={() => setHelpOpen(true)}
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
+                collapsed={collapsed}
+                onToggleCollapsed={toggleCollapsed}
                 saveLabel={SAVE_LABEL[notes.saveState]}
                 query={query}
                 onQueryChange={setQuery}
@@ -240,13 +243,6 @@ export function Workspace({
             />
 
             <div className={'workspace__body' + (collapsed ? ' workspace__body_collapsed' : '')}>
-                {collapsed ? (
-                    <button
-                        type="button"
-                        className="workspace__sidebar-reveal"
-                        aria-label="Show notes"
-                    />
-                ) : null}
                 <aside className="workspace__sidebar">
                     <NoteList
                         ref={listRef}
@@ -264,8 +260,6 @@ export function Workspace({
                         onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
                         onTogglePin={notes.togglePin}
-                        collapsed={collapsed}
-                        onToggleCollapsed={toggleCollapsed}
                     />
                 </aside>
 

@@ -30,8 +30,6 @@ function setup(overrides: Record<string, unknown> = {}) {
         onSortChange: vi.fn(),
         pinnedIds: [],
         onTogglePin: vi.fn(),
-        collapsed: false,
-        onToggleCollapsed: vi.fn(),
         ...overrides,
     };
     const ref = createRef<NoteListHandle>();
