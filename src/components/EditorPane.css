@@ -21,7 +21,7 @@
 .editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.25;
+    line-height: 1.3;
 }
 
 /* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
@@ -52,20 +52,25 @@
     margin-top: 0;
 }
 
-/* The body sits under the title; it owns the editor's own scroll. The title (in NoteTitle.css)
-   is pinned above it. The title and the editor body share the --editor-gutter horizontal
-   padding (set on .workspace__editor) so their left edges align. */
+/* The title and the editor body share one vertical scroll container: .editor-pane is the
+   scroller, so the title (its first child) scrolls away with the content instead of staying
+   put. They also share the --editor-gutter horizontal padding (set on .workspace__editor) so
+   their left edges align. */
 .editor-pane {
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    overflow-y: auto;
 }
 
 .editor-pane__body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
+    /* Grow to fill a short note (whole area stays click-to-focus); a tall note overflows the
+       pane, which scrolls — carrying the title up out of view. The unbounded grow (no shrink,
+       no min-height) deliberately keeps the scroll on .editor-pane rather than the markdown
+       editor's own internal scroller (.g-md-wysiwyg-editor__editor has overflow-y: auto) — so
+       don't "restore" flex: 1 1 auto / overflow here; it would re-pin the title. */
+    flex: 1 0 auto;
 }
 
 /* Apple-Notes-style short dashes for bullet lists. */
