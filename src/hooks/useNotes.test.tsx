@@ -96,6 +96,8 @@ describe('useNotes — single note', () => {
         const second = renderHook(() => useNotes(store, onError));
         await waitFor(() => expect(second.result.current.activeId).toBe('B.md'));
         expect(second.result.current.note?.content).toBe('b');
+        // The restore path loads fresh content into the editor, so it bumps the session.
+        expect(second.result.current.sessionId).toBeGreaterThan(0);
     });
 
     it('clears a restored active id whose file no longer exists', async () => {

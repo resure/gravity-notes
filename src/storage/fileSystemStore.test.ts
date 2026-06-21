@@ -162,6 +162,18 @@ describe('FileSystemNoteStore', () => {
             expect((await store.get('New.md')).content).toBe('keep me');
             await expect(store.get('Old.md')).rejects.toThrow();
         });
+
+        it('writes the canonical single trailing newline to the renamed file', async () => {
+            dir.seedFile('Old.md', 'body', 5);
+
+            await store.rename('Old.md', 'New');
+
+            // store.get() strips trailing newlines, so read the raw file: a rename must leave it
+            // in the same "exactly one trailing newline" shape save() produces.
+            const handle = await dir.getFileHandle('New.md');
+            const raw = await (await handle.getFile()).text();
+            expect(raw).toBe('body\n');
+        });
     });
 
     describe('rename — collisions', () => {
