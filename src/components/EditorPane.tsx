@@ -1,14 +1,18 @@
-import {forwardRef, useEffect, useImperativeHandle} from 'react';
+import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 
 import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
 
 import type {Note} from '../storage/types';
+
+import {NotePreview} from './NotePreview';
 
 import './EditorPane.css';
 
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
     toggleMode(): void;
+    /** Toggle a read-only rendered preview of the current markup. */
+    togglePreview(): void;
     /** Move keyboard focus into the editor. */
     focus(): void;
 }
@@ -42,11 +46,19 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         [note.id],
     );
 
+    // Non-null while in read-only preview mode; holds the markup snapshot being previewed.
+    const [previewMarkup, setPreviewMarkup] = useState<string | null>(null);
+    const previewRef = useRef<HTMLDivElement>(null);
+
     useImperativeHandle(
         ref,
         () => ({
             toggleMode() {
                 editor.setEditorMode(editor.currentMode === 'wysiwyg' ? 'markup' : 'wysiwyg');
+            },
+            togglePreview() {
+                // Snapshot the live markup on the way in (includes unsaved edits); clear on the way out.
+                setPreviewMarkup((cur) => (cur === null ? editor.getValue() : null));
             },
             focus() {
                 editor.focus();
@@ -54,6 +66,18 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         }),
         [editor],
     );
+
+    // Move focus across the edit/preview transition: into the preview on enter, back to the
+    // editor on exit, so the Esc ladder keeps working from wherever you are.
+    const wasPreviewingRef = useRef(false);
+    useEffect(() => {
+        const previewing = previewMarkup !== null;
+        const changed = previewing !== wasPreviewingRef.current;
+        wasPreviewingRef.current = previewing;
+        if (!changed) return;
+        if (previewing) previewRef.current?.focus();
+        else editor.focus();
+    }, [previewMarkup, editor]);
 
     useEffect(() => {
         const handleChange = () => {
@@ -81,15 +105,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         <div
             className="editor-pane"
             onKeyDown={(event) => {
-                if (event.key === 'Escape') onEscape();
+                if (event.key !== 'Escape') return;
+                // Esc steps out of preview first (back to editing), then out to the list.
+                if (previewMarkup === null) onEscape();
+                else setPreviewMarkup(null);
             }}
         >
-            <MarkdownEditorView
-                settingsVisible={false}
-                stickyToolbar={false}
-                autofocus={autofocus}
-                editor={editor}
-            />
+            {previewMarkup === null ? (
+                <MarkdownEditorView
+                    settingsVisible={false}
+                    stickyToolbar={false}
+                    autofocus={autofocus}
+                    editor={editor}
+                />
+            ) : (
+                <NotePreview ref={previewRef} markup={previewMarkup} />
+            )}
         </div>
     );
 });

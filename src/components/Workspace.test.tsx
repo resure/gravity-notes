@@ -168,6 +168,21 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
+    it('toggles a read-only preview with the shortcut', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        await user.keyboard('{Meta>}{Shift>}p{/Shift}{/Meta}');
+        await waitFor(() => expect(document.querySelector('.note-preview')).toBeInTheDocument());
+        // Toggling again returns to the editor.
+        await user.keyboard('{Meta>}{Shift>}p{/Shift}{/Meta}');
+        await waitFor(() =>
+            expect(document.querySelector('.note-preview')).not.toBeInTheDocument(),
+        );
+    });
+
     it('F2 renames the selected note', async () => {
         const user = userEvent.setup();
         renderWorkspace();

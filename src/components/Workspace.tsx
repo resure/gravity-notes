@@ -166,6 +166,7 @@ export function Workspace({
     useShortcuts({
         createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
+        togglePreview: () => editorRef.current?.togglePreview(),
         openHelp: () => setHelpOpen(true),
         renameSelected: () => {
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);

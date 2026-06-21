@@ -1,0 +1,10 @@
+.note-preview {
+    height: 100%;
+    overflow-y: auto;
+    outline: none;
+}
+
+/* Match the editor's content inset so toggling edit/preview doesn't shift the text. */
+.note-preview__body {
+    padding: 8px 16px 16px;
+}
