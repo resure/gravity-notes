@@ -107,6 +107,10 @@ Improvements are built as sequenced sub-projects, each with its own spec + plan 
      top-bar `LayoutSideContent` toggle + a ⌘' shortcut (collapsed simply hides it); unpinned the note
      title so it scrolls with the content, with ~300px of end-of-note scroll room.
      Spec: `docs/superpowers/specs/2026-06-21-sidebar-toggle-editor-scroll-design.md`.
+   - ✅ **Sidebar peek shortcut** — ⌘⇧' slides the collapsed sidebar in as a transient overlay and
+     focuses the list (close on Esc / opening a note / click-outside); the top-bar toggle dropped its
+     "selected" highlight.
+     Spec: `docs/superpowers/specs/2026-06-21-sidebar-peek-shortcut-design.md`.
 4. ⬜ **Richer editing** — wire up the installed-but-unused editor extensions (Mermaid, LaTeX, tabs, cuts,
    code highlighting).
 5. ⬜ **Image attachments** — paste/drop images, stored alongside notes.
