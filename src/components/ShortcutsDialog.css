@@ -2,6 +2,8 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    /* The dialog has no footer, so give the last group a little breathing room from the edge. */
+    padding-bottom: 8px;
 }
 
 .shortcuts-dialog__group {
