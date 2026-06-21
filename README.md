@@ -62,6 +62,7 @@ Key modules:
 - ESC key behaviour imrovement with closed sidebar
 - Fullscreen mode?
 - PWA improvements
+- Mobile view
 - Trash bin for deleted notes
 - Media attachments, with separate view for files management (and preview)
 - Wiki-style links between notes, backlinks
