@@ -85,6 +85,17 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const focusableId =
         selectedId && notes.some((n) => n.id === selectedId) ? selectedId : (notes[0]?.id ?? null);
 
+    // When an inline rename ends (commit or cancel), return keyboard focus to the list so
+    // arrow-nav continues — the input unmounts first, otherwise focus is stranded on <body>.
+    // Done in an effect (after the unmount), not synchronously, so a cancel doesn't blur-commit.
+    const wasEditingRef = useRef(false);
+    useEffect(() => {
+        if (wasEditingRef.current && editingId === null && focusableId) {
+            itemRefs.current.get(focusableId)?.focus();
+        }
+        wasEditingRef.current = editingId !== null;
+    }, [editingId, focusableId]);
+
     const beginRename = (note: NoteMeta) => {
         setEditValue(note.title);
         setEditingId(note.id);

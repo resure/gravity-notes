@@ -51,7 +51,8 @@ export interface UseNotes {
     close(): Promise<void>;
     /** Create a new empty note, open it, and return its id (null on failure). */
     create(): Promise<string | null>;
-    rename(id: string, nextTitle: string): Promise<void>;
+    /** Rename a note; returns the resulting id (unchanged on a no-op/collision, null on error). */
+    rename(id: string, nextTitle: string): Promise<string | null>;
     remove(id: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
@@ -202,10 +203,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     }, [flush, store, persistMetadata, refresh, open, onError]);
 
     const rename = useCallback(
-        async (id: string, nextTitle: string) => {
+        async (id: string, nextTitle: string): Promise<string | null> => {
             if (conflict?.id === id) {
                 onError('Resolve the conflict before renaming this note.');
-                return;
+                return null;
             }
             await flush();
             try {
@@ -224,8 +225,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setConflict(null);
                     setSaveState('idle');
                 }
+                return meta.id;
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to rename note');
+                return null;
             }
         },
         [conflict, flush, store, persistMetadata, refresh, onError],

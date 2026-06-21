@@ -68,6 +68,7 @@ export function Workspace({
     const editorRef = useRef<EditorPaneHandle>(null);
     const listRef = useRef<NoteListHandle>(null);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [pendingListFocus, setPendingListFocus] = useState(false);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -108,6 +109,27 @@ export function Workspace({
         // eslint wants the whole `notes`/`nav` objects here, not their members.
         [filteredNotes, notes, nav],
     );
+
+    const handleRename = useCallback(
+        (id: string, title: string) => {
+            void (async () => {
+                const newId = await notes.rename(id, title);
+                // Re-select the resulting id and flag a focus restore — the rename input
+                // unmounted (and the row may have remounted under a new id), so without this
+                // keyboard focus is stranded on <body>.
+                nav.setSelected(newId ?? id);
+                setPendingListFocus(true);
+            })();
+        },
+        [notes, nav],
+    );
+
+    // After a rename settles (list + selection updated), return focus to the selected row.
+    useEffect(() => {
+        if (!pendingListFocus) return;
+        listRef.current?.focusSelected();
+        setPendingListFocus(false);
+    }, [pendingListFocus, filteredNotes, nav.selectedId]);
 
     useShortcuts({
         focusSearch: () => searchInputRef.current?.focus(),
@@ -160,7 +182,7 @@ export function Workspace({
                         onCommit={nav.commit}
                         onEscapeList={nav.escapeList}
                         onCreate={handleCreate}
-                        onRename={(id, title) => void notes.rename(id, title)}
+                        onRename={handleRename}
                         onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
                         onSortChange={notes.setSortMode}

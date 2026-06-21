@@ -136,4 +136,24 @@ describe('Workspace — nvALT navigation', () => {
         await user.keyboard('{F2}');
         expect(await screen.findByDisplayValue('Beta')).toBeInTheDocument();
     });
+
+    it('keeps keyboard focus on the note after an F2 rename', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{F2}');
+        const input = await screen.findByDisplayValue('Beta');
+        await user.clear(input);
+        await user.type(input, 'Renamed{Enter}');
+        const renamed = await screen.findByRole('option', {name: /Renamed/});
+        await waitFor(() => expect(renamed).toHaveAttribute('aria-selected', 'true'));
+        await waitFor(() => expect(renamed).toHaveFocus());
+    });
 });

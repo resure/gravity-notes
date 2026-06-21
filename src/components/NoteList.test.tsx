@@ -137,6 +137,16 @@ describe('NoteList — inline rename', () => {
         expect(screen.getByText('Beta')).toBeInTheDocument();
     });
 
+    it('restores focus to the row after cancelling a rename', async () => {
+        const user = userEvent.setup();
+        const {ref} = setup({selectedId: 'Alpha.md'});
+        act(() => {
+            ref.current?.startRename('Alpha.md');
+        });
+        await user.type(screen.getByDisplayValue('Alpha'), '{Escape}');
+        expect(screen.getByRole('option', {name: /Alpha/})).toHaveFocus();
+    });
+
     it('is a no-op when the title is unchanged', async () => {
         const user = userEvent.setup();
         const {props} = setup();
