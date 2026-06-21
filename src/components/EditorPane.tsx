@@ -6,6 +6,7 @@ import type {Note} from '../storage/types';
 
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
+import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBody';
 import {isCaretOnFirstLine} from './editorCaret';
 
 import './EditorPane.css';
@@ -115,6 +116,19 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         editor.focus();
     };
 
+    // Enter from the title: open a fresh empty line at the top of the body and land on it.
+    // Falls back to the body start when the ProseMirror view isn't reachable (Markup mode).
+    const enterToBody = () => {
+        if (preview) {
+            previewRef.current?.focus();
+            return;
+        }
+        if (!openLineAbove(editor)) {
+            editor.moveCursor('start');
+            editor.focus();
+        }
+    };
+
     return (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
@@ -131,6 +145,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
                 onLeaveToBody={goToBody}
+                onEnter={enterToBody}
                 onEscape={onEscape}
             />
             {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures ArrowUp to hand off to the title; the editor inside is the interactive element */}
@@ -138,20 +153,24 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 ref={bodyRef}
                 className="editor-pane__body"
                 onKeyDown={(event) => {
-                    // Body → title: ArrowUp on the first visual line hands off to the title.
+                    // Body → title handoffs. Ignore preview and the editor's own modifier combos.
+                    if (preview || event.metaKey || event.ctrlKey || event.altKey) return;
+                    const body = bodyRef.current;
+                    // ArrowUp on the first visual line → caret to the end of the title.
                     if (
-                        preview ||
-                        event.key !== 'ArrowUp' ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.altKey ||
-                        event.shiftKey
+                        event.key === 'ArrowUp' &&
+                        !event.shiftKey &&
+                        body &&
+                        isCaretOnFirstLine(body)
                     ) {
+                        event.preventDefault();
+                        titleRef.current?.focusAtEnd();
                         return;
                     }
-                    const body = bodyRef.current;
-                    if (body && isCaretOnFirstLine(body)) {
+                    // Backspace on the empty line opened by Enter → remove it and go up to the title.
+                    if (event.key === 'Backspace' && atEmptyFirstLine(editor)) {
                         event.preventDefault();
+                        removeEmptyFirstLine(editor);
                         titleRef.current?.focusAtEnd();
                     }
                 }}

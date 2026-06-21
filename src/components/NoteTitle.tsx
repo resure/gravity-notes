@@ -19,8 +19,10 @@ interface NoteTitleProps {
     readOnly?: boolean;
     /** Commit a rename. Fired on blur (and on unmount if still dirty). */
     onCommit: (nextTitle: string) => void;
-    /** Move the caret into the body (Enter / ↓). */
+    /** Move the caret to the start of the existing body (↓). */
     onLeaveToBody: () => void;
+    /** Open a fresh empty line at the top of the body and move the caret to it (Enter). */
+    onEnter: () => void;
     /** Step back out to the list (Esc). */
     onEscape: () => void;
 }
@@ -29,12 +31,12 @@ interface NoteTitleProps {
  * The editable note title — a single-line, heading-styled input whose value is the file
  * name (minus `.md`). Edits stay local until committed: `onBlur` fires `onCommit` (which
  * renames the file), so moving to the body / clicking away / switching notes all commit.
- * `Enter` and `↓` move the caret into the body; `Esc` reverts and steps out. As a safety
- * net for programmatic note switches that never blur, a dirty draft is also committed on
- * unmount.
+ * `↓` moves the caret to the body start and `Enter` opens a new line atop the body; `Esc`
+ * reverts and steps out. As a safety net for programmatic note switches that never blur, a
+ * dirty draft is also committed on unmount.
  */
 export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function NoteTitle(
-    {title, readOnly = false, onCommit, onLeaveToBody, onEscape},
+    {title, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
     ref,
 ) {
     const [draft, setDraft] = useState(title);
@@ -86,9 +88,12 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
     }, []);
 
     const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter' || event.key === 'ArrowDown') {
+        if (event.key === 'Enter') {
             event.preventDefault();
-            onLeaveToBody(); // focuses the body → blurs here → onBlur commits
+            onEnter(); // open a new line atop the body → focuses it → blur commits
+        } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            onLeaveToBody(); // caret to the body start → focuses it → blur commits
         } else if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation(); // don't double-fire the editor pane's Esc handler

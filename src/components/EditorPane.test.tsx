@@ -4,16 +4,31 @@ import {fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-const {fakeEditor, setEditorMode, focus, moveCursor, isCaretOnFirstLine} = vi.hoisted(() => {
+const {
+    fakeEditor,
+    setEditorMode,
+    focus,
+    moveCursor,
+    isCaretOnFirstLine,
+    openLineAbove,
+    atEmptyFirstLine,
+    removeEmptyFirstLine,
+} = vi.hoisted(() => {
     const setEditorMode = vi.fn();
     const focus = vi.fn();
     const moveCursor = vi.fn();
     const isCaretOnFirstLine = vi.fn(() => true);
+    const openLineAbove = vi.fn(() => true);
+    const atEmptyFirstLine = vi.fn(() => false);
+    const removeEmptyFirstLine = vi.fn();
     return {
         setEditorMode,
         focus,
         moveCursor,
         isCaretOnFirstLine,
+        openLineAbove,
+        atEmptyFirstLine,
+        removeEmptyFirstLine,
         fakeEditor: {
             currentMode: 'wysiwyg' as 'wysiwyg' | 'markup',
             setEditorMode,
@@ -32,6 +47,8 @@ vi.mock('@gravity-ui/markdown-editor', () => ({
 }));
 
 vi.mock('./editorCaret', () => ({isCaretOnFirstLine}));
+
+vi.mock('./editorBody', () => ({openLineAbove, atEmptyFirstLine, removeEmptyFirstLine}));
 
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 
@@ -124,19 +141,32 @@ describe('EditorPane — title ↔ body handoff', () => {
         focus.mockClear();
         moveCursor.mockClear();
         isCaretOnFirstLine.mockReturnValue(true);
+        openLineAbove.mockClear().mockReturnValue(true);
+        atEmptyFirstLine.mockClear().mockReturnValue(false);
+        removeEmptyFirstLine.mockClear();
     });
 
-    it('Enter in the title moves the caret to the start of the body', () => {
+    it('Enter in the title opens a line at the top of the body', () => {
+        renderPane();
+        fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'Enter'});
+        expect(openLineAbove).toHaveBeenCalled();
+        // openLineAbove handled it (returned true) → no plain move-to-start fallback.
+        expect(moveCursor).not.toHaveBeenCalled();
+    });
+
+    it('Enter falls back to the body start when the view is unreachable', () => {
+        openLineAbove.mockReturnValue(false);
         renderPane();
         fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'Enter'});
         expect(moveCursor).toHaveBeenCalledWith('start');
         expect(focus).toHaveBeenCalled();
     });
 
-    it('ArrowDown in the title moves the caret to the body', () => {
+    it('ArrowDown in the title moves the caret to the body start (no new line)', () => {
         renderPane();
         fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'ArrowDown'});
         expect(moveCursor).toHaveBeenCalledWith('start');
+        expect(openLineAbove).not.toHaveBeenCalled();
     });
 
     it('ArrowUp on the first body line focuses the title', () => {
@@ -165,6 +195,26 @@ describe('EditorPane — title ↔ body handoff', () => {
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
         fireEvent.keyDown(body, {key: 'ArrowUp', shiftKey: true});
+        expect(screen.getByLabelText('Note title')).not.toHaveFocus();
+    });
+
+    it('Backspace on the empty first line removes it and focuses the title', () => {
+        atEmptyFirstLine.mockReturnValue(true);
+        const {container} = renderPane();
+        const body = container.querySelector('.editor-pane__body');
+        if (!body) throw new Error('body not rendered');
+        fireEvent.keyDown(body, {key: 'Backspace'});
+        expect(removeEmptyFirstLine).toHaveBeenCalled();
+        expect(screen.getByLabelText('Note title')).toHaveFocus();
+    });
+
+    it('Backspace elsewhere in the body is left to the editor', () => {
+        atEmptyFirstLine.mockReturnValue(false);
+        const {container} = renderPane();
+        const body = container.querySelector('.editor-pane__body');
+        if (!body) throw new Error('body not rendered');
+        fireEvent.keyDown(body, {key: 'Backspace'});
+        expect(removeEmptyFirstLine).not.toHaveBeenCalled();
         expect(screen.getByLabelText('Note title')).not.toHaveFocus();
     });
 

@@ -10,7 +10,15 @@ function noop() {}
 
 describe('NoteTitle', () => {
     it('shows the title and an Untitled placeholder', () => {
-        render(<NoteTitle title="Ideas" onCommit={noop} onLeaveToBody={noop} onEscape={noop} />);
+        render(
+            <NoteTitle
+                title="Ideas"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
         const input = screen.getByLabelText('Note title') as HTMLInputElement;
         expect(input.value).toBe('Ideas');
         expect(input.placeholder).toBe('Untitled');
@@ -19,7 +27,15 @@ describe('NoteTitle', () => {
     it('commits the draft on blur', async () => {
         const user = userEvent.setup();
         const onCommit = vi.fn();
-        render(<NoteTitle title="Old" onCommit={onCommit} onLeaveToBody={noop} onEscape={noop} />);
+        render(
+            <NoteTitle
+                title="Old"
+                onCommit={onCommit}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
         const input = screen.getByLabelText('Note title');
         await user.clear(input);
         await user.type(input, 'New');
@@ -27,17 +43,26 @@ describe('NoteTitle', () => {
         expect(onCommit).toHaveBeenCalledWith('New');
     });
 
-    it('Enter and ArrowDown leave for the body', async () => {
+    it('Enter opens a line atop the body; ArrowDown moves to the body start', async () => {
         const user = userEvent.setup();
+        const onEnter = vi.fn();
         const onLeaveToBody = vi.fn();
         render(
-            <NoteTitle title="X" onCommit={noop} onLeaveToBody={onLeaveToBody} onEscape={noop} />,
+            <NoteTitle
+                title="X"
+                onCommit={noop}
+                onLeaveToBody={onLeaveToBody}
+                onEnter={onEnter}
+                onEscape={noop}
+            />,
         );
         const input = screen.getByLabelText('Note title');
         input.focus();
         await user.keyboard('{Enter}');
+        expect(onEnter).toHaveBeenCalledTimes(1);
+        expect(onLeaveToBody).not.toHaveBeenCalled();
         await user.keyboard('{ArrowDown}');
-        expect(onLeaveToBody).toHaveBeenCalledTimes(2);
+        expect(onLeaveToBody).toHaveBeenCalledTimes(1);
     });
 
     it('Escape reverts the draft and steps out', async () => {
@@ -45,7 +70,13 @@ describe('NoteTitle', () => {
         const onEscape = vi.fn();
         const onCommit = vi.fn();
         render(
-            <NoteTitle title="Keep" onCommit={onCommit} onLeaveToBody={noop} onEscape={onEscape} />,
+            <NoteTitle
+                title="Keep"
+                onCommit={onCommit}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={onEscape}
+            />,
         );
         const input = screen.getByLabelText('Note title') as HTMLInputElement;
         await user.clear(input);
@@ -63,6 +94,7 @@ describe('NoteTitle', () => {
                 title="Keep"
                 onCommit={onCommit}
                 onLeaveToBody={noop}
+                onEnter={noop}
                 onEscape={() => (document.activeElement as HTMLElement | null)?.blur()}
             />,
         );
@@ -78,7 +110,13 @@ describe('NoteTitle', () => {
         const user = userEvent.setup();
         const onCommit = vi.fn();
         const {unmount} = render(
-            <NoteTitle title="Old" onCommit={onCommit} onLeaveToBody={noop} onEscape={noop} />,
+            <NoteTitle
+                title="Old"
+                onCommit={onCommit}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
         );
         const input = screen.getByLabelText('Note title');
         await user.clear(input);
@@ -90,24 +128,53 @@ describe('NoteTitle', () => {
     it('syncs to a changed title prop only while unfocused', async () => {
         const user = userEvent.setup();
         const {rerender} = render(
-            <NoteTitle title="First" onCommit={noop} onLeaveToBody={noop} onEscape={noop} />,
+            <NoteTitle
+                title="First"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
         );
         const input = screen.getByLabelText('Note title') as HTMLInputElement;
         // Unfocused: a prop change updates the field.
-        rerender(<NoteTitle title="Second" onCommit={noop} onLeaveToBody={noop} onEscape={noop} />);
+        rerender(
+            <NoteTitle
+                title="Second"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
         expect(input.value).toBe('Second');
         // Focused + edited: a prop change must NOT clobber the user's typing.
         await user.click(input);
         await user.clear(input);
         await user.type(input, 'Typing');
-        rerender(<NoteTitle title="Third" onCommit={noop} onLeaveToBody={noop} onEscape={noop} />);
+        rerender(
+            <NoteTitle
+                title="Third"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
         expect(input.value).toBe('Typing');
     });
 
     it('focusAtEnd focuses the input', () => {
         const ref = createRef<NoteTitleHandle>();
         render(
-            <NoteTitle ref={ref} title="Hi" onCommit={noop} onLeaveToBody={noop} onEscape={noop} />,
+            <NoteTitle
+                ref={ref}
+                title="Hi"
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
         );
         ref.current?.focusAtEnd();
         expect(screen.getByLabelText('Note title')).toHaveFocus();
