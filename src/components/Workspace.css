@@ -5,34 +5,6 @@
     background-color: var(--g-color-base-background);
 }
 
-.workspace__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
-}
-
-.workspace__brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-}
-
-.workspace__header-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.workspace__save-state {
-    min-width: 64px;
-    text-align: right;
-}
-
 .workspace__body {
     display: flex;
     flex: 1;

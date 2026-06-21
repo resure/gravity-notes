@@ -1,7 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
-import {CircleQuestion, Folder} from '@gravity-ui/icons';
-import {Button, Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
+import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -14,7 +13,8 @@ import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
-import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
+import {type ThemePref} from './ThemeSwitcher';
+import {TopBar} from './TopBar';
 
 import './Workspace.css';
 
@@ -115,6 +115,15 @@ export function Workspace({
         [notes, nav],
     );
 
+    // Enter the list from the search box (↓/↑): preview the row and move DOM focus onto it.
+    const enterList = useCallback(
+        (id: string) => {
+            nav.browse(id);
+            listRef.current?.focusRow(id);
+        },
+        [nav],
+    );
+
     const handleDelete = useCallback(
         (id: string) => {
             const ids = filteredNotes.map((n) => n.id);
@@ -165,31 +174,25 @@ export function Workspace({
 
     return (
         <div className="workspace">
-            <header className="workspace__header">
-                <div className="workspace__brand">
-                    <Text variant="subheader-2">Gravity Notes</Text>
-                    <Label theme="unknown" icon={<Icon data={Folder} size={14} />}>
-                        {folderName ?? 'Folder'}
-                    </Label>
-                </div>
-                <div className="workspace__header-right">
-                    <Text color="secondary" className="workspace__save-state">
-                        {SAVE_LABEL[notes.saveState]}
-                    </Text>
-                    <Button
-                        view="flat"
-                        size="m"
-                        onClick={() => setHelpOpen(true)}
-                        title="Keyboard shortcuts (?)"
-                    >
-                        <Icon data={CircleQuestion} />
-                    </Button>
-                    <Button view="flat" size="m" onClick={onChangeFolder} title="Change folder">
-                        Change folder
-                    </Button>
-                    <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-                </div>
-            </header>
+            <TopBar
+                folderName={folderName}
+                onChangeFolder={onChangeFolder}
+                onOpenHelp={() => setHelpOpen(true)}
+                themePref={themePref}
+                onChangeThemePref={onChangeThemePref}
+                saveLabel={SAVE_LABEL[notes.saveState]}
+                query={query}
+                onQueryChange={setQuery}
+                searchInputRef={searchInputRef}
+                notes={filteredNotes}
+                selectedId={nav.selectedId}
+                onCommit={nav.commit}
+                onCreate={handleCreate}
+                onEscapeList={nav.escapeList}
+                onEnterList={enterList}
+                sortMode={notes.metadata.sort}
+                onSortChange={notes.setSortMode}
+            />
 
             <div className="workspace__body">
                 <aside className="workspace__sidebar">
@@ -198,16 +201,12 @@ export function Workspace({
                         notes={filteredNotes}
                         selectedId={nav.selectedId}
                         query={query}
-                        onQueryChange={setQuery}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
                         onCommit={nav.commit}
                         onEscapeList={nav.escapeList}
-                        onCreate={handleCreate}
                         onRename={handleRename}
                         onDelete={handleDelete}
-                        sortMode={notes.metadata.sort}
-                        onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
                         onTogglePin={notes.togglePin}
                     />

@@ -6,15 +6,6 @@
     background-color: var(--g-color-base-background);
 }
 
-.note-list__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 16px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-}
-
 .note-list__items {
     flex: 1;
     overflow-y: auto;
@@ -72,24 +63,10 @@
     flex: 1;
 }
 
-.note-list__search {
-    padding: 8px 16px 12px;
-}
-
 .note-list__match {
     background-color: var(--g-color-base-warning-medium, rgba(255, 219, 77, 0.45));
     border-radius: 2px;
     padding: 0 1px;
-}
-
-.note-list__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.note-list__sort {
-    flex-shrink: 0;
 }
 
 .note-list__pin {

@@ -19,16 +19,12 @@ function setup(overrides: Record<string, unknown> = {}) {
         notes: NOTES,
         selectedId: 'Alpha.md',
         query: '',
-        onQueryChange: vi.fn(),
         searchInputRef: createRef<HTMLInputElement>(),
         onBrowse: vi.fn(),
         onCommit: vi.fn(),
         onEscapeList: vi.fn(),
-        onCreate: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
-        sortMode: 'updated',
-        onSortChange: vi.fn(),
         pinnedIds: [],
         onTogglePin: vi.fn(),
         ...overrides,
@@ -124,9 +120,11 @@ describe('NoteList — focus handle', () => {
     });
 
     it('focusSelected() falls back to the search box when the list is empty', () => {
-        const {ref, props} = setup({notes: [], selectedId: null});
+        // The top bar owns the real search input; here we just assert the handle reaches for it.
+        const focus = vi.fn();
+        const {ref} = setup({notes: [], selectedId: null, searchInputRef: {current: {focus}}});
         ref.current?.focusSelected();
-        expect(props.searchInputRef.current).toHaveFocus();
+        expect(focus).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -221,14 +219,7 @@ describe('NoteList — delete', () => {
     });
 });
 
-describe('NoteList — search', () => {
-    it('calls onQueryChange when typing in the search field', async () => {
-        const user = userEvent.setup();
-        const {props} = setup();
-        await user.type(screen.getByPlaceholderText('Search'), 'x');
-        expect(props.onQueryChange).toHaveBeenCalledWith('x');
-    });
-
+describe('NoteList — search display', () => {
     it('highlights the matched substring in titles', () => {
         setup({query: 'lph'});
         const mark = document.querySelector('mark');
@@ -238,86 +229,6 @@ describe('NoteList — search', () => {
     it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
         expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();
-    });
-
-    it('commits the top match on Enter in the search field', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({query: 'a'});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Enter}');
-        expect(props.onCommit).toHaveBeenCalledWith('Alpha.md');
-    });
-
-    it('re-opens the selected note on Enter when the search box is empty', async () => {
-        const user = userEvent.setup();
-        // Beta is selected though Alpha is the top row; with no query, Enter re-opens Beta.
-        const {props} = setup({query: '', selectedId: 'Beta.md'});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Enter}');
-        expect(props.onCommit).toHaveBeenCalledWith('Beta.md');
-    });
-
-    it('creates a note titled with the query on Enter when nothing matches (nvALT)', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({notes: [], query: 'Groceries'});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Enter}');
-        expect(props.onCreate).toHaveBeenCalledWith('Groceries');
-        expect(props.onQueryChange).toHaveBeenCalledWith('');
-    });
-
-    it('does not create on Enter when the query is blank and nothing matches', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({notes: [], query: '   '});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Enter}');
-        expect(props.onCreate).not.toHaveBeenCalled();
-    });
-
-    it('enters the list on ArrowDown from the search field', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({selectedId: 'Beta.md'});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{ArrowDown}');
-        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
-        expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
-    });
-
-    it('enters the list at the last row on ArrowUp from the search field', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({selectedId: null});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{ArrowUp}');
-        // With no selection, ArrowUp targets the last row (notes = [Alpha, Beta]).
-        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
-        expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus();
-    });
-
-    it('clears the query on Escape when the search field has text', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({query: 'beta'});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Escape}');
-        expect(props.onQueryChange).toHaveBeenCalledWith('');
-        expect(props.onEscapeList).not.toHaveBeenCalled();
-    });
-
-    it('escapes the list on Escape when the search field is empty', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({query: ''});
-        screen.getByPlaceholderText('Search').focus();
-        await user.keyboard('{Escape}');
-        expect(props.onEscapeList).toHaveBeenCalledTimes(1);
-    });
-});
-
-describe('NoteList — sort control', () => {
-    it('changes the sort mode via the sort control', async () => {
-        const user = userEvent.setup();
-        const {props} = setup();
-        await user.click(screen.getByRole('combobox', {name: 'Sort notes'}));
-        await user.click(await screen.findByRole('option', {name: 'Title (A→Z)'}));
-        expect(props.onSortChange).toHaveBeenCalledWith('title');
     });
 });
 

@@ -115,12 +115,12 @@ describe('Workspace — nvALT navigation', () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
-        const search = screen.getByPlaceholderText('Search');
+        const search = screen.getByPlaceholderText(/Search/);
         await user.type(search, 'Zzz Notes{Enter}');
         // No existing note matches "Zzz Notes", so Enter creates it...
         await screen.findByRole('option', {name: /Zzz Notes/});
         // ...and the search box is cleared afterward.
-        expect(screen.getByPlaceholderText('Search')).toHaveValue('');
+        expect(screen.getByPlaceholderText(/Search/)).toHaveValue('');
     });
 
     it('closes the open note on Escape in an empty search box', async () => {
@@ -129,7 +129,7 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Beta/});
         await user.click(screen.getByRole('option', {name: /Beta/}));
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
-        await user.click(screen.getByPlaceholderText('Search'));
+        await user.click(screen.getByPlaceholderText(/Search/));
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByText(/Select a note/)).toBeInTheDocument());
     });
@@ -173,8 +173,8 @@ describe('Workspace — nvALT navigation', () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
-        // Focus a header button (simulates losing focus to the top bar).
-        screen.getByRole('button', {name: 'Change folder'}).focus();
+        // Focus the folder-menu button (simulates losing focus to the top bar).
+        screen.getByRole('button', {name: /notes/i}).focus();
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
     });
