@@ -147,6 +147,57 @@ describe('useNotes — single note', () => {
         await waitFor(async () => expect((await store.readMetadata()).active).toBe('New.md'));
     });
 
+    it('renaming the active note does not bump the editor session', async () => {
+        const {hook} = await setup((dir) => dir.seedFile('Old.md', 'x', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('Old.md');
+        });
+        const session = hook.result.current.sessionId;
+        await act(async () => {
+            await hook.result.current.rename('Old.md', 'New');
+        });
+        expect(hook.result.current.activeId).toBe('New.md');
+        // Same session ⇒ the body editor is NOT remounted on a rename.
+        expect(hook.result.current.sessionId).toBe(session);
+    });
+
+    it('opening a different note bumps the editor session', async () => {
+        const {hook} = await setup((dir) => {
+            dir.seedFile('A.md', 'a', 100);
+            dir.seedFile('B.md', 'b', 200);
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        const session = hook.result.current.sessionId;
+        await act(async () => {
+            await hook.result.current.open('B.md');
+        });
+        expect(hook.result.current.sessionId).not.toBe(session);
+    });
+
+    it('surfaces a rename collision and leaves the note unchanged', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile('Taken.md', 't', 200);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        let result: string | null = 'unset';
+        await act(async () => {
+            result = await hook.result.current.rename('A.md', 'Taken');
+        });
+        expect(result).toBeNull();
+        expect(onError).toHaveBeenCalled();
+        expect(hook.result.current.activeId).toBe('A.md');
+    });
+
     it('removing the active note clears it', async () => {
         const {hook} = await setup((dir) => dir.seedFile('A.md', 'a', 100));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
