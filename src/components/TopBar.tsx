@@ -102,6 +102,10 @@ export function TopBar({
 
     return (
         <header className="topbar">
+            {/* "Toggle sidebar" (not "…notes…") so the label doesn't match the folder
+                button's /notes/i query in Workspace.test. `selected` (not a raw
+                aria-pressed, which Gravity's Button overwrites with its own) is what
+                renders aria-pressed — pressed = sidebar shown. */}
             <Button
                 view="flat"
                 size="m"
@@ -109,7 +113,7 @@ export function TopBar({
                 onClick={onToggleCollapsed}
                 aria-label="Toggle sidebar"
                 title="Toggle sidebar (⌘')"
-                aria-pressed={!collapsed}
+                selected={!collapsed}
             >
                 <Icon data={LayoutSideContent} />
             </Button>
