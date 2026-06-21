@@ -1,6 +1,6 @@
 import {screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@gravity-ui/markdown-editor', () => ({
     useMarkdownEditor: () => ({
@@ -41,6 +41,12 @@ function renderWorkspace() {
 }
 
 describe('Workspace — nvALT navigation', () => {
+    afterEach(() => {
+        // The sidebar-collapse tests persist to localStorage; clear it so no collapsed state
+        // leaks into the other tests (jsdom shares localStorage across a suite).
+        localStorage.removeItem('gravity-notes:sidebar-collapsed');
+    });
+
     it('shows the placeholder until a note is opened, and never a tab strip', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
@@ -354,5 +360,23 @@ describe('Workspace — nvALT navigation', () => {
                 'true',
             ),
         );
+    });
+
+    it('collapses the sidebar and persists it', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        // Docked: no reveal handle.
+        expect(screen.queryByLabelText('Show notes')).not.toBeInTheDocument();
+        await user.click(screen.getByLabelText('Collapse sidebar'));
+        // Collapsed: the left-edge reveal handle appears and the state is persisted.
+        await screen.findByLabelText('Show notes');
+        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('true');
+    });
+
+    it('restores the collapsed sidebar from localStorage', async () => {
+        localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
+        renderWorkspace();
+        await screen.findByLabelText('Show notes');
     });
 });

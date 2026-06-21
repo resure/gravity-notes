@@ -26,6 +26,8 @@ interface WorkspaceProps {
     onChangeFolder: () => void;
 }
 
+const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
+
 const SAVE_LABEL: Record<SaveState, string> = {
     idle: '',
     saving: 'Saving…',
@@ -71,6 +73,11 @@ export function Workspace({
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Read-only preview mode, kept here so it persists as the open note changes.
     const [previewMode, setPreviewMode] = useState(false);
+    const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
+    useEffect(() => {
+        localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+    }, [collapsed]);
+    const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -232,7 +239,14 @@ export function Workspace({
                 onFocusList={() => listRef.current?.focusSelected()}
             />
 
-            <div className="workspace__body">
+            <div className={'workspace__body' + (collapsed ? ' workspace__body_collapsed' : '')}>
+                {collapsed ? (
+                    <button
+                        type="button"
+                        className="workspace__sidebar-reveal"
+                        aria-label="Show notes"
+                    />
+                ) : null}
                 <aside className="workspace__sidebar">
                     <NoteList
                         ref={listRef}
@@ -250,6 +264,8 @@ export function Workspace({
                         onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
                         onTogglePin={notes.togglePin}
+                        collapsed={collapsed}
+                        onToggleCollapsed={toggleCollapsed}
                     />
                 </aside>
 
