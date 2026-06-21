@@ -1,10 +1,5 @@
 /** The set of actions the global keyboard handler can invoke. */
-export type ShortcutAction =
-    | 'focusSearch'
-    | 'createNote'
-    | 'toggleEditorMode'
-    | 'openHelp'
-    | 'renameSelected';
+export type ShortcutAction = 'createNote' | 'toggleEditorMode' | 'openHelp' | 'renameSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
@@ -20,7 +15,7 @@ export interface GlobalBinding {
 
 /** One row of the keyboard-shortcut help sheet, and (optionally) its global binding. */
 export interface ShortcutDescriptor {
-    /** Gravity <Hotkey> value, e.g. 'mod+k'. */
+    /** Gravity <Hotkey> value, e.g. 'mod+j' or 'esc esc'. */
     keys: string;
     /** Human description shown in the help dialog. */
     description: string;
@@ -32,16 +27,13 @@ export interface ShortcutDescriptor {
 
 /** Single source of truth for both the global handler and the help dialog. */
 export const SHORTCUTS: ShortcutDescriptor[] = [
-    {
-        keys: 'mod+k',
-        description: 'Focus search',
-        group: 'Navigation',
-        global: {trigger: 'mod', key: 'k', action: 'focusSearch', inTyping: false},
-    },
     {keys: 'up', description: 'Preview previous note', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note', group: 'Navigation'},
     {keys: 'enter', description: 'Edit the selected note', group: 'Navigation'},
     {keys: 'esc', description: 'Editor → list, then close (or clear search)', group: 'Navigation'},
+    // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses
+    // the search box). ⌘K is deliberately left to the editor's insert-link command.
+    {keys: 'esc esc', description: 'Focus search', group: 'Navigation'},
     {
         keys: 'mod+j',
         description: 'New note',

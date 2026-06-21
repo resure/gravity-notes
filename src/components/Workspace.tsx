@@ -152,7 +152,6 @@ export function Workspace({
     }, [pendingListFocus, filteredNotes, nav.selectedId]);
 
     useShortcuts({
-        focusSearch: () => searchInputRef.current?.focus(),
         createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         openHelp: () => setHelpOpen(true),
