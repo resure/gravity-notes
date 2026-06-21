@@ -1,4 +1,4 @@
-import {screen, waitFor, within} from '@testing-library/react';
+import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -46,6 +46,19 @@ describe('Workspace — nvALT navigation', () => {
         // leaks into the other tests (jsdom shares localStorage across a suite).
         localStorage.removeItem('gravity-notes:sidebar-collapsed');
     });
+
+    // Collapse the sidebar, then fire ⌘⇧' to peek it. A direct keyDown avoids userEvent's
+    // keyboard-layout mapping of the `"` character. Resolves once the peek class is present.
+    async function collapseThenPeek(user: ReturnType<typeof userEvent.setup>) {
+        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
+        fireEvent.keyDown(document, {key: '"', metaKey: true, shiftKey: true});
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
+        );
+    }
 
     it('shows the placeholder until a note is opened, and never a tab strip', async () => {
         renderWorkspace();
@@ -396,5 +409,62 @@ describe('Workspace — nvALT navigation', () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
+    });
+
+    it("⌘⇧' peeks the collapsed sidebar", async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        expect(document.querySelector('.workspace__body_peeked')).not.toBeNull();
+    });
+
+    it("⌘⇧' does nothing while the sidebar is docked", async () => {
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
+        fireEvent.keyDown(document, {key: '"', metaKey: true, shiftKey: true});
+        expect(document.querySelector('.workspace__body_peeked')).toBeNull();
+    });
+
+    it('Esc closes the peek', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        // Focus is on a list row; Esc there closes the peek.
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+    });
+
+    it('opening a note closes the peek', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        // Enter on the focused row commits (opens) the note → closes the peek.
+        await user.keyboard('{Enter}');
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+    });
+
+    it('clicking outside the sidebar closes the peek', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        fireEvent.mouseDown(document.body);
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+    });
+
+    it("docking with ⌘' clears the peek", async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await collapseThenPeek(user);
+        await user.keyboard("{Meta>}'{/Meta}");
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
+        );
+        expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
 });

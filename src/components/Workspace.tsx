@@ -79,6 +79,32 @@ export function Workspace({
     }, [collapsed]);
     const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
+    // Transient overlay reveal of the collapsed sidebar (⌘⇧'); not persisted. Only meaningful
+    // while collapsed — the invariant effect clears it whenever the sidebar is docked.
+    const [peeked, setPeeked] = useState(false);
+    useEffect(() => {
+        if (!collapsed && peeked) setPeeked(false);
+    }, [collapsed, peeked]);
+    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately.
+    useEffect(() => {
+        if (peeked) listRef.current?.focusSelected();
+    }, [peeked]);
+    // While peeked, a mousedown anywhere outside the sidebar closes it (e.g. clicking the editor).
+    useEffect(() => {
+        if (!peeked) return undefined;
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target;
+            if (
+                target instanceof Node &&
+                !document.querySelector('.workspace__sidebar')?.contains(target)
+            ) {
+                setPeeked(false);
+            }
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        return () => document.removeEventListener('mousedown', onPointerDown);
+    }, [peeked]);
+
     const nav = useNoteNavigation({
         activeId: notes.activeId,
         open: notes.open,
@@ -211,6 +237,9 @@ export function Workspace({
         selectNextNote: () => browseRelative(1),
         selectPrevNote: () => browseRelative(-1),
         toggleSidebar: toggleCollapsed,
+        peekSidebar: () => {
+            if (collapsed) setPeeked(true);
+        },
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
@@ -241,7 +270,13 @@ export function Workspace({
                 onFocusList={() => listRef.current?.focusSelected()}
             />
 
-            <div className={'workspace__body' + (collapsed ? ' workspace__body_collapsed' : '')}>
+            <div
+                className={
+                    'workspace__body' +
+                    (collapsed ? ' workspace__body_collapsed' : '') +
+                    (collapsed && peeked ? ' workspace__body_peeked' : '')
+                }
+            >
                 <aside className="workspace__sidebar">
                     <NoteList
                         ref={listRef}
@@ -250,8 +285,14 @@ export function Workspace({
                         query={query}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
-                        onCommit={nav.commit}
-                        onEscapeList={nav.escapeToSearch}
+                        onCommit={(id) => {
+                            nav.commit(id);
+                            setPeeked(false);
+                        }}
+                        onEscapeList={() => {
+                            setPeeked(false);
+                            nav.escapeToSearch();
+                        }}
                         onCreate={handleCreate}
                         onRename={handleRename}
                         onDelete={handleDelete}
