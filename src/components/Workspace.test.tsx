@@ -121,4 +121,19 @@ describe('Workspace — nvALT navigation', () => {
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByText(/Select a note/)).toBeInTheDocument());
     });
+
+    it('F2 renames the selected note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{F2}');
+        expect(await screen.findByDisplayValue('Beta')).toBeInTheDocument();
+    });
 });

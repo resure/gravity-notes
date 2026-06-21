@@ -1,5 +1,10 @@
 /** The set of actions the global keyboard handler can invoke. */
-export type ShortcutAction = 'focusSearch' | 'createNote' | 'toggleEditorMode' | 'openHelp';
+export type ShortcutAction =
+    | 'focusSearch'
+    | 'createNote'
+    | 'toggleEditorMode'
+    | 'openHelp'
+    | 'renameSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
@@ -49,7 +54,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
         global: {trigger: 'mod', key: '/', action: 'toggleEditorMode'},
     },
-    {keys: 'f2', description: 'Rename selected note', group: 'Editing'},
+    {
+        keys: 'f2',
+        description: 'Rename selected note',
+        group: 'Editing',
+        global: {trigger: 'bare', key: 'F2', action: 'renameSelected', inTyping: true},
+    },
     {
         keys: '?',
         description: 'Show this help',

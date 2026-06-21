@@ -9,6 +9,7 @@ function makeActions(): ShortcutActions {
         createNote: vi.fn(),
         toggleEditorMode: vi.fn(),
         openHelp: vi.fn(),
+        renameSelected: vi.fn(),
     };
 }
 
@@ -90,5 +91,15 @@ describe('useShortcuts', () => {
         input.focus();
         press({key: 'j', ctrlKey: true});
         expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('renames the selected note on F2, even while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'F2'});
+        expect(actions.renameSelected).toHaveBeenCalledTimes(1);
     });
 });

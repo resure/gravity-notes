@@ -11,6 +11,8 @@ import './NoteList.css';
 export interface NoteListHandle {
     /** Move keyboard focus to the selected row (used when leaving the editor). */
     focusSelected(): void;
+    /** Begin inline-renaming the given note (used by the global F2 shortcut). */
+    startRename(id: string): void;
 }
 
 export interface NoteListProps {
@@ -83,20 +85,24 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const focusableId =
         selectedId && notes.some((n) => n.id === selectedId) ? selectedId : (notes[0]?.id ?? null);
 
+    const beginRename = (note: NoteMeta) => {
+        setEditValue(note.title);
+        setEditingId(note.id);
+    };
+
     useImperativeHandle(
         ref,
         () => ({
             focusSelected() {
                 if (focusableId) itemRefs.current.get(focusableId)?.focus();
             },
+            startRename(id: string) {
+                const note = notes.find((n) => n.id === id);
+                if (note) beginRename(note);
+            },
         }),
-        [focusableId],
+        [focusableId, notes],
     );
-
-    const startRename = (note: NoteMeta) => {
-        setEditValue(note.title);
-        setEditingId(note.id);
-    };
 
     const commitRename = (note: NoteMeta) => {
         const next = editValue.trim();
@@ -137,10 +143,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             case 'Escape':
                 event.preventDefault();
                 onEscapeList();
-                break;
-            case 'F2':
-                event.preventDefault();
-                startRename(note);
                 break;
         }
     };
@@ -236,7 +238,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 aria-selected={selected}
                                 tabIndex={tabbable ? 0 : -1}
                                 onClick={() => !editing && browseRow(note.id)}
-                                onDoubleClick={() => startRename(note)}
+                                onDoubleClick={() => beginRename(note)}
                                 onKeyDown={(e) => onItemKeyDown(e, note)}
                             >
                                 {editing ? (
@@ -303,7 +305,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                                     {
                                                         text: 'Rename',
                                                         iconStart: <Icon data={Pencil} />,
-                                                        action: () => startRename(note),
+                                                        action: () => beginRename(note),
                                                     },
                                                     {
                                                         text: 'Delete',

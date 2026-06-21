@@ -107,6 +107,9 @@ export function Workspace({dir, folderName, theme, onToggleTheme, onChangeFolder
         createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         openHelp: () => setHelpOpen(true),
+        renameSelected: () => {
+            if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
+        },
     });
 
     return (

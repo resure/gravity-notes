@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {screen, within} from '@testing-library/react';
+import {act, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -101,11 +101,12 @@ describe('NoteList — focus handle', () => {
 });
 
 describe('NoteList — inline rename', () => {
-    it('renames via F2 and commits on Enter', async () => {
+    it('renames via the startRename handle and commits on Enter', async () => {
         const user = userEvent.setup();
-        const {props} = setup({selectedId: 'Alpha.md'});
-        screen.getByRole('option', {name: /Alpha/}).focus();
-        await user.keyboard('{F2}');
+        const {ref, props} = setup({selectedId: 'Alpha.md'});
+        act(() => {
+            ref.current?.startRename('Alpha.md');
+        });
         const input = screen.getByDisplayValue('Alpha');
         await user.clear(input);
         await user.type(input, 'Renamed{Enter}');
