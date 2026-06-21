@@ -280,4 +280,57 @@ describe('Workspace — nvALT navigation', () => {
         await user.click(screen.getByRole('button', {name: 'New'}));
         await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveFocus());
     });
+
+    it('navigates to the next/previous note with ⌘J / ⌘K', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{Meta>}j{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Alpha/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        await user.keyboard('{Meta>}k{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+    });
+
+    it('⌘J navigates even while the title field is focused', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        screen.getByLabelText('Note title').focus();
+        await user.keyboard('{Meta>}j{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Alpha/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+    });
+
+    it('creates a note with ⌘Enter', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await user.keyboard('{Meta>}{Enter}{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Untitled/})).toBeInTheDocument(),
+        );
+    });
 });
