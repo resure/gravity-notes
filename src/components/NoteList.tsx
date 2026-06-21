@@ -216,7 +216,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         {value: 'created', content: 'Created'},
                     ]}
                 />
-                <Button view="action" size="m" onClick={() => onCreate()}>
+                <Button view="normal" size="m" onClick={() => onCreate()}>
                     <Icon data={Plus} />
                     New
                 </Button>
