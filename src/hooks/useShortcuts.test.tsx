@@ -145,16 +145,15 @@ describe('useShortcuts', () => {
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 
-    it('peeks the sidebar on ctrl+shift+doublequote (and does not toggle)', () => {
+    it('peeks the sidebar on ctrl+backslash (and does not toggle)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        // Shift+apostrophe emits the double-quote character; that + shift is the ⌘⇧' binding.
-        press({key: '"', ctrlKey: true, shiftKey: true});
+        press({key: '\\', ctrlKey: true});
         expect(actions.peekSidebar).toHaveBeenCalledTimes(1);
         expect(actions.toggleSidebar).not.toHaveBeenCalled();
     });
 
-    it('does not peek the sidebar on ctrl+apostrophe without shift', () => {
+    it('does not peek the sidebar on ctrl+apostrophe (that is the toggle)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         press({key: "'", ctrlKey: true});

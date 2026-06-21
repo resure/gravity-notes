@@ -47,14 +47,13 @@ describe('Workspace — nvALT navigation', () => {
         localStorage.removeItem('gravity-notes:sidebar-collapsed');
     });
 
-    // Collapse the sidebar, then fire ⌘⇧' to peek it. A direct keyDown avoids userEvent's
-    // keyboard-layout mapping of the `"` character. Resolves once the peek class is present.
+    // Collapse the sidebar, then fire ⌘\ to peek it. Resolves once the peek class is present.
     async function collapseThenPeek(user: ReturnType<typeof userEvent.setup>) {
         await user.click(screen.getByLabelText('Toggle sidebar'));
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
-        fireEvent.keyDown(document, {key: '"', metaKey: true, shiftKey: true});
+        fireEvent.keyDown(document, {key: '\\', metaKey: true});
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
         );
@@ -411,7 +410,7 @@ describe('Workspace — nvALT navigation', () => {
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
     });
 
-    it("⌘⇧' peeks the collapsed sidebar", async () => {
+    it('⌘\\ peeks the collapsed sidebar', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
@@ -419,11 +418,11 @@ describe('Workspace — nvALT navigation', () => {
         expect(document.querySelector('.workspace__body_peeked')).not.toBeNull();
     });
 
-    it("⌘⇧' does nothing while the sidebar is docked", async () => {
+    it('⌘\\ does nothing while the sidebar is docked', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
-        fireEvent.keyDown(document, {key: '"', metaKey: true, shiftKey: true});
+        fireEvent.keyDown(document, {key: '\\', metaKey: true});
         expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
 
@@ -468,7 +467,7 @@ describe('Workspace — nvALT navigation', () => {
         expect(document.querySelector('.workspace__body_peeked')).toBeNull();
     });
 
-    it("⌘⇧' focuses the list when it peeks", async () => {
+    it('⌘\\ focuses the list when it peeks', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});

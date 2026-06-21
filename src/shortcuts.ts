@@ -68,11 +68,10 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         global: {trigger: 'mod', key: "'", action: 'toggleSidebar'},
     },
     {
-        keys: "mod+shift+'",
+        keys: 'mod+\\',
         description: 'Peek the collapsed sidebar',
         group: 'Navigation',
-        // Shift+' emits '"' in event.key — keep `key` the double-quote, not the apostrophe.
-        global: {trigger: 'mod', key: '"', action: 'peekSidebar', shift: true},
+        global: {trigger: 'mod', key: '\\', action: 'peekSidebar'},
     },
     {
         keys: 'mod+enter',
