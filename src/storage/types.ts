@@ -29,7 +29,7 @@ export interface Note extends NoteMeta {
 }
 
 /** How the note list is ordered. */
-export type SortMode = 'updated' | 'title' | 'created';
+export type SortMode = 'updated' | 'title' | 'title-desc' | 'created';
 
 /** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
 export interface NotesMetadata {

@@ -12,7 +12,7 @@ export const DEFAULT_METADATA: NotesMetadata = {
     active: null,
 };
 
-const SORT_MODES: readonly SortMode[] = ['updated', 'title', 'created'];
+const SORT_MODES: readonly SortMode[] = ['updated', 'title', 'title-desc', 'created'];
 
 /** Tolerant parse: coerce anything unexpected to defaults; never throws. */
 export function parseMetadata(raw: unknown): NotesMetadata {
@@ -106,6 +106,8 @@ function comparatorFor(sort: SortMode, created: Readonly<Record<string, number>>
     switch (sort) {
         case 'title':
             return (a: NoteMeta, b: NoteMeta) => a.title.localeCompare(b.title);
+        case 'title-desc':
+            return (a: NoteMeta, b: NoteMeta) => b.title.localeCompare(a.title);
         case 'created':
             return (a: NoteMeta, b: NoteMeta) => createdOf(b, created) - createdOf(a, created);
         case 'updated':

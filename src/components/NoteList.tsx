@@ -212,6 +212,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     options={[
                         {value: 'updated', content: 'Updated'},
                         {value: 'title', content: 'Title (A→Z)'},
+                        {value: 'title-desc', content: 'Title (Z→A)'},
                         {value: 'created', content: 'Created'},
                     ]}
                 />
