@@ -69,6 +69,8 @@ export function Workspace({
     const listRef = useRef<NoteListHandle>(null);
     const [helpOpen, setHelpOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
+    // Read-only preview mode, kept here so it persists as the open note changes.
+    const [previewMode, setPreviewMode] = useState(false);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -166,7 +168,7 @@ export function Workspace({
     useShortcuts({
         createNote: handleCreate,
         toggleEditorMode: () => editorRef.current?.toggleMode(),
-        togglePreview: () => editorRef.current?.togglePreview(),
+        togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
         renameSelected: () => {
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
@@ -242,8 +244,10 @@ export function Workspace({
                                     key={`${notes.note.id}:${notes.note.updatedAt}`}
                                     note={notes.note}
                                     autofocus={nav.editorAutofocus}
+                                    preview={previewMode}
                                     onChange={notes.edit}
                                     onEscape={nav.escapeEditor}
+                                    onExitPreview={() => setPreviewMode(false)}
                                 />
                             </div>
                         </>

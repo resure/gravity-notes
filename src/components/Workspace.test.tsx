@@ -183,6 +183,25 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
+    it('keeps preview mode when switching notes', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        await user.keyboard('{Meta>}{Shift>}p{/Shift}{/Meta}');
+        await waitFor(() => expect(document.querySelector('.note-preview')).toBeInTheDocument());
+        // Switch to Alpha — preview mode carries over to the new note.
+        await user.click(screen.getByRole('option', {name: /Alpha/}));
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Alpha/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        expect(document.querySelector('.note-preview')).toBeInTheDocument();
+    });
+
     it('F2 renames the selected note', async () => {
         const user = userEvent.setup();
         renderWorkspace();

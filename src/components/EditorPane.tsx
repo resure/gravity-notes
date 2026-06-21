@@ -1,4 +1,4 @@
-import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
+import {forwardRef, useEffect, useImperativeHandle, useRef} from 'react';
 
 import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
 
@@ -11,31 +11,32 @@ import './EditorPane.css';
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
     toggleMode(): void;
-    /** Toggle a read-only rendered preview of the current markup. */
-    togglePreview(): void;
     /** Move keyboard focus into the editor. */
     focus(): void;
 }
 
 interface EditorPaneProps {
     note: Note;
-    /** Focus the editor on (re)mount — true only when opened to edit (a "commit"); false for a browse preview. */
+    /** Focus on (re)mount — true only when opened to edit (a "commit"); false for a browse preview. */
     autofocus: boolean;
+    /** Read-only preview mode. Owned by Workspace so it persists across note switches. */
+    preview?: boolean;
     onChange: (markup: string) => void;
     /** Fired when an otherwise-unhandled Escape bubbles out of the editor (exit to the list). */
     onEscape: () => void;
+    /** Esc while previewing: leave preview (back to editing). */
+    onExitPreview?: () => void;
 }
 
 /**
  * Wraps the Gravity markdown editor for the single open note. The editor instance is
- * re-created whenever the note id changes (via the `deps` argument), loading that note's
- * markup. It focuses on (re)mount only when `autofocus` is set (a commit open); a browse
- * preview mounts unfocused, leaving focus on the note list. Same-note commits focus via
- * the `focus()` handle. An Escape that the editor itself does not consume bubbles to the
- * wrapper and calls `onEscape`.
+ * re-created whenever the note id changes, loading that note's markup. It focuses on
+ * (re)mount only when `autofocus` is set (a commit open); a browse preview mounts unfocused.
+ * In `preview` mode the editor is replaced by a read-only render of its current markup;
+ * preview is owned by Workspace so it carries across note switches.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, autofocus, onChange, onEscape},
+    {note, autofocus, preview = false, onChange, onEscape, onExitPreview},
     ref,
 ) {
     const editor = useMarkdownEditor(
@@ -46,8 +47,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         [note.id],
     );
 
-    // Non-null while in read-only preview mode; holds the markup snapshot being previewed.
-    const [previewMarkup, setPreviewMarkup] = useState<string | null>(null);
     const previewRef = useRef<HTMLDivElement>(null);
 
     useImperativeHandle(
@@ -56,28 +55,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             toggleMode() {
                 editor.setEditorMode(editor.currentMode === 'wysiwyg' ? 'markup' : 'wysiwyg');
             },
-            togglePreview() {
-                // Snapshot the live markup on the way in (includes unsaved edits); clear on the way out.
-                setPreviewMarkup((cur) => (cur === null ? editor.getValue() : null));
-            },
             focus() {
                 editor.focus();
             },
         }),
         [editor],
     );
-
-    // Move focus across the edit/preview transition: into the preview on enter, back to the
-    // editor on exit, so the Esc ladder keeps working from wherever you are.
-    const wasPreviewingRef = useRef(false);
-    useEffect(() => {
-        const previewing = previewMarkup !== null;
-        const changed = previewing !== wasPreviewingRef.current;
-        wasPreviewingRef.current = previewing;
-        if (!changed) return;
-        if (previewing) previewRef.current?.focus();
-        else editor.focus();
-    }, [previewMarkup, editor]);
 
     useEffect(() => {
         const handleChange = () => {
@@ -94,11 +77,24 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         };
     }, [editor, note.content, onChange]);
 
-    // Focus only on (re)mount when this open was a commit. `editor` changes per note id.
+    // Focus on (re)mount when this open was a commit — the preview surface if previewing,
+    // else the editor. `editor` changes per note id.
     useEffect(() => {
-        if (autofocus) editor.focus();
+        if (!autofocus) return;
+        if (preview) previewRef.current?.focus();
+        else editor.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on (re)mount; same-note commits use the focus() handle
     }, [editor]);
+
+    // Move focus when preview is toggled within a note: onto the preview on enter, back to
+    // the editor on exit, so the Esc ladder keeps working.
+    const prevPreviewRef = useRef(preview);
+    useEffect(() => {
+        if (preview === prevPreviewRef.current) return;
+        prevPreviewRef.current = preview;
+        if (preview) previewRef.current?.focus();
+        else editor.focus();
+    }, [preview, editor]);
 
     return (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
@@ -107,19 +103,19 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
                 // Esc steps out of preview first (back to editing), then out to the list.
-                if (previewMarkup === null) onEscape();
-                else setPreviewMarkup(null);
+                if (preview) onExitPreview?.();
+                else onEscape();
             }}
         >
-            {previewMarkup === null ? (
+            {preview ? (
+                <NotePreview ref={previewRef} markup={editor.getValue()} />
+            ) : (
                 <MarkdownEditorView
                     settingsVisible={false}
                     stickyToolbar={false}
                     autofocus={autofocus}
                     editor={editor}
                 />
-            ) : (
-                <NotePreview ref={previewRef} markup={previewMarkup} />
             )}
         </div>
     );
