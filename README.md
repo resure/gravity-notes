@@ -2,13 +2,14 @@
 
 A simple note-taking app built on the [Gravity UI](https://gravity-ui.com/) ecosystem,
 using [`@gravity-ui/markdown-editor`](https://github.com/gravity-ui/markdown-editor) as the
-WYSIWYG/Markdown editor. On first run you choose where notes live: a **folder on your computer**
-(plain `.md` files), or **in this browser** — and you can **export/import** `.md` files either way.
+WYSIWYG/Markdown editor. Runs as a **web app** and a **macOS desktop app** (Tauri). On first run you
+choose where notes live: a **folder on your computer** (plain `.md` files), or **in-browser / in-app**
+— and you can **export/import** `.md` files either way.
 
 ## Features (v1)
 
-- **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers), or
-  in-browser storage that works in any modern browser
+- **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers, or natively
+  in the desktop app), or in-browser/in-app storage that works everywhere
 - **Export / import**: download all notes as a `.md` zip, or import `.md` files / a zip — so you own
   your data regardless of backend, and can migrate between them
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
@@ -31,7 +32,8 @@ WYSIWYG/Markdown editor. On first run you choose where notes live: a **folder on
 | `⌘J` / `⌘K`              | Preview next / previous note (works while editing)                                                                                      |
 | `Enter`                  | Edit the selected note                                                                                                                  |
 | `Esc`                    | Editor → list → search (then close / clear)                                                                                             |
-| `⌘Enter`                 | New note                                                                                                                                |
+| `⌘L`                     | Jump to the search box (`⌘L` in the desktop app; browsers reserve it)                                                                   |
+| `⌘⇧Enter` / `⌘N`         | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
 | `⌘\`                     | Toggle the sidebar                                                                                                                      |
 | `⌘'`                     | Peek the collapsed sidebar / focus the list                                                                                             |
 | `⌘⇧;`                    | Toggle WYSIWYG / Markup                                                                                                                 |
@@ -42,10 +44,15 @@ WYSIWYG/Markdown editor. On first run you choose where notes live: a **folder on
 
 ## Requirements
 
-Any modern browser works. **Folder storage** uses the
+Any modern browser works. **Folder storage** in the browser uses the
 [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API), which is
 Chromium-only (Chrome, Edge, …); on Firefox/Safari the first-run screen offers only **in-browser
-storage** (IndexedDB). Use **Export** to get your notes out as plain `.md` files at any time.
+storage** (IndexedDB). The **desktop app** (Tauri, macOS arm64) reads/writes the folder natively, so
+folder storage works there regardless — with no per-session permission re-grant. Use **Export** to
+get your notes out as plain `.md` files at any time.
+
+Building the desktop app needs a Rust toolchain (**rustc ≥ 1.88**; [rustup](https://rustup.rs) is
+recommended) and the Xcode Command Line Tools.
 
 ## Getting started
 
@@ -55,32 +62,40 @@ npm run dev          # start the dev server (http://localhost:5173)
 npm run build        # type-check + production build
 npm run build:single # single self-contained index.html (all JS/CSS inlined)
 npm run preview      # preview the production build
+
+npm run tauri:dev    # run the macOS desktop app against the dev server
+npm run tauri:build  # build the .app / .dmg (arm64) → src-tauri/target/release/bundle
 ```
 
-On first run, pick **Open a folder** (Chromium) or **Store in this browser**. The choice is
-remembered across reloads; a folder also re-prompts for permission each session (a browser security
-requirement). Switch later — or export/import — from the storage menu in the top bar.
+On first run, pick **Open a folder** or **Store in this browser** (**Store inside the app** in the
+desktop build). The choice is remembered across reloads. In the browser, a folder re-prompts for
+permission each session (a browser security requirement); the desktop app does not. Switch later — or
+export/import — from the storage menu in the top bar.
 
 ## Architecture
 
 ```
-FolderGate ──▶ NoteStore (filesystem | indexeddb) ──▶ useNotes() ──▶ NoteList + EditorPane
-(choose storage)  (.md files on disk, or IndexedDB)     (state + autosave)   (UI)
+FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ useNotes() ──▶ NoteList + EditorPane
+(choose storage)  (.md on disk: web FSA / native Rust; or IndexedDB)  (state + autosave)   (UI)
 ```
 
-All persistence sits behind the `NoteStore` interface (`src/storage/types.ts`), with two backends:
-`FileSystemNoteStore` (`src/storage/fileSystemStore.ts`, plain `.md` files in a chosen folder) and
-`IndexedDbNoteStore` (`src/storage/indexedDbStore.ts`, in-browser). Both share the same
-`<Title>.md` ids, canonical body shape, and `updatedAt`-based conflict semantics
+All persistence sits behind the `NoteStore` interface (`src/storage/types.ts`), with three backends:
+`FileSystemNoteStore` (`src/storage/fileSystemStore.ts`, plain `.md` files via the browser File System
+Access API), `TauriNoteStore` (`src/storage/tauriStore.ts`, the same `.md` folder via native Rust `fs`
+commands in the desktop app), and `IndexedDbNoteStore` (`src/storage/indexedDbStore.ts`, in-browser).
+All share the same `<Title>.md` ids, canonical body shape, and `updatedAt`-based conflict semantics
 (`src/storage/noteText.ts`), so everything above the seam is backend-agnostic. Per-folder/-store
 metadata — sort mode, pins, created stamps, the open note — lives in `metadata.ts`. The chosen
-backend (and any folder handle) is remembered in IndexedDB (`src/storage/handlePersistence.ts`).
+backend (and any folder handle or path) is remembered in IndexedDB (`src/storage/handlePersistence.ts`).
+The desktop shell is `src-tauri/` (Tauri 2); its only app code is the `notes_*` filesystem commands in
+`src-tauri/src/lib.rs`.
 
 Key modules:
 
-- `src/storage/` — `types.ts` (the `NoteStore` seam), `fileSystemStore.ts` + `indexedDbStore.ts`
-  (the two backends), `noteText.ts` (shared id/body helpers), `metadata.ts` (sort/pins sidecar),
-  `transfer.ts` (`.md` zip export/import), `handlePersistence.ts` (remembered backend + handle)
+- `src/storage/` — `types.ts` (the `NoteStore` seam), `fileSystemStore.ts` + `tauriStore.ts` +
+  `indexedDbStore.ts` (the three backends), `noteText.ts` (shared id/body helpers), `metadata.ts`
+  (sort/pins sidecar), `transfer.ts` (`.md` zip export/import), `handlePersistence.ts` (remembered
+  backend + handle/path)
 - `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle; yields a ready
   `NoteStore`
 - `src/hooks/useNotes.ts` — note list, selection, debounced autosave, and conflict detection

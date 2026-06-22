@@ -6,6 +6,7 @@ import {type ShortcutActions, useShortcuts} from './useShortcuts';
 function makeActions(): ShortcutActions {
     return {
         createNote: vi.fn(),
+        focusSearch: vi.fn(),
         selectNextNote: vi.fn(),
         selectPrevNote: vi.fn(),
         toggleSidebar: vi.fn(),
@@ -43,11 +44,42 @@ describe('useShortcuts', () => {
         expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
     });
 
-    it('creates a note on ctrl+enter', () => {
+    it('creates a note on ctrl+shift+enter', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'Enter', ctrlKey: true, shiftKey: true});
+        expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not create a note on ctrl+enter without shift', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         press({key: 'Enter', ctrlKey: true});
+        expect(actions.createNote).not.toHaveBeenCalled();
+    });
+
+    it('creates a note on ctrl+n', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'n', ctrlKey: true});
         expect(actions.createNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('jumps to the search box on ctrl+l', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'l', ctrlKey: true});
+        expect(actions.focusSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('jumps to the search box on ctrl+l even while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'l', ctrlKey: true});
+        expect(actions.focusSearch).toHaveBeenCalledTimes(1);
     });
 
     it('toggles editor mode on mod+shift+semicolon (matched by physical key)', () => {

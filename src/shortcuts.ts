@@ -1,6 +1,7 @@
 /** The set of actions the global keyboard handler can invoke. */
 export type ShortcutAction =
     | 'createNote'
+    | 'focusSearch'
     | 'selectNextNote'
     | 'selectPrevNote'
     | 'toggleSidebar'
@@ -68,6 +69,13 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     // the search box).
     {keys: 'esc esc', description: 'Focus search', group: 'Navigation'},
     {
+        keys: 'mod+l',
+        description: 'Jump to the search box',
+        group: 'Navigation',
+        // ⌘L is reserved by browsers (focus the address bar), so it's effective in the desktop app.
+        global: {trigger: 'mod', key: 'l', action: 'focusSearch'},
+    },
+    {
         keys: 'mod+\\',
         description: 'Toggle the sidebar',
         group: 'Navigation',
@@ -80,10 +88,18 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         global: {trigger: 'mod', key: "'", action: 'peekSidebar'},
     },
     {
-        keys: 'mod+enter',
+        keys: 'mod+shift+enter',
         description: 'New note',
         group: 'Editing',
-        global: {trigger: 'mod', key: 'Enter', action: 'createNote'},
+        global: {trigger: 'mod', key: 'Enter', action: 'createNote', shift: true},
+    },
+    {
+        keys: 'mod+n',
+        description: 'New note',
+        group: 'Editing',
+        // ⌘N is reserved by browsers (new window), so this chord is effective in the desktop app;
+        // ⌘⇧↵ is the cross-target equivalent.
+        global: {trigger: 'mod', key: 'n', action: 'createNote'},
     },
     {
         keys: 'mod+shift+;',

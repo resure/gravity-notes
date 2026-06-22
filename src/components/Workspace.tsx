@@ -274,11 +274,13 @@ export function Workspace({
     // we only move the list cursor to the new id (and only when the renamed note is still the
     // open one — an unmount-time commit of a note we've since left must not hijack selection).
     const handleEditorRename = useCallback(
-        (id: string, title: string) => {
+        (id: string, title: string): Promise<boolean> => {
             const wasActive = notes.activeId === id;
-            void (async () => {
+            return (async () => {
                 const newId = await notes.rename(id, title);
                 if (wasActive && newId && newId !== id) nav.setSelected(newId);
+                // null ⇒ the rename was rejected (collision / error) and the file is unchanged.
+                return newId !== null;
             })();
         },
         [notes, nav],
@@ -293,6 +295,10 @@ export function Workspace({
 
     useShortcuts({
         createNote: handleCreate,
+        focusSearch: () => {
+            searchInputRef.current?.focus();
+            searchInputRef.current?.select(); // select any existing query so typing replaces it
+        },
         selectNextNote: () => browseRelative(1),
         selectPrevNote: () => browseRelative(-1),
         toggleSidebar: toggleCollapsed,

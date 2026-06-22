@@ -25,8 +25,11 @@ interface EditorPaneProps {
     /** Read-only preview mode. Owned by Workspace so it persists across note switches. */
     preview?: boolean;
     onChange: (markup: string) => void;
-    /** Commit a title edit (renames the file). Carries the note id it applies to. */
-    onRename: (id: string, nextTitle: string) => void;
+    /**
+     * Commit a title edit (renames the file). Carries the note id it applies to. May resolve
+     * `false` when the rename was rejected (e.g. a name collision), so the title field can revert.
+     */
+    onRename: (id: string, nextTitle: string) => void | Promise<boolean>;
     /** Fired when an otherwise-unhandled Escape bubbles out of the editor (exit to the list). */
     onEscape: () => void;
 }

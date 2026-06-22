@@ -131,10 +131,10 @@ describe('TopBar — search keyboard model', () => {
         expect(props.onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('⌘Enter does not trigger the search action — lets the global new-note shortcut fire', () => {
+    it('⌘⇧Enter does not trigger the search action — lets the global new-note shortcut fire', () => {
         const {props} = setup({query: 'Alpha', notes: NOTES});
         const input = screen.getByPlaceholderText(SEARCH);
-        fireEvent.keyDown(input, {key: 'Enter', metaKey: true});
+        fireEvent.keyDown(input, {key: 'Enter', metaKey: true, shiftKey: true});
         expect(props.onCommit).not.toHaveBeenCalled();
         expect(props.onCreate).not.toHaveBeenCalled();
     });

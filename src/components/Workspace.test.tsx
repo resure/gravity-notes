@@ -344,14 +344,34 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('creates a note with ⌘Enter', async () => {
+    it('creates a note with ⌘⇧Enter', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
-        await user.keyboard('{Meta>}{Enter}{/Meta}');
+        await user.keyboard('{Meta>}{Shift>}{Enter}{/Shift}{/Meta}');
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Untitled/})).toBeInTheDocument(),
         );
+    });
+
+    it('creates a note with ⌘N', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await user.keyboard('{Meta>}n{/Meta}');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Untitled/})).toBeInTheDocument(),
+        );
+    });
+
+    it('jumps to the search box with ⌘L', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        // Open a note so focus leaves the search box (which is focused on load).
+        await user.click(await screen.findByRole('option', {name: /Alpha/}));
+        await waitFor(() => expect(screen.getByPlaceholderText(/Search/)).not.toHaveFocus());
+        await user.keyboard('{Meta>}l{/Meta}');
+        await waitFor(() => expect(screen.getByPlaceholderText(/Search/)).toHaveFocus());
     });
 
     it('⌘K clamps at the first row — does not wrap to the last', async () => {
