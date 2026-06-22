@@ -5,7 +5,7 @@ import importOrderConfig from '@gravity-ui/eslint-config/import-order';
 import prettierConfig from '@gravity-ui/eslint-config/prettier';
 
 export default [
-    {ignores: ['dist', 'coverage']},
+    {ignores: ['dist', 'coverage', 'src-tauri']},
     ...baseConfig,
     ...clientConfig,
     ...importOrderConfig,

@@ -17,7 +17,10 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc && tsc -p tsconfig.node.json"
+    "typecheck": "tsc && tsc -p tsconfig.node.json",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@diplodoc/cut-extension": "^1.0.0",
@@ -28,6 +31,8 @@
     "@gravity-ui/icons": "^2.18.0",
     "@gravity-ui/markdown-editor": "^15.40.0",
     "@gravity-ui/uikit": "^7.41.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "fflate": "^0.8.3",
     "highlight.js": "^11.8.0",
     "katex": "^0.16.9",
@@ -39,6 +44,7 @@
   "devDependencies": {
     "@gravity-ui/eslint-config": "^4.3.1",
     "@gravity-ui/prettier-config": "^1.1.1",
+    "@tauri-apps/cli": "^2.11.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

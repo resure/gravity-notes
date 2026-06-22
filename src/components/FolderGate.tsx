@@ -53,10 +53,11 @@ function Content({storage}: {storage: NotesStorage}) {
             <Text variant="header-1">Welcome to Gravity Notes</Text>
             <Text color="secondary">
                 Choose where to keep your notes. Each note is a plain Markdown file you fully own —
-                stored in a folder on your computer, or inside this browser.
+                stored in a folder on your computer, or{' '}
+                {storage.isTauri ? 'inside the app' : 'inside this browser'}.
             </Text>
             <div className="folder-gate__actions">
-                {storage.supportsFileSystem ? (
+                {storage.supportsFolders ? (
                     <Button
                         view="action"
                         size="l"
@@ -67,15 +68,15 @@ function Content({storage}: {storage: NotesStorage}) {
                     </Button>
                 ) : null}
                 <Button
-                    view={storage.supportsFileSystem ? 'outlined' : 'action'}
+                    view={storage.supportsFolders ? 'outlined' : 'action'}
                     size="l"
-                    loading={storage.state === 'loading' && !storage.supportsFileSystem}
+                    loading={storage.state === 'loading' && !storage.supportsFolders}
                     onClick={() => void storage.useBrowserStorage()}
                 >
-                    Store in this browser
+                    {storage.isTauri ? 'Store inside the app' : 'Store in this browser'}
                 </Button>
             </div>
-            {!storage.supportsFileSystem ? (
+            {!storage.supportsFolders ? (
                 <Text variant="caption-2" color="secondary">
                     Saving to a folder needs a Chromium browser (Chrome/Edge). You can move your
                     notes to a folder later by exporting them.
