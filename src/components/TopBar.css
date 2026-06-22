@@ -7,67 +7,104 @@
     flex-shrink: 0;
 }
 
-/* The search is the hero: it fills from the left up to the right-hand controls. */
+/* The search is the hero: it fills from the orb up to the right edge. */
 .topbar__search {
     flex: 1;
     min-width: 0;
 }
 
-/* Low-key autosave indicator: faint solid at rest, a slow blink while saving, and a
-   distinct color when something actually needs attention (error / on-disk conflict). */
-.topbar__status-dot {
-    margin-right: 5px;
-    width: 10px;
-    height: 10px;
+/* DropdownMenu wraps the switcher in this div (it's the popup anchor); keep it from stretching. */
+.topbar__menu-anchor {
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
+}
+
+/* The orange orb = the app mark and the menu trigger: a small, flat disc in the app icon's orange —
+   no gradient, shadow, or outline, so it reads as one clean dot. Its color doubles as the save
+   indicator (it recolors for error/conflict and pulses while saving). */
+.topbar__menu-orb {
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
     border-radius: 50%;
-    background-color: var(--g-color-text-hint);
-    opacity: 0.4;
+    background-color: var(--gn-orange);
+    cursor: pointer;
     transition:
-        opacity 0.2s ease,
+        transform 0.1s ease,
         background-color 0.2s ease;
 }
 
-.topbar__status-dot_saving {
-    opacity: 1;
-    animation: topbar-status-blink 1.4s ease-in-out infinite;
+/* No size change on hover; only a small press feedback stays. */
+.topbar__menu-orb:active {
+    transform: scale(0.95);
 }
 
-.topbar__status-dot_error {
-    background-color: var(--g-color-text-danger);
-    opacity: 1;
+.topbar__menu-orb:focus-visible {
+    outline: 2px solid var(--g-color-line-focus);
+    outline-offset: 2px;
 }
 
-.topbar__status-dot_conflict {
-    background-color: var(--g-color-text-warning);
-    opacity: 1;
+/* Saving: a slow, gentle pulse — the same rhythm the old status dot used. */
+.topbar__menu-orb_saving {
+    animation: topbar-orb-blink 1.4s ease-in-out infinite;
 }
 
-@keyframes topbar-status-blink {
+@keyframes topbar-orb-blink {
     0%,
     100% {
-        opacity: 0.85;
+        opacity: 1;
     }
     50% {
-        opacity: 0.2;
+        opacity: 0.4;
     }
 }
 
-/* Honor a reduced-motion preference: hold the saving dot steady instead of blinking. */
+/* Something needs attention: recolor the disc (the menu's status line says what). */
+.topbar__menu-orb_error {
+    background-color: var(--g-color-text-danger);
+}
+
+.topbar__menu-orb_conflict {
+    background-color: var(--g-color-text-warning);
+}
+
+/* Honor a reduced-motion preference: hold the orb steady instead of pulsing. */
 @media (prefers-reduced-motion: reduce) {
-    .topbar__status-dot_saving {
+    .topbar__menu-orb_saving {
         animation: none;
     }
 }
 
-.topbar__folder {
-    gap: 6px;
-    flex-shrink: 0;
-    max-width: 220px;
+/* Small status swatch in the read-only menu line, colored by state (mirrors the orb). */
+.topbar__menu-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin: 0 4px;
+    border-radius: 50%;
+    background-color: var(--g-color-text-positive);
+}
+.topbar__menu-status-dot_saving {
+    background-color: var(--gn-orange);
+}
+.topbar__menu-status-dot_error {
+    background-color: var(--g-color-text-danger);
+}
+.topbar__menu-status-dot_conflict {
+    background-color: var(--g-color-text-warning);
 }
 
-.topbar__folder-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+/* Keyboard hints trailing a menu item (⌘\, ⌘/) — quiet, so the label leads. */
+.topbar__menu-kbd {
+    color: var(--g-color-text-hint);
+    font-size: 12px;
+}
+
+/* The storage label is context, not an action — cap its width so a long folder name can't blow out
+   the menu. */
+.topbar__menu-storage {
+    max-width: 260px;
 }

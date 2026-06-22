@@ -14,8 +14,8 @@ import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
-import {type ThemePref} from './ThemeSwitcher';
 import {TopBar} from './TopBar';
+import {type ThemePref} from './theme';
 
 import './Workspace.css';
 

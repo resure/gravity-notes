@@ -42,6 +42,12 @@ function renderWorkspace() {
     return {dir, store};
 }
 
+// The sidebar toggle now lives in the orb menu: open it, then click the item.
+async function toggleSidebarViaMenu(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', {name: 'Menu'}));
+    await user.click(await screen.findByRole('menuitem', {name: /Toggle sidebar/}));
+}
+
 describe('Workspace — nvALT navigation', () => {
     afterEach(() => {
         // The sidebar-collapse tests persist to localStorage; clear it so no collapsed state
@@ -51,7 +57,7 @@ describe('Workspace — nvALT navigation', () => {
 
     // Collapse the sidebar, then fire ⌘' to peek it. Resolves once the peek class is present.
     async function collapseThenPeek(user: ReturnType<typeof userEvent.setup>) {
-        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
@@ -266,8 +272,8 @@ describe('Workspace — nvALT navigation', () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
-        // Focus the storage-menu button (simulates losing focus to the top bar).
-        screen.getByRole('button', {name: 'Storage options'}).focus();
+        // Focus the orb menu button (simulates losing focus to the top bar).
+        screen.getByRole('button', {name: 'Menu'}).focus();
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
     });
@@ -396,18 +402,17 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('toggles the sidebar from the top bar and persists it', async () => {
+    it('toggles the sidebar from the orb menu and persists it', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
-        const toggle = screen.getByLabelText('Toggle sidebar');
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
-        await user.click(toggle);
+        await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
         expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('true');
-        await user.click(toggle);
+        await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
         );
@@ -607,7 +612,7 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Beta/});
         await user.click(screen.getByRole('option', {name: /Beta/}));
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
-        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );

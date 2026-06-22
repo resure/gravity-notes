@@ -70,7 +70,7 @@
 
 .note-list__item_selected,
 .note-list__item_selected:hover {
-    background-color: var(--g-color-base-selection);
+    background-color: var(--note-list-selected-bg);
 }
 
 .note-list__title {
@@ -91,8 +91,8 @@
 }
 
 /* Mark the keyboard-focused row with a stronger fill instead of an outline border —
-   a step darker than the selection-hover tint so the focused note clearly stands out.
-   The tint is theme-aware (see --note-list-focus-bg in index.css). */
+   a step stronger than the selected-row wash so the focused note clearly stands out.
+   The orange tint is theme-aware (see --note-list-focus-bg in index.css). */
 .note-list__item:focus-visible {
     outline: none;
     background-color: var(--note-list-focus-bg);
