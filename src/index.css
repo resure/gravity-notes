@@ -5,11 +5,18 @@ body,
     margin: 0;
 }
 
+/* The app icon's orange (mid-tone of the disc gradient). Single source of truth for the menu orb
+   and the saving status dot; theme-independent, so it lives on :root. */
+:root {
+    --gn-orange: #ea892b;
+}
+
 /* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
    must flip with the theme, so it's set per theme root (matching Gravity's own selectors,
    and loaded after uikit so it wins). text-brand-contrast keeps button labels readable on
-   the inverted fill. --note-list-focus-bg is a custom step-darker tint for the focused row.
-   (Visual — smoke-tested.) */
+   the inverted fill. --note-list-selected-bg / --note-list-focus-bg give the active note in the
+   list a faint orange wash (the keyboard-focused row a step stronger), kept list-local so Gravity's
+   other selection surfaces stay monochrome. (Visual — smoke-tested.) */
 .g-root_theme_light {
     --g-color-base-brand: var(--g-color-private-black-600-solid);
     --g-color-base-brand-hover: var(--g-color-private-black-700-solid);
@@ -22,7 +29,8 @@ body,
     --g-color-text-link: #c2650f;
     --g-color-text-link-hover: #9e520c;
     --g-color-text-link-visited: #8a4a12;
-    --note-list-focus-bg: var(--g-color-private-black-250);
+    --note-list-selected-bg: rgba(234, 137, 43, 0.08);
+    --note-list-focus-bg: rgba(234, 137, 43, 0.14);
 }
 
 .g-root_theme_dark {
@@ -37,11 +45,13 @@ body,
     --g-color-text-link: #e08a2b;
     --g-color-text-link-hover: #f0a050;
     --g-color-text-link-visited: #c2752a;
-    --note-list-focus-bg: var(--g-color-private-white-250);
-    /* Neutralize the warm cast of the dark base surfaces toward grey. Tuned live. */
-    --g-color-base-background: #1f1f1f;
-    --g-color-base-generic: #2a2a2a;
-    --g-color-base-generic-hover: #333333;
+    --note-list-selected-bg: rgba(234, 137, 43, 0.11);
+    --note-list-focus-bg: rgba(234, 137, 43, 0.18);
+    /* A very subtle warm/orange cast on the dark base surfaces (a hint, not a tint you'd name).
+       Tuned live. */
+    --g-color-base-background: #211e1a;
+    --g-color-base-generic: #2a2723;
+    --g-color-base-generic-hover: #332f29;
 }
 
 /* Code text was washing out in dark mode; force a readable foreground on inline + fenced code

@@ -140,34 +140,56 @@ describe('TopBar — search keyboard model', () => {
     });
 });
 
-describe('TopBar — controls', () => {
-    it('exposes export / import / change-storage in the storage menu', async () => {
+describe('TopBar — orb menu', () => {
+    it('exposes export / import / change-storage in the orb menu', async () => {
         const user = userEvent.setup();
         const {props} = setup({storageLabel: 'my-notes'});
-        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
         await user.click(await screen.findByRole('menuitem', {name: /Export all notes/}));
         expect(props.onExport).toHaveBeenCalledTimes(1);
 
-        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
         await user.click(await screen.findByRole('menuitem', {name: /Import \.md files/}));
         expect(props.onImport).toHaveBeenCalledTimes(1);
 
-        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
         await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
         expect(props.onChangeStorage).toHaveBeenCalledTimes(1);
     });
 
-    it('opens help from the help button', async () => {
+    it('toggles the sidebar from the orb menu', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.click(screen.getByRole('button', {name: /Keyboard shortcuts/}));
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Toggle sidebar/}));
+        expect(props.onToggleCollapsed).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens help from the orb menu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Keyboard shortcuts/}));
         expect(props.onOpenHelp).toHaveBeenCalledTimes(1);
     });
 
-    it('reflects the autosave state on the status dot', () => {
+    it('changes the theme from the orb menu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({themePref: 'system'});
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        // Hover opens the Theme submenu (deterministic in jsdom; click would toggle it).
+        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: 'Theme'}));
+        await user.click(await screen.findByRole('menuitem', {name: 'Dark'}));
+        expect(props.onChangeThemePref).toHaveBeenCalledWith('dark');
+    });
+
+    it('reflects the autosave state on the orb and the menu status line', async () => {
+        const user = userEvent.setup();
         setup({saveState: 'saving'});
-        const dot = screen.getByRole('status');
-        expect(dot).toHaveClass('topbar__status-dot_saving');
-        expect(dot).toHaveAttribute('aria-label', 'Saving…');
+        const orb = screen.getByRole('button', {name: 'Menu'});
+        expect(orb).toHaveClass('topbar__menu-orb_saving');
+        expect(orb).toHaveAttribute('title', 'Saving…');
+        await user.click(orb);
+        expect(await screen.findByRole('menuitem', {name: /Saving…/})).toBeInTheDocument();
     });
 });

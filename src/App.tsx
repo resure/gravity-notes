@@ -10,8 +10,8 @@ import {
 
 import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
-import type {ThemePref} from './components/ThemeSwitcher';
 import {Workspace} from './components/Workspace';
+import type {ThemePref} from './components/theme';
 import {useNotesStorage} from './hooks/useNotesStorage';
 
 const toaster = new Toaster();
