@@ -18,8 +18,10 @@ const SEARCH = 'Search or create a note…';
 
 function setup(overrides: Record<string, unknown> = {}) {
     const props = {
-        folderName: 'notes',
-        onChangeFolder: vi.fn(),
+        storageLabel: 'notes',
+        onChangeStorage: vi.fn(),
+        onExport: vi.fn(),
+        onImport: vi.fn(),
         onOpenHelp: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
@@ -127,11 +129,20 @@ describe('TopBar — search keyboard model', () => {
 });
 
 describe('TopBar — controls', () => {
-    it('changes folder from the folder button', async () => {
+    it('exposes export / import / change-storage in the storage menu', async () => {
         const user = userEvent.setup();
-        const {props} = setup({folderName: 'my-notes'});
-        await user.click(screen.getByRole('button', {name: /my-notes/}));
-        expect(props.onChangeFolder).toHaveBeenCalledTimes(1);
+        const {props} = setup({storageLabel: 'my-notes'});
+        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Export all notes/}));
+        expect(props.onExport).toHaveBeenCalledTimes(1);
+
+        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Import \.md files/}));
+        expect(props.onImport).toHaveBeenCalledTimes(1);
+
+        await user.click(screen.getByRole('button', {name: 'Storage options'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
+        expect(props.onChangeStorage).toHaveBeenCalledTimes(1);
     });
 
     it('opens help from the help button', async () => {

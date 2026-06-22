@@ -16,6 +16,7 @@ vi.mock('@gravity-ui/markdown-editor', () => ({
 }));
 
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
+import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {renderWithProviders} from '../test/render';
 
 import {Workspace} from './Workspace';
@@ -28,16 +29,17 @@ function renderWorkspace() {
     const dir = new FakeDirectoryHandle();
     dir.seedFile('Alpha.md', 'a', 100);
     dir.seedFile('Beta.md', 'b', 200);
+    const store = new FileSystemNoteStore(asDirectoryHandle(dir));
     renderWithProviders(
         <Workspace
-            dir={asDirectoryHandle(dir)}
-            folderName="notes"
+            store={store}
+            storageLabel="notes"
             themePref="light"
             onChangeThemePref={vi.fn()}
-            onChangeFolder={vi.fn()}
+            onChangeStorage={vi.fn()}
         />,
     );
-    return {dir};
+    return {dir, store};
 }
 
 describe('Workspace — nvALT navigation', () => {
@@ -264,8 +266,8 @@ describe('Workspace — nvALT navigation', () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
-        // Focus the folder-menu button (simulates losing focus to the top bar).
-        screen.getByRole('button', {name: /notes/i}).focus();
+        // Focus the storage-menu button (simulates losing focus to the top bar).
+        screen.getByRole('button', {name: 'Storage options'}).focus();
         await user.keyboard('{Escape}');
         await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
     });
