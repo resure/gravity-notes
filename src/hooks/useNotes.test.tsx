@@ -348,6 +348,13 @@ class DeferredSaveStore implements NoteStore {
         return [...this.content.keys()].map((id) => this.meta(id));
     }
 
+    async getAll(): Promise<Note[]> {
+        return [...this.content.keys()].map((id) => ({
+            ...this.meta(id),
+            content: this.content.get(id) ?? '',
+        }));
+    }
+
     get(id: string): Promise<Note> {
         if (this.deferGets) {
             return new Promise<Note>((resolve) => this.getQueue.push({id, resolve}));

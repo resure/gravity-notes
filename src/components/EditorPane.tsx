@@ -171,6 +171,13 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     // body grown taller than a short note) → drop the caret at the very end.
                     // Clicks on the editable content itself fall through to the editor.
                     if (preview) return;
+                    // The selection formatting toolbar renders in a portal (outside this subtree),
+                    // but its mousedown still bubbles here via React's portal event propagation. Only
+                    // act on clicks that are real DOM descendants of the body wrapper; otherwise the
+                    // moveCursor('end') below would collapse the active selection and the toolbar's
+                    // formatting buttons would do nothing.
+                    if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
+                        return;
                     if ((event.target as HTMLElement).closest('.g-md-editor')) return;
                     event.preventDefault();
                     editor.moveCursor('end');

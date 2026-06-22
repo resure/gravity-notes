@@ -7,6 +7,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 const {
     fakeEditor,
     editorState,
+    portalState,
     setEditorMode,
     focus,
     moveCursor,
@@ -24,6 +25,9 @@ const {
     const removeEmptyFirstLine = vi.fn();
     // Controllable editor value + captured 'change' handler, so tests can simulate edits.
     const editorState = {value: '', changeHandler: null as null | (() => void)};
+    // When enabled, the mocked editor view renders a portal button (to document.body) standing in
+    // for the real selection formatting toolbar, which is a portaled Gravity Popup.
+    const portalState = {enabled: false};
     return {
         setEditorMode,
         focus,
@@ -33,6 +37,7 @@ const {
         atEmptyFirstLine,
         removeEmptyFirstLine,
         editorState,
+        portalState,
         fakeEditor: {
             currentMode: 'wysiwyg' as 'wysiwyg' | 'markup',
             setEditorMode,
@@ -49,10 +54,22 @@ const {
     };
 });
 
-vi.mock('@gravity-ui/markdown-editor', () => ({
-    useMarkdownEditor: () => fakeEditor,
-    MarkdownEditorView: () => null,
-}));
+vi.mock('@gravity-ui/markdown-editor', async () => {
+    const {createElement} = await import('react');
+    const {createPortal} = await import('react-dom');
+    return {
+        useMarkdownEditor: () => fakeEditor,
+        // Renders nothing by default. With the portal enabled, it emits a button into document.body
+        // (a React portal child of this view) to mimic the selection toolbar's DOM placement.
+        MarkdownEditorView: () =>
+            portalState.enabled
+                ? createPortal(
+                      createElement('button', {'data-testid': 'sel-toolbar-btn'}, 'Bold'),
+                      document.body,
+                  )
+                : null,
+    };
+});
 
 vi.mock('./editorCaret', () => ({isCaretOnFirstLine}));
 
@@ -235,6 +252,39 @@ describe('EditorPane — title ↔ body handoff', () => {
         await user.type(input, 'Renamed');
         fireEvent.blur(input);
         expect(onRename).toHaveBeenCalledWith('a.md', 'Renamed');
+    });
+});
+
+describe('EditorPane — empty-area click', () => {
+    beforeEach(() => {
+        moveCursor.mockClear();
+        focus.mockClear();
+    });
+
+    it('drops the caret at the end when clicking the empty body padding', () => {
+        const {container} = renderPane();
+        const body = container.querySelector('.editor-pane__body');
+        if (!body) throw new Error('body not rendered');
+        // A mousedown on the body wrapper itself (its padding/empty space) moves the caret to the end.
+        fireEvent.mouseDown(body);
+        expect(moveCursor).toHaveBeenCalledWith('end');
+        expect(focus).toHaveBeenCalled();
+    });
+
+    it('ignores a mousedown from the portaled selection toolbar (keeps the selection intact)', () => {
+        portalState.enabled = true;
+        try {
+            renderPane();
+            // The toolbar button is portaled to document.body; its mousedown bubbles to the body
+            // handler via React's portal propagation. The handler must NOT moveCursor('end') — doing
+            // so would collapse the selection and the formatting command would apply to nothing.
+            const toolbarButton = screen.getByTestId('sel-toolbar-btn');
+            moveCursor.mockClear();
+            fireEvent.mouseDown(toolbarButton);
+            expect(moveCursor).not.toHaveBeenCalled();
+        } finally {
+            portalState.enabled = false;
+        }
     });
 });
 

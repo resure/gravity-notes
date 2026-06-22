@@ -282,6 +282,37 @@ describe('NoteList — search display', () => {
         expect(mark?.textContent).toBe('lph');
     });
 
+    it('highlights every query term in the title (multi-term)', () => {
+        setup({notes: [{id: 'G.md', title: 'Gamma beta', updatedAt: 1}], query: 'gamma beta'});
+        const marks = [...document.querySelectorAll('mark')].map((m) => m.textContent);
+        expect(marks).toEqual(expect.arrayContaining(['Gamma', 'beta']));
+    });
+
+    it('highlights the longer term when one query term is a prefix of another', () => {
+        // "java" is a prefix of "javascript"; longest-first ordering marks the whole word.
+        setup({
+            notes: [{id: 'J.md', title: 'I love javascript', updatedAt: 1}],
+            query: 'java javascript',
+        });
+        const mark = [...document.querySelectorAll('mark')].find(
+            (m) => m.textContent === 'javascript',
+        );
+        expect(mark).toBeTruthy();
+    });
+
+    it('shows a body snippet in place of the preview, with the term highlighted', () => {
+        setup({
+            notes: [{id: 'A.md', title: 'A', updatedAt: 1, preview: 'head of note'}],
+            query: 'needle',
+            snippetById: new Map([['A.md', '…around the needle here…']]),
+        });
+        // The full-text snippet replaces the standard head-of-note preview.
+        expect(screen.queryByText(/head of note/)).toBeNull();
+        expect(screen.getByText(/around the/)).toBeInTheDocument();
+        const mark = [...document.querySelectorAll('mark')].find((m) => m.textContent === 'needle');
+        expect(mark).toBeTruthy();
+    });
+
     it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
         expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();

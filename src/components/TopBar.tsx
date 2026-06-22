@@ -38,6 +38,11 @@ export interface TopBarProps {
     searchInputRef: RefObject<HTMLInputElement>;
     /** The filtered, ordered notes — used to target Enter/Arrow from the search box. */
     notes: NoteMeta[];
+    /**
+     * True while the full-text corpus is still loading for the active query. Enter must not treat an
+     * empty `notes` as "no match → create" yet — a body match may still be about to appear.
+     */
+    searchLoading: boolean;
     selectedId: string | null;
     onCommit: (id: string) => void;
     onCreate: (title?: string) => void;
@@ -77,6 +82,7 @@ export function TopBar({
     onQueryChange,
     searchInputRef,
     notes,
+    searchLoading,
     selectedId,
     onCommit,
     onCreate,
@@ -100,6 +106,11 @@ export function TopBar({
                 // A query that matches: open the top match (nvALT).
                 event.preventDefault();
                 onCommit(notes[0].id);
+            } else if (searchLoading) {
+                // The body corpus is still loading, so an empty list doesn't yet mean "no match" —
+                // a full-text hit may be about to appear. Swallow Enter rather than fabricate a note;
+                // the user can press it again once matches resolve.
+                event.preventDefault();
             } else {
                 // A query that matches nothing: create a note titled with it, then clear the
                 // search so the new note is visible and the box is ready for the next find.

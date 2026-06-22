@@ -1,9 +1,10 @@
-import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
+import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
 import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
+import {escapeRegExp, tokenizeQuery} from '../search';
 import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
@@ -22,6 +23,8 @@ export interface NoteListProps {
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
+    /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
+    snippetById?: Map<string, string>;
     /** Shared with the top bar's search box; focused when the list is empty. */
     searchInputRef: RefObject<HTMLInputElement>;
     /** Preview a note (move the highlight): arrow/vim nav, single click. */
@@ -40,17 +43,23 @@ export interface NoteListProps {
     onTogglePin: (id: string) => void;
 }
 
-function highlightMatch(title: string, query: string): ReactNode {
-    const q = query.trim();
-    if (!q) return title;
-    const idx = title.toLowerCase().indexOf(q.toLowerCase());
-    if (idx === -1) return title;
-    return (
-        <>
-            {title.slice(0, idx)}
-            <mark className="note-list__match">{title.slice(idx, idx + q.length)}</mark>
-            {title.slice(idx + q.length)}
-        </>
+/** Wrap every occurrence of any `term` (case-insensitive) in `text` with a highlight `<mark>`. */
+function highlightTerms(text: string, terms: string[]): ReactNode {
+    if (terms.length === 0 || !text) return text;
+    // Longest term first so that when one term is a prefix of another (e.g. "java" vs "javascript"),
+    // regex leftmost-alternation still highlights the longer match rather than shadowing it.
+    const ordered = [...terms].sort((a, b) => b.length - a.length);
+    // A capturing group makes String.split interleave the matched delimiters into the result, so
+    // odd indices are the matches to mark and even indices are the surrounding plain text.
+    const pattern = new RegExp(`(${ordered.map(escapeRegExp).join('|')})`, 'gi');
+    return text.split(pattern).map((part, i) =>
+        i % 2 === 1 ? (
+            <mark key={i} className="note-list__match">
+                {part}
+            </mark>
+        ) : (
+            part
+        ),
     );
 }
 
@@ -75,6 +84,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         notes,
         selectedId,
         query,
+        snippetById,
         searchInputRef,
         onBrowse,
         onCommit,
@@ -92,6 +102,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<NoteMeta | null>(null);
+    // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
+    const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const editInputRef = useRef<HTMLInputElement>(null);
 
@@ -236,6 +248,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         const selected = note.id === selectedId;
                         const editing = note.id === editingId;
                         const tabbable = !editing && note.id === focusableId;
+                        // A full-text body match shows its surrounding snippet in place of the
+                        // standard head-of-note preview.
+                        const previewText = snippetById?.get(note.id) ?? note.preview;
                         return (
                             <div
                                 key={note.id}
@@ -282,7 +297,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                                 />
                                             ) : null}
                                             <Text className="note-list__title" ellipsis>
-                                                {highlightMatch(note.title, query)}
+                                                {highlightTerms(note.title, terms)}
                                             </Text>
                                             <div className="note-list__actions">
                                                 <DropdownMenu
@@ -338,14 +353,14 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                             >
                                                 {formatNoteDate(note.updatedAt)}
                                             </Text>
-                                            {note.preview ? (
+                                            {previewText ? (
                                                 <Text
                                                     variant="caption-2"
                                                     color="secondary"
                                                     className="note-list__preview"
                                                     ellipsis
                                                 >
-                                                    {note.preview}
+                                                    {highlightTerms(previewText, terms)}
                                                 </Text>
                                             ) : null}
                                         </div>

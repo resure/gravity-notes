@@ -62,6 +62,23 @@ describe('FileSystemNoteStore', () => {
         });
     });
 
+    describe('getAll', () => {
+        it('returns every markdown note with its full body, ignoring non-md entries', async () => {
+            dir.seedFile('Alpha.md', '# Alpha\n\nfull alpha body', 100);
+            dir.seedFile('Beta.md', 'beta body\n\n', 200);
+            dir.seedFile('image.png', 'x', 3);
+            dir.seedSubdir('attachments');
+
+            const all = await store.getAll();
+
+            expect(all.map((n) => n.id).sort()).toEqual(['Alpha.md', 'Beta.md']);
+            const alpha = all.find((n) => n.id === 'Alpha.md');
+            // Full content (not just the preview head), with trailing newlines stripped like get().
+            expect(alpha?.content).toBe('# Alpha\n\nfull alpha body');
+            expect(all.find((n) => n.id === 'Beta.md')?.content).toBe('beta body');
+        });
+    });
+
     describe('get and save', () => {
         it('reads a note body and title', async () => {
             dir.seedFile('Ideas.md', 'first line', 10);

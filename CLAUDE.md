@@ -45,6 +45,10 @@ above the seam (`useNotes`, navigation, UI) is backend-agnostic.
 Key modules:
 
 - `src/storage/types.ts` — the `NoteStore` interface (storage-agnostic; no FS-specific types leak in).
+  Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus.
+- `src/search.ts` — pure full-text ranking (no I/O, no React): `tokenizeQuery`, `scoreNoteText`
+  (multi-term AND; title ≫ body, word-boundary/prefix/phrase boosts), `buildSnippet`, `searchNotes`.
+  The corpus (id → body) is loaded above it and passed in, so it stays trivially unit-testable.
 - `src/storage/noteText.ts` — pure helpers shared by both backends: `titleFromFileName`,
   `sanitizeTitle`, `canonicalBody`, `previewFromContent`, `uniqueName`. Keeps id/body shape identical.
 - `src/storage/fileSystemStore.ts` — `FileSystemNoteStore` (File System Access API). Trickiest logic:
@@ -73,7 +77,7 @@ Key modules:
   short-circuits the already-open note (no remount). Exposes `flushPending()` (teardown) and
   `refresh()` (re-list after import). Takes a `NoteStore` — agnostic to which backend it is.
 - `src/hooks/useNoteNavigation.ts` / `useNoteSearch.ts` / `useShortcuts.ts` — list cursor + focus ladder
-  (browse/commit/escape), search-or-create filtering, and the global keyboard shortcuts (driven by the
+  (browse/commit/escape), full-text search-or-create, and the global keyboard shortcuts (driven by the
   `SHORTCUTS` descriptor in `src/shortcuts.ts`, which the help dialog also renders from). Punctuation
   chords match by `event.code` (e.g. `⌘⇧;` → `Semicolon`), since the shifted `event.key` differs.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate), `Workspace`

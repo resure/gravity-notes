@@ -56,6 +56,22 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('getAll', () => {
+        it('returns every note with its full body (trailing newline stripped)', async () => {
+            const a = await store.create('Alpha');
+            await store.save(a.id, '# Alpha\n\nfull alpha body', a.updatedAt ?? 0);
+            await store.create('Beta');
+
+            const all = await store.getAll();
+
+            expect(all.map((n) => n.id).sort()).toEqual(['Alpha.md', 'Beta.md']);
+            expect(all.find((n) => n.id === 'Alpha.md')?.content).toBe(
+                '# Alpha\n\nfull alpha body',
+            );
+            expect(all.find((n) => n.id === 'Beta.md')?.content).toBe('');
+        });
+    });
+
     describe('save', () => {
         it('round-trips content and ends the stored body with a blank line', async () => {
             const meta = await store.create('Note');

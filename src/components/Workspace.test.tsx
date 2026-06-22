@@ -524,6 +524,63 @@ describe('Workspace — nvALT navigation', () => {
         expect(within(list).queryByDisplayValue('Beta')).toBeNull();
     });
 
+    it('finds a note by its body text and shows a match snippet', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Recipes.md', 'pancakes need buttermilk', 100);
+        dir.seedFile('Travel.md', 'flights to tokyo', 200);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={vi.fn()}
+            />,
+        );
+        await screen.findByRole('option', {name: /Recipes/});
+        await user.type(screen.getByPlaceholderText(/Search/), 'buttermilk');
+        // "buttermilk" lives only in Recipes' body — it surfaces once the corpus loads...
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Recipes/})).toBeInTheDocument(),
+        );
+        // ...while Travel (no match in title or body) is filtered out, and the body snippet shows
+        // the matched word highlighted.
+        expect(screen.queryByRole('option', {name: /Travel/})).toBeNull();
+        const recipes = screen.getByRole('option', {name: /Recipes/});
+        const mark = [...recipes.querySelectorAll('mark')].find(
+            (m) => m.textContent === 'buttermilk',
+        );
+        expect(mark).toBeTruthy();
+    });
+
+    it('shows a snippet around a body match that lies beyond the head-preview window', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        const preamble = 'lorem ipsum dolor sit amet '.repeat(10); // ~270 chars, no "kubernetes"
+        dir.seedFile('Journal.md', `${preamble} then we discussed kubernetes at length`, 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={vi.fn()}
+            />,
+        );
+        await screen.findByRole('option', {name: /Journal/});
+        await user.type(screen.getByPlaceholderText(/Search/), 'kubernetes');
+        await waitFor(() =>
+            expect(screen.getByRole('option', {name: /Journal/})).toBeInTheDocument(),
+        );
+        // The deep body match is surfaced as a highlighted snippet, not the (non-matching) head.
+        const row = screen.getByRole('option', {name: /Journal/});
+        const mark = [...row.querySelectorAll('mark')].find((m) => m.textContent === 'kubernetes');
+        expect(mark).toBeTruthy();
+    });
+
     it('Esc from the editor peeks the sidebar when collapsed', async () => {
         const user = userEvent.setup();
         renderWorkspace();

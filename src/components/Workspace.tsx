@@ -57,7 +57,13 @@ export function Workspace({
         () => orderNotes(notes.notes, notes.metadata),
         [notes.notes, notes.metadata],
     );
-    const {query, setQuery, filteredNotes} = useNoteSearch(orderedNotes);
+    const {
+        query,
+        setQuery,
+        filteredNotes,
+        snippetById,
+        loading: searchLoading,
+    } = useNoteSearch(orderedNotes, store);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
@@ -340,6 +346,7 @@ export function Workspace({
                 onQueryChange={setQuery}
                 searchInputRef={searchInputRef}
                 notes={filteredNotes}
+                searchLoading={searchLoading}
                 selectedId={nav.selectedId}
                 onCommit={nav.commit}
                 onCreate={handleCreate}
@@ -361,6 +368,7 @@ export function Workspace({
                         notes={filteredNotes}
                         selectedId={nav.selectedId}
                         query={query}
+                        snippetById={snippetById}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
                         onCommit={(id) => {
