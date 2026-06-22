@@ -1,0 +1,110 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- blueprint grid backdrop (flat base + cool minor/major grid) -->
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse" x="100" y="100">
+      <path d="M52 0 H0 V52" fill="none" stroke="#9DB0D6" stroke-opacity="0.10" stroke-width="1.5"/>
+    </pattern>
+    <pattern id="gridMajor" width="208" height="208" patternUnits="userSpaceOnUse" x="100" y="100">
+      <path d="M208 0 H0 V208" fill="none" stroke="#9DB0D6" stroke-opacity="0.18" stroke-width="2"/>
+    </pattern>
+
+    <linearGradient id="stackBack" x1="512" y1="240" x2="512" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3A3F4A"/>
+      <stop offset="1" stop-color="#23262E"/>
+    </linearGradient>
+    <linearGradient id="page" x1="380" y1="240" x2="640" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#373C47"/>
+      <stop offset="0.42" stop-color="#2B2F39"/>
+      <stop offset="1" stop-color="#1E212A"/>
+    </linearGradient>
+    <linearGradient id="pageSheen" x1="512" y1="248" x2="512" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="320" y1="252" x2="704" y2="356" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0A06A"/>
+      <stop offset="0.5" stop-color="#E8915A"/>
+      <stop offset="1" stop-color="#D97757"/>
+    </linearGradient>
+    <linearGradient id="coralSheen" x1="512" y1="252" x2="512" y2="316" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#E3E7EE"/>
+      <stop offset="0.5" stop-color="#9DA4B0"/>
+      <stop offset="1" stop-color="#6B717C"/>
+    </linearGradient>
+    <filter id="lift" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="20" stdDeviation="26" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="softShadow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="coralGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <clipPath id="sq">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+    <clipPath id="pageClip">
+      <rect x="300" y="252" width="424" height="556" rx="34" ry="34"/>
+    </clipPath>
+  </defs>
+
+  <!-- flat dark squircle + blueprint grid -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#14171E"/>
+  <g clip-path="url(#sq)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#grid)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#gridMajor)"/>
+  </g>
+  <rect x="101" y="101" width="822" height="822" rx="184" ry="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+
+  <g filter="url(#lift)">
+    <rect x="324" y="280" width="400" height="528" rx="32" fill="url(#stackBack)" opacity="0.9"/>
+    <rect x="314" y="268" width="416" height="540" rx="33" fill="url(#stackBack)"/>
+    <rect x="300" y="252" width="424" height="556" rx="34" fill="url(#page)" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+
+    <g clip-path="url(#pageClip)">
+      <rect x="300" y="252" width="424" height="220" fill="url(#pageSheen)"/>
+      <rect x="300" y="252" width="424" height="86" fill="url(#coral)"/>
+      <rect x="300" y="252" width="424" height="40" fill="url(#coralSheen)"/>
+      <g fill="#C2C8D4">
+        <rect x="348" y="408" width="328" height="20" rx="10" opacity="0.62"/>
+        <rect x="348" y="470" width="328" height="20" rx="10" opacity="0.52"/>
+        <rect x="348" y="532" width="328" height="20" rx="10" opacity="0.44"/>
+        <rect x="348" y="594" width="252" height="20" rx="10" opacity="0.36"/>
+        <rect x="348" y="656" width="296" height="20" rx="10" opacity="0.28"/>
+      </g>
+      <rect x="348" y="718" width="148" height="20" rx="10" fill="#E8915A"/>
+    </g>
+
+    <g>
+      <g fill="#000000" opacity="0.30" filter="url(#softShadow)">
+        <ellipse cx="372" cy="262" rx="13" ry="10"/>
+        <ellipse cx="442" cy="262" rx="13" ry="10"/>
+        <ellipse cx="512" cy="262" rx="13" ry="10"/>
+        <ellipse cx="582" cy="262" rx="13" ry="10"/>
+        <ellipse cx="652" cy="262" rx="13" ry="10"/>
+      </g>
+      <g fill="none" stroke="url(#ring)" stroke-width="13" stroke-linecap="round">
+        <path d="M372 290 C356 290 352 240 372 240"/>
+        <path d="M442 290 C426 290 422 240 442 240"/>
+        <path d="M512 290 C496 290 492 240 512 240"/>
+        <path d="M582 290 C566 290 562 240 582 240"/>
+        <path d="M652 290 C636 290 632 240 652 240"/>
+      </g>
+      <g fill="none" stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round">
+        <path d="M366 244 C360 240 368 238 374 240"/>
+        <path d="M436 244 C430 240 438 238 444 240"/>
+        <path d="M506 244 C500 240 508 238 514 240"/>
+        <path d="M576 244 C570 240 578 238 584 240"/>
+        <path d="M646 244 C640 240 648 238 654 240"/>
+      </g>
+    </g>
+
+    <path d="M334 252 Q300 252 300 286" fill="none" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <rect x="320" y="278" width="384" height="40" rx="20" fill="#E8915A" opacity="0.28" filter="url(#coralGlow)" clip-path="url(#sq)"/>
+</svg>
