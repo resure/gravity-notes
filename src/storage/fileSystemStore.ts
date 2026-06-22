@@ -66,6 +66,24 @@ export class FileSystemNoteStore implements NoteStore {
         return metas;
     }
 
+    async getAll(): Promise<Note[]> {
+        const notes: Note[] = [];
+        for await (const handle of this.dir.values()) {
+            if (handle.kind !== 'file' || !handle.name.toLowerCase().endsWith(MD_EXT)) {
+                continue;
+            }
+            const file = await (handle as FileSystemFileHandle).getFile();
+            notes.push({
+                id: handle.name,
+                title: titleFromFileName(handle.name),
+                updatedAt: file.lastModified,
+                // Stripped to match get()/the editor's serialized shape (parity for the search corpus).
+                content: stripTrailingNewlines(await file.text()),
+            });
+        }
+        return notes;
+    }
+
     async get(id: string): Promise<Note> {
         const handle = await this.dir.getFileHandle(id);
         const file = await handle.getFile();

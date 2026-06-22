@@ -13,6 +13,8 @@ WYSIWYG/Markdown editor. On first run you choose where notes live: a **folder on
   your data regardless of backend, and can migrate between them
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
   (updated, created, title A→Z / Z→A)
+- **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
+  passage shown as a snippet in the list (multi-word queries match all terms)
 - Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode
 - Debounced **autosave**, with a status indicator and unsaved-changes guards
 - **Conflict handling** when a note changes underneath you (reload / keep mine / save a copy / discard)
@@ -22,21 +24,21 @@ WYSIWYG/Markdown editor. On first run you choose where notes live: a **folder on
 
 ### Keyboard shortcuts
 
-| Keys                     | Action                                                                                                |
-| ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Type in the search box   | Find notes; `Enter` opens the top match, or creates a note titled with the query when nothing matches |
-| `↑` / `↓` (or `k` / `j`) | Preview the previous / next note                                                                      |
-| `⌘J` / `⌘K`              | Preview next / previous note (works while editing)                                                    |
-| `Enter`                  | Edit the selected note                                                                                |
-| `Esc`                    | Editor → list → search (then close / clear)                                                           |
-| `⌘Enter`                 | New note                                                                                              |
-| `⌘\`                     | Toggle the sidebar                                                                                    |
-| `⌘'`                     | Peek the collapsed sidebar / focus the list                                                           |
-| `⌘⇧;`                    | Toggle WYSIWYG / Markup                                                                               |
-| `⌘⇧P`                    | Toggle read-only preview                                                                              |
-| `⌘⇧K`                    | Insert link (in the editor)                                                                           |
-| `F2`                     | Rename the selected note                                                                              |
-| `⌘/`                     | Show the shortcut help                                                                                |
+| Keys                     | Action                                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Type in the search box   | Full-text search of titles + bodies (ranked); `Enter` opens the top match, or creates a note titled with the query when nothing matches |
+| `↑` / `↓` (or `k` / `j`) | Preview the previous / next note                                                                                                        |
+| `⌘J` / `⌘K`              | Preview next / previous note (works while editing)                                                                                      |
+| `Enter`                  | Edit the selected note                                                                                                                  |
+| `Esc`                    | Editor → list → search (then close / clear)                                                                                             |
+| `⌘Enter`                 | New note                                                                                                                                |
+| `⌘\`                     | Toggle the sidebar                                                                                                                      |
+| `⌘'`                     | Peek the collapsed sidebar / focus the list                                                                                             |
+| `⌘⇧;`                    | Toggle WYSIWYG / Markup                                                                                                                 |
+| `⌘⇧P`                    | Toggle read-only preview                                                                                                                |
+| `⌘⇧K`                    | Insert link (in the editor)                                                                                                             |
+| `F2`                     | Rename the selected note                                                                                                                |
+| `⌘/`                     | Show the shortcut help                                                                                                                  |
 
 ## Requirements
 
@@ -83,7 +85,8 @@ Key modules:
   `NoteStore`
 - `src/hooks/useNotes.ts` — note list, selection, debounced autosave, and conflict detection
 - `src/hooks/useNoteNavigation.ts`, `useNoteSearch.ts`, `useShortcuts.ts` — cursor/focus flow,
-  search-or-create, and global keyboard shortcuts
+  full-text search-or-create (ranking lives in pure `src/search.ts`, fed by `NoteStore.getAll()`),
+  and global keyboard shortcuts
 - `src/components/` — `FolderGate`, `Workspace`, `TopBar`, `NoteList`, `EditorPane` (+ `NoteTitle`,
   `NotePreview`), `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, `ErrorBoundary`
 - `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
@@ -100,7 +103,6 @@ Key modules:
 
 ### Backlog
 
-- Full-text search + ranking (search currently matches titles only)
 - Tab-to-complete in the search box
 
 - Fullscreen mode?

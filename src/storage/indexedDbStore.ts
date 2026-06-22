@@ -69,6 +69,21 @@ export class IndexedDbNoteStore implements NoteStore {
         return metas;
     }
 
+    async getAll(): Promise<Note[]> {
+        const records = await this.run<NoteRecord[]>(
+            NOTES_STORE,
+            'readonly',
+            (store) => store.getAll() as IDBRequest<NoteRecord[]>,
+        );
+        return records.map((record) => ({
+            id: record.id,
+            title: titleFromFileName(record.id),
+            updatedAt: record.updatedAt,
+            // Stripped to match get()/the editor's serialized shape (parity for the search corpus).
+            content: stripTrailingNewlines(record.content),
+        }));
+    }
+
     async get(id: string): Promise<Note> {
         const record = await this.getRecord(id);
         if (!record) throw notFound(id);

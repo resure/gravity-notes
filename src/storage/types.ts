@@ -48,6 +48,12 @@ export interface NotesMetadata {
 export interface NoteStore {
     /** List all notes, typically sorted by most-recently-updated. */
     list(): Promise<NoteMeta[]>;
+    /**
+     * Load every note with its full content, in a single pass (one IndexedDB read / one directory
+     * scan). Feeds the in-memory full-text search index, which lives above the storage seam so
+     * ranking stays backend-agnostic. Order is not significant (results are ranked by relevance).
+     */
+    getAll(): Promise<Note[]>;
     /** Load a single note's full content. */
     get(id: string): Promise<Note>;
     /**

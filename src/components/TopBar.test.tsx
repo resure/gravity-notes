@@ -31,6 +31,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         onQueryChange: vi.fn(),
         searchInputRef: createRef<HTMLInputElement>(),
         notes: NOTES,
+        searchLoading: false,
         selectedId: 'Alpha.md',
         onCommit: vi.fn(),
         onCreate: vi.fn(),
@@ -83,6 +84,17 @@ describe('TopBar — search keyboard model', () => {
         screen.getByPlaceholderText(SEARCH).focus();
         await user.keyboard('{Enter}');
         expect(props.onCreate).not.toHaveBeenCalled();
+    });
+
+    it('does not create on Enter while the full-text corpus is still loading', async () => {
+        const user = userEvent.setup();
+        // Empty result set but the corpus is still loading — a body match may be about to appear,
+        // so Enter must not fabricate a phantom note.
+        const {props} = setup({notes: [], query: 'Groceries', searchLoading: true});
+        screen.getByPlaceholderText(SEARCH).focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCreate).not.toHaveBeenCalled();
+        expect(props.onCommit).not.toHaveBeenCalled();
     });
 
     it('enters the list on ArrowDown from the search box', async () => {
