@@ -8,13 +8,18 @@ import {renderWithProviders} from '../test/render';
 import {FolderGate} from './FolderGate';
 
 function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
+    const isTauri = over.isTauri ?? false;
+    const supportsFileSystem = over.supportsFileSystem ?? true;
     return {
         state: 'choosing',
         store: null,
         backend: null,
         storageLabel: null,
         error: null,
-        supportsFileSystem: true,
+        isTauri,
+        supportsFileSystem,
+        // Default to consistency with the other flags unless a test overrides it explicitly.
+        supportsFolders: over.supportsFolders ?? (isTauri || supportsFileSystem),
         pickFolder: vi.fn(async () => {}),
         useBrowserStorage: vi.fn(async () => {}),
         grantPermission: vi.fn(async () => {}),
@@ -44,6 +49,18 @@ describe('FolderGate', () => {
         expect(screen.queryByRole('button', {name: /Open a folder/})).not.toBeInTheDocument();
         expect(screen.getByText(/needs a Chromium browser/)).toBeInTheDocument();
         await user.click(screen.getByRole('button', {name: 'Store in this browser'}));
+        expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers a native folder option inside the desktop app (no Chromium caption)', async () => {
+        const user = userEvent.setup();
+        // In the Tauri shell the FS API is absent, but native folders are available.
+        const storage = makeStorage({isTauri: true, supportsFileSystem: false});
+        renderWithProviders(<FolderGate storage={storage} />);
+
+        expect(screen.getByRole('button', {name: /Open a folder/})).toBeInTheDocument();
+        expect(screen.queryByText(/needs a Chromium browser/)).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', {name: 'Store inside the app'}));
         expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
     });
 

@@ -11,9 +11,16 @@ const DB_NAME = 'gravity-notes';
 const STORE_NAME = 'handles';
 const HANDLE_KEY = 'notes-dir';
 const BACKEND_KEY = 'backend';
+const FOLDER_PATH_KEY = 'notes-folder-path';
 
-/** Which storage backend the user chose: a picked folder, or in-browser IndexedDB. */
-export type StorageBackend = 'filesystem' | 'indexeddb';
+/**
+ * Which storage backend the user chose:
+ * - `filesystem` — a folder picked via the browser File System Access API (Chromium web build);
+ * - `tauri-fs` — a folder on disk via native Rust commands (the desktop app, where the FSA API is
+ *   unavailable in WKWebView); the chosen folder is remembered as a plain path string;
+ * - `indexeddb` — in-browser / in-app IndexedDB.
+ */
+export type StorageBackend = 'filesystem' | 'tauri-fs' | 'indexeddb';
 
 function openDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -77,9 +84,23 @@ export function loadBackend(): Promise<StorageBackend | undefined> {
     return tx<StorageBackend | undefined>('readonly', (store) => store.get(BACKEND_KEY));
 }
 
-/** Forget the chosen backend and any stored folder handle (back to the first-run choice screen). */
+/**
+ * Remember the desktop app's chosen folder as a plain path string. Unlike the web backend's
+ * structured-cloned `FileSystemDirectoryHandle`, the native (`tauri-fs`) backend just needs the
+ * path — and the OS, not the browser, governs access, so there's no per-session re-grant.
+ */
+export function saveFolderPath(path: string): Promise<void> {
+    return tx('readwrite', (store) => store.put(path, FOLDER_PATH_KEY)).then(() => undefined);
+}
+
+export function loadFolderPath(): Promise<string | undefined> {
+    return tx<string | undefined>('readonly', (store) => store.get(FOLDER_PATH_KEY));
+}
+
+/** Forget the chosen backend and any stored folder handle/path (back to the first-run choice). */
 export function clearStorageChoice(): Promise<void> {
     return tx('readwrite', (store) => store.delete(HANDLE_KEY))
+        .then(() => tx('readwrite', (store) => store.delete(FOLDER_PATH_KEY)))
         .then(() => tx('readwrite', (store) => store.delete(BACKEND_KEY)))
         .then(() => undefined);
 }

@@ -6,12 +6,15 @@ import {
     clearStorageChoice,
     loadBackend,
     loadDirHandle,
+    loadFolderPath,
     queryPermission,
     requestPermission,
     saveBackend,
     saveDirHandle,
+    saveFolderPath,
 } from '../storage/handlePersistence';
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
+import {TauriNoteStore} from '../storage/tauriStore';
 import type {NoteStore} from '../storage/types';
 
 export type StorageState =
@@ -20,9 +23,20 @@ export type StorageState =
     | 'needs-permission' // a folder was remembered, but permission must be re-granted
     | 'ready';
 
+/** Running inside the Tauri desktop shell (native folder access), not a plain browser. */
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+/** Browser File System Access API (Chromium web build). Absent in the WKWebView desktop shell. */
 const supportsFileSystem = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+/** Whether folder-on-disk storage is offered at all: native in the app, or FSA in the browser. */
+const supportsFolders = isTauri || supportsFileSystem;
 
-const BROWSER_LABEL = 'In this browser';
+const BROWSER_LABEL = isTauri ? 'In this app' : 'In this browser';
+
+/** Display label for a folder path: its last segment (e.g. `/Users/me/Notes` → `Notes`). */
+function folderName(path: string): string {
+    const parts = path.split(/[/\\]/).filter(Boolean);
+    return parts[parts.length - 1] ?? path;
+}
 
 export interface NotesStorage {
     state: StorageState;
@@ -32,8 +46,12 @@ export interface NotesStorage {
     /** Human label for the active storage (folder name, or "In this browser"). */
     storageLabel: string | null;
     error: string | null;
-    /** Whether the File System Access API is available (drives showing the "open folder" option). */
+    /** Running inside the desktop app (native folder access) rather than a plain browser. */
+    isTauri: boolean;
+    /** Whether the File System Access API is available (Chromium web build). */
     supportsFileSystem: boolean;
+    /** Whether a folder-on-disk option is offered at all (native app, or FSA in the browser). */
+    supportsFolders: boolean;
     /** Open the system folder picker (must be triggered by a user gesture). */
     pickFolder(): Promise<void>;
     /** Use in-browser (IndexedDB) storage. */
@@ -75,6 +93,21 @@ export function useNotesStorage(): NotesStorage {
                     setState('ready');
                     return;
                 }
+                if (kind === 'tauri-fs') {
+                    // Native desktop folder: access is governed by the OS, not a per-session browser
+                    // grant, so the remembered path opens straight to ready (no needs-permission).
+                    const path = await loadFolderPath();
+                    if (cancelled || interactedRef.current) return;
+                    if (path) {
+                        setStore(new TauriNoteStore(path));
+                        setBackend('tauri-fs');
+                        setStorageLabel(folderName(path));
+                        setState('ready');
+                    } else {
+                        setState('choosing');
+                    }
+                    return;
+                }
                 if (kind === 'filesystem' && savedHandle) {
                     setStorageLabel(savedHandle.name);
                     const permission = await queryPermission(savedHandle);
@@ -104,6 +137,27 @@ export function useNotesStorage(): NotesStorage {
     const pickFolder = useCallback(async () => {
         interactedRef.current = true;
         setError(null);
+        if (isTauri) {
+            try {
+                // Native folder picker (the File System Access API is unavailable in WKWebView).
+                const {open} = await import('@tauri-apps/plugin-dialog');
+                const selected = await open({
+                    directory: true,
+                    multiple: false,
+                    title: 'Choose your notes folder',
+                });
+                if (typeof selected !== 'string') return; // dismissed
+                await saveFolderPath(selected);
+                await saveBackend('tauri-fs');
+                setStore(new TauriNoteStore(selected));
+                setBackend('tauri-fs');
+                setStorageLabel(folderName(selected));
+                setState('ready');
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Could not open the folder.');
+            }
+            return;
+        }
         try {
             const handle = await window.showDirectoryPicker({
                 id: 'gravity-notes',
@@ -175,7 +229,9 @@ export function useNotesStorage(): NotesStorage {
         backend,
         storageLabel,
         error,
+        isTauri,
         supportsFileSystem,
+        supportsFolders,
         pickFolder,
         useBrowserStorage,
         grantPermission,

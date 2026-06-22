@@ -4,14 +4,22 @@ Guidance for working in this repository.
 
 ## What this is
 
-**Gravity Notes** — a local-first Markdown note-taking app. On first run the user chooses where notes
-live: a **folder** of plain `.md` files (browser **File System Access API**) or **in-browser**
-(IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/) ecosystem, with
-`@gravity-ui/markdown-editor` as the WYSIWYG/Markdown editor.
+**Gravity Notes** — a local-first Markdown note-taking app, shipping as both a **web app** and a
+**macOS desktop app** (Tauri 2). On first run the user chooses where notes live: a **folder** of
+plain `.md` files or **in-browser** (IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/)
+ecosystem, with `@gravity-ui/markdown-editor` as the WYSIWYG/Markdown editor.
 
-**Browser support:** any modern browser. Folder storage is Chromium-only (the File System Access API
-is unavailable in Firefox/Safari), so those browsers are offered only the in-browser backend. Notes
-move between backends via `.md` export/import (`src/storage/transfer.ts`).
+**Targets / folder backends.** The folder-of-`.md` backend is served two ways behind one `NoteStore`
+seam:
+
+- **Web (Chromium):** `FileSystemNoteStore` via the browser **File System Access API** — Chromium-only
+  (unavailable in Firefox/Safari, which are offered only the in-browser backend).
+- **Desktop (Tauri, macOS arm64):** `TauriNoteStore` via native Rust `fs` commands — the FSA API is
+  absent in WKWebView. This makes folder storage work natively in the app, with no per-session
+  permission re-grant.
+
+Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
+lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: the `notes_*` fs commands).
 
 ## Commands
 
@@ -29,18 +37,22 @@ npm run lint:fix     # ESLint with autofix
 npm run format       # Prettier write (covers CSS/MD/JSON too)
 npm run format:check # Prettier check (used in CI)
 npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config.ts
+
+# Desktop app (Tauri 2, macOS arm64). Needs Rust ≥ 1.88 (rustup recommended).
+npm run tauri:dev    # run the desktop app against the Vite dev server
+npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/target/release/bundle
 ```
 
 ## Architecture
 
 ```
-FolderGate ──▶ NoteStore (filesystem | indexeddb) ──▶ useNotes() ──▶ NoteList + EditorPane
-(choose storage)  (.md files on disk, or IndexedDB)     (state + autosave)   (UI)
+FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ useNotes() ──▶ NoteList + EditorPane
+(choose storage)  (.md on disk: web FSA / native Rust; or IndexedDB)  (state + autosave)   (UI)
 ```
 
 All persistence sits behind the **`NoteStore` interface** (`src/storage/types.ts`) — the key extension
-seam, with two backends. Note id = `<Title>.md` in both; the name without `.md` is the title. Anything
-above the seam (`useNotes`, navigation, UI) is backend-agnostic.
+seam, with three backends (two of them folder-of-`.md`). Note id = `<Title>.md` in all; the name
+without `.md` is the title. Anything above the seam (`useNotes`, navigation, UI) is backend-agnostic.
 
 Key modules:
 
@@ -57,18 +69,28 @@ Key modules:
 - `src/storage/indexedDbStore.ts` — `IndexedDbNoteStore` (in-browser). Mirrors the FS store's
   semantics (`<Title>.md` ids, canonical body, `updatedAt`-based `ConflictError`, `NotFoundError` on a
   missing note) so `useNotes` is unaffected by which backend is active.
+- `src/storage/tauriStore.ts` — `TauriNoteStore` (desktop). Same semantics as the FS store, but over
+  `invoke()` to the Rust `notes_*` commands (`src-tauri/src/lib.rs`). Reuses the `noteText`/`metadata`
+  helpers verbatim; gets real atomic `fs::rename` (no copy-then-delete) but still keeps the case-only
+  rename two-step (macOS's case-insensitive FS makes a direct case-only rename a no-op). `save()`
+  reproduces the FS contract exactly: `ConflictError` on mtime mismatch, a `NotFoundError` `DOMException`
+  when the file is gone (so `useNotes` maps it to a "deleted" conflict).
 - `src/storage/transfer.ts` — `.md` export (zip via `fflate`) and import (`.md` / `.zip`), for any
   backend; the way to get plain files out of in-browser storage and migrate between backends.
-- `src/storage/handlePersistence.ts` — remembers the chosen backend (and folder handle) in IndexedDB
-  so reloads restore it; per-session permission re-grant. Each `tx()` closes the connection on
+- `src/storage/handlePersistence.ts` — remembers the chosen backend in IndexedDB so reloads restore
+  it: a `FileSystemDirectoryHandle` (web, per-session permission re-grant) or a plain folder-path
+  string (`tauri-fs`, no re-grant — the OS governs access). Each `tx()` closes the connection on
   complete / error / abort.
 - `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
   `orderNotes` (pins first, then the active sort).
 - `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle (state machine:
-  `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore`. Bootstrap is
-  `try/catch`-guarded and bails (via `interactedRef`) once the user chooses, so a slow IndexedDB read
-  can't clobber it. Back-compat: a stored folder handle with no backend flag is treated as filesystem.
+  `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore`. Detects the Tauri
+  shell (`__TAURI_INTERNALS__`): there `pickFolder()` uses the native dialog and the `tauri-fs`
+  bootstrap goes straight to `ready` (no `needs-permission`). `supportsFolders` (= native app OR
+  browser FSA) drives whether the folder option is offered. Bootstrap is `try/catch`-guarded and bails
+  (via `interactedRef`) once the user chooses, so a slow IndexedDB read can't clobber it. Back-compat:
+  a stored folder handle with no backend flag is treated as filesystem.
 - `src/hooks/useNotes.ts` — note list, selection, **debounced autosave** (500 ms), and **conflict
   detection**. Editing is deliberately decoupled from React state: keystrokes flow into a ref + timer,
   not `setState`, so the markdown editor instance is never re-created mid-typing. Pending edits are
@@ -99,8 +121,10 @@ Key modules:
   `@gravity-ui/eslint-config` + `@gravity-ui/prettier-config`.
 - Errors surface to the user via the toaster (`onError` in `Workspace`); storage methods throw and
   callers translate to toasts.
-- Keep new persistence behind `NoteStore` so alternative backends (Electron `fs`, HTTP API, IndexedDB)
-  stay drop-in.
+- Keep new persistence behind `NoteStore` so alternative backends (the Tauri `fs` store, HTTP API,
+  IndexedDB) stay drop-in. Anything that runs only in the desktop shell must feature-detect Tauri and
+  keep the browser build working (e.g. `pickFolder` branches; `@tauri-apps/plugin-dialog` is loaded
+  via dynamic `import()` so it never enters the web bundle).
 
 ## Roadmap
 
