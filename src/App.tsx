@@ -8,6 +8,7 @@ import {
     ToasterProvider,
 } from '@gravity-ui/uikit';
 
+import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
 import type {ThemePref} from './components/ThemeSwitcher';
 import {Workspace} from './components/Workspace';
@@ -34,17 +35,19 @@ export function App() {
         <ThemeProvider theme={themePref}>
             <MobileProvider>
                 <ToasterProvider toaster={toaster}>
-                    {folder.state === 'ready' && folder.dir ? (
-                        <Workspace
-                            dir={folder.dir}
-                            folderName={folder.folderName}
-                            themePref={themePref}
-                            onChangeThemePref={setThemePref}
-                            onChangeFolder={() => void folder.forgetFolder()}
-                        />
-                    ) : (
-                        <FolderGate folder={folder} />
-                    )}
+                    <ErrorBoundary>
+                        {folder.state === 'ready' && folder.dir ? (
+                            <Workspace
+                                dir={folder.dir}
+                                folderName={folder.folderName}
+                                themePref={themePref}
+                                onChangeThemePref={setThemePref}
+                                onChangeFolder={() => void folder.forgetFolder()}
+                            />
+                        ) : (
+                            <FolderGate folder={folder} />
+                        )}
+                    </ErrorBoundary>
                     <ToasterComponent />
                 </ToasterProvider>
             </MobileProvider>

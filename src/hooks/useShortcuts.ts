@@ -33,11 +33,16 @@ export function useShortcuts(actions: ShortcutActions): void {
                 const allowInTyping = binding.inTyping ?? binding.trigger === 'mod';
                 if (typing && !allowInTyping) continue;
                 if (binding.trigger === 'mod') {
+                    // Prefer a physical-key (event.code) match when the binding specifies one;
+                    // otherwise compare event.key case-insensitively.
+                    const keyMatches = binding.code
+                        ? event.code === binding.code
+                        : event.key.toLowerCase() === binding.key.toLowerCase();
                     if (
                         mod &&
                         (binding.shift ? event.shiftKey : !event.shiftKey) &&
                         !event.altKey &&
-                        event.key.toLowerCase() === binding.key.toLowerCase()
+                        keyMatches
                     ) {
                         event.preventDefault();
                         actionsRef.current[binding.action]();

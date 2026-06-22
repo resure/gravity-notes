@@ -16,6 +16,12 @@ export interface GlobalBinding {
     trigger: 'mod' | 'bare';
     /** `event.key` to match. For the 'mod' trigger the comparison is case-insensitive. */
     key: string;
+    /**
+     * Physical-key match (`event.code`), preferred over `key` when present. Required for
+     * punctuation chords with Shift, where the shifted `event.key` differs from the base char
+     * (e.g. ⌘⇧; reports `event.key === ':'`, not ';') — see the macOS shortcut memory.
+     */
+    code?: string;
     /** Which action to fire. */
     action: ShortcutAction;
     /** For a 'mod' binding, also require Shift (default: Shift must be absent). */
@@ -83,7 +89,15 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         keys: 'mod+shift+;',
         description: 'Toggle WYSIWYG / Markup',
         group: 'Editing',
-        global: {trigger: 'mod', key: ';', action: 'toggleEditorMode', shift: true},
+        // Match the physical Semicolon key: with Shift held, event.key is ':' on US/UK layouts,
+        // so a key-based match would never fire.
+        global: {
+            trigger: 'mod',
+            key: ';',
+            code: 'Semicolon',
+            action: 'toggleEditorMode',
+            shift: true,
+        },
     },
     {
         keys: 'mod+shift+p',

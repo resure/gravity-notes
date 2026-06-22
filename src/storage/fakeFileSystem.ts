@@ -44,13 +44,20 @@ class FakeFileHandle {
         const file = this.file;
         const tick = this.tick;
         let buffer = '';
+        let aborted = false;
         return {
             async write(contents: string) {
                 buffer += contents;
             },
             async close() {
+                if (aborted) return;
                 file.content = buffer;
                 file.lastModified = tick();
+            },
+            // Mirror FileSystemWritableFileStream.abort(): discard the buffered write, leaving
+            // the original file untouched (the real stream commits atomically only on close()).
+            async abort() {
+                aborted = true;
             },
         };
     }
@@ -63,7 +70,15 @@ export class FakeDirectoryHandle {
     private readonly fileEntries = new Map<string, FakeFile>();
     private readonly dirEntries = new Map<string, FakeDirectoryHandle>();
 
-    constructor(readonly name = 'notes') {}
+    /**
+     * @param name folder name.
+     * @param caseInsensitive model a case-insensitive filesystem (macOS/Windows default), where
+     *   `note.md` and `Note.md` resolve to the same entry — used to exercise case-only renames.
+     */
+    constructor(
+        readonly name = 'notes',
+        private readonly caseInsensitive = false,
+    ) {}
 
     /** Seed a file. `lastModified` defaults to a monotonic tick when omitted. */
     seedFile(name: string, content: string, lastModified?: number) {
@@ -88,21 +103,33 @@ export class FakeDirectoryHandle {
     }
 
     async getFileHandle(name: string, options?: {create?: boolean}): Promise<FakeFileHandle> {
-        let file = this.fileEntries.get(name);
+        const resolved = this.resolveName(name);
+        let file = this.fileEntries.get(resolved);
         if (!file) {
             if (!options?.create) {
                 throw new DOMException(`${name} not found`, 'NotFoundError');
             }
             file = {content: '', lastModified: ++this.clock};
             this.fileEntries.set(name, file);
+            return new FakeFileHandle(name, file, () => ++this.clock);
         }
-        return new FakeFileHandle(name, file, () => ++this.clock);
+        return new FakeFileHandle(resolved, file, () => ++this.clock);
     }
 
     async removeEntry(name: string): Promise<void> {
-        if (!this.fileEntries.delete(name)) {
+        if (!this.fileEntries.delete(this.resolveName(name))) {
             throw new DOMException(`${name} not found`, 'NotFoundError');
         }
+    }
+
+    /** Map a requested name to the stored entry's name (case-folded match when case-insensitive). */
+    private resolveName(name: string): string {
+        if (!this.caseInsensitive || this.fileEntries.has(name)) return name;
+        const lower = name.toLowerCase();
+        for (const existing of this.fileEntries.keys()) {
+            if (existing.toLowerCase() === lower) return existing;
+        }
+        return name;
     }
 }
 

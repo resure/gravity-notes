@@ -60,6 +60,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     const previewRef = useRef<HTMLDivElement>(null);
     const titleRef = useRef<NoteTitleHandle>(null);
     const bodyRef = useRef<HTMLDivElement>(null);
+    // The editor emits a no-op 'change' as the initial markup loads; suppress only that FIRST emit,
+    // not every value that equals the original — otherwise undoing back to the loaded content within
+    // the autosave window leaves a stale pending edit that writes the pre-undo value to disk.
+    const settledRef = useRef(false);
 
     useImperativeHandle(
         ref,
@@ -77,11 +81,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     useEffect(() => {
         const handleChange = () => {
             const value = editor.getValue();
-            // Ignore the no-op change emitted while the initial markup loads, so we don't
-            // rewrite the file (and bump it to the top of the list) on open.
-            if (value !== note.content) {
-                onChange(value);
+            // Ignore only the first emit if it just echoes the loaded content (the no-op fired while
+            // the initial markup loads), so we don't rewrite the file on open. Every later change —
+            // including an undo back to the original — flows through so disk matches the screen.
+            if (!settledRef.current) {
+                settledRef.current = true;
+                if (value === note.content) return;
             }
+            onChange(value);
         };
         editor.on('change', handleChange);
         return () => {

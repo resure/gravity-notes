@@ -84,7 +84,9 @@
 }
 
 .note-list__item:hover .note-list__actions,
-.note-list__item_selected .note-list__actions {
+.note-list__item_selected .note-list__actions,
+/* Reveal on keyboard focus too, so the row menu is reachable without a pointer hover. */
+.note-list__item:focus-within .note-list__actions {
     opacity: 1;
 }
 

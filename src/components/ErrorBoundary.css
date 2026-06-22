@@ -1,0 +1,26 @@
+.error-boundary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+    background-color: var(--g-color-base-background);
+}
+
+.error-boundary__card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 420px;
+    text-align: center;
+}
+
+.error-boundary__detail {
+    word-break: break-word;
+}
+
+.error-boundary__actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 4px;
+}

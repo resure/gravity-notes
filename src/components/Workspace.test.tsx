@@ -450,7 +450,7 @@ describe('Workspace — nvALT navigation', () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         await collapseThenPeek(user);
-        fireEvent.mouseDown(document.body);
+        fireEvent.pointerDown(document.body);
         await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
     });
 
@@ -507,5 +507,38 @@ describe('Workspace — nvALT navigation', () => {
         fireEvent.keyDown(document, {key: "'", metaKey: true});
         await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+    });
+
+    it('F2 does not start a list rename while the in-editor title is focused', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        const title = await screen.findByLabelText('Note title');
+        title.focus();
+        await user.keyboard('{F2}');
+        // The guard means the list does NOT open an inline rename input for the selected row.
+        const list = screen.getByRole('listbox', {name: 'Notes'});
+        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
+    });
+
+    it('Esc from the editor peeks the sidebar when collapsed', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        await user.click(screen.getByLabelText('Toggle sidebar'));
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
+        // With the sidebar collapsed, Esc out of the editor reveals (peeks) it instead of focusing
+        // a hidden row.
+        const pane = document.querySelector('.editor-pane');
+        if (!pane) throw new Error('editor-pane not rendered');
+        fireEvent.keyDown(pane, {key: 'Escape'});
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
+        );
     });
 });

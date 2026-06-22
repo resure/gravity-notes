@@ -20,7 +20,7 @@ export function ThemeSwitcher({pref, onChange}: ThemeSwitcherProps) {
     return (
         <DropdownMenu
             renderSwitcher={(props) => (
-                <Button {...props} view="flat" size="m" title="Theme">
+                <Button {...props} view="flat" size="m" title="Theme" aria-label="Theme">
                     <Icon data={current.icon} />
                 </Button>
             )}

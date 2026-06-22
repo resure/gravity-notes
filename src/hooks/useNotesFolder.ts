@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 
 import {
     clearDirHandle,
@@ -36,24 +36,39 @@ export function useNotesFolder(): NotesFolder {
     const [dir, setDir] = useState<FileSystemDirectoryHandle | null>(null);
     const [folderName, setFolderName] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Set once the user takes a folder action (pick/grant/forget). The bootstrap effect bails if
+    // this is set, so a slow IndexedDB read can't clobber a state the user just chose.
+    const interactedRef = useRef(false);
 
     // On load, try to recover the previously-opened folder.
     useEffect(() => {
-        if (!isSupported) return;
+        if (!isSupported) return undefined;
         let cancelled = false;
         (async () => {
-            const saved = await loadDirHandle();
-            if (cancelled) return;
-            if (!saved) {
+            try {
+                const saved = await loadDirHandle();
+                if (cancelled || interactedRef.current) return;
+                if (!saved) {
+                    setState('needs-folder');
+                    return;
+                }
+                setFolderName(saved.name);
+                const permission = await queryPermission(saved);
+                if (cancelled || interactedRef.current) return;
+                if (permission === 'granted') {
+                    setDir(saved);
+                    setState('ready');
+                } else {
+                    setState('needs-permission');
+                }
+            } catch (err) {
+                // IndexedDB or permission query failed (e.g. blocked in private mode) — don't get
+                // stuck on the loading spinner; fall back to the folder picker with the error shown.
+                if (cancelled || interactedRef.current) return;
+                setError(
+                    err instanceof Error ? err.message : 'Could not restore the saved folder.',
+                );
                 setState('needs-folder');
-                return;
-            }
-            setFolderName(saved.name);
-            if ((await queryPermission(saved)) === 'granted') {
-                setDir(saved);
-                setState('ready');
-            } else {
-                setState('needs-permission');
             }
         })();
         return () => {
@@ -62,6 +77,7 @@ export function useNotesFolder(): NotesFolder {
     }, []);
 
     const pickFolder = useCallback(async () => {
+        interactedRef.current = true;
         setError(null);
         try {
             const handle = await window.showDirectoryPicker({
@@ -84,6 +100,7 @@ export function useNotesFolder(): NotesFolder {
     }, []);
 
     const grantPermission = useCallback(async () => {
+        interactedRef.current = true;
         setError(null);
         const saved = await loadDirHandle();
         if (!saved) {
@@ -99,6 +116,7 @@ export function useNotesFolder(): NotesFolder {
     }, []);
 
     const forgetFolder = useCallback(async () => {
+        interactedRef.current = true;
         await clearDirHandle();
         setDir(null);
         setFolderName(null);

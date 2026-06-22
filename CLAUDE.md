@@ -18,6 +18,7 @@ unavailable in Firefox/Safari; those are a planned later phase (in-browser/Index
 npm install
 npm run dev          # Vite dev server (http://localhost:5173)
 npm run build        # type-check (tsc, noEmit) + production build
+npm run build:single # single self-contained index.html (inlined assets); also run in CI
 npm run preview      # preview the production build
 
 npm test             # run the Vitest suite once
@@ -26,7 +27,7 @@ npm run lint         # ESLint (Gravity flat config; also enforces Prettier on JS
 npm run lint:fix     # ESLint with autofix
 npm run format       # Prettier write (covers CSS/MD/JSON too)
 npm run format:check # Prettier check (used in CI)
-npm run typecheck    # tsc (noEmit)
+npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config.ts
 ```
 
 ## Architecture
@@ -46,17 +47,32 @@ Key modules:
   Holds the trickiest logic: title sanitizing, unique-filename resolution, copy-then-delete rename
   (the FS Access API has no atomic rename), list sorting.
 - `src/storage/handlePersistence.ts` — stashes the directory handle in IndexedDB so the folder survives
-  reloads; handles the per-session permission re-grant.
+  reloads; handles the per-session permission re-grant. Each `tx()` closes the connection on complete /
+  error / abort.
+- `src/storage/metadata.ts` — the `.gravity-notes.json` sidecar: tolerant `parseMetadata`, pure
+  transforms (`withPinToggled`, `withActive`, `reconcile`, …), and `orderNotes` (pins first, then the
+  active sort).
 - `src/hooks/useNotesFolder.ts` — folder picking + permission lifecycle (state machine:
-  `loading`/`unsupported`/`needs-folder`/`needs-permission`/`ready`).
-- `src/hooks/useNotes.ts` — note list, selection, and **debounced autosave** (500 ms). Editing is
-  deliberately decoupled from React state: keystrokes flow into a ref + timer, not `setState`, so the
-  markdown editor instance is never re-created mid-typing. Pending edits are flushed on
-  `visibilitychange` / `beforeunload`.
-- `src/components/` — `FolderGate` (pre-folder gate), `Workspace` (header + layout), `NoteList`
-  (sidebar with create/rename/delete), `EditorPane` (wraps the Gravity markdown editor; re-created per
-  editing session via a stable `useNotes.sessionId`, so a rename doesn't remount it).
-- `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence.
+  `loading`/`unsupported`/`needs-folder`/`needs-permission`/`ready`). Bootstrap is `try/catch`-guarded
+  and bails (via `interactedRef`) once the user picks/grants, so a slow IndexedDB read can't clobber it.
+- `src/hooks/useNotes.ts` — note list, selection, **debounced autosave** (500 ms), and **conflict
+  detection**. Editing is deliberately decoupled from React state: keystrokes flow into a ref + timer,
+  not `setState`, so the markdown editor instance is never re-created mid-typing. Pending edits are
+  flushed before every lifecycle transition (open/create/rename/remove/close/folder-change) and on
+  `visibilitychange` / `beforeunload`; `open()` is guarded by a generation counter (wrong-note race) and
+  short-circuits the already-open note (no remount). Exposes `flushPending()` for teardown.
+- `src/hooks/useNoteNavigation.ts` / `useNoteSearch.ts` / `useShortcuts.ts` — list cursor + focus ladder
+  (browse/commit/escape), search-or-create filtering, and the global keyboard shortcuts (driven by the
+  `SHORTCUTS` descriptor in `src/shortcuts.ts`, which the help dialog also renders from). Punctuation
+  chords match by `event.code` (e.g. `⌘⇧;` → `Semicolon`), since the shifted `event.key` differs.
+- `src/components/` — `FolderGate` (pre-folder gate), `Workspace` (top bar + layout + nav wiring),
+  `TopBar` (nvALT search box + folder/theme/help controls + save-status dot), `NoteList` (sidebar with
+  create/rename/delete, pin, sort), `EditorPane` (wraps the Gravity markdown editor; re-created per
+  editing session via a stable `useNotes.sessionId`, so a rename doesn't remount it) with `NoteTitle`
+  and `NotePreview`, `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, and `ErrorBoundary` (root
+  render-crash net).
+- `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
+  `ErrorBoundary`.
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
 
 ## Conventions

@@ -6,6 +6,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 const {
     fakeEditor,
+    editorState,
     setEditorMode,
     focus,
     moveCursor,
@@ -21,6 +22,8 @@ const {
     const openLineAbove = vi.fn(() => true);
     const atEmptyFirstLine = vi.fn(() => false);
     const removeEmptyFirstLine = vi.fn();
+    // Controllable editor value + captured 'change' handler, so tests can simulate edits.
+    const editorState = {value: '', changeHandler: null as null | (() => void)};
     return {
         setEditorMode,
         focus,
@@ -29,14 +32,19 @@ const {
         openLineAbove,
         atEmptyFirstLine,
         removeEmptyFirstLine,
+        editorState,
         fakeEditor: {
             currentMode: 'wysiwyg' as 'wysiwyg' | 'markup',
             setEditorMode,
             focus,
             moveCursor,
-            getValue: () => '',
-            on: () => {},
-            off: () => {},
+            getValue: () => editorState.value,
+            on: (event: string, cb: () => void) => {
+                if (event === 'change') editorState.changeHandler = cb;
+            },
+            off: () => {
+                editorState.changeHandler = null;
+            },
         },
     };
 });
@@ -227,5 +235,33 @@ describe('EditorPane — title ↔ body handoff', () => {
         await user.type(input, 'Renamed');
         fireEvent.blur(input);
         expect(onRename).toHaveBeenCalledWith('a.md', 'Renamed');
+    });
+});
+
+describe('EditorPane — change emission', () => {
+    beforeEach(() => {
+        editorState.value = '';
+        editorState.changeHandler = null;
+    });
+
+    it('suppresses only the initial load no-op, then emits every change — including a revert', () => {
+        const onChange = vi.fn();
+        renderPane({onChange}); // NOTE.content === 'hello'
+
+        // The first emit just echoes the loaded content (the open-time no-op): suppressed.
+        editorState.value = 'hello';
+        editorState.changeHandler?.();
+        expect(onChange).not.toHaveBeenCalled();
+
+        // A real edit flows through.
+        editorState.value = 'hellox';
+        editorState.changeHandler?.();
+        expect(onChange).toHaveBeenLastCalledWith('hellox');
+
+        // Undoing back to the original within the session must STILL emit, so the autosave writes
+        // 'hello' (matching the screen) rather than leaving the stale 'hellox' in the buffer.
+        editorState.value = 'hello';
+        editorState.changeHandler?.();
+        expect(onChange).toHaveBeenLastCalledWith('hello');
     });
 });

@@ -88,3 +88,19 @@
         transform 0.15s ease,
         visibility 0s linear 0s;
 }
+
+/* Honor a reduced-motion preference: snap the sidebar in/out instead of sliding (visibility still
+   delayed on close so the row stays focusable until docked). */
+@media (prefers-reduced-motion: reduce) {
+    .workspace__body_collapsed .workspace__sidebar,
+    .workspace__body_peeked .workspace__sidebar {
+        transition:
+            transform 0s,
+            visibility 0s linear 0.15s;
+    }
+    .workspace__body_peeked .workspace__sidebar {
+        transition:
+            transform 0s,
+            visibility 0s linear 0s;
+    }
+}

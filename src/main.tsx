@@ -20,7 +20,12 @@ import './index.css';
 
 import {App} from './App';
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root');
+if (!rootEl) {
+    throw new Error('Gravity Notes failed to start: no #root element in the document.');
+}
+
+createRoot(rootEl).render(
     <StrictMode>
         <App />
     </StrictMode>,

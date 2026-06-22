@@ -115,6 +115,8 @@ export function TopBar({
                 value={query}
                 onUpdate={onQueryChange}
                 placeholder="Search or create a note…"
+                // Placeholders aren't a reliable accessible name; name the field explicitly.
+                controlProps={{'aria-label': 'Search or create a note'}}
                 hasClear
                 onKeyDown={onSearchKeyDown}
             />
@@ -158,7 +160,13 @@ export function TopBar({
                 </Button>
             </Tooltip>
             <ThemeSwitcher pref={themePref} onChange={onChangeThemePref} />
-            <Button view="flat" size="m" onClick={onOpenHelp} title="Keyboard shortcuts (⌘/)">
+            <Button
+                view="flat"
+                size="m"
+                onClick={onOpenHelp}
+                title="Keyboard shortcuts (⌘/)"
+                aria-label="Keyboard shortcuts"
+            >
                 <Icon data={CircleQuestion} />
             </Button>
         </header>

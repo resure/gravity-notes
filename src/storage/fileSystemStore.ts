@@ -47,6 +47,26 @@ function previewFromContent(text: string): string {
         .slice(0, 140);
 }
 
+/**
+ * Write text to a file handle, aborting the writable on failure so a half-written stream isn't
+ * left dangling. The File System Access API commits a writable atomically only on close(), so the
+ * original file is untouched if write() throws before then.
+ */
+async function writeFile(handle: FileSystemFileHandle, text: string): Promise<void> {
+    const writable = await handle.createWritable();
+    try {
+        await writable.write(text);
+        await writable.close();
+    } catch (err) {
+        try {
+            await writable.abort();
+        } catch {
+            // The stream may already be errored/closed; nothing more to clean up.
+        }
+        throw err;
+    }
+}
+
 /** Turn a user-supplied title into a safe file-name base (no extension). */
 function sanitizeTitle(title: string): string {
     const cleaned = title
@@ -103,6 +123,10 @@ export class FileSystemNoteStore implements NoteStore {
     async create(title: string): Promise<NoteMeta> {
         const fileName = await this.uniqueFileName(sanitizeTitle(title));
         const handle = await this.dir.getFileHandle(fileName, {create: true});
+        // Write the canonical "blank line at EOF" shape save() produces, so a brand-new note has a
+        // consistent on-disk shape for external tools rather than a zero-byte file. get() strips it
+        // back to an empty body, so the editor still opens to a blank note with no spurious save.
+        await writeFile(handle, canonicalBody(''));
         const updatedAt = (await handle.getFile()).lastModified;
         return {id: fileName, title: titleFromFileName(fileName), updatedAt};
     }
@@ -113,10 +137,8 @@ export class FileSystemNoteStore implements NoteStore {
         if (current !== baseUpdatedAt) {
             throw new ConflictError(id, current);
         }
-        const writable = await handle.createWritable();
         // End the file with a blank line at EOF (the editor serializes no trailing newline).
-        await writable.write(canonicalBody(content));
-        await writable.close();
+        await writeFile(handle, canonicalBody(content));
         const updatedAt = (await handle.getFile()).lastModified;
         return {id, title: titleFromFileName(id), updatedAt};
     }
@@ -153,9 +175,7 @@ export class FileSystemNoteStore implements NoteStore {
 
     async writeMetadata(meta: NotesMetadata): Promise<void> {
         const handle = await this.dir.getFileHandle(METADATA_FILENAME, {create: true});
-        const writable = await handle.createWritable();
-        await writable.write(JSON.stringify(meta, null, 2));
-        await writable.close();
+        await writeFile(handle, JSON.stringify(meta, null, 2));
     }
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
@@ -164,21 +184,35 @@ export class FileSystemNoteStore implements NoteStore {
         if (nextName === id) {
             return {id, title: titleFromFileName(id)};
         }
-        // Renaming onto another note's name is rejected (no auto-numbered copy); the
-        // caller surfaces it to the user.
-        if (await this.exists(nextName)) {
+        // A case-only rename (note.md → Note.md) is the SAME file on a case-insensitive
+        // filesystem (macOS/Windows default): the collision check below would see the source as a
+        // collision, and a naive copy-then-delete would delete the file we just wrote.
+        const caseOnlyRename = nextName.toLowerCase() === id.toLowerCase();
+        // Renaming onto another note's name is rejected (no auto-numbered copy); the caller
+        // surfaces it to the user. Skipped for a case-only rename (the only "match" is itself).
+        if (!caseOnlyRename && (await this.exists(nextName))) {
             throw new NameCollisionError(id, base);
         }
-        // The File System Access API has no atomic rename: copy to the new file,
-        // then delete the old one.
+        // The File System Access API has no atomic rename. Write the same canonical shape save()
+        // produces (a blank line at EOF) so a rename doesn't change the file's trailing whitespace
+        // (renames are frequent now that editing the title renames the file).
         const content = (await this.get(id)).content;
+        if (caseOnlyRename) {
+            // Go through a distinct temp name so the case actually changes on a case-insensitive
+            // FS and the original is never the copy target. The temp doesn't end in `.md`, so
+            // list() ignores it even transiently.
+            const tempName = `${nextName}.rename-tmp`;
+            const tempHandle = await this.dir.getFileHandle(tempName, {create: true});
+            await writeFile(tempHandle, canonicalBody(content));
+            await this.dir.removeEntry(id);
+            const renamed = await this.dir.getFileHandle(nextName, {create: true});
+            await writeFile(renamed, canonicalBody(content));
+            await this.dir.removeEntry(tempName);
+            const updatedAt = (await renamed.getFile()).lastModified;
+            return {id: nextName, title: titleFromFileName(nextName), updatedAt};
+        }
         const handle = await this.dir.getFileHandle(nextName, {create: true});
-        const writable = await handle.createWritable();
-        // Write the same canonical shape save() produces (a blank line at EOF), so a rename
-        // doesn't change the file's trailing whitespace (renames are frequent now that editing
-        // the title renames the file).
-        await writable.write(canonicalBody(content));
-        await writable.close();
+        await writeFile(handle, canonicalBody(content));
         await this.dir.removeEntry(id);
         // Read the real on-disk mtime so the caller can seed an accurate conflict baseline.
         const updatedAt = (await handle.getFile()).lastModified;
@@ -191,12 +225,14 @@ export class FileSystemNoteStore implements NoteStore {
 
     /** Resolve `<base>.md`, appending " 2", " 3", ... until the name is free. */
     private async uniqueFileName(base: string): Promise<string> {
-        for (let i = 1; ; i++) {
+        // Bounded so a pathological folder (every candidate taken) can't spin forever.
+        for (let i = 1; i <= 100000; i++) {
             const candidate = (i === 1 ? base : `${base} ${i}`) + MD_EXT;
             if (!(await this.exists(candidate))) {
                 return candidate;
             }
         }
+        throw new Error(`Could not find a free file name for "${base}"`);
     }
 
     private async exists(fileName: string): Promise<boolean> {
