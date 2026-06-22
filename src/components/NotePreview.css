@@ -56,11 +56,19 @@
     margin-top: 0;
 }
 
-/* Apple-Notes-style short dashes for bullet lists, matching the editor. */
+/* Apple-Notes-style short dashes for bullet lists, matching the editor. `::marker { content }` is
+   Chromium-only; WebKit (the desktop app) needs `list-style-type: <string>`, which both engines
+   honor — so set both (the ::marker rule keeps Chromium's exact rendering). */
+.note-preview__body.yfm ul > li {
+    list-style-type: '–  ';
+}
 .note-preview__body.yfm ul > li::marker {
     content: '–  ';
 }
 /* …but not on task-list rows — the checkbox replaces the bullet. */
+.note-preview__body.yfm ul > li:has(input[type='checkbox']) {
+    list-style-type: none;
+}
 .note-preview__body.yfm ul > li:has(input[type='checkbox'])::marker {
     content: '';
 }

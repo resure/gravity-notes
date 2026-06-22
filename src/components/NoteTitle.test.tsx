@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {fireEvent, render, screen} from '@testing-library/react';
+import {fireEvent, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -43,7 +43,50 @@ describe('NoteTitle', () => {
         expect(onCommit).toHaveBeenCalledWith('New');
     });
 
-    it('⌘Enter does not call onEnter — lets the global new-note shortcut bubble', () => {
+    it('reverts the field and stops re-committing when a rename is rejected (name collision)', async () => {
+        const user = userEvent.setup();
+        // A rejected rename resolves false (e.g. the target name is taken).
+        const onCommit = vi.fn(async () => false);
+        render(
+            <NoteTitle
+                title="Keep"
+                onCommit={onCommit}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
+        const input = screen.getByLabelText('Note title') as HTMLInputElement;
+        await user.clear(input);
+        await user.type(input, 'Taken');
+        fireEvent.blur(input);
+        expect(onCommit).toHaveBeenCalledWith('Taken');
+        // The field snaps back to the real, unchanged title (which the list still shows).
+        await waitFor(() => expect(input.value).toBe('Keep'));
+        // A second blur must NOT re-fire the failing rename (the draft now equals the title).
+        onCommit.mockClear();
+        fireEvent.blur(input);
+        expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it('does not commit on blur when the title is unchanged', () => {
+        const onCommit = vi.fn();
+        render(
+            <NoteTitle
+                title="Same"
+                onCommit={onCommit}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
+        const input = screen.getByLabelText('Note title');
+        input.focus();
+        fireEvent.blur(input);
+        expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it('⌘⇧Enter does not call onEnter — lets the global new-note shortcut bubble', () => {
         const onEnter = vi.fn();
         render(
             <NoteTitle
@@ -56,7 +99,7 @@ describe('NoteTitle', () => {
         );
         const input = screen.getByLabelText('Note title');
         input.focus();
-        fireEvent.keyDown(input, {key: 'Enter', metaKey: true});
+        fireEvent.keyDown(input, {key: 'Enter', metaKey: true, shiftKey: true});
         expect(onEnter).not.toHaveBeenCalled();
     });
 

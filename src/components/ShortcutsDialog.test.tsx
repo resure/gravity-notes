@@ -9,8 +9,10 @@ import {ShortcutsDialog} from './ShortcutsDialog';
 describe('ShortcutsDialog', () => {
     it('renders a row for every shortcut in the descriptor', () => {
         renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
+        // One row per descriptor; descriptions can repeat (e.g. two chords both make a New note).
+        expect(document.querySelectorAll('.shortcuts-dialog__row')).toHaveLength(SHORTCUTS.length);
         for (const shortcut of SHORTCUTS) {
-            expect(screen.getByText(shortcut.description)).toBeInTheDocument();
+            expect(screen.getAllByText(shortcut.description).length).toBeGreaterThan(0);
         }
     });
 

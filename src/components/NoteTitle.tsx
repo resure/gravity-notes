@@ -17,8 +17,11 @@ interface NoteTitleProps {
     title: string;
     /** Read-only in preview mode. */
     readOnly?: boolean;
-    /** Commit a rename. Fired on blur (and on unmount if still dirty). */
-    onCommit: (nextTitle: string) => void;
+    /**
+     * Commit a rename. Fired on blur (and on unmount if still dirty). May resolve `false` when the
+     * rename was rejected (e.g. a name collision), so the field can revert to the committed title.
+     */
+    onCommit: (nextTitle: string) => void | Promise<boolean>;
     /** Move the caret to the start of the existing body (↓ or Tab). */
     onLeaveToBody: () => void;
     /** Open a fresh empty line at the top of the body and move the caret to it (Enter). */
@@ -124,7 +127,15 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
                     revertedRef.current = false;
                     return;
                 }
-                onCommit(draft);
+                // Unchanged → nothing to rename. This also stops a later blur from re-firing a
+                // rename that was just reverted below (which would stack another error toast).
+                if (draftRef.current === titleRef.current) return;
+                void (async () => {
+                    const applied = await onCommitRef.current(draftRef.current);
+                    // A rejected rename (e.g. a name collision) leaves the file unchanged; snap the
+                    // field back to the committed title so it matches the list.
+                    if (applied === false) setDraft(titleRef.current);
+                })();
             }}
             onKeyDown={onKeyDown}
         />

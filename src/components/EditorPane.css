@@ -73,13 +73,22 @@
     flex: 1 0 auto;
 }
 
-/* Apple-Notes-style short dashes for bullet lists. */
+/* Apple-Notes-style short dashes for bullet lists. Chromium honors `::marker { content }`, but
+   WebKit (the desktop app's WKWebView) ignores `content` on ::marker and falls back to default
+   discs. `list-style-type: <string>` is honored by both engines (Chrome 79+, Safari 17+), so set
+   it too — in Chromium the ::marker rule still drives the exact rendering. */
+.editor-pane .g-md-editor ul > li {
+    list-style-type: '–  ';
+}
 .editor-pane .g-md-editor ul > li::marker {
     content: '–  ';
 }
 
 /* …but not on checklist rows — the checkbox replaces the bullet. The editor renders
    checkboxes as a .g-md-checkbox div inside ordinary <ul> items (no GFM task-list class). */
+.editor-pane .g-md-editor ul > li:has(.g-md-checkbox) {
+    list-style-type: none;
+}
 .editor-pane .g-md-editor ul > li:has(.g-md-checkbox)::marker {
     content: '';
 }
