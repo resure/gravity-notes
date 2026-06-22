@@ -11,17 +11,26 @@
     padding-top: 8px;
 }
 
-/* Apple-Notes-style rhythm: tighter line-height + minimal paragraph spacing. The content
-   typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm classes outrank
-   it so these win without !important. */
+/* Comfortable reading rhythm: a relaxed line-height, with paragraph spacing still minimal because
+   blank lines between paragraphs are real empty rows (preserveEmptyRows) that carry the gap — not
+   margins. The content typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm
+   classes outrank it so these win without !important. */
 .editor-pane .g-md-editor.ProseMirror.yfm {
-    line-height: 1.25;
+    line-height: 1.2;
 }
 
 .editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.3;
+    line-height: 1.35;
+}
+
+/* Block elements get real air above them. The paragraph above has an almost-zero bottom margin, so
+   without this a table or code block hugs the preceding line (YFM gives blocks a 0 top / 15px bottom
+   margin). Restore a top gap that mirrors the space below. The `> :first-child` rule below still
+   wins by specificity, so a block that opens the note stays flush with the top. */
+.editor-pane .g-md-editor.ProseMirror.yfm :where(pre, table, blockquote) {
+    margin-top: 12px;
 }
 
 /* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
