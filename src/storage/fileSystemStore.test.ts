@@ -186,6 +186,25 @@ describe('FileSystemNoteStore', () => {
         });
     });
 
+    describe('rename — case-only (case-insensitive filesystem)', () => {
+        it('changes a note title from lower to upper case', async () => {
+            // macOS/Windows default: note.md and Note.md are the same file.
+            const ciDir = new FakeDirectoryHandle('notes', true);
+            ciDir.seedFile('note.md', 'keep me', 5);
+            const ciStore = new FileSystemNoteStore(asDirectoryHandle(ciDir));
+
+            const meta = await ciStore.rename('note.md', 'Note');
+
+            expect(meta.id).toBe('Note.md');
+            // The single file now lists under the new-cased name with content intact...
+            const metas = await ciStore.list();
+            expect(metas.map((m) => m.id)).toEqual(['Note.md']);
+            expect((await ciStore.get('Note.md')).content).toBe('keep me');
+            // ...and no rename temp file leaks into the listing.
+            expect(metas).toHaveLength(1);
+        });
+    });
+
     describe('rename — collisions', () => {
         it('renames to a free name', async () => {
             dir.seedFile('Old.md', 'body', 100);

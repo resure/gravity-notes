@@ -50,10 +50,12 @@ describe('useShortcuts', () => {
         expect(actions.createNote).toHaveBeenCalledTimes(1);
     });
 
-    it('toggles editor mode on mod+shift+semicolon', () => {
+    it('toggles editor mode on mod+shift+semicolon (matched by physical key)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: ';', metaKey: true, shiftKey: true});
+        // A real ⌘⇧; keydown reports key ':' (Shift) but code 'Semicolon'; the binding matches the
+        // physical key, so the previous key-based match (against ';') would never have fired.
+        press({key: ':', code: 'Semicolon', metaKey: true, shiftKey: true});
         expect(actions.toggleEditorMode).toHaveBeenCalledTimes(1);
     });
 

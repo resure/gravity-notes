@@ -62,6 +62,8 @@ export interface UseNotes {
     remove(id: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
+    /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
+    flushPending(): Promise<void>;
     /** Conflict resolvers (act on the open note). */
     reloadDisk(): Promise<void>;
     keepMine(): Promise<void>;
@@ -120,6 +122,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const pendingRef = useRef<{id: string; content: string} | null>(null);
     /** Last on-disk `lastModified` we've seen for the open note. */
     const baselineRef = useRef<number | null>(null);
+    /** Bumped per open() so a slow earlier load can't overwrite a newer one (wrong-note race). */
+    const openGenerationRef = useRef(0);
 
     const refresh = useCallback(async () => {
         const list = await store.list();
@@ -154,7 +158,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             setSaveState('saved');
             bumpInList(pending.id, meta.updatedAt);
         } catch (err) {
-            pendingRef.current = pending; // never drop the user's content
+            // Restore the snapshot only if no newer keystroke landed during the await — otherwise
+            // the newer edit (already in pendingRef, with its own timer) must win, not be clobbered.
+            if (pendingRef.current === null) pendingRef.current = pending;
             if (err instanceof ConflictError) {
                 setConflict({id: err.id, diskUpdatedAt: err.diskUpdatedAt, deleted: false});
                 setSaveState('conflict');
@@ -170,13 +176,20 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const open = useCallback(
         async (id: string) => {
+            // Already the open note: don't reload — that would remount the editor (losing caret,
+            // scroll, undo) and rewrite metadata.active on every re-click or ⌘J/⌘K at a list end.
+            if (metadataRef.current.active === id) return;
             // Flush the outgoing note before swapping. Note: if that note has an unresolved
             // external conflict, flush() re-queues its content but the setConflict(null) below
             // discards it — navigating away from a conflict abandons its unsaved edits, the same
             // behavior as before tabs existed (see the design spec's conflict-on-navigate edge).
+            const generation = ++openGenerationRef.current;
             await flush();
             try {
                 const loaded = await store.get(id);
+                // A newer open() superseded this one while we awaited — drop the stale result so a
+                // slow earlier load can't land the editor on the wrong note.
+                if (generation !== openGenerationRef.current) return;
                 baselineRef.current = loaded.updatedAt ?? null;
                 setNote(loaded);
                 bumpSession();
@@ -184,6 +197,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 setSaveState('idle');
                 await persistMetadata(withActive(metadataRef.current, id));
             } catch (err) {
+                if (generation !== openGenerationRef.current) return;
                 onError(err instanceof Error ? err.message : 'Failed to open note');
             }
         },
@@ -192,7 +206,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const close = useCallback(async () => {
         await flush();
-        pendingRef.current = null;
+        // flush() restores pendingRef when it fails (save error / conflict). Don't blow that away:
+        // keep the note open so the user can resolve it instead of silently dropping their content.
+        if (pendingRef.current) return;
         setNote(null);
         setConflict(null);
         setSaveState('idle');
@@ -262,6 +278,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const remove = useCallback(
         async (id: string) => {
+            // Flush first so a pending edit to a *different* note isn't stranded by the refresh()
+            // below re-reading stale bytes (and to match open/create/rename/close, which all flush).
+            await flush();
             try {
                 await store.remove(id);
                 if (pendingRef.current?.id === id) pendingRef.current = null;
@@ -278,7 +297,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to delete note');
             }
         },
-        [store, persistMetadata, refresh, clearTimer, onError],
+        [flush, store, persistMetadata, refresh, clearTimer, onError],
     );
 
     const edit = useCallback(
@@ -313,10 +332,40 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     }, [conflict, store, onError, bumpInList, clearTimer, bumpSession]);
 
     const keepMine = useCallback(async () => {
-        if (!conflict || conflict.deleted) return;
+        if (!conflict) return;
         const content = pendingRef.current?.content ?? note?.content ?? '';
         pendingRef.current = null;
         try {
+            if (conflict.deleted) {
+                // The file was deleted on disk — recreate it with our content rather than abandoning
+                // the user to "Save as copy". create() reuses the same name when it's free, so the
+                // id usually survives; adopt the resulting id in place if it differs.
+                const recreated = await store.create(note?.title ?? 'Note');
+                const meta = await store.save(recreated.id, content, recreated.updatedAt ?? 0);
+                baselineRef.current = meta.updatedAt ?? null;
+                if (recreated.id !== conflict.id) {
+                    await persistMetadata(
+                        withRenamed(
+                            withCreatedStamp(
+                                metadataRef.current,
+                                recreated.id,
+                                recreated.updatedAt ?? 0,
+                            ),
+                            conflict.id,
+                            recreated.id,
+                        ),
+                    );
+                    setNote((prev) =>
+                        prev && prev.id === conflict.id
+                            ? {...prev, id: recreated.id, title: recreated.title}
+                            : prev,
+                    );
+                }
+                setConflict(null);
+                setSaveState('saved');
+                await refresh();
+                return;
+            }
             const meta = await store.save(conflict.id, content, conflict.diskUpdatedAt);
             baselineRef.current = meta.updatedAt ?? null;
             setConflict(null);
@@ -326,7 +375,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save note');
         }
-    }, [conflict, note, store, onError, bumpInList]);
+    }, [conflict, note, store, onError, bumpInList, persistMetadata, refresh]);
 
     const saveAsCopy = useCallback(async (): Promise<string | null> => {
         if (!conflict) return null;
@@ -364,37 +413,44 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     useEffect(() => {
         let cancelled = false;
         void (async () => {
-            const [list, raw] = await Promise.all([store.list(), store.readMetadata()]);
-            if (cancelled) return;
-            const meta = reconcile(
-                raw,
-                list.map((n) => n.id),
-            );
-            let loaded: Note | null = null;
-            if (meta.active) {
-                try {
-                    loaded = await store.get(meta.active);
-                } catch {
-                    loaded = null;
+            try {
+                const [list, raw] = await Promise.all([store.list(), store.readMetadata()]);
+                if (cancelled) return;
+                const meta = reconcile(
+                    raw,
+                    list.map((n) => n.id),
+                );
+                let loaded: Note | null = null;
+                if (meta.active) {
+                    try {
+                        loaded = await store.get(meta.active);
+                    } catch {
+                        loaded = null;
+                    }
                 }
-            }
-            if (cancelled) return;
-            const reconciled: NotesMetadata = loaded ? meta : {...meta, active: null};
-            setNotes(list);
-            applyMetadata(reconciled);
-            if (loaded) {
-                baselineRef.current = loaded.updatedAt ?? null;
-                setNote(loaded);
-                bumpSession();
-            }
-            if (reconciled.active !== meta.active) {
-                void store.writeMetadata(reconciled); // heal the dotfile if active vanished
+                if (cancelled) return;
+                const reconciled: NotesMetadata = loaded ? meta : {...meta, active: null};
+                setNotes(list);
+                applyMetadata(reconciled);
+                if (loaded) {
+                    baselineRef.current = loaded.updatedAt ?? null;
+                    setNote(loaded);
+                    bumpSession();
+                }
+                if (reconciled.active !== meta.active) {
+                    void store.writeMetadata(reconciled); // heal the dotfile if active vanished
+                }
+            } catch (err) {
+                // Listing or reading metadata failed (stale handle, permission loss, read error) —
+                // surface it instead of silently showing an empty "No notes yet" workspace.
+                if (cancelled) return;
+                onError(err instanceof Error ? err.message : 'Failed to load notes');
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [store, applyMetadata, bumpSession]);
+    }, [store, applyMetadata, bumpSession, onError]);
 
     // Clear any pending autosave timer when the hook unmounts.
     useEffect(() => {
@@ -407,8 +463,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     useEffect(() => {
         const onHide = () => void flush();
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            // Capture intent BEFORE flushing: flush() nulls pendingRef synchronously (an async fn
+            // runs to its first await), so checking it after would always read null and the prompt
+            // would never fire for a normal pending edit.
+            const hasUnsaved = Boolean(pendingRef.current || conflict);
             void flush();
-            if (pendingRef.current || conflict) {
+            if (hasUnsaved) {
                 event.preventDefault();
                 // eslint-disable-next-line no-param-reassign -- standard beforeunload idiom to trigger the browser's unsaved-changes prompt
                 event.returnValue = '';
@@ -428,7 +488,14 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             if (document.visibilityState !== 'visible') return;
             const id = metadataRef.current.active;
             if (!id || conflict || pendingRef.current) return;
-            const diskMtime = await store.stat(id);
+            let diskMtime: number | null;
+            try {
+                diskMtime = await store.stat(id);
+            } catch {
+                // stat() can throw on permission loss / unexpected FS errors; don't let the
+                // fire-and-forget check surface as an unhandled rejection.
+                return;
+            }
             if (diskMtime === null) {
                 setConflict({id, diskUpdatedAt: 0, deleted: true});
                 setSaveState('conflict');
@@ -462,6 +529,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         rename,
         remove,
         edit,
+        flushPending: flush,
         reloadDisk,
         keepMine,
         saveAsCopy,

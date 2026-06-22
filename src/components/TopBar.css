@@ -53,6 +53,13 @@
     }
 }
 
+/* Honor a reduced-motion preference: hold the saving dot steady instead of blinking. */
+@media (prefers-reduced-motion: reduce) {
+    .topbar__status-dot_saving {
+        animation: none;
+    }
+}
+
 .topbar__folder {
     gap: 6px;
     flex-shrink: 0;

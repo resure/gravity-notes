@@ -81,10 +81,11 @@ export function Workspace({
     useEffect(() => {
         if (peeked) listRef.current?.focusSelected();
     }, [peeked]);
-    // While peeked, a mousedown anywhere outside the sidebar closes it (e.g. clicking the editor).
+    // While peeked, a pointerdown anywhere outside the sidebar closes it (e.g. clicking the editor).
+    // pointerdown (not mousedown) so touch/pen also dismiss the overlay.
     useEffect(() => {
         if (!peeked) return undefined;
-        const onPointerDown = (event: MouseEvent) => {
+        const onPointerDown = (event: Event) => {
             const target = event.target;
             if (
                 target instanceof Node &&
@@ -93,8 +94,8 @@ export function Workspace({
                 setPeeked(false);
             }
         };
-        document.addEventListener('mousedown', onPointerDown);
-        return () => document.removeEventListener('mousedown', onPointerDown);
+        document.addEventListener('pointerdown', onPointerDown);
+        return () => document.removeEventListener('pointerdown', onPointerDown);
     }, [peeked]);
 
     const nav = useNoteNavigation({
@@ -112,7 +113,8 @@ export function Workspace({
     }, []);
 
     // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
-    // bar, the document body), send it back to the note list so keyboard nav resumes.
+    // bar, the document body), send it back to the note list so keyboard nav resumes. When the
+    // sidebar is collapsed the list rows are hidden (unfocusable), so peek it open instead.
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -125,11 +127,28 @@ export function Workspace({
                 return;
             }
             event.preventDefault();
-            listRef.current?.focusSelected();
+            if (collapsed) setPeeked(true);
+            else listRef.current?.focusSelected();
         };
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
-    }, []);
+    }, [collapsed]);
+
+    // Esc out of the editor: focus the selected row, unless the sidebar is collapsed (its rows are
+    // hidden) — then peek it open, which moves focus into the list.
+    const handleEditorEscape = useCallback(() => {
+        if (collapsed) setPeeked(true);
+        else nav.escapeEditor();
+    }, [collapsed, nav]);
+
+    // Change folders only after flushing any pending edit, so a keystroke inside the 500 ms
+    // autosave window isn't lost when the workspace unmounts.
+    const handleChangeFolder = useCallback(() => {
+        void (async () => {
+            await notes.flushPending();
+            onChangeFolder();
+        })();
+    }, [notes, onChangeFolder]);
 
     const handleCreate = useCallback(
         (title?: string) => {
@@ -244,6 +263,10 @@ export function Workspace({
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
         renameSelected: () => {
+            // F2 fires even while typing; ignore it when the in-editor title is focused so it
+            // doesn't open a second rename surface in the list instead of acting on the title.
+            const el = document.activeElement;
+            if (el instanceof HTMLElement && el.closest('.note-title')) return;
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
     });
@@ -252,7 +275,7 @@ export function Workspace({
         <div className="workspace">
             <TopBar
                 folderName={folderName}
-                onChangeFolder={onChangeFolder}
+                onChangeFolder={handleChangeFolder}
                 onOpenHelp={() => setHelpOpen(true)}
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
@@ -333,7 +356,7 @@ export function Workspace({
                                     preview={previewMode}
                                     onChange={notes.edit}
                                     onRename={handleEditorRename}
-                                    onEscape={nav.escapeEditor}
+                                    onEscape={handleEditorEscape}
                                 />
                             </div>
                         </>

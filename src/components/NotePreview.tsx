@@ -1,6 +1,7 @@
 import {forwardRef, useMemo} from 'react';
 
 import transform from '@diplodoc/transform';
+import {Text} from '@gravity-ui/uikit';
 
 import './NotePreview.css';
 
@@ -19,18 +20,31 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
     {markup},
     ref,
 ) {
-    const html = useMemo(() => {
+    const rendered = useMemo<{html: string; error: boolean}>(() => {
         try {
-            return transform(markup).result.html;
+            return {html: transform(markup).result.html, error: false};
         } catch {
-            return '';
+            return {html: '', error: true};
         }
     }, [markup]);
 
     return (
         <div ref={ref} className="note-preview" tabIndex={-1}>
-            {/* Rendered from the user's own local Markdown; the editor disallows raw HTML. */}
-            <div className="note-preview__body yfm" dangerouslySetInnerHTML={{__html: html}} />
+            {rendered.error ? (
+                // Surface a transform failure instead of a silent blank pane; the editor body keeps
+                // the actual content, so the user can switch back and keep working.
+                <Text color="danger" className="note-preview__error">
+                    Couldn’t render a preview of this note. Switch back to the editor to keep
+                    editing.
+                </Text>
+            ) : (
+                // @diplodoc/transform escapes raw HTML (allowHTML:false) and sanitizes its output
+                // (needToSanitizeHtml:true) by default, so this matches the editor's no-raw-HTML policy.
+                <div
+                    className="note-preview__body yfm"
+                    dangerouslySetInnerHTML={{__html: rendered.html}}
+                />
+            )}
         </div>
     );
 });

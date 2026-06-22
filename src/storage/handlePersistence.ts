@@ -29,10 +29,29 @@ function tx<T>(
     return openDb().then(
         (db) =>
             new Promise<T>((resolve, reject) => {
-                const request = run(db.transaction(STORE_NAME, mode).objectStore(STORE_NAME));
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-                request.transaction!.oncomplete = () => db.close();
+                const transaction = db.transaction(STORE_NAME, mode);
+                const request = run(transaction.objectStore(STORE_NAME));
+                let result: T;
+                request.onsuccess = () => {
+                    result = request.result;
+                };
+                // Resolve once the transaction commits (so writes are durable), and always close
+                // the connection — on complete, error, or abort — so it can never leak or hang.
+                transaction.oncomplete = () => {
+                    db.close();
+                    resolve(result);
+                };
+                transaction.onerror = () => {
+                    db.close();
+                    reject(transaction.error ?? request.error);
+                };
+                transaction.onabort = () => {
+                    db.close();
+                    reject(
+                        transaction.error ??
+                            new DOMException('IndexedDB transaction aborted', 'AbortError'),
+                    );
+                };
             }),
     );
 }
