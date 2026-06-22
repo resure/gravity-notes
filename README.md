@@ -118,12 +118,9 @@ Key modules:
 
 ### Backlog
 
-- Tab-to-complete in the search box
+- Tune line-height, padding before/after code blocks, height of inline code blocks
 
-- Fullscreen mode?
-
-- PWA improvements
-- Mobile view
+- Tab-to-complete in the search box, nvALT-style
 
 - Wiki-style links between notes, backlinks
 - Recent-note history (cmd+[] - back/forward through visited notes)
@@ -131,8 +128,14 @@ Key modules:
 - Trash bin for deleted notes
 - Media attachments, with separate view for files management (and preview)
 
+- Folders support?
+
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
 
+- Proper signed desktop macOS app
+- Mobile view
+- Mobile app
+
 - Tags?
-- Daily notes
+- Daily notes?
