@@ -64,6 +64,8 @@ export interface UseNotes {
     edit(content: string): void;
     /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
     flushPending(): Promise<void>;
+    /** Re-read the note list from the store (e.g. after importing notes). */
+    refresh(): Promise<void>;
     /** Conflict resolvers (act on the open note). */
     reloadDisk(): Promise<void>;
     keepMine(): Promise<void>;
@@ -530,6 +532,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         remove,
         edit,
         flushPending: flush,
+        refresh,
         reloadDisk,
         keepMine,
         saveAsCopy,

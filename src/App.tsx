@@ -12,7 +12,7 @@ import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
 import type {ThemePref} from './components/ThemeSwitcher';
 import {Workspace} from './components/Workspace';
-import {useNotesFolder} from './hooks/useNotesFolder';
+import {useNotesStorage} from './hooks/useNotesStorage';
 
 const toaster = new Toaster();
 
@@ -25,7 +25,7 @@ function initialTheme(): ThemePref {
 
 export function App() {
     const [themePref, setThemePref] = useState<ThemePref>(initialTheme);
-    const folder = useNotesFolder();
+    const storage = useNotesStorage();
 
     useEffect(() => {
         localStorage.setItem(THEME_KEY, themePref);
@@ -36,16 +36,16 @@ export function App() {
             <MobileProvider>
                 <ToasterProvider toaster={toaster}>
                     <ErrorBoundary>
-                        {folder.state === 'ready' && folder.dir ? (
+                        {storage.state === 'ready' && storage.store ? (
                             <Workspace
-                                dir={folder.dir}
-                                folderName={folder.folderName}
+                                store={storage.store}
+                                storageLabel={storage.storageLabel}
                                 themePref={themePref}
                                 onChangeThemePref={setThemePref}
-                                onChangeFolder={() => void folder.forgetFolder()}
+                                onChangeStorage={() => void storage.reset()}
                             />
                         ) : (
-                            <FolderGate folder={folder} />
+                            <FolderGate storage={storage} />
                         )}
                     </ErrorBoundary>
                     <ToasterComponent />

@@ -10,6 +10,10 @@
 const DB_NAME = 'gravity-notes';
 const STORE_NAME = 'handles';
 const HANDLE_KEY = 'notes-dir';
+const BACKEND_KEY = 'backend';
+
+/** Which storage backend the user chose: a picked folder, or in-browser IndexedDB. */
+export type StorageBackend = 'filesystem' | 'indexeddb';
 
 function openDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -64,8 +68,20 @@ export function loadDirHandle(): Promise<FileSystemDirectoryHandle | undefined> 
     return tx<FileSystemDirectoryHandle | undefined>('readonly', (store) => store.get(HANDLE_KEY));
 }
 
-export function clearDirHandle(): Promise<void> {
-    return tx('readwrite', (store) => store.delete(HANDLE_KEY)).then(() => undefined);
+/** Remember which backend the user chose, so reloads restore it without re-asking. */
+export function saveBackend(kind: StorageBackend): Promise<void> {
+    return tx('readwrite', (store) => store.put(kind, BACKEND_KEY)).then(() => undefined);
+}
+
+export function loadBackend(): Promise<StorageBackend | undefined> {
+    return tx<StorageBackend | undefined>('readonly', (store) => store.get(BACKEND_KEY));
+}
+
+/** Forget the chosen backend and any stored folder handle (back to the first-run choice screen). */
+export function clearStorageChoice(): Promise<void> {
+    return tx('readwrite', (store) => store.delete(HANDLE_KEY))
+        .then(() => tx('readwrite', (store) => store.delete(BACKEND_KEY)))
+        .then(() => undefined);
 }
 
 /** Check the current permission state without prompting. */

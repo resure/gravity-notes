@@ -1,7 +1,13 @@
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
-import {CircleQuestion, Folder, LayoutSideContent} from '@gravity-ui/icons';
-import {Button, Icon, TextInput, Tooltip} from '@gravity-ui/uikit';
+import {
+    ArrowDownToLine,
+    ArrowUpFromLine,
+    CircleQuestion,
+    Folder,
+    LayoutSideContent,
+} from '@gravity-ui/icons';
+import {Button, DropdownMenu, Icon, TextInput, Tooltip} from '@gravity-ui/uikit';
 
 import type {SaveState} from '../hooks/useNotes';
 import type {NoteMeta} from '../storage/types';
@@ -11,9 +17,14 @@ import {type ThemePref, ThemeSwitcher} from './ThemeSwitcher';
 import './TopBar.css';
 
 export interface TopBarProps {
-    /** Folder name doubles as the "change folder" button (in the top bar's right controls). */
-    folderName: string | null;
-    onChangeFolder: () => void;
+    /** Active storage label (folder name, or "In this browser"); opens the storage menu. */
+    storageLabel: string | null;
+    /** Switch backend (returns to the choice screen). */
+    onChangeStorage: () => void;
+    /** Export all notes as a .md zip. */
+    onExport: () => void;
+    /** Import .md files / a zip into the current store. */
+    onImport: () => void;
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
@@ -53,8 +64,10 @@ const STATUS_TEXT: Record<SaveState, string> = {
  * list lives in `NoteList` (sort + New now sit above it).
  */
 export function TopBar({
-    folderName,
-    onChangeFolder,
+    storageLabel,
+    onChangeStorage,
+    onExport,
+    onImport,
     onOpenHelp,
     themePref,
     onChangeThemePref,
@@ -120,17 +133,38 @@ export function TopBar({
                 hasClear
                 onKeyDown={onSearchKeyDown}
             />
-            <Button
-                view="flat"
-                size="m"
-                width="auto"
-                className="topbar__folder"
-                onClick={onChangeFolder}
-                title="Change folder"
-            >
-                <Icon data={Folder} size={16} />
-                <span className="topbar__folder-name">{folderName ?? 'Folder'}</span>
-            </Button>
+            <DropdownMenu
+                renderSwitcher={(props) => (
+                    <Button
+                        {...props}
+                        view="flat"
+                        size="m"
+                        width="auto"
+                        className="topbar__folder"
+                        aria-label="Storage options"
+                    >
+                        <Icon data={Folder} size={16} />
+                        <span className="topbar__folder-name">{storageLabel ?? 'Storage'}</span>
+                    </Button>
+                )}
+                items={[
+                    {
+                        text: 'Export all notes…',
+                        iconStart: <Icon data={ArrowDownToLine} />,
+                        action: onExport,
+                    },
+                    {
+                        text: 'Import .md files…',
+                        iconStart: <Icon data={ArrowUpFromLine} />,
+                        action: onImport,
+                    },
+                    {
+                        text: 'Change storage…',
+                        iconStart: <Icon data={Folder} />,
+                        action: onChangeStorage,
+                    },
+                ]}
+            />
             <Tooltip content={STATUS_TEXT[saveState]} placement="bottom">
                 <div
                     className={`topbar__status-dot topbar__status-dot_${saveState}`}

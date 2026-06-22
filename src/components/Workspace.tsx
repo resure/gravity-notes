@@ -6,8 +6,9 @@ import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
-import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {orderNotes} from '../storage/metadata';
+import {exportNotes, importNotes} from '../storage/transfer';
+import type {NoteStore} from '../storage/types';
 
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
@@ -19,23 +20,23 @@ import {TopBar} from './TopBar';
 import './Workspace.css';
 
 interface WorkspaceProps {
-    dir: FileSystemDirectoryHandle;
-    folderName: string | null;
+    store: NoteStore;
+    /** Label for the active storage (folder name, or "In this browser"). */
+    storageLabel: string | null;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    onChangeFolder: () => void;
+    onChangeStorage: () => void;
 }
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
 
 export function Workspace({
-    dir,
-    folderName,
+    store,
+    storageLabel,
     themePref,
     onChangeThemePref,
-    onChangeFolder,
+    onChangeStorage,
 }: WorkspaceProps) {
-    const store = useMemo(() => new FileSystemNoteStore(dir), [dir]);
     const {add} = useToaster();
 
     const onError = useCallback(
@@ -141,14 +142,55 @@ export function Workspace({
         else nav.escapeEditor();
     }, [collapsed, nav]);
 
-    // Change folders only after flushing any pending edit, so a keystroke inside the 500 ms
+    const notify = useCallback(
+        (message: string) =>
+            add({
+                name: `notes-info-${Date.now()}`,
+                title: message,
+                theme: 'success',
+                autoHiding: 4000,
+            }),
+        [add],
+    );
+
+    // Change storage only after flushing any pending edit, so a keystroke inside the 500 ms
     // autosave window isn't lost when the workspace unmounts.
-    const handleChangeFolder = useCallback(() => {
+    const handleChangeStorage = useCallback(() => {
         void (async () => {
             await notes.flushPending();
-            onChangeFolder();
+            onChangeStorage();
         })();
-    }, [notes, onChangeFolder]);
+    }, [notes, onChangeStorage]);
+
+    const handleExport = useCallback(() => {
+        void (async () => {
+            try {
+                await notes.flushPending();
+                const count = await exportNotes(store);
+                notify(count === 1 ? 'Exported 1 note' : `Exported ${count} notes`);
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to export notes');
+            }
+        })();
+    }, [notes, store, notify, onError]);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const handleImportClick = useCallback(() => fileInputRef.current?.click(), []);
+    const handleImportFiles = useCallback(
+        (files: FileList | null) => {
+            if (!files || files.length === 0) return;
+            void (async () => {
+                try {
+                    const count = await importNotes(store, files);
+                    await notes.refresh();
+                    notify(count === 1 ? 'Imported 1 note' : `Imported ${count} notes`);
+                } catch (err) {
+                    onError(err instanceof Error ? err.message : 'Failed to import notes');
+                }
+            })();
+        },
+        [store, notes, notify, onError],
+    );
 
     const handleCreate = useCallback(
         (title?: string) => {
@@ -273,9 +315,22 @@ export function Workspace({
 
     return (
         <div className="workspace">
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".md,.zip"
+                multiple
+                hidden
+                onChange={(event) => {
+                    handleImportFiles(event.target.files);
+                    event.target.value = ''; // allow re-importing the same file
+                }}
+            />
             <TopBar
-                folderName={folderName}
-                onChangeFolder={handleChangeFolder}
+                storageLabel={storageLabel}
+                onChangeStorage={handleChangeStorage}
+                onExport={handleExport}
+                onImport={handleImportClick}
                 onOpenHelp={() => setHelpOpen(true)}
                 themePref={themePref}
                 onChangeThemePref={onChangeThemePref}
