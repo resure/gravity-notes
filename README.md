@@ -6,6 +6,13 @@ WYSIWYG/Markdown editor. Runs as a **web app** and a **macOS desktop app** (Taur
 choose where notes live: a **folder on your computer** (plain `.md` files), or **in-browser / in-app**
 — and you can **export/import** `.md` files either way.
 
+## Philosophy
+
+The app does little, on purpose. There is one box — type, and you are reading the nearest note or
+writing a new one, as in nvALT. The design takes after [Things](https://culturedcode.com/things/):
+plain, quiet, out of the way. Every action has a key. The type is set to be read; the notes are plain
+Markdown files, and they are yours.
+
 ## Features (v1)
 
 - **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers, or natively
