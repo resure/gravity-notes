@@ -8,6 +8,7 @@ import {
     joinPath,
     previewFromContent,
     sanitizeDir,
+    sanitizeSegment,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
@@ -27,6 +28,8 @@ const DB_VERSION = 1;
 const NOTES_STORE = 'notes';
 const KV_STORE = 'kv';
 const METADATA_KEY = 'metadata';
+/** KV key holding the list of deliberately-empty folder paths (no real directories in-browser). */
+const FOLDERS_KEY = 'folders';
 
 /** One note row. `content` is stored in the canonical "blank line at EOF" shape, like the FS store. */
 interface NoteRecord {
@@ -183,6 +186,45 @@ export class IndexedDbNoteStore implements NoteStore {
         await this.run(NOTES_STORE, 'readwrite', (store) => store.delete(id));
     }
 
+    async createFolder(parentPath: string, name: string): Promise<string> {
+        const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
+        const folders = await this.readFolders();
+        if (!folders.includes(path)) {
+            await this.run(KV_STORE, 'readwrite', (store) =>
+                store.put([...folders, path], FOLDERS_KEY),
+            );
+        }
+        return path;
+    }
+
+    async removeFolder(path: string): Promise<void> {
+        const folders = await this.readFolders();
+        if (folders.includes(path)) {
+            await this.run(KV_STORE, 'readwrite', (store) =>
+                store.put(
+                    folders.filter((f) => f !== path),
+                    FOLDERS_KEY,
+                ),
+            );
+        }
+    }
+
+    async listFolders(): Promise<string[]> {
+        const records = await this.run<NoteRecord[]>(
+            NOTES_STORE,
+            'readonly',
+            (store) => store.getAll() as IDBRequest<NoteRecord[]>,
+        );
+        // Folders implied by a note's path, plus the deliberately-empty (marker) folders.
+        const folders = new Set<string>(await this.readFolders());
+        for (const record of records) {
+            for (let dir = dirname(record.id); dir; dir = dirname(dir)) {
+                folders.add(dir);
+            }
+        }
+        return [...folders].sort();
+    }
+
     async readMetadata(): Promise<NotesMetadata> {
         const raw = await this.run<unknown>(KV_STORE, 'readonly', (store) =>
             store.get(METADATA_KEY),
@@ -192,6 +234,13 @@ export class IndexedDbNoteStore implements NoteStore {
 
     async writeMetadata(meta: NotesMetadata): Promise<void> {
         await this.run(KV_STORE, 'readwrite', (store) => store.put(meta, METADATA_KEY));
+    }
+
+    private async readFolders(): Promise<string[]> {
+        const raw = await this.run<unknown>(KV_STORE, 'readonly', (store) =>
+            store.get(FOLDERS_KEY),
+        );
+        return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
     }
 
     private openDb(): Promise<IDBDatabase> {

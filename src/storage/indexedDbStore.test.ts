@@ -226,6 +226,39 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('empty folders', () => {
+        it('lists folders implied by notes plus deliberately-created empty ones', async () => {
+            await store.create('Note', 'Work/Sub');
+            await store.createFolder('', 'Projects');
+            expect(await store.listFolders()).toEqual(['Projects', 'Work', 'Work/Sub']);
+        });
+
+        it('createFolder is idempotent and returns the sanitized path', async () => {
+            expect(await store.createFolder('Work', 'Plans')).toBe('Work/Plans');
+            await store.createFolder('Work', 'Plans');
+            expect((await store.listFolders()).filter((f) => f === 'Work/Plans')).toHaveLength(1);
+        });
+
+        it('keeps a marked folder after its last note leaves, but drops an implicit one', async () => {
+            await store.create('Note', 'Implicit');
+            await store.create('Note', 'Marked');
+            await store.createFolder('', 'Marked');
+
+            await store.remove('Implicit/Note.md');
+            await store.remove('Marked/Note.md');
+
+            // Implicit/ vanishes (only existed via its note); Marked/ survives via its marker.
+            expect(await store.listFolders()).toEqual(['Marked']);
+        });
+
+        it('removeFolder drops an empty folder marker', async () => {
+            await store.createFolder('', 'Temp');
+            expect(await store.listFolders()).toContain('Temp');
+            await store.removeFolder('Temp');
+            expect(await store.listFolders()).not.toContain('Temp');
+        });
+    });
+
     describe('remove / stat', () => {
         it('deletes a note', async () => {
             await store.create('Gone');

@@ -226,6 +226,20 @@ export class FileSystemNoteStore implements NoteStore {
         await this.dir.removeEntry(id);
     }
 
+    async createFolder(): Promise<string> {
+        // Needs the per-segment getDirectoryHandle walk + .gnkeep handling (phase 11).
+        throw new Error('Folders are not supported on this backend yet');
+    }
+
+    async removeFolder(): Promise<void> {
+        throw new Error('Folders are not supported on this backend yet');
+    }
+
+    async listFolders(): Promise<string[]> {
+        // Single-level listing for now (phase 11 makes it recurse), so there are no subfolders.
+        return [];
+    }
+
     private async exists(fileName: string): Promise<boolean> {
         try {
             await this.dir.getFileHandle(fileName);
