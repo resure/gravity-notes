@@ -379,6 +379,9 @@ export function Workspace({
             if (el instanceof HTMLElement && el.closest('.note-title')) return;
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
+        moveSelected: () => {
+            if (nav.selectedId) listRef.current?.startMove(nav.selectedId);
+        },
     });
 
     return (
@@ -446,6 +449,8 @@ export function Workspace({
                         onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
                         onRemoveFolder={(path) => void notes.removeFolder(path)}
                         onToggleCollapse={toggleCollapse}
+                        folderPaths={notes.folders}
+                        onMoveTo={(id, dest) => void notes.move(id, dest)}
                         onRename={handleRename}
                         onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
