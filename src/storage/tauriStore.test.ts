@@ -145,19 +145,57 @@ describe('TauriNoteStore', () => {
         expect([a.id, b.id, c.id]).toEqual(['Note.md', 'Note 2.md', 'Note 3.md']);
     });
 
-    describe('folders (interim, until phase 7)', () => {
-        it('refuses to create a note in a subfolder', async () => {
-            await expect(store.create('Note', 'Work')).rejects.toThrow(/subfolder/i);
-            expect((await store.create('Note')).id).toBe('Note.md');
+    describe('folders', () => {
+        it('creates a note inside a subfolder with a basename title', async () => {
+            const meta = await store.create('Roadmap', 'Work');
+            expect(meta).toMatchObject({id: 'Work/Roadmap.md', title: 'Roadmap'});
+            expect(fs.raw('Work/Roadmap.md')).toBe('\n\n');
         });
 
-        it('refuses a cross-folder move but allows a same-folder no-op', async () => {
-            const created = await store.create('Note');
-            await expect(store.move('Note.md', 'Archive')).rejects.toThrow(/folders/i);
-            expect(await store.move('Note.md', '')).toMatchObject({
-                id: 'Note.md',
-                updatedAt: created.updatedAt,
-            });
+        it('scopes collision-numbering to the target folder', async () => {
+            const a = await store.create('Note', 'Inbox');
+            const b = await store.create('Note', 'Archive');
+            const c = await store.create('Note', 'Inbox');
+            expect([a.id, b.id, c.id]).toEqual([
+                'Inbox/Note.md',
+                'Archive/Note.md',
+                'Inbox/Note 2.md',
+            ]);
+        });
+
+        it('lists nested notes with basename titles', async () => {
+            await store.create('Roadmap', 'Work');
+            const metas = await store.list();
+            expect(metas.find((m) => m.id === 'Work/Roadmap.md')?.title).toBe('Roadmap');
+        });
+
+        it('moves a note into another folder and back to the root', async () => {
+            const created = await store.create('Note', 'Inbox');
+            await store.save('Inbox/Note.md', 'keep', created.updatedAt ?? 0);
+
+            const moved = await store.move('Inbox/Note.md', 'Archive');
+            expect(moved.id).toBe('Archive/Note.md');
+            expect((await store.get('Archive/Note.md')).content).toBe('keep');
+            expect(await store.stat('Inbox/Note.md')).toBeNull();
+
+            const back = await store.move('Archive/Note.md', '');
+            expect(back.id).toBe('Note.md');
+        });
+
+        it('hard-fails a move onto an existing same-leaf note', async () => {
+            await store.create('Note', 'Inbox');
+            await store.create('Note', 'Archive');
+            await expect(store.move('Inbox/Note.md', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Inbox/Note.md')).not.toBeNull();
+        });
+
+        it('renames a nested note within its own folder', async () => {
+            await store.create('Old', 'Work');
+            const meta = await store.rename('Work/Old.md', 'New');
+            expect(meta.id).toBe('Work/New.md');
+            expect(await store.stat('Work/Old.md')).toBeNull();
         });
     });
 

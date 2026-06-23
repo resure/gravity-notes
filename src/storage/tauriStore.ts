@@ -5,6 +5,7 @@ import {
     MD_EXT,
     basename,
     canonicalBody,
+    dirname,
     joinPath,
     previewFromContent,
     sanitizeDir,
@@ -51,8 +52,8 @@ function notFound(id: string): DOMException {
  * write helper is atomic there too, preserving the same crash-safety guarantee.
  */
 export class TauriNoteStore implements NoteStore {
-    /** False until the Rust `notes_list`/`notes_read_all` commands recurse subdirectories (phase 7). */
-    readonly listsRecursively = false;
+    /** The Rust `notes_list`/`notes_read_all` commands recurse subdirectories. */
+    readonly listsRecursively = true;
 
     constructor(private readonly dir: string) {}
 
@@ -92,16 +93,16 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async create(title: string, parentPath = ''): Promise<NoteMeta> {
-        // Subfolder creation needs the Rust commands to create_dir_all the parent (phase 7); until
-        // then this backend only creates at the root.
-        if (sanitizeDir(parentPath) !== '') {
-            throw new Error('Creating notes in a subfolder is not supported on this backend yet');
-        }
-        const fileName = await uniqueName(sanitizeTitle(title), (name) => this.exists(name));
+        const dir = sanitizeDir(parentPath);
+        // Scope the collision probe to the target folder; notes_write create_dir_all's the parent.
+        const leaf = await uniqueName(sanitizeTitle(title), (name) =>
+            this.exists(joinPath(dir, name)),
+        );
+        const id = joinPath(dir, leaf);
         // Write the canonical "blank line at EOF" shape save() produces (get() strips it back),
         // so a brand-new note has a consistent on-disk shape for external tools.
-        const updatedAt = await this.write(fileName, canonicalBody(''));
-        return {id: fileName, title: titleFromFileName(fileName), updatedAt};
+        const updatedAt = await this.write(id, canonicalBody(''));
+        return {id, title: titleFromFileName(id), updatedAt};
     }
 
     async save(id: string, content: string, baseUpdatedAt: number): Promise<NoteMeta> {
@@ -121,7 +122,8 @@ export class TauriNoteStore implements NoteStore {
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
         const base = sanitizeTitle(nextTitle);
-        const nextName = base + MD_EXT;
+        // Rename is leaf-only: re-join the new leaf onto the note's own folder so it stays put.
+        const nextName = joinPath(dirname(id), base + MD_EXT);
         if (nextName === id) {
             return {id, title: titleFromFileName(id)};
         }
@@ -157,14 +159,23 @@ export class TauriNoteStore implements NoteStore {
 
     async move(id: string, destFolder: string): Promise<NoteMeta> {
         const newId = joinPath(sanitizeDir(destFolder), basename(id));
-        // Real cross-folder moves need the path-aware Rust commands (phase 7); a move into the
-        // folder the note already lives in is a harmless no-op that still works here.
-        if (newId !== id) {
-            throw new Error('Moving notes between folders is not supported on this backend yet');
+        if (newId === id) {
+            // Already in that folder: a no-op; just report the current mtime.
+            const updatedAt = await invoke<number | null>('notes_stat', {dir: this.dir, name: id});
+            if (updatedAt === null) throw notFound(id);
+            return {id, title: titleFromFileName(id), updatedAt};
         }
-        const updatedAt = await invoke<number | null>('notes_stat', {dir: this.dir, name: id});
-        if (updatedAt === null) throw notFound(id);
-        return {id, title: titleFromFileName(id), updatedAt};
+        if (await this.exists(newId)) {
+            throw new NameCollisionError(id, titleFromFileName(id));
+        }
+        // notes_rename create_dir_all's the destination folder and moves the file (atomic, or an
+        // EXDEV copy+delete fallback), returning the post-move mtime so the baseline re-seeds.
+        const updatedAt = await invoke<number>('notes_rename', {
+            dir: this.dir,
+            from: id,
+            to: newId,
+        });
+        return {id: newId, title: titleFromFileName(newId), updatedAt};
     }
 
     async remove(id: string): Promise<void> {
