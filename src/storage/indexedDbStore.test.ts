@@ -216,6 +216,14 @@ describe('IndexedDbNoteStore', () => {
                 name: 'NotFoundError',
             });
         });
+
+        it('renames a nested note within its own folder (leaf-only)', async () => {
+            await store.create('Old', 'Work');
+            const meta = await store.rename('Work/Old.md', 'New');
+            expect(meta.id).toBe('Work/New.md');
+            expect(await store.stat('Work/Old.md')).toBeNull();
+            expect((await store.list()).map((m) => m.id)).toContain('Work/New.md');
+        });
     });
 
     describe('remove / stat', () => {

@@ -4,6 +4,7 @@ import {
     PREVIEW_SCAN_BYTES,
     basename,
     canonicalBody,
+    dirname,
     joinPath,
     previewFromContent,
     sanitizeDir,
@@ -136,7 +137,8 @@ export class IndexedDbNoteStore implements NoteStore {
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
         const base = sanitizeTitle(nextTitle);
-        const nextId = base + MD_EXT;
+        // Rename is leaf-only: re-join the new leaf onto the note's own folder so it stays put.
+        const nextId = joinPath(dirname(id), base + MD_EXT);
         if (nextId === id) {
             return {id, title: titleFromFileName(id)};
         }
