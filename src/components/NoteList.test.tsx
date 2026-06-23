@@ -6,6 +6,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
+import type {TreeRow} from '../tree';
 
 import {NoteList, type NoteListHandle, type NoteListProps, formatNoteDate} from './NoteList';
 
@@ -15,25 +16,41 @@ const NOTES: NoteMeta[] = [
 ];
 
 function setup(overrides: Record<string, unknown> = {}) {
+    // Tests describe their content as flat `notes`; convert to depth-0 note rows here. Pass `rows`
+    // directly to exercise the tree (folder headers).
+    const notes = (overrides.notes as NoteMeta[] | undefined) ?? NOTES;
+    const pinnedIds = (overrides.pinnedIds as string[] | undefined) ?? [];
+    const rows: TreeRow[] = notes.map((note) => ({
+        kind: 'note',
+        note,
+        depth: 0,
+        pinned: pinnedIds.includes(note.id),
+    }));
+    const rest: Record<string, unknown> = {...overrides};
+    delete rest.notes;
     const props = {
-        notes: NOTES,
+        rows,
         selectedId: 'Alpha.md',
         query: '',
+        showCrumbs: false,
         searchInputRef: createRef<HTMLInputElement>(),
         onBrowse: vi.fn(),
         onCommit: vi.fn(),
         onEscapeList: vi.fn(),
         onCreate: vi.fn(),
+        onCreateFolder: vi.fn(),
+        onRemoveFolder: vi.fn(),
+        onToggleCollapse: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
         sortMode: 'updated',
         onSortChange: vi.fn(),
-        pinnedIds: [],
+        pinnedIds,
         onTogglePin: vi.fn(),
-        ...overrides,
+        ...rest,
     };
     const ref = createRef<NoteListHandle>();
-    renderWithProviders(<NoteList ref={ref} {...(props as NoteListProps)} />);
+    renderWithProviders(<NoteList ref={ref} {...(props as unknown as NoteListProps)} />);
     return {props, ref};
 }
 
@@ -323,7 +340,8 @@ describe('NoteList — toolbar', () => {
     it('creates an untitled note from the New button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.click(screen.getByRole('button', {name: /New/}));
+        // Exact name so it doesn't also match the "New folder" button.
+        await user.click(screen.getByRole('button', {name: 'New'}));
         expect(props.onCreate).toHaveBeenCalledWith();
     });
 
@@ -361,5 +379,91 @@ describe('NoteList — pinning', () => {
         await user.click(within(alpha).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Unpin/}));
         expect(props.onTogglePin).toHaveBeenCalledWith('Alpha.md');
+    });
+});
+
+describe('NoteList — folder tree', () => {
+    const folder = (path: string, over: Record<string, unknown> = {}): TreeRow => ({
+        kind: 'folder',
+        path,
+        name: path.slice(path.lastIndexOf('/') + 1),
+        depth: path.split('/').length - 1,
+        collapsed: false,
+        pinned: false,
+        hasChildren: true,
+        ...over,
+    });
+    const noteRow = (id: string, depth = 1): TreeRow => ({
+        kind: 'note',
+        note: {id, title: id.slice(id.lastIndexOf('/') + 1).replace(/\.md$/, ''), updatedAt: 1},
+        depth,
+        pinned: false,
+    });
+
+    it('renders folder headers alongside their indented notes', () => {
+        setup({rows: [folder('Work'), noteRow('Work/Plan.md')]});
+        expect(screen.getByText('Work')).toBeInTheDocument();
+        expect(screen.getByRole('option', {name: /Plan/})).toBeInTheDocument();
+    });
+
+    it('toggles a folder by clicking its header', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Work')]});
+        await user.click(screen.getByText('Work'));
+        expect(props.onToggleCollapse).toHaveBeenCalledWith('Work');
+    });
+
+    it('toggles a folder via the keyboard-accessible caret button', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Work', {collapsed: true})]});
+        await user.click(screen.getByRole('button', {name: 'Expand Work'}));
+        expect(props.onToggleCollapse).toHaveBeenCalledWith('Work');
+    });
+
+    it('creates a note inside a folder from the header +', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Work')]});
+        await user.click(screen.getByRole('button', {name: 'New note in Work'}));
+        expect(props.onCreate).toHaveBeenCalledWith(undefined, 'Work');
+    });
+
+    it('pins a folder from its menu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Work')]});
+        await user.click(screen.getByRole('button', {name: 'Folder actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Pin to top/}));
+        expect(props.onTogglePin).toHaveBeenCalledWith('Work');
+    });
+
+    it('removes an empty folder from its menu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Empty', {hasChildren: false})]});
+        await user.click(screen.getByRole('button', {name: 'Folder actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
+        expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
+    });
+
+    it('creates a folder from the New Folder button via the inline row', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'New folder'}));
+        await user.type(await screen.findByPlaceholderText('Folder name'), 'Projects{Enter}');
+        expect(props.onCreateFolder).toHaveBeenCalledWith('', 'Projects');
+    });
+
+    it('shows a folder-path crumb on a note row in search mode', () => {
+        setup({showCrumbs: true, rows: [noteRow('Work/Sub/Plan.md', 0)]});
+        expect(screen.getByText('Work / Sub')).toBeInTheDocument();
+    });
+
+    it('moves the cursor between notes across folders, skipping headers', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({
+            selectedId: 'A/One.md',
+            rows: [folder('A'), noteRow('A/One.md'), folder('B'), noteRow('B/Two.md')],
+        });
+        screen.getByRole('option', {name: /One/}).focus();
+        await user.keyboard('j');
+        expect(props.onBrowse).toHaveBeenCalledWith('B/Two.md');
     });
 });

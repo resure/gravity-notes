@@ -7,8 +7,10 @@ import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {orderNotes} from '../storage/metadata';
+import {dirname} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteStore} from '../storage/types';
+import {type TreeRow, buildTree, visibleNoteIds} from '../tree';
 
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
@@ -29,6 +31,18 @@ interface WorkspaceProps {
 }
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
+const COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
+
+function loadCollapsedFolders(): Set<string> {
+    try {
+        const raw = JSON.parse(localStorage.getItem(COLLAPSED_FOLDERS_KEY) ?? '[]');
+        return new Set(
+            Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [],
+        );
+    } catch {
+        return new Set();
+    }
+}
 
 export function Workspace({
     store,
@@ -64,6 +78,45 @@ export function Workspace({
         snippetById,
         loading: searchLoading,
     } = useNoteSearch(orderedNotes, store);
+
+    // Which folders are collapsed in the tree (persisted). A toggle rebuilds the set immutably.
+    const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(loadCollapsedFolders);
+    useEffect(() => {
+        localStorage.setItem(COLLAPSED_FOLDERS_KEY, JSON.stringify([...collapsedFolders]));
+    }, [collapsedFolders]);
+    const toggleCollapse = useCallback((path: string) => {
+        setCollapsedFolders((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+        });
+    }, []);
+
+    // Searching renders a flat ranked list (with folder crumbs); otherwise, the folder tree.
+    const searching = query.trim().length > 0;
+    const pinnedSet = useMemo(() => new Set(notes.metadata.pinned), [notes.metadata.pinned]);
+    const rows = useMemo<TreeRow[]>(() => {
+        if (searching) {
+            return filteredNotes.map((note) => ({
+                kind: 'note',
+                note,
+                depth: 0,
+                pinned: pinnedSet.has(note.id),
+            }));
+        }
+        return buildTree(notes.notes, notes.folders, notes.metadata, collapsedFolders);
+    }, [
+        searching,
+        filteredNotes,
+        pinnedSet,
+        notes.notes,
+        notes.folders,
+        notes.metadata,
+        collapsedFolders,
+    ]);
+    // The note ids the cursor moves over — visible note rows only (folder headers/collapsed skipped).
+    const visibleIds = useMemo(() => visibleNoteIds(rows), [rows]);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
@@ -199,10 +252,13 @@ export function Workspace({
     );
 
     const handleCreate = useCallback(
-        (title?: string) => {
+        (title?: string, parentPath?: string) => {
             nav.prepareCreate(); // arm the title to focus + select on the new note's mount
+            // ⌘N / the New button create into the focused folder (the selected note's folder);
+            // an explicit parentPath (a folder's ＋, or the search box's root '') overrides that.
+            const dest = parentPath ?? (nav.selectedId ? dirname(nav.selectedId) : '');
             void (async () => {
-                const id = await notes.create(title);
+                const id = await notes.create(title, dest);
                 if (id) nav.setSelected(id);
             })();
         },
@@ -223,7 +279,7 @@ export function Workspace({
     // nothing is selected yet.
     const browseRelative = useCallback(
         (delta: number) => {
-            const ids = filteredNotes.map((n) => n.id);
+            const ids = visibleIds;
             if (ids.length === 0) return;
             const current = nav.selectedId;
             let index: number;
@@ -235,12 +291,12 @@ export function Workspace({
             const target = ids[index];
             if (target) enterList(target);
         },
-        [filteredNotes, nav, enterList],
+        [visibleIds, nav, enterList],
     );
 
     const handleDelete = useCallback(
         (id: string) => {
-            const ids = filteredNotes.map((n) => n.id);
+            const ids = visibleIds;
             const idx = ids.indexOf(id);
             const neighbor = ids[idx + 1] ?? ids[idx - 1] ?? null;
             const wasActive = notes.activeId === id;
@@ -253,7 +309,7 @@ export function Workspace({
             })();
         },
         // eslint wants the whole `notes`/`nav` objects here, not their members.
-        [filteredNotes, notes, nav],
+        [visibleIds, notes, nav],
     );
 
     const handleRename = useCallback(
@@ -291,7 +347,7 @@ export function Workspace({
         if (!pendingListFocus) return;
         listRef.current?.focusSelected();
         setPendingListFocus(false);
-    }, [pendingListFocus, filteredNotes, nav.selectedId]);
+    }, [pendingListFocus, rows, nav.selectedId]);
 
     useShortcuts({
         createNote: handleCreate,
@@ -355,7 +411,7 @@ export function Workspace({
                 searchLoading={searchLoading}
                 selectedId={nav.selectedId}
                 onCommit={nav.commit}
-                onCreate={handleCreate}
+                onCreate={(title) => handleCreate(title, '')}
                 onClose={nav.closeFromSearch}
                 onEnterList={enterList}
                 onFocusList={() => listRef.current?.focusSelected()}
@@ -371,9 +427,10 @@ export function Workspace({
                 <aside className="workspace__sidebar">
                     <NoteList
                         ref={listRef}
-                        notes={filteredNotes}
+                        rows={rows}
                         selectedId={nav.selectedId}
                         query={query}
+                        showCrumbs={searching}
                         snippetById={snippetById}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
@@ -386,6 +443,9 @@ export function Workspace({
                             nav.escapeToSearch();
                         }}
                         onCreate={handleCreate}
+                        onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
+                        onRemoveFolder={(path) => void notes.removeFolder(path)}
+                        onToggleCollapse={toggleCollapse}
                         onRename={handleRename}
                         onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
