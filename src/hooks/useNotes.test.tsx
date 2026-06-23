@@ -4,7 +4,14 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {METADATA_FILENAME} from '../storage/metadata';
-import type {Note, NoteMeta, NoteStore, NotesMetadata} from '../storage/types';
+import {
+    ConflictError,
+    NameCollisionError,
+    type Note,
+    type NoteMeta,
+    type NoteStore,
+    type NotesMetadata,
+} from '../storage/types';
 
 import {useNotes} from './useNotes';
 
@@ -555,5 +562,231 @@ describe('useNotes — save lifecycle hardening', () => {
 
         expect(hook.result.current.note?.id).toBe('C.md');
         expect(hook.result.current.activeId).toBe('C.md');
+    });
+});
+
+/**
+ * In-memory store supporting nested ids with real conflict/NotFound semantics, plus a releasable
+ * gate on move() so a test can inject a keystroke while a move is mid-flight. (The FS store's move
+ * is an interim stub that throws for nested paths, so it can't drive these.)
+ */
+class ControllableStore implements NoteStore {
+    readonly listsRecursively = true;
+    saves: string[] = [];
+    atGate = false;
+    private files = new Map<string, {content: string; updatedAt: number}>();
+    private metadata: NotesMetadata = {
+        version: 1,
+        sort: 'updated',
+        pinned: [],
+        created: {},
+        active: null,
+    };
+    private clock = 100;
+    private gate: Promise<void> | null = null;
+    private release: (() => void) | null = null;
+
+    seed(id: string, content: string) {
+        this.files.set(id, {content, updatedAt: ++this.clock});
+    }
+
+    /** Make the next move() park (setting atGate) until releaseMove() is called. */
+    gateMove() {
+        this.gate = new Promise<void>((resolve) => {
+            this.release = resolve;
+        });
+    }
+
+    releaseMove() {
+        this.release?.();
+        this.gate = null;
+        this.release = null;
+        this.atGate = false;
+    }
+
+    async list(): Promise<NoteMeta[]> {
+        return [...this.files.keys()].map((id) => this.meta(id));
+    }
+
+    async getAll(): Promise<Note[]> {
+        return [...this.files].map(([id, f]) => ({...this.meta(id), content: f.content}));
+    }
+
+    async get(id: string): Promise<Note> {
+        const f = this.files.get(id);
+        if (!f) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        return {...this.meta(id), content: f.content};
+    }
+
+    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+        const id = parentPath ? `${parentPath}/${title}.md` : `${title}.md`;
+        this.files.set(id, {content: '', updatedAt: ++this.clock});
+        return this.meta(id);
+    }
+
+    async save(id: string, content: string, base: number): Promise<NoteMeta> {
+        this.saves.push(id);
+        const f = this.files.get(id);
+        if (!f) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        if (f.updatedAt !== base) throw new ConflictError(id, f.updatedAt);
+        f.content = content;
+        f.updatedAt = ++this.clock;
+        return this.meta(id);
+    }
+
+    async rename(id: string, nextTitle: string): Promise<NoteMeta> {
+        const next = `${nextTitle}.md`;
+        const f = this.files.get(id);
+        if (!f) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        this.files.set(next, {...f});
+        this.files.delete(id);
+        return this.meta(next);
+    }
+
+    async move(id: string, destFolder: string): Promise<NoteMeta> {
+        const leaf = id.slice(id.lastIndexOf('/') + 1);
+        const newId = destFolder ? `${destFolder}/${leaf}` : leaf;
+        if (this.gate) {
+            this.atGate = true;
+            await this.gate;
+        }
+        const f = this.files.get(id);
+        if (!f) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        if (newId === id) return this.meta(id);
+        if (this.files.has(newId)) throw new NameCollisionError(id, this.meta(id).title);
+        this.files.set(newId, {...f}); // pure relocation: content + mtime preserved
+        this.files.delete(id);
+        return this.meta(newId);
+    }
+
+    async remove(id: string): Promise<void> {
+        this.files.delete(id);
+    }
+
+    async stat(id: string): Promise<number | null> {
+        return this.files.get(id)?.updatedAt ?? null;
+    }
+
+    async readMetadata(): Promise<NotesMetadata> {
+        return this.metadata;
+    }
+
+    async writeMetadata(meta: NotesMetadata): Promise<void> {
+        this.metadata = meta;
+    }
+
+    private meta(id: string): NoteMeta {
+        const leaf = id.slice(id.lastIndexOf('/') + 1).replace(/\.md$/, '');
+        return {id, title: leaf, updatedAt: this.files.get(id)?.updatedAt};
+    }
+}
+
+describe('useNotes — move (folders)', () => {
+    it('moves the open note into a folder, updating identity in place (no remount)', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+        const session = hook.result.current.sessionId;
+
+        await act(async () => {
+            await hook.result.current.move('A.md', 'Work');
+        });
+
+        expect(hook.result.current.activeId).toBe('Work/A.md');
+        expect(hook.result.current.note?.id).toBe('Work/A.md');
+        expect(hook.result.current.note?.content).toBe('body');
+        expect(hook.result.current.sessionId).toBe(session); // editor instance kept
+        expect(hook.result.current.notes.map((n) => n.id)).toEqual(['Work/A.md']);
+        expect((await store.readMetadata()).active).toBe('Work/A.md');
+        expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('remaps a pinned note id when moving it', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        act(() => {
+            hook.result.current.togglePin('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.move('A.md', 'Work');
+        });
+        expect(hook.result.current.metadata.pinned).toEqual(['Work/A.md']);
+    });
+
+    it('refuses a move onto an existing same-leaf note, leaving the source open and intact', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'a');
+        store.seed('Work/A.md', 'other');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+
+        let result: string | null = 'unset';
+        await act(async () => {
+            result = await hook.result.current.move('A.md', 'Work');
+        });
+
+        expect(result).toBeNull();
+        expect(onError).toHaveBeenCalled();
+        expect(await store.stat('A.md')).not.toBeNull();
+        expect(hook.result.current.activeId).toBe('A.md');
+    });
+
+    it('preserves a keystroke typed DURING the move await, saving it to the new id without conflict', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'v0');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('A.md');
+        });
+
+        // Type v1 (arms the autosave), then start a move that parks at the store.move await.
+        act(() => {
+            hook.result.current.edit('v1');
+        });
+        store.gateMove();
+        // Start the move inside an awaited act so flush()'s state updates settle here, draining
+        // microtasks until move() has run flush() (saving v1 to A.md) and parked on the gate.
+        let movePromise: Promise<string | null> = Promise.resolve(null);
+        await act(async () => {
+            movePromise = hook.result.current.move('A.md', 'Work');
+            for (let i = 0; i < 100 && !store.atGate; i++) await Promise.resolve();
+        });
+        expect(store.atGate).toBe(true);
+        // Type v2 while the move is in flight — metadata.active is still 'A.md' here.
+        act(() => {
+            hook.result.current.edit('v2');
+        });
+        // Release the move; it kills the stale v2 timer and re-points the pending edit to the new id.
+        await act(async () => {
+            store.releaseMove();
+            await movePromise;
+        });
+        // Drain the re-armed autosave.
+        await act(async () => {
+            await hook.result.current.flushPending();
+        });
+
+        expect(hook.result.current.activeId).toBe('Work/A.md');
+        expect(hook.result.current.conflict).toBeNull();
+        expect((await store.get('Work/A.md')).content).toBe('v2'); // keystroke not lost
+        expect(await store.stat('A.md')).toBeNull(); // old id gone
+        // The only save against the old id was the pre-move flush; nothing saved to it afterwards.
+        expect(store.saves.filter((id) => id === 'A.md')).toHaveLength(1);
+        expect(store.saves[store.saves.length - 1]).toBe('Work/A.md');
+        expect(onError).not.toHaveBeenCalled();
     });
 });
