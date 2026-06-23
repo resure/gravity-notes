@@ -59,6 +59,8 @@ export interface UseNotes {
     create(title?: string): Promise<string | null>;
     /** Rename a note; returns the resulting id (unchanged on a no-op/collision, null on error). */
     rename(id: string, nextTitle: string): Promise<string | null>;
+    /** Move a note into another folder (`destFolder`, `''` = root); returns the resulting id (null on error). */
+    move(id: string, destFolder: string): Promise<string | null>;
     remove(id: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
@@ -126,6 +128,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const baselineRef = useRef<number | null>(null);
     /** Bumped per open() so a slow earlier load can't overwrite a newer one (wrong-note race). */
     const openGenerationRef = useRef(0);
+    /**
+     * True while a move() is reconciling the open note's id, so the focus conflict-check can't stat
+     * a half-moved (old, now-gone) id and raise a spurious deleted-conflict.
+     */
+    const moveInProgressRef = useRef(false);
 
     const refresh = useCallback(async () => {
         const list = await store.list();
@@ -277,6 +284,69 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             }
         },
         [conflict, flush, store, persistMetadata, refresh, onError],
+    );
+
+    const move = useCallback(
+        async (id: string, destFolder: string): Promise<string | null> => {
+            if (conflict?.id === id) {
+                onError('Resolve the conflict before moving this note.');
+                return null;
+            }
+            // Flush the outgoing pending edit first (against the OLD id), so no save races the move.
+            await flush();
+            moveInProgressRef.current = true;
+            try {
+                const meta = await store.move(id, destFolder);
+                // No-op move (already in that folder): nothing to reconcile.
+                if (meta.id === id) return meta.id;
+
+                const wasActive = metadataRef.current.active === id;
+                // A keystroke during the flush/move awaits may have re-queued an edit for the moved
+                // note (the editor stays live — no remount). Kill its timer now so it can't flush
+                // against the old, now-gone id while we reconcile; we carry it over and re-arm below.
+                const pendingForMoved = pendingRef.current?.id === id;
+                if (pendingForMoved) clearTimer();
+
+                // Reconcile identity in a fixed order so any edit() racing the persist below reads a
+                // consistent (new) id. The editor instance is kept (no sessionId bump), so the
+                // caret/focus survive the move — exactly like rename, but keeping the in-memory body.
+                if (wasActive) {
+                    setNote((prev) =>
+                        prev && prev.id === id
+                            ? {...prev, id: meta.id, title: meta.title, updatedAt: meta.updatedAt}
+                            : prev,
+                    );
+                }
+                // persistMetadata sets metadataRef.current.active synchronously, so by the time it
+                // awaits the write a racing edit() already sees the NEW id (never re-tags the dead one).
+                await persistMetadata(withRenamed(metadataRef.current, id, meta.id));
+                if (wasActive) {
+                    baselineRef.current = meta.updatedAt ?? null; // re-seed the conflict baseline
+                    setConflict(null);
+                    setSaveState('idle');
+                }
+                if (pendingForMoved) {
+                    // Carry the in-flight keystrokes to the new id (do NOT drop them) and re-arm a
+                    // fresh autosave so they still get written — against the new id.
+                    pendingRef.current = {id: meta.id, content: pendingRef.current?.content ?? ''};
+                    clearTimer();
+                    setSaveState('saving');
+                    timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
+                }
+                await refresh();
+                return meta.id;
+            } catch (err) {
+                if (err instanceof NameCollisionError) {
+                    onError(err.message);
+                    return null;
+                }
+                onError(err instanceof Error ? err.message : 'Failed to move note');
+                return null;
+            } finally {
+                moveInProgressRef.current = false;
+            }
+        },
+        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
     );
 
     const remove = useCallback(
@@ -491,7 +561,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         const check = async () => {
             if (document.visibilityState !== 'visible') return;
             const id = metadataRef.current.active;
-            if (!id || conflict || pendingRef.current) return;
+            if (!id || conflict || pendingRef.current || moveInProgressRef.current) return;
             let diskMtime: number | null;
             try {
                 diskMtime = await store.stat(id);
@@ -531,6 +601,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         close,
         create,
         rename,
+        move,
         remove,
         edit,
         flushPending: flush,
