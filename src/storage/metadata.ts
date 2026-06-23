@@ -82,15 +82,29 @@ export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     };
 }
 
-/** Drop pinned/created entries whose id is no longer a live file; null a dead active. Self-heals external deletes. */
-export function reconcile(meta: NotesMetadata, liveIds: string[]): NotesMetadata {
+/**
+ * Drop pinned/created entries whose id is no longer a live file; null a dead active. Self-heals
+ * external deletes.
+ *
+ * When `recursive` is false the live set is only the *top level* (the backend cannot yet enumerate
+ * subdirectories), so any nested id (one containing `/`) is KEPT rather than pruned — otherwise a
+ * non-recursive backend opening a folder that holds nested notes would silently strip their pins
+ * from the shared sidecar. Defaults to recursive (prune freely), matching a complete live set.
+ */
+export function reconcile(
+    meta: NotesMetadata,
+    liveIds: string[],
+    options?: {recursive?: boolean},
+): NotesMetadata {
+    const recursive = options?.recursive ?? true;
     const live = new Set(liveIds);
+    const keep = (id: string) => live.has(id) || (!recursive && id.includes('/'));
     const created: Record<string, number> = {};
     for (const [id, time] of Object.entries(meta.created)) {
-        if (live.has(id)) created[id] = time;
+        if (keep(id)) created[id] = time;
     }
-    const active = meta.active && live.has(meta.active) ? meta.active : null;
-    return {...meta, pinned: meta.pinned.filter((id) => live.has(id)), created, active};
+    const active = meta.active && keep(meta.active) ? meta.active : null;
+    return {...meta, pinned: meta.pinned.filter(keep), created, active};
 }
 
 /** Pure ordering: pinned notes first, each group sorted by the active sort. Does not mutate input. */

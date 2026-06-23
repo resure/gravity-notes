@@ -205,7 +205,11 @@ export function searchNotes(
         (a, b) =>
             b.score - a.score ||
             (b.note.updatedAt ?? 0) - (a.note.updatedAt ?? 0) ||
-            a.note.title.localeCompare(b.note.title),
+            a.note.title.localeCompare(b.note.title) ||
+            // Final tiebreak on the full path-id so two same-leaf notes in different folders
+            // (Archive/Notes.md vs Inbox/Notes.md) order deterministically across sessions,
+            // rather than falling to nondeterministic store-listing order.
+            a.note.id.localeCompare(b.note.id),
     );
     return results;
 }

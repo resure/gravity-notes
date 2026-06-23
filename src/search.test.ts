@@ -155,4 +155,18 @@ describe('searchNotes', () => {
         ]);
         expect(searchNotes(NOTES, corpus, 'alpha absent')).toEqual([]);
     });
+
+    it('orders two same-leaf notes deterministically by full path-id, regardless of input order', () => {
+        // Same title, same updatedAt: every earlier sort key ties, so the final path-id tiebreak
+        // decides — and must give the same result no matter how the store happened to list them.
+        const inbox: NoteMeta = {id: 'Inbox/Notes.md', title: 'Notes', updatedAt: 5};
+        const archive: NoteMeta = {id: 'Archive/Notes.md', title: 'Notes', updatedAt: 5};
+        const expected = ['Archive/Notes.md', 'Inbox/Notes.md'];
+        expect(searchNotes([inbox, archive], new Map(), 'notes').map((r) => r.note.id)).toEqual(
+            expected,
+        );
+        expect(searchNotes([archive, inbox], new Map(), 'notes').map((r) => r.note.id)).toEqual(
+            expected,
+        );
+    });
 });

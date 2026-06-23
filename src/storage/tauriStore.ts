@@ -48,6 +48,9 @@ function notFound(id: string): DOMException {
  * write helper is atomic there too, preserving the same crash-safety guarantee.
  */
 export class TauriNoteStore implements NoteStore {
+    /** False until the Rust `notes_list`/`notes_read_all` commands recurse subdirectories (phase 7). */
+    readonly listsRecursively = false;
+
     constructor(private readonly dir: string) {}
 
     async list(): Promise<NoteMeta[]> {
