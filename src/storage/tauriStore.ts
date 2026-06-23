@@ -3,8 +3,11 @@ import {invoke} from '@tauri-apps/api/core';
 import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     MD_EXT,
+    basename,
     canonicalBody,
+    joinPath,
     previewFromContent,
+    sanitizeDir,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
@@ -88,7 +91,12 @@ export class TauriNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string): Promise<NoteMeta> {
+    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+        // Subfolder creation needs the Rust commands to create_dir_all the parent (phase 7); until
+        // then this backend only creates at the root.
+        if (sanitizeDir(parentPath) !== '') {
+            throw new Error('Creating notes in a subfolder is not supported on this backend yet');
+        }
         const fileName = await uniqueName(sanitizeTitle(title), (name) => this.exists(name));
         // Write the canonical "blank line at EOF" shape save() produces (get() strips it back),
         // so a brand-new note has a consistent on-disk shape for external tools.
@@ -145,6 +153,18 @@ export class TauriNoteStore implements NoteStore {
             to: nextName,
         });
         return {id: nextName, title: titleFromFileName(nextName), updatedAt};
+    }
+
+    async move(id: string, destFolder: string): Promise<NoteMeta> {
+        const newId = joinPath(sanitizeDir(destFolder), basename(id));
+        // Real cross-folder moves need the path-aware Rust commands (phase 7); a move into the
+        // folder the note already lives in is a harmless no-op that still works here.
+        if (newId !== id) {
+            throw new Error('Moving notes between folders is not supported on this backend yet');
+        }
+        const updatedAt = await invoke<number | null>('notes_stat', {dir: this.dir, name: id});
+        if (updatedAt === null) throw notFound(id);
+        return {id, title: titleFromFileName(id), updatedAt};
     }
 
     async remove(id: string): Promise<void> {

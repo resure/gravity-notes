@@ -145,6 +145,22 @@ describe('TauriNoteStore', () => {
         expect([a.id, b.id, c.id]).toEqual(['Note.md', 'Note 2.md', 'Note 3.md']);
     });
 
+    describe('folders (interim, until phase 7)', () => {
+        it('refuses to create a note in a subfolder', async () => {
+            await expect(store.create('Note', 'Work')).rejects.toThrow(/subfolder/i);
+            expect((await store.create('Note')).id).toBe('Note.md');
+        });
+
+        it('refuses a cross-folder move but allows a same-folder no-op', async () => {
+            const created = await store.create('Note');
+            await expect(store.move('Note.md', 'Archive')).rejects.toThrow(/folders/i);
+            expect(await store.move('Note.md', '')).toMatchObject({
+                id: 'Note.md',
+                updatedAt: created.updatedAt,
+            });
+        });
+    });
+
     it('sanitizes unsafe titles into a file-name base', async () => {
         const meta = await store.create('a/b:c?');
         expect(meta.id).toBe('a b c.md');
