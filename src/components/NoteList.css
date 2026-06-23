@@ -168,3 +168,24 @@
     gap: 4px;
     padding: 5px 16px;
 }
+
+/* A folder being hovered as a drag-and-drop move target. */
+.note-list__folder_drop-target {
+    background-color: var(--note-list-focus-bg);
+    outline: 1px dashed var(--g-color-line-brand);
+    outline-offset: -1px;
+}
+
+/* "Move to…" picker: a scrollable column of left-aligned folder buttons. */
+.note-list__move-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.note-list__move-list .g-button__text {
+    justify-content: flex-start;
+    width: 100%;
+}

@@ -9,7 +9,8 @@ export type ShortcutAction =
     | 'toggleEditorMode'
     | 'togglePreview'
     | 'openHelp'
-    | 'renameSelected';
+    | 'renameSelected'
+    | 'moveSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
@@ -127,6 +128,13 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Rename selected note',
         group: 'Editing',
         global: {trigger: 'bare', key: 'F2', action: 'renameSelected', inTyping: true},
+    },
+    {
+        keys: 'mod+shift+m',
+        description: 'Move selected note to a folder',
+        group: 'Editing',
+        // 'm' is a letter, so the shifted event.key ('M') matches case-insensitively — no code needed.
+        global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true},
     },
     {
         keys: 'mod+/',

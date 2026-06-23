@@ -15,6 +15,7 @@ function makeActions(): ShortcutActions {
         togglePreview: vi.fn(),
         openHelp: vi.fn(),
         renameSelected: vi.fn(),
+        moveSelected: vi.fn(),
     };
 }
 
@@ -111,6 +112,13 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: 'p', metaKey: true});
         expect(actions.togglePreview).not.toHaveBeenCalled();
+    });
+
+    it('moves the selected note on mod+shift+m (shifted key is "M")', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'M', metaKey: true, shiftKey: true});
+        expect(actions.moveSelected).toHaveBeenCalledTimes(1);
     });
 
     it('opens help on mod+/', () => {

@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -41,6 +41,8 @@ function setup(overrides: Record<string, unknown> = {}) {
         onCreateFolder: vi.fn(),
         onRemoveFolder: vi.fn(),
         onToggleCollapse: vi.fn(),
+        folderPaths: [],
+        onMoveTo: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
         sortMode: 'updated',
@@ -465,5 +467,34 @@ describe('NoteList — folder tree', () => {
         screen.getByRole('option', {name: /One/}).focus();
         await user.keyboard('j');
         expect(props.onBrowse).toHaveBeenCalledWith('B/Two.md');
+    });
+
+    it('moves a note via the "Move to…" picker', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({folderPaths: ['Work', 'Archive']});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
+        // The picker lists Root + every folder; pick one.
+        expect(await screen.findByRole('button', {name: 'Root'})).toBeInTheDocument();
+        await user.click(screen.getByRole('button', {name: 'Archive'}));
+        expect(props.onMoveTo).toHaveBeenCalledWith('Beta.md', 'Archive');
+    });
+
+    it('opens the Move picker via the startMove handle (⌘⇧M)', async () => {
+        const {ref} = setup({folderPaths: ['Work']});
+        act(() => {
+            ref.current?.startMove('Alpha.md');
+        });
+        expect(await screen.findByRole('button', {name: 'Work'})).toBeInTheDocument();
+    });
+
+    it('moves a note when dropped onto a folder header', () => {
+        const {props} = setup({rows: [folder('Work'), noteRow('Note.md', 0)]});
+        const dataTransfer = {getData: () => 'Note.md', setData: vi.fn()};
+        const folderRow = screen.getByText('Work').closest('.note-list__folder') as HTMLElement;
+        fireEvent.dragOver(folderRow, {dataTransfer});
+        fireEvent.drop(folderRow, {dataTransfer});
+        expect(props.onMoveTo).toHaveBeenCalledWith('Note.md', 'Work');
     });
 });
