@@ -35,6 +35,8 @@ export interface NoteConflict {
 
 export interface UseNotes {
     notes: NoteMeta[];
+    /** Every folder path (POSIX), including deliberately-empty ones — for rendering the tree. */
+    folders: string[];
     /** Folder metadata: active sort, pinned ids, created stamps, the open note. */
     metadata: NotesMetadata;
     /**
@@ -55,13 +57,20 @@ export interface UseNotes {
     open(id: string): Promise<void>;
     /** Close the open note (placeholder). */
     close(): Promise<void>;
-    /** Create a new note (titled, or "Untitled"), open it, and return its id (null on failure). */
-    create(title?: string): Promise<string | null>;
+    /**
+     * Create a new note (titled, or "Untitled") inside `parentPath` (omitted = root), open it, and
+     * return its id (null on failure).
+     */
+    create(title?: string, parentPath?: string): Promise<string | null>;
     /** Rename a note; returns the resulting id (unchanged on a no-op/collision, null on error). */
     rename(id: string, nextTitle: string): Promise<string | null>;
     /** Move a note into another folder (`destFolder`, `''` = root); returns the resulting id (null on error). */
     move(id: string, destFolder: string): Promise<string | null>;
     remove(id: string): Promise<void>;
+    /** Create an (initially empty) folder and refresh the tree. */
+    createFolder(parentPath: string, name: string): Promise<void>;
+    /** Remove an empty folder (its marker) and refresh; unpins it if it was pinned. */
+    removeFolder(path: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
     /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
@@ -83,6 +92,7 @@ export interface UseNotes {
  */
 export function useNotes(store: NoteStore, onError: (message: string) => void): UseNotes {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
+    const [folders, setFolders] = useState<string[]>([]);
     const [note, setNote] = useState<Note | null>(null);
     const [saveState, setSaveState] = useState<SaveState>('idle');
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
@@ -135,14 +145,14 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const moveInProgressRef = useRef(false);
 
     const refresh = useCallback(async () => {
-        const list = await store.list();
+        const [list, folderList] = await Promise.all([store.list(), store.listFolders()]);
         setNotes(list);
+        setFolders(folderList);
+        // Reconcile against notes AND folders, so a pinned empty folder isn't pruned.
         applyMetadata(
-            reconcile(
-                metadataRef.current,
-                list.map((n) => n.id),
-                {recursive: store.listsRecursively},
-            ),
+            reconcile(metadataRef.current, [...list.map((n) => n.id), ...folderList], {
+                recursive: store.listsRecursively,
+            }),
         );
     }, [store, applyMetadata]);
 
@@ -226,10 +236,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     }, [flush, persistMetadata]);
 
     const create = useCallback(
-        async (title?: string): Promise<string | null> => {
+        async (title?: string, parentPath?: string): Promise<string | null> => {
             await flush();
             try {
-                const meta = await store.create(title?.trim() || 'Untitled');
+                const meta = await store.create(title?.trim() || 'Untitled', parentPath);
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
                 );
@@ -242,6 +252,31 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             }
         },
         [flush, store, persistMetadata, refresh, open, onError],
+    );
+
+    const createFolder = useCallback(
+        async (parentPath: string, name: string): Promise<void> => {
+            try {
+                await store.createFolder(parentPath, name);
+                await refresh();
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to create folder');
+            }
+        },
+        [store, refresh, onError],
+    );
+
+    const removeFolder = useCallback(
+        async (path: string): Promise<void> => {
+            try {
+                await store.removeFolder(path);
+                // refresh() reconciles against the new folder set, which drops a pin on the gone folder.
+                await refresh();
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to remove folder');
+            }
+        },
+        [store, refresh, onError],
     );
 
     const rename = useCallback(
@@ -487,13 +522,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         let cancelled = false;
         void (async () => {
             try {
-                const [list, raw] = await Promise.all([store.list(), store.readMetadata()]);
+                const [list, folderList, raw] = await Promise.all([
+                    store.list(),
+                    store.listFolders(),
+                    store.readMetadata(),
+                ]);
                 if (cancelled) return;
-                const meta = reconcile(
-                    raw,
-                    list.map((n) => n.id),
-                    {recursive: store.listsRecursively},
-                );
+                const meta = reconcile(raw, [...list.map((n) => n.id), ...folderList], {
+                    recursive: store.listsRecursively,
+                });
                 let loaded: Note | null = null;
                 if (meta.active) {
                     try {
@@ -505,6 +542,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 if (cancelled) return;
                 const reconciled: NotesMetadata = loaded ? meta : {...meta, active: null};
                 setNotes(list);
+                setFolders(folderList);
                 applyMetadata(reconciled);
                 if (loaded) {
                     baselineRef.current = loaded.updatedAt ?? null;
@@ -589,6 +627,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     return {
         notes,
+        folders,
         metadata,
         sessionId,
         setSortMode,
@@ -603,6 +642,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         rename,
         move,
         remove,
+        createFolder,
+        removeFolder,
         edit,
         flushPending: flush,
         refresh,

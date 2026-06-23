@@ -593,6 +593,7 @@ class ControllableStore implements NoteStore {
         active: null,
     };
     private clock = 100;
+    private folderMarkers = new Set<string>();
     private gate: Promise<void> | null = null;
     private release: (() => void) | null = null;
 
@@ -674,13 +675,23 @@ class ControllableStore implements NoteStore {
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {
-        return parentPath ? `${parentPath}/${name}` : name;
+        const path = parentPath ? `${parentPath}/${name}` : name;
+        this.folderMarkers.add(path);
+        return path;
     }
 
-    async removeFolder(): Promise<void> {}
+    async removeFolder(path: string): Promise<void> {
+        this.folderMarkers.delete(path);
+    }
 
     async listFolders(): Promise<string[]> {
-        return [];
+        const set = new Set(this.folderMarkers);
+        for (const id of this.files.keys()) {
+            const parts = id.split('/');
+            parts.pop(); // drop the leaf
+            for (let i = 1; i <= parts.length; i++) set.add(parts.slice(0, i).join('/'));
+        }
+        return [...set].sort();
     }
 
     async stat(id: string): Promise<number | null> {
@@ -808,5 +819,75 @@ describe('useNotes — move (folders)', () => {
         expect(store.saves.filter((id) => id === 'A.md')).toHaveLength(1);
         expect(store.saves[store.saves.length - 1]).toBe('Work/A.md');
         expect(onError).not.toHaveBeenCalled();
+    });
+});
+
+describe('useNotes — folders', () => {
+    it('exposes folders implied by notes plus deliberately-empty ones', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/Sub/Note.md', 'x');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+
+        await act(async () => {
+            await hook.result.current.createFolder('', 'Projects');
+        });
+
+        expect(hook.result.current.folders).toEqual(['Projects', 'Work', 'Work/Sub']);
+    });
+
+    it('creates a note inside a folder and opens it', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+
+        await act(async () => {
+            await hook.result.current.create('Idea', 'Work');
+        });
+
+        expect(hook.result.current.activeId).toBe('Work/Idea.md');
+        expect(hook.result.current.folders).toContain('Work');
+    });
+
+    it('keeps a pinned empty folder across a refresh (reconcile sees it as live)', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+
+        await act(async () => {
+            await hook.result.current.createFolder('', 'Keep');
+        });
+        act(() => {
+            hook.result.current.togglePin('Keep');
+        });
+        await act(async () => {
+            await hook.result.current.refresh();
+        });
+
+        expect(hook.result.current.metadata.pinned).toContain('Keep');
+        expect(hook.result.current.folders).toContain('Keep');
+    });
+
+    it('removeFolder drops the folder and unpins it', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+
+        await act(async () => {
+            await hook.result.current.createFolder('', 'Temp');
+        });
+        act(() => {
+            hook.result.current.togglePin('Temp');
+        });
+        await act(async () => {
+            await hook.result.current.removeFolder('Temp');
+        });
+
+        expect(hook.result.current.folders).not.toContain('Temp');
+        expect(hook.result.current.metadata.pinned).not.toContain('Temp');
     });
 });
