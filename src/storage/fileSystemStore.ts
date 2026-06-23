@@ -44,6 +44,9 @@ async function writeFile(handle: FileSystemFileHandle, text: string): Promise<vo
  * id; the file name without `.md` is the title.
  */
 export class FileSystemNoteStore implements NoteStore {
+    /** False until the FSA list()/getAll() walk descends into subdirectories (phase 11). */
+    readonly listsRecursively = false;
+
     constructor(private readonly dir: FileSystemDirectoryHandle) {}
 
     async list(): Promise<NoteMeta[]> {

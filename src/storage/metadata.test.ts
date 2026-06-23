@@ -184,6 +184,37 @@ describe('reconcile', () => {
         } as const;
         expect(reconcile(meta, ['A.md']).active).toBe('A.md');
     });
+
+    it('prunes a nested id absent from the live set when the backend lists recursively', () => {
+        const meta = {
+            version: 1,
+            sort: 'updated',
+            pinned: ['Work/Roadmap.md', 'gone.md'],
+            created: {'Work/Roadmap.md': 1, 'gone.md': 2},
+            active: 'Work/Roadmap.md',
+        } as const;
+        // recursive listing => an absent nested id is genuinely dead and gets pruned.
+        const next = reconcile(meta, ['Inbox.md'], {recursive: true});
+        expect(next.pinned).toEqual([]);
+        expect(next.created).toEqual({});
+        expect(next.active).toBeNull();
+    });
+
+    it('keeps nested ids a non-recursive backend cannot see, while still pruning dead root ids', () => {
+        const meta = {
+            version: 1,
+            sort: 'updated',
+            pinned: ['Work/Roadmap.md', 'gone.md', 'Inbox.md'],
+            created: {'Work/Roadmap.md': 1, 'gone.md': 2, 'Inbox.md': 3},
+            active: 'Work/Roadmap.md',
+        } as const;
+        // Non-recursive backend only sees top-level 'Inbox.md'. The nested pin/created/active must
+        // survive (the backend can't prove them dead); the dead *root* id 'gone.md' is still pruned.
+        const next = reconcile(meta, ['Inbox.md'], {recursive: false});
+        expect(next.pinned).toEqual(['Work/Roadmap.md', 'Inbox.md']);
+        expect(next.created).toEqual({'Work/Roadmap.md': 1, 'Inbox.md': 3});
+        expect(next.active).toBe('Work/Roadmap.md');
+    });
 });
 
 describe('orderNotes', () => {

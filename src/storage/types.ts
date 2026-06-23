@@ -82,6 +82,13 @@ export interface NoteStore {
     readMetadata(): Promise<NotesMetadata>;
     /** Persist the folder's notes metadata. */
     writeMetadata(meta: NotesMetadata): Promise<void>;
+    /**
+     * Whether `list`/`getAll` enumerate notes in *every* subdirectory (true), or only the top level
+     * (false). Consumed by metadata reconciliation: a backend that cannot yet see nested notes must
+     * never let `reconcile` prune their metadata from the shared sidecar. Flips to true on a backend
+     * once its listing recurses.
+     */
+    readonly listsRecursively: boolean;
 }
 
 /** Thrown by {@link NoteStore.save} when the file changed on disk since the baseline. */

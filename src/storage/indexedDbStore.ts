@@ -49,6 +49,9 @@ function nextTimestamp(previous: number): number {
  * regardless of backend. Notes are opaque here; use export/import (transfer.ts) to get plain `.md`.
  */
 export class IndexedDbNoteStore implements NoteStore {
+    /** getAll()/list() read every record by key, so nested (slash-bearing) ids are always seen. */
+    readonly listsRecursively = true;
+
     private dbPromise: Promise<IDBDatabase> | null = null;
 
     async list(): Promise<NoteMeta[]> {

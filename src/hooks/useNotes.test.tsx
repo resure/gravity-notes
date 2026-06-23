@@ -317,6 +317,7 @@ describe('useNotes — conflict resolvers', () => {
  * can be interleaved while a save is in flight (the flush-failure-overwrite race).
  */
 class DeferredSaveStore implements NoteStore {
+    readonly listsRecursively = true;
     saveDeferred: {resolve(): void; reject(err: unknown): void} | null = null;
     /** When true, get() blocks until resolveGet(id) is called — to interleave overlapping opens. */
     deferGets = false;
