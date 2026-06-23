@@ -59,8 +59,11 @@ export interface NoteStore {
     /**
      * Create a new, empty note with a unique title and return its meta.
      * @param title preferred title; the store resolves collisions (e.g. "Untitled 2").
+     * @param parentPath POSIX-relative folder to create the note in; omitted or `''` means the
+     *   root. The collision probe is scoped to that folder, so the same title is free in different
+     *   folders.
      */
-    create(title: string): Promise<NoteMeta>;
+    create(title: string, parentPath?: string): Promise<NoteMeta>;
     /**
      * Persist the body of an existing note using optimistic concurrency, where
      * `baseUpdatedAt` is the `updatedAt` the caller last saw for this note.
@@ -74,6 +77,15 @@ export interface NoteStore {
      * when the target name is already taken by another note.
      */
     rename(id: string, nextTitle: string): Promise<NoteMeta>;
+    /**
+     * Relocate a note into `destFolder` (a POSIX-relative folder; `''` means the root), keeping its
+     * leaf title — so its id changes from the old path to `<destFolder>/<Title>.md`. A move into the
+     * folder it already lives in is a no-op. Returns the new meta with the post-move `updatedAt`, so
+     * the caller can re-seed its conflict baseline. Throws {@link NameCollisionError} when a note
+     * with that leaf already exists in `destFolder`, and a `NotFoundError` `DOMException` when the
+     * source is gone (mapped to a deleted-conflict, exactly like `get`).
+     */
+    move(id: string, destFolder: string): Promise<NoteMeta>;
     /** Delete a note. */
     remove(id: string): Promise<void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */

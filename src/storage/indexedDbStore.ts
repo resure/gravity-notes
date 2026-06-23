@@ -2,8 +2,11 @@ import {parseMetadata} from './metadata';
 import {
     MD_EXT,
     PREVIEW_SCAN_BYTES,
+    basename,
     canonicalBody,
+    joinPath,
     previewFromContent,
+    sanitizeDir,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
@@ -99,8 +102,13 @@ export class IndexedDbNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string): Promise<NoteMeta> {
-        const id = await uniqueName(sanitizeTitle(title), (name) => this.exists(name));
+    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+        const dir = sanitizeDir(parentPath);
+        // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
+        const leaf = await uniqueName(sanitizeTitle(title), (name) =>
+            this.exists(joinPath(dir, name)),
+        );
+        const id = joinPath(dir, leaf);
         const updatedAt = Date.now();
         await this.run(NOTES_STORE, 'readwrite', (store) =>
             store.add({id, content: canonicalBody(''), updatedAt} satisfies NoteRecord),
@@ -146,6 +154,27 @@ export class IndexedDbNoteStore implements NoteStore {
             return store.delete(id);
         });
         return {id: nextId, title: titleFromFileName(nextId), updatedAt};
+    }
+
+    async move(id: string, destFolder: string): Promise<NoteMeta> {
+        const newId = joinPath(sanitizeDir(destFolder), basename(id));
+        const record = await this.getRecord(id);
+        if (!record) throw notFound(id);
+        // Already in the target folder: a pure no-op, preserving the current mtime.
+        if (newId === id) {
+            return {id, title: titleFromFileName(id), updatedAt: record.updatedAt};
+        }
+        if (await this.exists(newId)) {
+            throw new NameCollisionError(id, titleFromFileName(id));
+        }
+        // Pure relocation: content and mtime are unchanged, so the re-seeded conflict baseline still
+        // matches the moved record. Write the new key and delete the old one in one transaction.
+        const updatedAt = record.updatedAt;
+        await this.run(NOTES_STORE, 'readwrite', (store) => {
+            store.put({id: newId, content: record.content, updatedAt} satisfies NoteRecord);
+            return store.delete(id);
+        });
+        return {id: newId, title: titleFromFileName(newId), updatedAt};
     }
 
     async remove(id: string): Promise<void> {

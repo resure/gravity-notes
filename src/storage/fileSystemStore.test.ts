@@ -14,6 +14,20 @@ describe('FileSystemNoteStore', () => {
         store = new FileSystemNoteStore(asDirectoryHandle(dir));
     });
 
+    describe('folders (interim, until phase 11)', () => {
+        it('refuses to create a note in a subfolder', async () => {
+            await expect(store.create('Note', 'Work')).rejects.toThrow(/subfolder/i);
+            // root creation is unaffected
+            expect((await store.create('Note')).id).toBe('Note.md');
+        });
+
+        it('refuses a cross-folder move but allows a same-folder no-op', async () => {
+            dir.seedFile('Note.md', 'hi', 100);
+            await expect(store.move('Note.md', 'Archive')).rejects.toThrow(/folders/i);
+            expect(await store.move('Note.md', '')).toMatchObject({id: 'Note.md', updatedAt: 100});
+        });
+    });
+
     describe('list', () => {
         it('returns .md files newest-first with derived titles', async () => {
             dir.seedFile('Alpha.md', '# Alpha', 100);

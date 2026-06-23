@@ -2,8 +2,11 @@ import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     MD_EXT,
     PREVIEW_SCAN_BYTES,
+    basename,
     canonicalBody,
+    joinPath,
     previewFromContent,
+    sanitizeDir,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
@@ -101,7 +104,12 @@ export class FileSystemNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string): Promise<NoteMeta> {
+    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+        // Subfolder creation needs the per-segment getDirectoryHandle walk (phase 11); until then
+        // this backend only creates at the root.
+        if (sanitizeDir(parentPath) !== '') {
+            throw new Error('Creating notes in a subfolder is not supported on this backend yet');
+        }
         const fileName = await uniqueName(sanitizeTitle(title), (name) => this.exists(name));
         const handle = await this.dir.getFileHandle(fileName, {create: true});
         // Write the canonical "blank line at EOF" shape save() produces, so a brand-new note has a
@@ -198,6 +206,18 @@ export class FileSystemNoteStore implements NoteStore {
         // Read the real on-disk mtime so the caller can seed an accurate conflict baseline.
         const updatedAt = (await handle.getFile()).lastModified;
         return {id: nextName, title: titleFromFileName(nextName), updatedAt};
+    }
+
+    async move(id: string, destFolder: string): Promise<NoteMeta> {
+        const newId = joinPath(sanitizeDir(destFolder), basename(id));
+        // Real cross-folder moves need the per-segment resolver + copy-then-delete across dirs
+        // (phase 11); a move into the folder the note already lives in is a harmless no-op.
+        if (newId !== id) {
+            throw new Error('Moving notes between folders is not supported on this backend yet');
+        }
+        const updatedAt = await this.stat(id);
+        if (updatedAt === null) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        return {id, title: titleFromFileName(id), updatedAt};
     }
 
     async remove(id: string): Promise<void> {

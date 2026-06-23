@@ -147,6 +147,77 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('folders: nested create / move', () => {
+        it('creates a note inside a subfolder with a basename title', async () => {
+            const meta = await store.create('Roadmap', 'Work');
+            expect(meta).toMatchObject({id: 'Work/Roadmap.md', title: 'Roadmap'});
+            expect((await store.get('Work/Roadmap.md')).content).toBe('');
+            // list()/getAll() derive the leaf title, not the folder-prefixed path.
+            expect((await store.list())[0].title).toBe('Roadmap');
+        });
+
+        it('creates in a deeply nested folder', async () => {
+            const meta = await store.create('Deep', 'Work/Sub/Folder');
+            expect(meta.id).toBe('Work/Sub/Folder/Deep.md');
+        });
+
+        it('sanitizes the parent path so it cannot escape the root', async () => {
+            const meta = await store.create('X', '../../etc');
+            expect(meta.id).toBe('etc/X.md');
+        });
+
+        it('scopes collision-numbering to the target folder', async () => {
+            const inbox = await store.create('Notes', 'Inbox');
+            const archive = await store.create('Notes', 'Archive');
+            const inbox2 = await store.create('Notes', 'Inbox');
+            expect(inbox.id).toBe('Inbox/Notes.md');
+            expect(archive.id).toBe('Archive/Notes.md'); // same leaf, different folder → no suffix
+            expect(inbox2.id).toBe('Inbox/Notes 2.md'); // same folder → numbered
+        });
+
+        it('moves a note into another folder, preserving content and mtime', async () => {
+            const created = await store.create('Note', 'Inbox');
+            const saved = await store.save('Inbox/Note.md', 'keep me', created.updatedAt ?? 0);
+
+            const moved = await store.move('Inbox/Note.md', 'Archive');
+
+            expect(moved).toMatchObject({id: 'Archive/Note.md', title: 'Note'});
+            expect(moved.updatedAt).toBe(saved.updatedAt); // pure relocation: mtime unchanged
+            expect((await store.get('Archive/Note.md')).content).toBe('keep me');
+            expect(await store.stat('Inbox/Note.md')).toBeNull();
+        });
+
+        it('moves a nested note back to the root', async () => {
+            await store.create('Note', 'Inbox');
+            const moved = await store.move('Inbox/Note.md', '');
+            expect(moved.id).toBe('Note.md');
+            expect(await store.stat('Inbox/Note.md')).toBeNull();
+        });
+
+        it('is a no-op when moving into the folder the note already lives in', async () => {
+            const created = await store.create('Note', 'Inbox');
+            const moved = await store.move('Inbox/Note.md', 'Inbox');
+            expect(moved.id).toBe('Inbox/Note.md');
+            expect(moved.updatedAt).toBe(created.updatedAt);
+        });
+
+        it('hard-fails a move onto an existing same-leaf note, leaving the source intact', async () => {
+            await store.create('Note', 'Inbox');
+            await store.create('Note', 'Archive');
+
+            await expect(store.move('Inbox/Note.md', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Inbox/Note.md')).not.toBeNull();
+        });
+
+        it('throws NotFoundError when moving a missing note', async () => {
+            await expect(store.move('Ghost/Note.md', 'Archive')).rejects.toMatchObject({
+                name: 'NotFoundError',
+            });
+        });
+    });
+
     describe('remove / stat', () => {
         it('deletes a note', async () => {
             await store.create('Gone');

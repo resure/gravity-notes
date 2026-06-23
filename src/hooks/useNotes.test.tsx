@@ -363,11 +363,21 @@ class DeferredSaveStore implements NoteStore {
         return Promise.resolve({...this.meta(id), content: this.content.get(id) ?? ''});
     }
 
-    async create(title: string): Promise<NoteMeta> {
-        const id = `${title}.md`;
+    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+        const id = parentPath ? `${parentPath}/${title}.md` : `${title}.md`;
         this.content.set(id, '');
         this.mtime.set(id, ++this.clock);
         return this.meta(id);
+    }
+
+    async move(id: string, destFolder: string): Promise<NoteMeta> {
+        const leaf = id.slice(id.lastIndexOf('/') + 1);
+        const next = destFolder ? `${destFolder}/${leaf}` : leaf;
+        if (next === id) return this.meta(id);
+        this.content.set(next, this.content.get(id) ?? '');
+        this.content.delete(id);
+        this.mtime.set(next, this.mtime.get(id) ?? ++this.clock);
+        return this.meta(next);
     }
 
     save(id: string, content: string): Promise<NoteMeta> {
