@@ -9,6 +9,7 @@ import {
     joinPath,
     previewFromContent,
     sanitizeDir,
+    sanitizeSegment,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
@@ -180,6 +181,20 @@ export class TauriNoteStore implements NoteStore {
 
     async remove(id: string): Promise<void> {
         await invoke('notes_remove', {dir: this.dir, name: id});
+    }
+
+    async createFolder(parentPath: string, name: string): Promise<string> {
+        const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
+        await invoke('notes_create_folder', {dir: this.dir, path});
+        return path;
+    }
+
+    async removeFolder(path: string): Promise<void> {
+        await invoke('notes_remove_dir', {dir: this.dir, path});
+    }
+
+    async listFolders(): Promise<string[]> {
+        return invoke<string[]>('notes_list_folders', {dir: this.dir});
     }
 
     async readMetadata(): Promise<NotesMetadata> {

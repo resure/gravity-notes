@@ -25,6 +25,10 @@ use tauri::Manager;
 
 /// Note files end in `.md` (matched case-insensitively, like the web backend).
 const MD_EXT: &str = ".md";
+/// Marker file keeping a deliberately-empty folder alive (mirrors `FOLDER_MARKER` in noteText.ts).
+const FOLDER_MARKER: &str = ".gnkeep";
+/// The metadata sidecar — ignored by the empty-folder prune (it only ever lives at the root).
+const METADATA_FILENAME: &str = ".gravity-notes.json";
 /// Bytes of each file scanned for the list-preview snippet. Mirrors `PREVIEW_SCAN_BYTES`
 /// in `src/storage/noteText.ts`; the preview text itself is derived TS-side.
 const PREVIEW_SCAN_BYTES: u64 = 500;
@@ -255,6 +259,11 @@ fn notes_rename(dir: String, from: String, to: String) -> Result<f64, String> {
         fs::create_dir_all(parent).map_err(stringify)?;
     }
     rename_or_copy(&from_path, &to_path).map_err(stringify)?;
+    // Moving the last note out of a folder leaves it empty: prune the source's now-empty ancestors
+    // (a folder kept alive by a .gnkeep marker survives). The destination keeps the moved file.
+    if let Some(parent) = from_path.parent() {
+        prune_empty_ancestors(Path::new(&dir), parent);
+    }
     let meta = fs::metadata(&to_path).map_err(stringify)?;
     Ok(modified_ms(&meta))
 }
@@ -262,7 +271,97 @@ fn notes_rename(dir: String, from: String, to: String) -> Result<f64, String> {
 #[tauri::command]
 fn notes_remove(dir: String, name: String) -> Result<(), String> {
     let path = resolve_within(&dir, &name)?;
-    fs::remove_file(path).map_err(stringify)
+    fs::remove_file(&path).map_err(stringify)?;
+    if let Some(parent) = path.parent() {
+        prune_empty_ancestors(Path::new(&dir), parent);
+    }
+    Ok(())
+}
+
+/// Whether `dir` holds nothing worth keeping: no `.md`, no `.gnkeep`, no subdirectory. The sidecar
+/// is ignored; an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
+/// can't race a concurrent write. Anything else (a note, a marker, a subdir) keeps the folder.
+fn is_prunable(dir: &Path) -> bool {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return false,
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => return false,
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == METADATA_FILENAME {
+            continue;
+        }
+        // A note, the .gnkeep marker, a subdirectory, or an in-flight temp all keep the folder.
+        return false;
+    }
+    true
+}
+
+/// Remove now-empty folders from `start` up toward `root` (never removing `root` itself). Stops at
+/// the first folder that is kept (holds a note, a `.gnkeep`, a subdir, or an in-flight temp).
+fn prune_empty_ancestors(root: &Path, start: &Path) {
+    let mut dir = start.to_path_buf();
+    while dir != root && dir.starts_with(root) {
+        if !is_prunable(&dir) || fs::remove_dir(&dir).is_err() {
+            break;
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent.to_path_buf(),
+            None => break,
+        }
+    }
+}
+
+/// Create an (initially empty) folder and keep it alive with a `.gnkeep` marker.
+#[tauri::command]
+fn notes_create_folder(dir: String, path: String) -> Result<(), String> {
+    let folder = resolve_within(&dir, &path)?;
+    fs::create_dir_all(&folder).map_err(stringify)?;
+    write_atomic(&folder.join(FOLDER_MARKER), b"").map_err(stringify)
+}
+
+/// Remove an empty folder: drop its `.gnkeep`, then remove the (now-empty) directory.
+#[tauri::command]
+fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
+    let folder = resolve_within(&dir, &path)?;
+    let _ = fs::remove_file(folder.join(FOLDER_MARKER));
+    fs::remove_dir(&folder).map_err(stringify)
+}
+
+/// Every folder (recursively) relative to the root, including deliberately-empty `.gnkeep` ones.
+#[tauri::command]
+fn notes_list_folders(dir: String) -> Result<Vec<String>, String> {
+    let root = Path::new(&dir);
+    let mut out = Vec::new();
+    collect_folders(root, root, &mut out).map_err(stringify)?;
+    Ok(out)
+}
+
+fn collect_folders(root: &Path, current: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
+    for entry in fs::read_dir(current)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() || !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        out.push(
+            path.strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/"),
+        );
+        collect_folders(root, &path, out)?;
+    }
+    Ok(())
 }
 
 /// Whether a name exists in the folder. Case-insensitive on macOS's default filesystem,
@@ -318,6 +417,9 @@ pub fn run() {
             notes_remove,
             notes_exists,
             notes_stat,
+            notes_create_folder,
+            notes_remove_dir,
+            notes_list_folders,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -420,6 +522,57 @@ mod tests {
         // Nothing was written outside the folder.
         assert!(!dir.parent().unwrap().join("evil.md").exists());
         assert!(!dir.parent().unwrap().join("escaped.md").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn creates_and_lists_an_empty_folder_kept_by_its_marker() {
+        let dir = temp_dir();
+        notes_create_folder(s(&dir), "Projects".into()).unwrap();
+
+        assert!(dir.join("Projects").join(FOLDER_MARKER).is_file());
+        assert_eq!(notes_list_folders(s(&dir)).unwrap(), vec!["Projects"]);
+        // The marker keeps it out of the note listing.
+        assert!(notes_list(s(&dir)).unwrap().is_empty());
+
+        notes_remove_dir(s(&dir), "Projects".into()).unwrap();
+        assert!(!dir.join("Projects").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn removing_the_last_note_prunes_an_implicit_folder_but_keeps_a_marked_one() {
+        let dir = temp_dir();
+        // An implicit folder (no marker) and a deliberately-empty one (marker).
+        notes_write(s(&dir), "Work/Note.md".into(), "x".into()).unwrap();
+        notes_create_folder(s(&dir), "Keep".into()).unwrap();
+        notes_write(s(&dir), "Keep/Temp.md".into(), "y".into()).unwrap();
+
+        // Deleting Work's only note prunes the now-empty Work/ entirely.
+        notes_remove(s(&dir), "Work/Note.md".into()).unwrap();
+        assert!(!dir.join("Work").exists());
+
+        // Deleting Keep's only note leaves Keep/ alive — its .gnkeep marker is content.
+        notes_remove(s(&dir), "Keep/Temp.md".into()).unwrap();
+        assert!(dir.join("Keep").is_dir());
+        assert!(dir.join("Keep").join(FOLDER_MARKER).is_file());
+        assert_eq!(notes_list_folders(s(&dir)).unwrap(), vec!["Keep"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn moving_the_last_note_out_prunes_nested_empty_ancestors() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "A/B/C/Note.md".into(), "x".into()).unwrap();
+
+        notes_rename(s(&dir), "A/B/C/Note.md".into(), "Note.md".into()).unwrap();
+
+        // A, A/B, A/B/C were all left empty by the move and pruned up to (not including) the root.
+        assert!(!dir.join("A").exists());
+        assert!(dir.join("Note.md").is_file());
 
         let _ = fs::remove_dir_all(&dir);
     }

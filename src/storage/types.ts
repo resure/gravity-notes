@@ -88,6 +88,20 @@ export interface NoteStore {
     move(id: string, destFolder: string): Promise<NoteMeta>;
     /** Delete a note. */
     remove(id: string): Promise<void>;
+    /**
+     * Create an (initially empty) folder at `parentPath`/`name` and return its POSIX path. A
+     * deliberately-empty folder persists — a `.gnkeep` marker on disk, or a marker entry in-browser
+     * — so the auto-prune of emptied folders never destroys one the user created on purpose.
+     * Returns the existing path if it already exists.
+     */
+    createFolder(parentPath: string, name: string): Promise<string>;
+    /** Remove an empty folder's marker (the caller ensures it holds no notes). */
+    removeFolder(path: string): Promise<void>;
+    /**
+     * Every folder path (POSIX), including deliberately-empty ones, for rendering the tree. Folders
+     * implied by a note's path are included alongside explicitly-created empty ones.
+     */
+    listFolders(): Promise<string[]>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
     /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */

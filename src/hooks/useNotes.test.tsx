@@ -412,6 +412,16 @@ class DeferredSaveStore implements NoteStore {
         this.content.delete(id);
     }
 
+    async createFolder(parentPath: string, name: string): Promise<string> {
+        return parentPath ? `${parentPath}/${name}` : name;
+    }
+
+    async removeFolder(): Promise<void> {}
+
+    async listFolders(): Promise<string[]> {
+        return [];
+    }
+
     async stat(id: string): Promise<number | null> {
         return this.mtime.get(id) ?? null;
     }
@@ -661,6 +671,16 @@ class ControllableStore implements NoteStore {
 
     async remove(id: string): Promise<void> {
         this.files.delete(id);
+    }
+
+    async createFolder(parentPath: string, name: string): Promise<string> {
+        return parentPath ? `${parentPath}/${name}` : name;
+    }
+
+    async removeFolder(): Promise<void> {}
+
+    async listFolders(): Promise<string[]> {
+        return [];
     }
 
     async stat(id: string): Promise<number | null> {
