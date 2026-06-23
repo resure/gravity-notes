@@ -6,9 +6,44 @@
 
 export const MD_EXT = '.md';
 
-/** Strip the `.md` extension to get a display title. */
+/**
+ * Marker file that keeps a deliberately-empty folder alive (it counts as folder *content*, so the
+ * empty-ancestor prune leaves the folder in place). Git-familiar and visible in Finder. Not used
+ * until first-class empty folders land; defined here so every layer shares the one spelling.
+ */
+export const FOLDER_MARKER = '.gnkeep';
+
+/**
+ * The leaf (last `/` segment) of a note id. A flat id (no slash) is its own leaf, so this is a no-op
+ * for non-nested notes.
+ */
+export function basename(id: string): string {
+    const slash = id.lastIndexOf('/');
+    return slash === -1 ? id : id.slice(slash + 1);
+}
+
+/**
+ * The POSIX folder path of a note id, without a trailing slash; `''` for a root-level note. A flat
+ * id yields `''`.
+ */
+export function dirname(id: string): string {
+    const slash = id.lastIndexOf('/');
+    return slash === -1 ? '' : id.slice(0, slash);
+}
+
+/** Join a POSIX folder path and a leaf into a note id. An empty `parent` means root. */
+export function joinPath(parent: string, leaf: string): string {
+    const dir = parent.replace(/\/+$/, '');
+    return dir ? `${dir}/${leaf}` : leaf;
+}
+
+/**
+ * Strip the `.md` extension off the *leaf* to get a display title. Basename-first, so a nested id
+ * (`Work/Roadmap.md`) yields just `Roadmap`, never the folder prefix; a flat id is unaffected.
+ */
 export function titleFromFileName(name: string): string {
-    return name.toLowerCase().endsWith(MD_EXT) ? name.slice(0, -MD_EXT.length) : name;
+    const leaf = basename(name);
+    return leaf.toLowerCase().endsWith(MD_EXT) ? leaf.slice(0, -MD_EXT.length) : leaf;
 }
 
 /** Trailing newlines are insignificant in Markdown; drop them for a canonical body. */
@@ -43,15 +78,39 @@ export function previewFromContent(text: string): string {
         .slice(0, 140);
 }
 
-/** Turn a user-supplied title into a safe file-name base (no extension). */
-export function sanitizeTitle(title: string): string {
+/**
+ * Turn a user-supplied title into a safe file-name *segment* (one leaf or one folder name, no
+ * extension). Path separators are squashed to spaces, so a typed title can never inject a folder
+ * boundary — nesting only ever comes from an explicit path join, never from the text of a name.
+ */
+export function sanitizeSegment(title: string): string {
     const cleaned = title
-        .replace(/[/\\:*?"<>|]/g, ' ') // characters illegal in file names
+        .replace(/[/\\:*?"<>|]/g, ' ') // characters illegal in file names (incl. path separators)
         // eslint-disable-next-line no-control-regex
         .replace(/[\x00-\x1f]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
     return cleaned || 'Untitled';
+}
+
+/**
+ * Back-compat alias: a note *title* is exactly one leaf segment. Existing `create`/`rename` call
+ * sites keep calling `sanitizeTitle`; nesting is expressed by joining a separately-sanitized folder
+ * path, never by what the user types into a title.
+ */
+export const sanitizeTitle = sanitizeSegment;
+
+/**
+ * Clean a user-supplied POSIX-relative folder path: sanitize each segment, and drop empty, `.`, and
+ * `..` segments so a folder path can never escape the notes root. Returns `''` for the root.
+ */
+export function sanitizeDir(relDir: string): string {
+    return relDir
+        .split('/')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
+        .map(sanitizeSegment)
+        .join('/');
 }
 
 /**
