@@ -134,6 +134,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             reconcile(
                 metadataRef.current,
                 list.map((n) => n.id),
+                {recursive: store.listsRecursively},
             ),
         );
     }, [store, applyMetadata]);
@@ -421,6 +422,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 const meta = reconcile(
                     raw,
                     list.map((n) => n.id),
+                    {recursive: store.listsRecursively},
                 );
                 let loaded: Note | null = null;
                 if (meta.active) {
