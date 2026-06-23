@@ -1,11 +1,25 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
-import {Ellipsis, Pencil, Pin, PinFill, PinSlash, Plus, TrashBin} from '@gravity-ui/icons';
+import {
+    ChevronDown,
+    ChevronRight,
+    Ellipsis,
+    Folder,
+    FolderPlus,
+    Pencil,
+    Pin,
+    PinFill,
+    PinSlash,
+    Plus,
+    TrashBin,
+} from '@gravity-ui/icons';
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
 import {escapeRegExp, tokenizeQuery} from '../search';
-import type {NoteMeta, SortMode} from '../storage/types';
+import {dirname} from '../storage/noteText';
+import type {SortMode} from '../storage/types';
+import type {TreeRow} from '../tree';
 
 import './NoteList.css';
 
@@ -19,10 +33,13 @@ export interface NoteListHandle {
 }
 
 export interface NoteListProps {
-    notes: NoteMeta[];
+    /** The visible rows: the folder tree, or a flat list of note rows when searching. */
+    rows: TreeRow[];
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
+    /** Show each note's folder path as a dimmed crumb (flat search mode, where headers are absent). */
+    showCrumbs: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
     snippetById?: Map<string, string>;
     /** Shared with the top bar's search box; focused when the list is empty. */
@@ -33,13 +50,20 @@ export interface NoteListProps {
     onCommit: (id: string) => void;
     /** Esc on a focused row: close the open note and return to search. */
     onEscapeList: () => void;
-    /** New-note button above the list (creates an Untitled note). */
-    onCreate: (title?: string) => void;
+    /** Create a note (optionally inside `parentPath`). */
+    onCreate: (title?: string, parentPath?: string) => void;
+    /** Create an (initially empty) folder. */
+    onCreateFolder: (parentPath: string, name: string) => void;
+    /** Remove an empty folder. */
+    onRemoveFolder: (path: string) => void;
+    /** Collapse/expand a folder. */
+    onToggleCollapse: (path: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
+    /** Toggle a pin — works on a note id or a folder path. */
     onTogglePin: (id: string) => void;
 }
 
@@ -79,17 +103,31 @@ export function formatNoteDate(ts: number | undefined): string {
     return `${dd}.${mo}.${yy}`;
 }
 
+/** Folder path as a readable crumb: "Work/Sub" → "Work / Sub". */
+function folderCrumb(id: string): string {
+    return dirname(id).split('/').join(' / ');
+}
+
+/** Left padding (px) for a row at the given tree depth (depth 0 matches the toolbar inset). */
+function indentFor(depth: number): number {
+    return 16 + depth * 16;
+}
+
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
-        notes,
+        rows,
         selectedId,
         query,
+        showCrumbs,
         snippetById,
         searchInputRef,
         onBrowse,
         onCommit,
         onEscapeList,
         onCreate,
+        onCreateFolder,
+        onRemoveFolder,
+        onToggleCollapse,
         onRename,
         onDelete,
         sortMode,
@@ -101,24 +139,37 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 ) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
-    const [deleting, setDeleting] = useState<NoteMeta | null>(null);
+    const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
+    // The parent path for a pending New-folder dialog (null = closed); '' = create at the root.
+    const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+    const [newFolderName, setNewFolderName] = useState('');
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const editInputRef = useRef<HTMLInputElement>(null);
+    const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+    // The note ids the keyboard cursor moves over — visible note rows only (folder headers skipped).
+    const noteIds = useMemo(
+        () => rows.flatMap((row) => (row.kind === 'note' ? [row.note.id] : [])),
+        [rows],
+    );
 
     // Focus the rename field when inline editing begins.
     useEffect(() => {
         if (editingId) editInputRef.current?.focus();
     }, [editingId]);
 
-    // The item that is tabbable: the selected one, else the first.
+    useEffect(() => {
+        if (newFolderParent !== null) newFolderInputRef.current?.focus();
+    }, [newFolderParent]);
+
+    // The note row that is tabbable: the selected one if visible, else the first visible note.
     const focusableId =
-        selectedId && notes.some((n) => n.id === selectedId) ? selectedId : (notes[0]?.id ?? null);
+        selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
 
     // When an inline rename ends (commit or cancel), return keyboard focus to the list so
     // arrow-nav continues — the input unmounts first, otherwise focus is stranded on <body>.
-    // Done in an effect (after the unmount), not synchronously, so a cancel doesn't blur-commit.
     const wasEditingRef = useRef(false);
     useEffect(() => {
         if (wasEditingRef.current && editingId === null && focusableId) {
@@ -127,9 +178,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         wasEditingRef.current = editingId !== null;
     }, [editingId, focusableId]);
 
-    const beginRename = (note: NoteMeta) => {
-        setEditValue(note.title);
-        setEditingId(note.id);
+    const beginRename = (id: string, title: string) => {
+        setEditValue(title);
+        setEditingId(id);
     };
 
     useImperativeHandle(
@@ -137,8 +188,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         () => ({
             focusSelected() {
                 const row = focusableId ? itemRefs.current.get(focusableId) : undefined;
-                // Fall back to the search box when there's no row (e.g. an empty result set),
-                // so Esc from a lost-focus spot still lands somewhere useful.
+                // Fall back to the search box when there's no visible note row (e.g. an empty
+                // result set), so Esc from a lost-focus spot still lands somewhere useful.
                 if (row) row.focus();
                 else searchInputRef.current?.focus();
             },
@@ -146,11 +197,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 itemRefs.current.get(id)?.focus();
             },
             startRename(id: string) {
-                const note = notes.find((n) => n.id === id);
-                if (note) beginRename(note);
+                const row = rows.find((r) => r.kind === 'note' && r.note.id === id);
+                if (row && row.kind === 'note') beginRename(id, row.note.title);
             },
         }),
-        [focusableId, notes, searchInputRef],
+        [focusableId, rows, searchInputRef],
     );
 
     const confirmDelete = () => {
@@ -158,12 +209,23 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         setDeleting(null);
     };
 
-    const commitRename = (note: NoteMeta) => {
+    const commitRename = (id: string, title: string) => {
         const next = editValue.trim();
         setEditingId(null);
-        if (next && next !== note.title) {
-            onRename(note.id, next);
-        }
+        if (next && next !== title) onRename(id, next);
+    };
+
+    const submitNewFolder = () => {
+        const name = newFolderName.trim();
+        const parent = newFolderParent;
+        setNewFolderParent(null);
+        setNewFolderName('');
+        if (parent !== null && name) onCreateFolder(parent, name);
+    };
+
+    const cancelNewFolder = () => {
+        setNewFolderParent(null);
+        setNewFolderName('');
     };
 
     /** Move the highlight to a row, preview it, and keep DOM focus on the list. */
@@ -173,32 +235,32 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     };
 
     const moveSelection = (fromId: string, delta: number) => {
-        const index = notes.findIndex((n) => n.id === fromId);
+        const index = noteIds.indexOf(fromId);
         if (index === -1) return;
-        const next = notes[Math.min(Math.max(index + delta, 0), notes.length - 1)];
-        if (next && next.id !== fromId) browseRow(next.id);
+        const next = noteIds[Math.min(Math.max(index + delta, 0), noteIds.length - 1)];
+        if (next && next !== fromId) browseRow(next);
     };
 
-    const onItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, note: NoteMeta) => {
-        if (editingId === note.id) return;
+    const onItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, id: string) => {
+        if (editingId === id) return;
         // Bare j/k mirror the arrow keys (vim-style). Guarded against modifiers so ⌘J
         // (new note) still falls through to the global shortcut handler.
         const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
         if (event.key === 'ArrowDown' || (bare && event.key === 'j')) {
             event.preventDefault();
-            moveSelection(note.id, 1);
+            moveSelection(id, 1);
             return;
         }
         if (event.key === 'ArrowUp' || (bare && event.key === 'k')) {
             event.preventDefault();
-            moveSelection(note.id, -1);
+            moveSelection(id, -1);
             return;
         }
         switch (event.key) {
             case 'Enter':
                 if (!bare) break; // ⌘/Ctrl+Enter is the global new-note shortcut — let it bubble
                 event.preventDefault();
-                onCommit(note.id);
+                onCommit(id);
                 break;
             case 'Escape':
                 event.preventDefault();
@@ -208,6 +270,192 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     };
 
     const pinnedSet = new Set(pinnedIds);
+
+    const renderFolder = (row: Extract<TreeRow, {kind: 'folder'}>) => (
+        <div
+            key={`folder:${row.path}`}
+            className="note-list__folder"
+            style={{paddingInlineStart: indentFor(row.depth)}}
+        >
+            {/* The whole disclosure (caret + folder icon + name) is one button: keyboard-toggleable
+                and avoiding a non-interactive div with a click handler. The ＋/menu are siblings. */}
+            <Button
+                className="note-list__folder-toggle"
+                view="flat"
+                size="s"
+                width="max"
+                aria-expanded={!row.collapsed}
+                aria-label={`${row.collapsed ? 'Expand' : 'Collapse'} ${row.name}`}
+                onClick={() => onToggleCollapse(row.path)}
+            >
+                <Icon data={row.collapsed ? ChevronRight : ChevronDown} size={14} />
+                <Icon data={Folder} size={14} />
+                {pinnedSet.has(row.path) ? (
+                    <Icon className="note-list__pin" data={PinFill} size={12} />
+                ) : null}
+                <span className="note-list__folder-name">{row.name}</span>
+            </Button>
+            <div className="note-list__actions">
+                <Button
+                    view="flat"
+                    size="s"
+                    aria-label={`New note in ${row.name}`}
+                    onClick={() => onCreate(undefined, row.path)}
+                >
+                    <Icon data={Plus} />
+                </Button>
+                <DropdownMenu
+                    renderSwitcher={(props) => (
+                        <Button {...props} view="flat" size="s" aria-label="Folder actions">
+                            <Icon data={Ellipsis} />
+                        </Button>
+                    )}
+                    items={[
+                        {
+                            text: pinnedSet.has(row.path) ? 'Unpin' : 'Pin to top',
+                            iconStart: <Icon data={pinnedSet.has(row.path) ? PinSlash : Pin} />,
+                            action: () => onTogglePin(row.path),
+                        },
+                        {
+                            text: 'New subfolder',
+                            iconStart: <Icon data={FolderPlus} />,
+                            action: () => setNewFolderParent(row.path),
+                        },
+                        {
+                            text: 'Delete folder',
+                            theme: 'danger',
+                            iconStart: <Icon data={TrashBin} />,
+                            // Only empty folders can be removed (the file delete is per-note).
+                            disabled: row.hasChildren,
+                            action: () => onRemoveFolder(row.path),
+                        },
+                    ]}
+                />
+            </div>
+        </div>
+    );
+
+    const renderNote = (row: Extract<TreeRow, {kind: 'note'}>) => {
+        const note = row.note;
+        const selected = note.id === selectedId;
+        const editing = note.id === editingId;
+        const tabbable = !editing && note.id === focusableId;
+        // A full-text body match shows its surrounding snippet in place of the head-of-note preview.
+        const previewText = snippetById?.get(note.id) ?? note.preview;
+        const crumb = showCrumbs ? folderCrumb(note.id) : '';
+        return (
+            <div
+                key={note.id}
+                ref={(el) => {
+                    if (el) itemRefs.current.set(note.id, el);
+                    else itemRefs.current.delete(note.id);
+                }}
+                className={'note-list__item' + (selected ? ' note-list__item_selected' : '')}
+                style={{paddingInlineStart: indentFor(row.depth)}}
+                role="option"
+                aria-selected={selected}
+                tabIndex={tabbable ? 0 : -1}
+                onClick={() => !editing && browseRow(note.id)}
+                onKeyDown={(e) => onItemKeyDown(e, note.id)}
+            >
+                {editing ? (
+                    <TextInput
+                        className="note-list__edit"
+                        controlRef={editInputRef}
+                        value={editValue}
+                        onUpdate={setEditValue}
+                        onBlur={() => commitRename(note.id, note.title)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                                e.preventDefault();
+                                commitRename(note.id, note.title);
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setEditingId(null);
+                            }
+                        }}
+                    />
+                ) : (
+                    <>
+                        <div className="note-list__row">
+                            {row.pinned ? (
+                                <Icon
+                                    className="note-list__pin"
+                                    data={PinFill}
+                                    size={14}
+                                    aria-hidden
+                                />
+                            ) : null}
+                            <Text className="note-list__title" ellipsis>
+                                {highlightTerms(note.title, terms)}
+                            </Text>
+                            <div className="note-list__actions">
+                                <DropdownMenu
+                                    renderSwitcher={(props) => (
+                                        <Button
+                                            {...props}
+                                            view="flat"
+                                            size="s"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                props.onClick?.(e);
+                                            }}
+                                        >
+                                            <Icon data={Ellipsis} />
+                                        </Button>
+                                    )}
+                                    items={[
+                                        {
+                                            text: row.pinned ? 'Unpin' : 'Pin to top',
+                                            iconStart: <Icon data={row.pinned ? PinSlash : Pin} />,
+                                            action: () => onTogglePin(note.id),
+                                        },
+                                        {
+                                            text: 'Rename',
+                                            iconStart: <Icon data={Pencil} />,
+                                            action: () => beginRename(note.id, note.title),
+                                        },
+                                        {
+                                            text: 'Delete',
+                                            theme: 'danger',
+                                            iconStart: <Icon data={TrashBin} />,
+                                            action: () =>
+                                                setDeleting({id: note.id, title: note.title}),
+                                        },
+                                    ]}
+                                />
+                            </div>
+                        </div>
+                        <div className="note-list__meta">
+                            <Text variant="caption-2" color="secondary" className="note-list__date">
+                                {formatNoteDate(note.updatedAt)}
+                            </Text>
+                            {crumb ? (
+                                <Text
+                                    variant="caption-2"
+                                    color="secondary"
+                                    className="note-list__crumb"
+                                    ellipsis
+                                >
+                                    {crumb}
+                                </Text>
+                            ) : null}
+                            {previewText ? (
+                                <Text
+                                    variant="caption-2"
+                                    color="secondary"
+                                    className="note-list__preview"
+                                    ellipsis
+                                >
+                                    {highlightTerms(previewText, terms)}
+                                </Text>
+                            ) : null}
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="note-list">
@@ -228,6 +476,14 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         {value: 'created', content: 'Created'},
                     ]}
                 />
+                <Button
+                    view="normal"
+                    size="m"
+                    aria-label="New folder"
+                    onClick={() => setNewFolderParent('')}
+                >
+                    <Icon data={FolderPlus} />
+                </Button>
                 <Button view="normal" size="m" onClick={() => onCreate()}>
                     <Icon data={Plus} />
                     New
@@ -235,7 +491,41 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             </div>
 
             <div className="note-list__items" role="listbox" aria-label="Notes">
-                {notes.length === 0 ? (
+                {newFolderParent === null ? null : (
+                    <div
+                        className="note-list__folder-new"
+                        style={{
+                            paddingInlineStart: indentFor(
+                                newFolderParent ? newFolderParent.split('/').length : 0,
+                            ),
+                        }}
+                    >
+                        <Icon
+                            className="note-list__folder-icon"
+                            data={Folder}
+                            size={14}
+                            aria-hidden
+                        />
+                        <TextInput
+                            className="note-list__edit"
+                            controlRef={newFolderInputRef}
+                            placeholder="Folder name"
+                            value={newFolderName}
+                            onUpdate={setNewFolderName}
+                            onBlur={submitNewFolder}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    submitNewFolder();
+                                } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    cancelNewFolder();
+                                }
+                            }}
+                        />
+                    </div>
+                )}
+                {rows.length === 0 && newFolderParent === null ? (
                     <div className="note-list__empty">
                         <Text color="secondary">
                             {query.trim()
@@ -244,131 +534,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         </Text>
                     </div>
                 ) : (
-                    notes.map((note) => {
-                        const selected = note.id === selectedId;
-                        const editing = note.id === editingId;
-                        const tabbable = !editing && note.id === focusableId;
-                        // A full-text body match shows its surrounding snippet in place of the
-                        // standard head-of-note preview.
-                        const previewText = snippetById?.get(note.id) ?? note.preview;
-                        return (
-                            <div
-                                key={note.id}
-                                ref={(el) => {
-                                    if (el) itemRefs.current.set(note.id, el);
-                                    else itemRefs.current.delete(note.id);
-                                }}
-                                className={
-                                    'note-list__item' +
-                                    (selected ? ' note-list__item_selected' : '')
-                                }
-                                role="option"
-                                aria-selected={selected}
-                                tabIndex={tabbable ? 0 : -1}
-                                onClick={() => !editing && browseRow(note.id)}
-                                onKeyDown={(e) => onItemKeyDown(e, note)}
-                            >
-                                {editing ? (
-                                    <TextInput
-                                        className="note-list__edit"
-                                        controlRef={editInputRef}
-                                        value={editValue}
-                                        onUpdate={setEditValue}
-                                        onBlur={() => commitRename(note)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
-                                                e.preventDefault();
-                                                commitRename(note);
-                                            } else if (e.key === 'Escape') {
-                                                e.preventDefault();
-                                                setEditingId(null);
-                                            }
-                                        }}
-                                    />
-                                ) : (
-                                    <>
-                                        <div className="note-list__row">
-                                            {pinnedSet.has(note.id) ? (
-                                                <Icon
-                                                    className="note-list__pin"
-                                                    data={PinFill}
-                                                    size={14}
-                                                    aria-hidden
-                                                />
-                                            ) : null}
-                                            <Text className="note-list__title" ellipsis>
-                                                {highlightTerms(note.title, terms)}
-                                            </Text>
-                                            <div className="note-list__actions">
-                                                <DropdownMenu
-                                                    renderSwitcher={(props) => (
-                                                        <Button
-                                                            {...props}
-                                                            view="flat"
-                                                            size="s"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                props.onClick?.(e);
-                                                            }}
-                                                        >
-                                                            <Icon data={Ellipsis} />
-                                                        </Button>
-                                                    )}
-                                                    items={[
-                                                        {
-                                                            text: pinnedSet.has(note.id)
-                                                                ? 'Unpin'
-                                                                : 'Pin to top',
-                                                            iconStart: (
-                                                                <Icon
-                                                                    data={
-                                                                        pinnedSet.has(note.id)
-                                                                            ? PinSlash
-                                                                            : Pin
-                                                                    }
-                                                                />
-                                                            ),
-                                                            action: () => onTogglePin(note.id),
-                                                        },
-                                                        {
-                                                            text: 'Rename',
-                                                            iconStart: <Icon data={Pencil} />,
-                                                            action: () => beginRename(note),
-                                                        },
-                                                        {
-                                                            text: 'Delete',
-                                                            theme: 'danger',
-                                                            iconStart: <Icon data={TrashBin} />,
-                                                            action: () => setDeleting(note),
-                                                        },
-                                                    ]}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="note-list__meta">
-                                            <Text
-                                                variant="caption-2"
-                                                color="secondary"
-                                                className="note-list__date"
-                                            >
-                                                {formatNoteDate(note.updatedAt)}
-                                            </Text>
-                                            {previewText ? (
-                                                <Text
-                                                    variant="caption-2"
-                                                    color="secondary"
-                                                    className="note-list__preview"
-                                                    ellipsis
-                                                >
-                                                    {highlightTerms(previewText, terms)}
-                                                </Text>
-                                            ) : null}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        );
-                    })
+                    rows.map((row) => (row.kind === 'folder' ? renderFolder(row) : renderNote(row)))
                 )}
             </div>
 
