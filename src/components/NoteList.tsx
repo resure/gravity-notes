@@ -2,11 +2,9 @@ import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} f
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
 import {
-    ChevronDown,
-    ChevronRight,
     Ellipsis,
     Folder,
-    FolderPlus,
+    Folders,
     Pencil,
     Pin,
     PinFill,
@@ -18,8 +16,7 @@ import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@grav
 
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {dirname} from '../storage/noteText';
-import type {SortMode} from '../storage/types';
-import type {TreeRow} from '../tree';
+import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
 
@@ -35,12 +32,12 @@ export interface NoteListHandle {
 }
 
 export interface NoteListProps {
-    /** The visible rows: the folder tree, or a flat list of note rows when searching. */
-    rows: TreeRow[];
+    /** The notes to show — already ordered (pins first, active sort), and folder-scoped or ranked. */
+    notes: NoteMeta[];
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
-    /** Show each note's folder path as a dimmed crumb (flat search mode, where headers are absent). */
+    /** Show each note's folder path as a dimmed crumb (flat search mode, across all folders). */
     showCrumbs: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
     snippetById?: Map<string, string>;
@@ -52,25 +49,24 @@ export interface NoteListProps {
     onCommit: (id: string) => void;
     /** Esc on a focused row: close the open note and return to search. */
     onEscapeList: () => void;
-    /** Create a note (optionally inside `parentPath`). */
-    onCreate: (title?: string, parentPath?: string) => void;
-    /** Create an (initially empty) folder. */
-    onCreateFolder: (parentPath: string, name: string) => void;
-    /** Remove an empty folder. */
-    onRemoveFolder: (path: string) => void;
-    /** Collapse/expand a folder. */
-    onToggleCollapse: (path: string) => void;
+    /** Create a note in the currently-selected folder. */
+    onCreate: () => void;
     /** All folder paths, for the "Move to…" picker. */
     folderPaths: string[];
-    /** Move a note into a folder (`''` = root) — the drag-drop and picker target. */
+    /** Move a note into a folder (`''` = root) — the picker target. */
     onMoveTo: (id: string, destFolder: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
-    /** Toggle a pin — works on a note id or a folder path. */
     onTogglePin: (id: string) => void;
+    /** Whether the folder rail is shown (drives the toggle button state + ← behavior). */
+    railOpen: boolean;
+    /** Show / hide the folder rail. */
+    onToggleRail: () => void;
+    /** Move focus into the folder rail (← on a row, when the rail is open). */
+    onFocusRail: () => void;
 }
 
 /** Wrap every occurrence of any `term` (case-insensitive) in `text` with a highlight `<mark>`. */
@@ -114,14 +110,9 @@ function folderCrumb(id: string): string {
     return dirname(id).split('/').join(' / ');
 }
 
-/** Left padding (px) for a row at the given tree depth (depth 0 matches the toolbar inset). */
-function indentFor(depth: number): number {
-    return 16 + depth * 16;
-}
-
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
-        rows,
+        notes,
         selectedId,
         query,
         showCrumbs,
@@ -131,9 +122,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onCommit,
         onEscapeList,
         onCreate,
-        onCreateFolder,
-        onRemoveFolder,
-        onToggleCollapse,
         folderPaths,
         onMoveTo,
         onRename,
@@ -142,40 +130,30 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSortChange,
         pinnedIds,
         onTogglePin,
+        railOpen,
+        onToggleRail,
+        onFocusRail,
     },
     ref,
 ) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
-    // The parent path for a pending New-folder dialog (null = closed); '' = create at the root.
-    const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
-    const [newFolderName, setNewFolderName] = useState('');
-    // The note whose "Move to…" picker is open (null = closed); and the folder being dragged over.
+    // The note whose "Move to…" picker is open (null = closed).
     const [movingNote, setMovingNote] = useState<{id: string; title: string} | null>(null);
-    const [dropTarget, setDropTarget] = useState<string | null>(null);
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const editInputRef = useRef<HTMLInputElement>(null);
-    const newFolderInputRef = useRef<HTMLInputElement>(null);
 
-    // The note ids the keyboard cursor moves over — visible note rows only (folder headers skipped).
-    const noteIds = useMemo(
-        () => rows.flatMap((row) => (row.kind === 'note' ? [row.note.id] : [])),
-        [rows],
-    );
+    const noteIds = useMemo(() => notes.map((note) => note.id), [notes]);
 
     // Focus the rename field when inline editing begins.
     useEffect(() => {
         if (editingId) editInputRef.current?.focus();
     }, [editingId]);
 
-    useEffect(() => {
-        if (newFolderParent !== null) newFolderInputRef.current?.focus();
-    }, [newFolderParent]);
-
-    // The note row that is tabbable: the selected one if visible, else the first visible note.
+    // The note row that is tabbable: the selected one if visible, else the first note.
     const focusableId =
         selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
 
@@ -208,15 +186,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 itemRefs.current.get(id)?.focus();
             },
             startRename(id: string) {
-                const row = rows.find((r) => r.kind === 'note' && r.note.id === id);
-                if (row && row.kind === 'note') beginRename(id, row.note.title);
+                const note = notes.find((n) => n.id === id);
+                if (note) beginRename(id, note.title);
             },
             startMove(id: string) {
-                const row = rows.find((r) => r.kind === 'note' && r.note.id === id);
-                if (row && row.kind === 'note') setMovingNote({id, title: row.note.title});
+                const note = notes.find((n) => n.id === id);
+                if (note) setMovingNote({id, title: note.title});
             },
         }),
-        [focusableId, rows, searchInputRef],
+        [focusableId, notes, searchInputRef],
     );
 
     const confirmDelete = () => {
@@ -228,19 +206,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         const next = editValue.trim();
         setEditingId(null);
         if (next && next !== title) onRename(id, next);
-    };
-
-    const submitNewFolder = () => {
-        const name = newFolderName.trim();
-        const parent = newFolderParent;
-        setNewFolderParent(null);
-        setNewFolderName('');
-        if (parent !== null && name) onCreateFolder(parent, name);
-    };
-
-    const cancelNewFolder = () => {
-        setNewFolderParent(null);
-        setNewFolderName('');
     };
 
     /** Move the highlight to a row, preview it, and keep DOM focus on the list. */
@@ -272,6 +237,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             return;
         }
         switch (event.key) {
+            case 'ArrowLeft':
+                // Step left into the folder rail (when it's open).
+                if (railOpen) {
+                    event.preventDefault();
+                    onFocusRail();
+                }
+                break;
             case 'Enter':
                 if (!bare) break; // ⌘/Ctrl+Enter is the global new-note shortcut — let it bubble
                 event.preventDefault();
@@ -284,91 +256,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         }
     };
 
-    const pinnedSet = new Set(pinnedIds);
-
-    const renderFolder = (row: Extract<TreeRow, {kind: 'folder'}>) => (
-        <div
-            key={`folder:${row.path}`}
-            className={
-                'note-list__folder' +
-                (dropTarget === row.path ? ' note-list__folder_drop-target' : '')
-            }
-            style={{paddingInlineStart: indentFor(row.depth)}}
-            onDragOver={(e) => {
-                e.preventDefault(); // allow drop
-                if (dropTarget !== row.path) setDropTarget(row.path);
-            }}
-            onDragLeave={() => setDropTarget((t) => (t === row.path ? null : t))}
-            onDrop={(e) => {
-                e.preventDefault();
-                setDropTarget(null);
-                const id = e.dataTransfer.getData('text/plain');
-                if (id) onMoveTo(id, row.path);
-            }}
-        >
-            {/* The whole disclosure (caret + folder icon + name) is one button: keyboard-toggleable
-                and avoiding a non-interactive div with a click handler. The ＋/menu are siblings. */}
-            <Button
-                className="note-list__folder-toggle"
-                view="flat"
-                size="s"
-                width="max"
-                aria-expanded={!row.collapsed}
-                aria-label={`${row.collapsed ? 'Expand' : 'Collapse'} ${row.name}`}
-                onClick={() => onToggleCollapse(row.path)}
-            >
-                <Icon data={row.collapsed ? ChevronRight : ChevronDown} size={14} />
-                <Icon data={Folder} size={14} />
-                {pinnedSet.has(row.path) ? (
-                    <Icon className="note-list__pin" data={PinFill} size={12} />
-                ) : null}
-                <span className="note-list__folder-name">{row.name}</span>
-            </Button>
-            <div className="note-list__actions">
-                <Button
-                    view="flat"
-                    size="s"
-                    aria-label={`New note in ${row.name}`}
-                    onClick={() => onCreate(undefined, row.path)}
-                >
-                    <Icon data={Plus} />
-                </Button>
-                <DropdownMenu
-                    renderSwitcher={(props) => (
-                        <Button {...props} view="flat" size="s" aria-label="Folder actions">
-                            <Icon data={Ellipsis} />
-                        </Button>
-                    )}
-                    items={[
-                        {
-                            text: pinnedSet.has(row.path) ? 'Unpin' : 'Pin to top',
-                            iconStart: <Icon data={pinnedSet.has(row.path) ? PinSlash : Pin} />,
-                            action: () => onTogglePin(row.path),
-                        },
-                        {
-                            text: 'New subfolder',
-                            iconStart: <Icon data={FolderPlus} />,
-                            action: () => setNewFolderParent(row.path),
-                        },
-                        {
-                            text: 'Delete folder',
-                            theme: 'danger',
-                            iconStart: <Icon data={TrashBin} />,
-                            // Only empty folders can be removed (the file delete is per-note).
-                            disabled: row.hasChildren,
-                            action: () => onRemoveFolder(row.path),
-                        },
-                    ]}
-                />
-            </div>
-        </div>
-    );
-
-    const renderNote = (row: Extract<TreeRow, {kind: 'note'}>) => {
-        const note = row.note;
+    const renderNote = (note: NoteMeta) => {
         const selected = note.id === selectedId;
         const editing = note.id === editingId;
         const tabbable = !editing && note.id === focusableId;
+        const pinned = pinnedIds.includes(note.id);
         // A full-text body match shows its surrounding snippet in place of the head-of-note preview.
         const previewText = snippetById?.get(note.id) ?? note.preview;
         const crumb = showCrumbs ? folderCrumb(note.id) : '';
@@ -380,7 +272,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     else itemRefs.current.delete(note.id);
                 }}
                 className={'note-list__item' + (selected ? ' note-list__item_selected' : '')}
-                style={{paddingInlineStart: indentFor(row.depth)}}
                 role="option"
                 aria-selected={selected}
                 tabIndex={tabbable ? 0 : -1}
@@ -409,7 +300,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 ) : (
                     <>
                         <div className="note-list__row">
-                            {row.pinned ? (
+                            {pinned ? (
                                 <Icon
                                     className="note-list__pin"
                                     data={PinFill}
@@ -437,8 +328,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                     )}
                                     items={[
                                         {
-                                            text: row.pinned ? 'Unpin' : 'Pin to top',
-                                            iconStart: <Icon data={row.pinned ? PinSlash : Pin} />,
+                                            text: pinned ? 'Unpin' : 'Pin to top',
+                                            iconStart: <Icon data={pinned ? PinSlash : Pin} />,
                                             action: () => onTogglePin(note.id),
                                         },
                                         {
@@ -497,6 +388,16 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     return (
         <div className="note-list">
             <div className="note-list__toolbar">
+                <Button
+                    view="flat"
+                    size="m"
+                    selected={railOpen}
+                    aria-label={railOpen ? 'Hide folders' : 'Show folders'}
+                    aria-pressed={railOpen}
+                    onClick={onToggleRail}
+                >
+                    <Icon data={Folders} />
+                </Button>
                 <Select
                     className="note-list__sort"
                     aria-label="Sort notes"
@@ -513,14 +414,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         {value: 'created', content: 'Created'},
                     ]}
                 />
-                <Button
-                    view="normal"
-                    size="m"
-                    aria-label="New folder"
-                    onClick={() => setNewFolderParent('')}
-                >
-                    <Icon data={FolderPlus} />
-                </Button>
                 <Button view="normal" size="m" onClick={() => onCreate()}>
                     <Icon data={Plus} />
                     New
@@ -528,50 +421,16 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             </div>
 
             <div className="note-list__items" role="listbox" aria-label="Notes">
-                {newFolderParent === null ? null : (
-                    <div
-                        className="note-list__folder-new"
-                        style={{
-                            paddingInlineStart: indentFor(
-                                newFolderParent ? newFolderParent.split('/').length : 0,
-                            ),
-                        }}
-                    >
-                        <Icon
-                            className="note-list__folder-icon"
-                            data={Folder}
-                            size={14}
-                            aria-hidden
-                        />
-                        <TextInput
-                            className="note-list__edit"
-                            controlRef={newFolderInputRef}
-                            placeholder="Folder name"
-                            value={newFolderName}
-                            onUpdate={setNewFolderName}
-                            onBlur={submitNewFolder}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    submitNewFolder();
-                                } else if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    cancelNewFolder();
-                                }
-                            }}
-                        />
-                    </div>
-                )}
-                {rows.length === 0 && newFolderParent === null ? (
+                {notes.length === 0 ? (
                     <div className="note-list__empty">
                         <Text color="secondary">
                             {query.trim()
                                 ? `No match — press Enter to create "${query.trim()}"`
-                                : 'No notes yet. Create your first one.'}
+                                : 'No notes here yet. Create your first one.'}
                         </Text>
                     </div>
                 ) : (
-                    rows.map((row) => (row.kind === 'folder' ? renderFolder(row) : renderNote(row)))
+                    notes.map(renderNote)
                 )}
             </div>
 

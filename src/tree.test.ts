@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 
 import {DEFAULT_METADATA} from './storage/metadata';
 import type {NoteMeta, NotesMetadata} from './storage/types';
-import {buildTree, visibleNoteIds} from './tree';
+import {buildFolderTree, notesInFolder} from './tree';
 
 const note = (id: string, updatedAt = 1): NoteMeta => ({
     id,
@@ -16,83 +16,88 @@ const meta = (over: Partial<NotesMetadata> = {}): NotesMetadata => ({
     ...over,
 });
 
-/** Compact view of the tree for assertions: "<indent><folder>/" or "<indent>note". */
-function shape(rows: ReturnType<typeof buildTree>): string[] {
-    return rows.map((row) => {
-        const indent = '  '.repeat(row.depth);
-        return row.kind === 'folder' ? `${indent}${row.name}/` : `${indent}${row.note.title}`;
-    });
+/** Compact view of the folder rows for assertions: "<indent><name>/". */
+function shape(rows: ReturnType<typeof buildFolderTree>): string[] {
+    return rows.map((row) => `${'  '.repeat(row.depth)}${row.name}/`);
 }
 
-describe('buildTree', () => {
-    it('lists root notes flat when there are no folders', () => {
-        const rows = buildTree([note('B.md'), note('A.md')], [], meta(), new Set());
-        expect(shape(rows)).toEqual(['A', 'B']); // title sort
-        expect(rows.every((r) => r.depth === 0)).toBe(true);
+describe('buildFolderTree', () => {
+    it('is empty when there are no folders (notes alone create none at root)', () => {
+        expect(buildFolderTree([], [note('A.md'), note('B.md')], meta(), new Set())).toEqual([]);
     });
 
-    it('groups notes under their folder, folders before notes, indented', () => {
-        const rows = buildTree(
-            [note('Root.md'), note('Work/Plan.md'), note('Work/Standup.md')],
-            ['Work'],
+    it('lists folders only — never notes — and nests by depth', () => {
+        const rows = buildFolderTree(
+            ['A', 'A/B', 'A/B/C'],
+            [note('A/B/C/Deep.md')],
             meta(),
             new Set(),
         );
-        expect(shape(rows)).toEqual(['Work/', '  Plan', '  Standup', 'Root']);
+        expect(shape(rows)).toEqual(['A/', '  B/', '    C/']);
     });
 
-    it('nests deeper folders with increasing depth', () => {
-        const rows = buildTree([note('A/B/C/Deep.md')], ['A', 'A/B', 'A/B/C'], meta(), new Set());
-        expect(shape(rows)).toEqual(['A/', '  B/', '    C/', '      Deep']);
+    it('omits a collapsed folder’s subfolders but keeps the folder', () => {
+        const rows = buildFolderTree(['A', 'A/B'], [], meta(), new Set(['A']));
+        expect(shape(rows)).toEqual(['A/']);
+        expect(rows[0].collapsed).toBe(true);
+        expect(rows[0].hasChildren).toBe(true);
     });
 
-    it('omits the children of a collapsed folder but keeps the header', () => {
-        const rows = buildTree([note('Work/Plan.md')], ['Work'], meta(), new Set(['Work']));
-        expect(shape(rows)).toEqual(['Work/']);
-        const header = rows[0];
-        expect(header.kind === 'folder' && header.collapsed).toBe(true);
-        expect(header.kind === 'folder' && header.hasChildren).toBe(true);
+    it('hasChildren reflects subfolders, not notes', () => {
+        const rows = buildFolderTree(['Work'], [note('Work/Plan.md')], meta(), new Set());
+        expect(rows).toHaveLength(1);
+        expect(rows[0].hasChildren).toBe(false); // a note inside is not a rail child
     });
 
-    it('shows a deliberately-empty folder (in the folder list, no notes)', () => {
-        const rows = buildTree([], ['Projects'], meta(), new Set());
+    it('shows a deliberately-empty folder', () => {
+        const rows = buildFolderTree(['Projects'], [], meta(), new Set());
         expect(shape(rows)).toEqual(['Projects/']);
-        expect(rows[0].kind === 'folder' && rows[0].hasChildren).toBe(false);
+        expect(rows[0].noteCount).toBe(0);
     });
 
-    it('orders each level: pinned folders, unpinned folders, pinned notes, unpinned notes', () => {
-        const rows = buildTree(
-            [note('Apple.md'), note('Zebra.md')],
-            ['Beta', 'Alpha'],
-            meta({pinned: ['Beta', 'Zebra.md']}),
-            new Set(),
-        );
-        // Beta pinned → before Alpha; Zebra pinned → before Apple; all folders before notes.
-        expect(shape(rows)).toEqual(['Beta/', 'Alpha/', 'Zebra', 'Apple']);
-    });
-
-    it('synthesizes missing ancestor folders so a nested note is never orphaned', () => {
-        const rows = buildTree([note('A/B/Note.md')], [], meta(), new Set());
-        expect(shape(rows)).toEqual(['A/', '  B/', '    Note']);
-    });
-
-    it('visibleNoteIds is the in-order note projection, skipping folder headers', () => {
-        const rows = buildTree(
-            [note('Root.md'), note('Work/Plan.md')],
-            ['Work', 'Empty'],
+    it('counts notes recursively for the badge', () => {
+        const rows = buildFolderTree(
+            ['A', 'A/B'],
+            [note('A/x.md'), note('A/B/y.md'), note('A/B/z.md')],
             meta(),
             new Set(),
         );
-        expect(visibleNoteIds(rows)).toEqual(['Work/Plan.md', 'Root.md']);
+        expect(rows.find((r) => r.path === 'A')?.noteCount).toBe(3);
+        expect(rows.find((r) => r.path === 'A/B')?.noteCount).toBe(2);
     });
 
-    it("drops a collapsed folder's notes from the cursor projection", () => {
-        const rows = buildTree(
-            [note('Work/Plan.md'), note('Root.md')],
-            ['Work'],
-            meta(),
-            new Set(['Work']),
+    it('orders each level: pinned folders first, then by name', () => {
+        const rows = buildFolderTree(
+            ['Beta', 'Alpha', 'Gamma'],
+            [],
+            meta({pinned: ['Beta']}),
+            new Set(),
         );
-        expect(visibleNoteIds(rows)).toEqual(['Root.md']);
+        expect(shape(rows)).toEqual(['Beta/', 'Alpha/', 'Gamma/']);
+    });
+
+    it('synthesizes missing ancestor folders so a nested folder is never orphaned', () => {
+        const rows = buildFolderTree([], [note('A/B/Note.md')], meta(), new Set());
+        expect(shape(rows)).toEqual(['A/', '  B/']);
+    });
+});
+
+describe('notesInFolder', () => {
+    const notes = [note('Root.md'), note('Work/Plan.md'), note('Work/Sub/Deep.md')];
+
+    it('returns every note for the All-Notes root (null)', () => {
+        expect(notesInFolder(notes, null).map((n) => n.id)).toEqual([
+            'Root.md',
+            'Work/Plan.md',
+            'Work/Sub/Deep.md',
+        ]);
+    });
+
+    it('returns only the direct children of a folder (not descendants)', () => {
+        expect(notesInFolder(notes, 'Work').map((n) => n.id)).toEqual(['Work/Plan.md']);
+    });
+
+    it('returns the root-level notes for the empty-string root', () => {
+        expect(notesInFolder(notes, '').map((n) => n.id)).toEqual(['Root.md']);
     });
 });

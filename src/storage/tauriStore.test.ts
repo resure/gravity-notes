@@ -38,9 +38,11 @@ class FakeFs {
             case 'notes_remove':
                 return this.remove(name);
             case 'notes_exists':
-                return this.files.has(this.key(name));
+                return this.exists(name);
             case 'notes_stat':
                 return this.stat(name);
+            case 'notes_move_dir':
+                return this.moveDir(args.from as string, args.to as string);
             default:
                 throw new Error(`unknown command: ${cmd}`);
         }
@@ -55,6 +57,26 @@ class FakeFs {
     /** Raw on-disk content (unstripped), for asserting the canonical body shape. */
     raw(name: string): string | undefined {
         return this.files.get(this.key(name))?.content;
+    }
+
+    /** A file exists, or a folder does (any file lives under `name/`). */
+    private exists(name: string): boolean {
+        if (this.files.has(this.key(name))) return true;
+        const prefix = `${this.key(name)}/`;
+        return [...this.files.keys()].some((k) => k.startsWith(prefix));
+    }
+
+    /** Re-key every file under `from` to `to` (the flat fake's stand-in for an fs::rename of a dir). */
+    private moveDir(from: string, to: string): null {
+        const prefix = `${from}/`;
+        for (const [k, f] of [...this.files]) {
+            if (f.name === from || f.name.startsWith(prefix)) {
+                this.files.delete(k);
+                const newName = to + f.name.slice(from.length);
+                this.files.set(this.key(newName), {...f, name: newName});
+            }
+        }
+        return null;
     }
 
     private key(name: string): string {
@@ -161,6 +183,31 @@ describe('TauriNoteStore', () => {
                 'Archive/Note.md',
                 'Inbox/Note 2.md',
             ]);
+        });
+
+        it('moveFolder re-keys every note under the moved folder', async () => {
+            await store.create('A', 'Work/Sub');
+            await store.create('B', 'Work');
+            await store.moveFolder('Work', 'Archive');
+            expect(await store.stat('Work/A.md')).toBeNull();
+            expect((await store.list()).map((m) => m.id).sort()).toEqual([
+                'Archive/B.md',
+                'Archive/Sub/A.md',
+            ]);
+        });
+
+        it('moveFolder hard-fails onto an existing destination', async () => {
+            await store.create('A', 'Work');
+            await store.create('B', 'Archive');
+            await expect(store.moveFolder('Work', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Work/A.md')).not.toBeNull();
+        });
+
+        it('moveFolder refuses to nest a folder inside itself', async () => {
+            await store.create('A', 'Work');
+            await expect(store.moveFolder('Work', 'Work/Sub')).rejects.toThrow(/itself/i);
         });
 
         it('lists nested notes with basename titles', async () => {

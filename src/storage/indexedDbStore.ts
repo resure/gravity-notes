@@ -209,19 +209,63 @@ export class IndexedDbNoteStore implements NoteStore {
         }
     }
 
+    async moveFolder(fromPath: string, toPath: string): Promise<void> {
+        const from = sanitizeDir(fromPath);
+        const to = sanitizeDir(toPath);
+        if (!from || from === to) return;
+        if (to === from || to.startsWith(`${from}/`)) {
+            throw new Error('Cannot move a folder into itself');
+        }
+        const prefix = `${from}/`;
+        const toPrefix = `${to}/`;
+        const [records, folders] = await Promise.all([
+            this.run<NoteRecord[]>(
+                NOTES_STORE,
+                'readonly',
+                (store) => store.getAll() as IDBRequest<NoteRecord[]>,
+            ),
+            this.readFolders(),
+        ]);
+        // Collision: a folder or note already lives at `to` (or under it) and isn't part of the move.
+        const occupied =
+            records.some((r) => r.id === to || r.id.startsWith(toPrefix)) ||
+            folders.some((f) => f === to || f.startsWith(toPrefix));
+        if (occupied) throw new NameCollisionError(from, basename(to));
+        const rekey = (id: string) => to + id.slice(from.length);
+        // Re-key every note under the moved folder (content + mtime preserved — a pure relocation).
+        const moved = records.filter((r) => r.id === from || r.id.startsWith(prefix));
+        if (moved.length > 0) {
+            await this.run(NOTES_STORE, 'readwrite', (store) => {
+                for (const record of moved) {
+                    store.put({...record, id: rekey(record.id)} satisfies NoteRecord);
+                }
+                let last = store.delete(moved[0].id);
+                for (let i = 1; i < moved.length; i++) last = store.delete(moved[i].id);
+                return last;
+            });
+        }
+        // Re-prefix any deliberately-empty folder markers in the moved subtree.
+        if (folders.some((f) => f === from || f.startsWith(prefix))) {
+            const next = folders.map((f) => (f === from || f.startsWith(prefix) ? rekey(f) : f));
+            await this.run(KV_STORE, 'readwrite', (store) => store.put(next, FOLDERS_KEY));
+        }
+    }
+
     async listFolders(): Promise<string[]> {
         const records = await this.run<NoteRecord[]>(
             NOTES_STORE,
             'readonly',
             (store) => store.getAll() as IDBRequest<NoteRecord[]>,
         );
-        // Folders implied by a note's path, plus the deliberately-empty (marker) folders.
-        const folders = new Set<string>(await this.readFolders());
-        for (const record of records) {
-            for (let dir = dirname(record.id); dir; dir = dirname(dir)) {
-                folders.add(dir);
-            }
-        }
+        // Every folder implied by a note's path or a deliberately-empty marker, with all ancestors
+        // synthesized (so a nested marker like `Archive/Empty` also surfaces `Archive`) — matching
+        // the FS/Tauri backends, which enumerate every real directory.
+        const folders = new Set<string>();
+        const addWithAncestors = (path: string) => {
+            for (let dir = path; dir; dir = dirname(dir)) folders.add(dir);
+        };
+        for (const marker of await this.readFolders()) addWithAncestors(marker);
+        for (const record of records) addWithAncestors(dirname(record.id));
         return [...folders].sort();
     }
 

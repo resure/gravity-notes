@@ -5,6 +5,7 @@ export type ShortcutAction =
     | 'selectNextNote'
     | 'selectPrevNote'
     | 'toggleSidebar'
+    | 'toggleFolderRail'
     | 'peekSidebar'
     | 'toggleEditorMode'
     | 'togglePreview'
@@ -81,6 +82,20 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Toggle the sidebar',
         group: 'Navigation',
         global: {trigger: 'mod', key: '\\', action: 'toggleSidebar'},
+    },
+    {
+        keys: 'mod+shift+\\',
+        description: 'Toggle the folder rail',
+        group: 'Navigation',
+        // Match the physical Backslash key: with Shift held, event.key is '|' on US/UK layouts,
+        // so a key-based match would never fire. Sibling of ⌘\ (which toggles the whole sidebar).
+        global: {
+            trigger: 'mod',
+            key: '\\',
+            code: 'Backslash',
+            action: 'toggleFolderRail',
+            shift: true,
+        },
     },
     {
         keys: "mod+'",

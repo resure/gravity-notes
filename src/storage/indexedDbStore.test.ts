@@ -259,6 +259,49 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('folders: moveFolder (rename + reparent)', () => {
+        it('renames a folder, re-keying its notes and preserving mtime', async () => {
+            const created = await store.create('Plan', 'Work');
+            await store.moveFolder('Work', 'Archive');
+            expect(await store.stat('Work/Plan.md')).toBeNull();
+            const moved = await store.get('Archive/Plan.md');
+            expect(moved.title).toBe('Plan');
+            // Pure relocation: the record's mtime is unchanged.
+            expect(moved.updatedAt).toBe(created.updatedAt);
+        });
+
+        it('reparents a folder, carrying its whole nested subtree', async () => {
+            await store.create('A', 'Work/Sub');
+            await store.create('B', 'Work');
+            await store.moveFolder('Work', 'Done/Work');
+            expect((await store.list()).map((m) => m.id).sort()).toEqual([
+                'Done/Work/B.md',
+                'Done/Work/Sub/A.md',
+            ]);
+        });
+
+        it('carries a deliberately-empty (marked) subfolder', async () => {
+            await store.createFolder('Work', 'Empty');
+            await store.moveFolder('Work', 'Archive');
+            expect(await store.listFolders()).toEqual(['Archive', 'Archive/Empty']);
+        });
+
+        it('hard-fails when the destination folder already exists', async () => {
+            await store.create('A', 'Work');
+            await store.create('B', 'Archive');
+            await expect(store.moveFolder('Work', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Source intact.
+            expect(await store.stat('Work/A.md')).not.toBeNull();
+        });
+
+        it('refuses to move a folder into its own descendant', async () => {
+            await store.create('A', 'Work/Sub');
+            await expect(store.moveFolder('Work', 'Work/Sub/Deep')).rejects.toThrow(/itself/i);
+        });
+    });
+
     describe('remove / stat', () => {
         it('deletes a note', async () => {
             await store.create('Gone');

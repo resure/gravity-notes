@@ -10,6 +10,7 @@ function makeActions(): ShortcutActions {
         selectNextNote: vi.fn(),
         selectPrevNote: vi.fn(),
         toggleSidebar: vi.fn(),
+        toggleFolderRail: vi.fn(),
         peekSidebar: vi.fn(),
         toggleEditorMode: vi.fn(),
         togglePreview: vi.fn(),
@@ -192,6 +193,24 @@ describe('useShortcuts', () => {
         document.body.appendChild(input);
         input.focus();
         press({key: '\\', ctrlKey: true});
+        expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggles the folder rail on mod+shift+backslash (matched by physical key)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        // A real ⌘⇧\ keydown reports key '|' (Shift) but code 'Backslash'; the binding matches the
+        // physical key. The sidebar (⌘\) must not also fire.
+        press({key: '|', code: 'Backslash', metaKey: true, shiftKey: true});
+        expect(actions.toggleFolderRail).toHaveBeenCalledTimes(1);
+        expect(actions.toggleSidebar).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle the folder rail on ctrl+backslash without shift', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: '\\', code: 'Backslash', ctrlKey: true});
+        expect(actions.toggleFolderRail).not.toHaveBeenCalled();
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 

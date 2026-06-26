@@ -332,6 +332,27 @@ fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     fs::remove_dir(&folder).map_err(stringify)
 }
 
+/// Move (or rename) a folder and everything under it from `from` to `to`: create `to`'s parent,
+/// rename the directory (atomic within the one picked folder), then prune `from`'s now-empty
+/// ancestors. Rejects an existing `to` (collision is also pre-checked TS-side). Both paths are
+/// containment-guarded.
+#[tauri::command]
+fn notes_move_dir(dir: String, from: String, to: String) -> Result<(), String> {
+    let from_path = resolve_within(&dir, &from)?;
+    let to_path = resolve_within(&dir, &to)?;
+    if to_path.exists() {
+        return Err(format!("\"{to}\" already exists"));
+    }
+    if let Some(parent) = to_path.parent() {
+        fs::create_dir_all(parent).map_err(stringify)?;
+    }
+    fs::rename(&from_path, &to_path).map_err(stringify)?;
+    if let Some(parent) = from_path.parent() {
+        prune_empty_ancestors(Path::new(&dir), parent);
+    }
+    Ok(())
+}
+
 /// Every folder (recursively) relative to the root, including deliberately-empty `.gnkeep` ones.
 #[tauri::command]
 fn notes_list_folders(dir: String) -> Result<Vec<String>, String> {
@@ -419,6 +440,7 @@ pub fn run() {
             notes_stat,
             notes_create_folder,
             notes_remove_dir,
+            notes_move_dir,
             notes_list_folders,
         ])
         .build(tauri::generate_context!())
@@ -573,6 +595,34 @@ mod tests {
         // A, A/B, A/B/C were all left empty by the move and pruned up to (not including) the root.
         assert!(!dir.join("A").exists());
         assert!(dir.join("Note.md").is_file());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn moves_a_folder_subtree_and_prunes_the_old_parent() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Work/A.md".into(), "a".into()).unwrap();
+        notes_write(s(&dir), "Work/Sub/B.md".into(), "b".into()).unwrap();
+
+        notes_move_dir(s(&dir), "Work".into(), "Archive/Work".into()).unwrap();
+
+        // The whole subtree moved under Archive/, and the now-empty Work/ was pruned.
+        assert!(!dir.join("Work").exists());
+        assert!(dir.join("Archive").join("Work").join("A.md").is_file());
+        assert!(dir.join("Archive").join("Work").join("Sub").join("B.md").is_file());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn move_dir_rejects_an_existing_destination() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Work/A.md".into(), "a".into()).unwrap();
+        notes_write(s(&dir), "Archive/B.md".into(), "b".into()).unwrap();
+
+        assert!(notes_move_dir(s(&dir), "Work".into(), "Archive".into()).is_err());
+        assert!(dir.join("Work").join("A.md").is_file()); // source intact
 
         let _ = fs::remove_dir_all(&dir);
     }

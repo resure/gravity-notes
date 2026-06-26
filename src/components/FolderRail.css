@@ -1,0 +1,131 @@
+.folder-rail {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: var(--rail-width, 200px);
+    flex-shrink: 0;
+    border-right: 1px solid var(--g-color-line-generic);
+    background-color: var(--g-color-base-generic-ultralight);
+}
+
+.folder-rail__items {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+}
+
+/* One folder (or "All Notes") row: caret + icon + name + count/actions. A steady 30px height and a
+   fixed caret slot keep every row aligned whether or not it has a chevron or a badge. */
+.folder-rail__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding-inline-end: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.folder-rail__row:hover {
+    background-color: var(--g-color-base-simple-hover);
+}
+
+.folder-rail__row_selected,
+.folder-rail__row_selected:hover {
+    background-color: var(--note-list-selected-bg);
+}
+
+.folder-rail__row:focus-visible {
+    outline: none;
+    background-color: var(--note-list-focus-bg);
+}
+
+/* A row hovered as a drag-and-drop target (a note moving in, or a folder being reparented). */
+.folder-rail__row_drop-target {
+    background-color: var(--note-list-focus-bg);
+    outline: 1px dashed var(--g-color-line-brand);
+    outline-offset: -1px;
+}
+
+/* Fixed-width caret slot, so folder icons line up whether or not a folder has subfolders. */
+.folder-rail__caret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    flex-shrink: 0;
+    color: var(--g-color-text-hint);
+}
+
+.folder-rail__caret_button {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--g-color-text-hint);
+}
+
+.folder-rail__caret_button:hover {
+    color: var(--g-color-text-primary);
+    background-color: var(--g-color-base-generic-hover);
+}
+
+.folder-rail__icon {
+    flex-shrink: 0;
+    color: var(--g-color-text-secondary);
+}
+
+.folder-rail__pin {
+    flex-shrink: 0;
+    color: var(--g-color-text-warning);
+}
+
+.folder-rail__name {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The note-count badge: quiet, tabular, right-aligned at a steady inset. */
+.folder-rail__count {
+    flex-shrink: 0;
+    color: var(--g-color-text-hint);
+    font-size: 12px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Row actions reveal on hover/focus and take the count's place, so the two never crowd each other. */
+.folder-rail__actions {
+    flex-shrink: 0;
+    opacity: 0;
+}
+
+.folder-rail__row:hover .folder-rail__actions,
+.folder-rail__row:focus-within .folder-rail__actions {
+    opacity: 1;
+}
+
+.folder-rail__row:hover .folder-rail__count,
+.folder-rail__row:focus-within .folder-rail__count {
+    display: none;
+}
+
+/* Inline name field for the new-folder and rename editors. */
+.folder-rail__input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* A quiet "New Folder" affordance docked at the bottom (Apple-Notes / Things style). */
+.folder-rail__footer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--g-color-line-generic);
+    padding: 4px;
+}
+
+.folder-rail__footer .g-button__text {
+    justify-content: flex-start;
+    width: 100%;
+    color: var(--g-color-text-secondary);
+}

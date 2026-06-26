@@ -11,6 +11,7 @@ import {
     withPinToggled,
     withRemoved,
     withRenamed,
+    withReprefixed,
     withSortMode,
 } from './metadata';
 import type {NoteMeta} from './types';
@@ -256,5 +257,40 @@ describe('orderNotes', () => {
         const input = [...notes];
         orderNotes(input, {...DEFAULT_METADATA, sort: 'title'});
         expect(input.map((n) => n.id)).toEqual(['B.md', 'A.md', 'C.md']);
+    });
+});
+
+describe('withReprefixed', () => {
+    it('re-homes note pins, folder pins, created stamps, and active under the moved prefix', () => {
+        const meta = {
+            ...DEFAULT_METADATA,
+            pinned: ['Work', 'Work/Plan.md', 'Other/Keep.md'],
+            created: {'Work/Plan.md': 5, 'Other/Keep.md': 7},
+            active: 'Work/Plan.md',
+        };
+        const next = withReprefixed(meta, 'Work', 'Archive/Work');
+        expect(next.pinned).toEqual(['Archive/Work', 'Archive/Work/Plan.md', 'Other/Keep.md']);
+        expect(next.created).toEqual({'Archive/Work/Plan.md': 5, 'Other/Keep.md': 7});
+        expect(next.active).toBe('Archive/Work/Plan.md');
+    });
+
+    it('handles a pure rename (same parent, new leaf)', () => {
+        const meta = {...DEFAULT_METADATA, active: 'Work/Sub/Note.md', pinned: ['Work/Sub']};
+        const next = withReprefixed(meta, 'Work/Sub', 'Work/Renamed');
+        expect(next.active).toBe('Work/Renamed/Note.md');
+        expect(next.pinned).toEqual(['Work/Renamed']);
+    });
+
+    it('leaves unrelated ids untouched and is a no-op when from === to', () => {
+        const meta = {...DEFAULT_METADATA, pinned: ['Work/A.md', 'Wow/B.md']};
+        expect(withReprefixed(meta, 'Hey', 'There').pinned).toEqual(['Work/A.md', 'Wow/B.md']);
+        expect(withReprefixed(meta, 'Work', 'Work')).toBe(meta);
+    });
+
+    it('does not match a sibling that merely shares a name prefix', () => {
+        // "Work" must not capture "Workshop/…".
+        const meta = {...DEFAULT_METADATA, pinned: ['Workshop/A.md', 'Work/B.md']};
+        const next = withReprefixed(meta, 'Work', 'Done');
+        expect(next.pinned).toEqual(['Workshop/A.md', 'Done/B.md']);
     });
 });

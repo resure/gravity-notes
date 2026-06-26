@@ -71,6 +71,26 @@ export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): 
     return {...meta, pinned, created, active};
 }
 
+/**
+ * Re-prefix every id/path that is `from` or sits under `from/` so it lives under `to` instead — the
+ * metadata side of a folder move/rename. Covers note pins, folder pins, created stamps, and the open
+ * note, since all are plain path strings sharing the moved folder's prefix.
+ */
+export function withReprefixed(meta: NotesMetadata, from: string, to: string): NotesMetadata {
+    if (from === to || !from) return meta;
+    const prefix = from + '/';
+    const remap = (id: string): string =>
+        id === from || id.startsWith(prefix) ? to + id.slice(from.length) : id;
+    const created: Record<string, number> = {};
+    for (const [id, time] of Object.entries(meta.created)) created[remap(id)] = time;
+    return {
+        ...meta,
+        pinned: meta.pinned.map(remap),
+        created,
+        active: meta.active ? remap(meta.active) : null,
+    };
+}
+
 export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     const created = {...meta.created};
     delete created[id];

@@ -8,8 +8,10 @@ import {
     withPinToggled,
     withRemoved,
     withRenamed,
+    withReprefixed,
     withSortMode,
 } from '../storage/metadata';
+import {titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -71,6 +73,8 @@ export interface UseNotes {
     createFolder(parentPath: string, name: string): Promise<void>;
     /** Remove an empty folder (its marker) and refresh; unpins it if it was pinned. */
     removeFolder(path: string): Promise<void>;
+    /** Move/rename a folder, re-keying its whole subtree; re-points the open note if it's inside. */
+    moveFolder(fromPath: string, toPath: string): Promise<void>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
     /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
@@ -277,6 +281,65 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             }
         },
         [store, refresh, onError],
+    );
+
+    const moveFolder = useCallback(
+        async (fromPath: string, toPath: string): Promise<void> => {
+            if (!fromPath || fromPath === toPath) return;
+            if (toPath === fromPath || toPath.startsWith(`${fromPath}/`)) {
+                onError('Cannot move a folder into itself.');
+                return;
+            }
+            const activeId = metadataRef.current.active;
+            const activeInside =
+                activeId !== null && (activeId === fromPath || activeId.startsWith(`${fromPath}/`));
+            if (activeInside && conflict) {
+                onError('Resolve the conflict before moving this folder.');
+                return;
+            }
+            // Flush any pending edit (against the OLD ids) before the subtree is re-keyed.
+            await flush();
+            // Guard the focus conflict-check from stat-ing the open note's old (now-gone) id.
+            moveInProgressRef.current = activeInside;
+            // Re-point the open note in place (no remount), re-seeding its baseline and carrying any
+            // edit a keystroke re-queued for it during the move's await window.
+            const repointOpenNote = async (oldId: string, newId: string) => {
+                const carryPending = pendingRef.current?.id === oldId;
+                if (carryPending) clearTimer();
+                setNote((prev) =>
+                    prev && prev.id === oldId
+                        ? {...prev, id: newId, title: titleFromFileName(newId)}
+                        : prev,
+                );
+                baselineRef.current = await store.stat(newId); // FSA copy bumps mtime; others keep it
+                setConflict(null);
+                setSaveState('idle');
+                if (carryPending) {
+                    pendingRef.current = {id: newId, content: pendingRef.current?.content ?? ''};
+                    setSaveState('saving');
+                    timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
+                }
+            };
+            try {
+                await store.moveFolder(fromPath, toPath);
+                // Re-prefix metadata (note + folder pins, created stamps, active) in one write; this
+                // sets metadataRef.active synchronously, so a racing edit() already sees the new id.
+                await persistMetadata(withReprefixed(metadataRef.current, fromPath, toPath));
+                if (activeInside && activeId) {
+                    await repointOpenNote(activeId, toPath + activeId.slice(fromPath.length));
+                }
+                await refresh();
+            } catch (err) {
+                if (err instanceof NameCollisionError) {
+                    onError(err.message);
+                } else {
+                    onError(err instanceof Error ? err.message : 'Failed to move folder');
+                }
+            } finally {
+                moveInProgressRef.current = false;
+            }
+        },
+        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
     );
 
     const rename = useCallback(
@@ -644,6 +707,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         remove,
         createFolder,
         removeFolder,
+        moveFolder,
         edit,
         flushPending: flush,
         refresh,
