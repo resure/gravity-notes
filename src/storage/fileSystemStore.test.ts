@@ -14,17 +14,225 @@ describe('FileSystemNoteStore', () => {
         store = new FileSystemNoteStore(asDirectoryHandle(dir));
     });
 
-    describe('folders (interim, until phase 11)', () => {
-        it('refuses to create a note in a subfolder', async () => {
-            await expect(store.create('Note', 'Work')).rejects.toThrow(/subfolder/i);
-            // root creation is unaffected
-            expect((await store.create('Note')).id).toBe('Note.md');
+    describe('folders: recursive listing', () => {
+        it('lists nested notes with forward-slash path ids, newest-first', async () => {
+            dir.seedFile('Inbox.md', 'a', 100);
+            dir.seedFile('Work/Roadmap.md', 'b', 300);
+            dir.seedFile('Work/Sub/Deep.md', 'c', 200);
+
+            const metas = await store.list();
+
+            expect(metas.map((m) => m.id)).toEqual([
+                'Work/Roadmap.md',
+                'Work/Sub/Deep.md',
+                'Inbox.md',
+            ]);
+            // Titles are leaf-only (never the folder prefix).
+            expect(metas.find((m) => m.id === 'Work/Roadmap.md')?.title).toBe('Roadmap');
         });
 
-        it('refuses a cross-folder move but allows a same-folder no-op', async () => {
-            dir.seedFile('Note.md', 'hi', 100);
-            await expect(store.move('Note.md', 'Archive')).rejects.toThrow(/folders/i);
-            expect(await store.move('Note.md', '')).toMatchObject({id: 'Note.md', updatedAt: 100});
+        it('getAll returns every nested note with its full body', async () => {
+            dir.seedFile('Inbox.md', 'a', 100);
+            dir.seedFile('Work/Sub/Deep.md', 'deep body\n\n', 200);
+
+            const all = await store.getAll();
+
+            expect(all.map((n) => n.id).sort()).toEqual(['Inbox.md', 'Work/Sub/Deep.md']);
+            expect(all.find((n) => n.id === 'Work/Sub/Deep.md')?.content).toBe('deep body');
+        });
+
+        it('skips dot-directories in the walk', async () => {
+            dir.seedFile('Real.md', 'x', 1);
+            dir.seedFile('.obsidian/Secret.md', 'y', 2);
+
+            expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
+            expect((await store.getAll()).map((n) => n.id)).toEqual(['Real.md']);
+        });
+    });
+
+    describe('folders: nested create / move / rename', () => {
+        it('creates a note inside a subfolder, creating the directory', async () => {
+            const meta = await store.create('Roadmap', 'Work');
+
+            expect(meta).toMatchObject({id: 'Work/Roadmap.md', title: 'Roadmap'});
+            expect((await store.get('Work/Roadmap.md')).content).toBe('');
+            expect(dir.paths()).toContain('Work/Roadmap.md');
+        });
+
+        it('creates in a deeply nested folder', async () => {
+            const meta = await store.create('Deep', 'Work/Sub/Folder');
+            expect(meta.id).toBe('Work/Sub/Folder/Deep.md');
+        });
+
+        it('sanitizes the parent path so it cannot escape the root', async () => {
+            const meta = await store.create('X', '../../etc');
+            expect(meta.id).toBe('etc/X.md');
+        });
+
+        it('scopes collision-numbering to the target folder', async () => {
+            const inbox = await store.create('Notes', 'Inbox');
+            const archive = await store.create('Notes', 'Archive');
+            const inbox2 = await store.create('Notes', 'Inbox');
+
+            expect(inbox.id).toBe('Inbox/Notes.md');
+            expect(archive.id).toBe('Archive/Notes.md'); // same leaf, different folder → no suffix
+            expect(inbox2.id).toBe('Inbox/Notes 2.md'); // same folder → numbered
+        });
+
+        it('moves a note into another folder, preserving content', async () => {
+            const created = await store.create('Note', 'Inbox');
+            await store.save('Inbox/Note.md', 'keep me', created.updatedAt ?? 0);
+
+            const moved = await store.move('Inbox/Note.md', 'Archive');
+
+            expect(moved).toMatchObject({id: 'Archive/Note.md', title: 'Note'});
+            expect((await store.get('Archive/Note.md')).content).toBe('keep me');
+            expect(await store.stat('Inbox/Note.md')).toBeNull();
+        });
+
+        it('moves a nested note back to the root', async () => {
+            await store.create('Note', 'Inbox');
+            const moved = await store.move('Inbox/Note.md', '');
+            expect(moved.id).toBe('Note.md');
+            expect(await store.stat('Inbox/Note.md')).toBeNull();
+        });
+
+        it('is a no-op when moving into the folder the note already lives in', async () => {
+            dir.seedFile('Inbox/Note.md', 'hi', 150);
+            const moved = await store.move('Inbox/Note.md', 'Inbox');
+            expect(moved).toMatchObject({id: 'Inbox/Note.md', updatedAt: 150});
+        });
+
+        it('hard-fails a move onto an existing same-leaf note, leaving the source intact', async () => {
+            await store.create('Note', 'Inbox');
+            await store.create('Note', 'Archive');
+
+            await expect(store.move('Inbox/Note.md', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Inbox/Note.md')).not.toBeNull();
+        });
+
+        it('throws NotFoundError when moving a missing note', async () => {
+            await expect(store.move('Ghost/Note.md', 'Archive')).rejects.toMatchObject({
+                name: 'NotFoundError',
+            });
+        });
+
+        it('renames a nested note within its own folder (leaf-only)', async () => {
+            await store.create('Old', 'Work');
+            const meta = await store.rename('Work/Old.md', 'New');
+            expect(meta.id).toBe('Work/New.md');
+            expect(await store.stat('Work/Old.md')).toBeNull();
+            expect((await store.list()).map((m) => m.id)).toContain('Work/New.md');
+        });
+    });
+
+    describe('folders: empty folders + prune', () => {
+        it('creates an empty folder kept alive by a .gnkeep marker', async () => {
+            const path = await store.createFolder('', 'Projects');
+
+            expect(path).toBe('Projects');
+            expect(await store.listFolders()).toEqual(['Projects']);
+            expect(dir.paths()).toContain('Projects/.gnkeep');
+            // The marker is not a note.
+            expect(await store.list()).toEqual([]);
+        });
+
+        it('lists folders implied by notes plus deliberately-created empty ones', async () => {
+            await store.create('Note', 'Work/Sub');
+            await store.createFolder('', 'Projects');
+            expect(await store.listFolders()).toEqual(['Projects', 'Work', 'Work/Sub']);
+        });
+
+        it('createFolder is idempotent and returns the sanitized path', async () => {
+            expect(await store.createFolder('Work', 'Plans')).toBe('Work/Plans');
+            await store.createFolder('Work', 'Plans');
+            expect((await store.listFolders()).filter((f) => f === 'Work/Plans')).toHaveLength(1);
+        });
+
+        it('removeFolder drops an empty folder entirely', async () => {
+            await store.createFolder('', 'Temp');
+            expect(await store.listFolders()).toContain('Temp');
+            await store.removeFolder('Temp');
+            expect(await store.listFolders()).not.toContain('Temp');
+            expect(dir.paths().some((p) => p.startsWith('Temp/'))).toBe(false);
+        });
+
+        it('removing the last note prunes an implicit folder but keeps a marked one', async () => {
+            await store.create('Note', 'Implicit');
+            await store.create('Note', 'Marked');
+            await store.createFolder('', 'Marked');
+
+            await store.remove('Implicit/Note.md');
+            await store.remove('Marked/Note.md');
+
+            // Implicit/ vanishes (only existed via its note); Marked/ survives via its .gnkeep.
+            expect(await store.listFolders()).toEqual(['Marked']);
+        });
+
+        it('moving the last note out prunes nested empty ancestors', async () => {
+            await store.create('Note', 'A/B/C');
+            await store.move('A/B/C/Note.md', '');
+            expect(await store.listFolders()).toEqual([]);
+            expect(await store.stat('Note.md')).not.toBeNull();
+        });
+    });
+
+    describe('folders: moveFolder (rename + reparent)', () => {
+        it('renames a folder, re-keying its notes and pruning the old name', async () => {
+            await store.create('Plan', 'Work');
+            await store.moveFolder('Work', 'Archive');
+            expect(await store.stat('Work/Plan.md')).toBeNull();
+            expect((await store.get('Archive/Plan.md')).title).toBe('Plan');
+            expect(await store.listFolders()).toEqual(['Archive']);
+        });
+
+        it('reparents a folder, carrying its whole nested subtree (content intact)', async () => {
+            const created = await store.create('A', 'Work/Sub');
+            await store.save('Work/Sub/A.md', 'keep me', created.updatedAt ?? 0);
+            await store.create('B', 'Work');
+            await store.moveFolder('Work', 'Done/Work');
+            expect((await store.list()).map((m) => m.id).sort()).toEqual([
+                'Done/Work/B.md',
+                'Done/Work/Sub/A.md',
+            ]);
+            expect((await store.get('Done/Work/Sub/A.md')).content).toBe('keep me');
+        });
+
+        it('carries a deliberately-empty (marked) subfolder', async () => {
+            await store.createFolder('Work', 'Empty');
+            await store.moveFolder('Work', 'Archive');
+            expect(await store.listFolders()).toEqual(['Archive', 'Archive/Empty']);
+        });
+
+        it('hard-fails when the destination folder already exists', async () => {
+            await store.create('A', 'Work');
+            await store.create('B', 'Archive');
+            await expect(store.moveFolder('Work', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Work/A.md')).not.toBeNull();
+        });
+
+        it('refuses to move a folder into its own descendant', async () => {
+            await store.create('A', 'Work/Sub');
+            await expect(store.moveFolder('Work', 'Work/Sub/Deep')).rejects.toThrow(/itself/i);
+        });
+    });
+
+    describe('rename — nested case-only (case-insensitive filesystem)', () => {
+        it('changes a nested note title case via a temp file', async () => {
+            const ciDir = new FakeDirectoryHandle('notes', true);
+            ciDir.seedFile('Work/note.md', 'keep me', 5);
+            const ciStore = new FileSystemNoteStore(asDirectoryHandle(ciDir));
+
+            const meta = await ciStore.rename('Work/note.md', 'Note');
+
+            expect(meta.id).toBe('Work/Note.md');
+            const metas = await ciStore.list();
+            expect(metas.map((m) => m.id)).toEqual(['Work/Note.md']);
+            expect((await ciStore.get('Work/Note.md')).content).toBe('keep me');
         });
     });
 

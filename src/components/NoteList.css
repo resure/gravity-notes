@@ -2,6 +2,8 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    width: var(--sidebar-width);
+    flex-shrink: 0;
     border-right: 1px solid var(--g-color-line-generic);
     background-color: var(--g-color-base-background);
 }
@@ -113,67 +115,10 @@
     color: var(--g-color-text-warning);
 }
 
-/* Folder header row: a full-width disclosure button (caret + folder icon + name) plus sibling
-   action buttons. Left padding is set inline per tree depth. */
-.note-list__folder {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 5px 16px;
-}
-
-.note-list__folder:hover {
-    background-color: var(--g-color-base-simple-hover);
-}
-
-/* The disclosure button reads as a flat row: left-aligned content, the name allowed to ellipsize. */
-.note-list__folder-toggle {
-    flex: 1;
-    min-width: 0;
-    justify-content: flex-start;
-    font-weight: 500;
-}
-
-.note-list__folder-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.note-list__folder-icon {
-    flex-shrink: 0;
-    color: var(--g-color-text-secondary);
-}
-
-.note-list__folder .note-list__actions {
-    opacity: 0;
-}
-
-.note-list__folder:hover .note-list__actions,
-.note-list__folder:focus-within .note-list__actions {
-    opacity: 1;
-}
-
 /* Dimmed folder-path crumb shown on a note row in flat search results. */
 .note-list__crumb {
     flex-shrink: 0;
     opacity: 0.7;
-}
-
-/* Inline "new folder" editor row (no modal): a folder icon + a name field. */
-.note-list__folder-new {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 5px 16px;
-}
-
-/* A folder being hovered as a drag-and-drop move target. */
-.note-list__folder_drop-target {
-    background-color: var(--note-list-focus-bg);
-    outline: 1px dashed var(--g-color-line-brand);
-    outline-offset: -1px;
 }
 
 /* "Move to…" picker: a scrollable column of left-aligned folder buttons. */

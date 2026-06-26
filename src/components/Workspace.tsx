@@ -7,13 +7,13 @@ import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {orderNotes} from '../storage/metadata';
-import {dirname} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteStore} from '../storage/types';
-import {type TreeRow, buildTree, visibleNoteIds} from '../tree';
+import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
 
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
+import {FolderRail, type FolderRailHandle} from './FolderRail';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
@@ -32,6 +32,17 @@ interface WorkspaceProps {
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
 const COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
+const SELECTED_FOLDER_KEY = 'gravity-notes:selected-folder';
+const RAIL_OPEN_KEY = 'gravity-notes:rail-open';
+
+function loadSelectedFolder(): string | null {
+    return localStorage.getItem(SELECTED_FOLDER_KEY);
+}
+
+/** Re-prefix a folder path (or note id) when its `from` ancestor folder moves/renames to `to`. */
+function reprefixPath(path: string, from: string, to: string): string {
+    return path === from || path.startsWith(`${from}/`) ? to + path.slice(from.length) : path;
+}
 
 function loadCollapsedFolders(): Set<string> {
     try {
@@ -93,34 +104,54 @@ export function Workspace({
         });
     }, []);
 
-    // Searching renders a flat ranked list (with folder crumbs); otherwise, the folder tree.
-    const searching = query.trim().length > 0;
-    const pinnedSet = useMemo(() => new Set(notes.metadata.pinned), [notes.metadata.pinned]);
-    const rows = useMemo<TreeRow[]>(() => {
-        if (searching) {
-            return filteredNotes.map((note) => ({
-                kind: 'note',
-                note,
-                depth: 0,
-                pinned: pinnedSet.has(note.id),
-            }));
+    // The folder selected in the rail (null = All Notes), persisted across reloads.
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(loadSelectedFolder);
+    useEffect(() => {
+        if (selectedFolder === null) localStorage.removeItem(SELECTED_FOLDER_KEY);
+        else localStorage.setItem(SELECTED_FOLDER_KEY, selectedFolder);
+    }, [selectedFolder]);
+    // A selected folder that no longer exists (deleted, or renamed elsewhere) falls back to All Notes.
+    useEffect(() => {
+        if (selectedFolder !== null && !notes.folders.includes(selectedFolder)) {
+            setSelectedFolder(null);
         }
-        return buildTree(notes.notes, notes.folders, notes.metadata, collapsedFolders);
-    }, [
-        searching,
-        filteredNotes,
-        pinnedSet,
-        notes.notes,
-        notes.folders,
-        notes.metadata,
-        collapsedFolders,
-    ]);
-    // The note ids the cursor moves over — visible note rows only (folder headers/collapsed skipped).
-    const visibleIds = useMemo(() => visibleNoteIds(rows), [rows]);
+    }, [notes.folders, selectedFolder]);
+
+    // Whether the folder rail is shown. Off by default, so the app stays a 2-pane nvALT view
+    // until you reach for folders; persisted across reloads.
+    const [railOpen, setRailOpen] = useState(() => localStorage.getItem(RAIL_OPEN_KEY) === 'true');
+    useEffect(() => {
+        localStorage.setItem(RAIL_OPEN_KEY, String(railOpen));
+    }, [railOpen]);
+    const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
+
+    const searching = query.trim().length > 0;
+    // The rail's folder tree (folders only).
+    const folderRows = useMemo<FolderRow[]>(
+        () => buildFolderTree(notes.folders, notes.notes, notes.metadata, collapsedFolders),
+        [notes.folders, notes.notes, notes.metadata, collapsedFolders],
+    );
+    // The middle pane: a global ranked list while searching (folders never hide a match), otherwise
+    // the selected folder's direct notes ('All Notes' = everything). Both stay ordered.
+    const listNotes = useMemo(
+        () => (searching ? filteredNotes : notesInFolder(orderedNotes, selectedFolder)),
+        [searching, filteredNotes, orderedNotes, selectedFolder],
+    );
+    // The note ids the cursor moves over (⌘J/⌘K, delete-neighbor).
+    const visibleIds = useMemo(() => listNotes.map((note) => note.id), [listNotes]);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<EditorPaneHandle>(null);
     const listRef = useRef<NoteListHandle>(null);
+    const railRef = useRef<FolderRailHandle>(null);
+    // When the rail is opened via the keyboard (⌘⇧\), move focus into it once it has mounted.
+    const [pendingRailFocus, setPendingRailFocus] = useState(false);
+    useEffect(() => {
+        if (railOpen && pendingRailFocus) {
+            railRef.current?.focusSelected();
+            setPendingRailFocus(false);
+        }
+    }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Read-only preview mode, kept here so it persists as the open note changes.
@@ -254,15 +285,15 @@ export function Workspace({
     const handleCreate = useCallback(
         (title?: string, parentPath?: string) => {
             nav.prepareCreate(); // arm the title to focus + select on the new note's mount
-            // ⌘N / the New button create into the focused folder (the selected note's folder);
-            // an explicit parentPath (a folder's ＋, or the search box's root '') overrides that.
-            const dest = parentPath ?? (nav.selectedId ? dirname(nav.selectedId) : '');
+            // ⌘N / the New button create into the selected folder; an explicit parentPath (the
+            // search box's root '') overrides that.
+            const dest = parentPath ?? selectedFolder ?? '';
             void (async () => {
                 const id = await notes.create(title, dest);
                 if (id) nav.setSelected(id);
             })();
         },
-        [notes, nav],
+        [notes, nav, selectedFolder],
     );
 
     // Enter the list from the search box (↓/↑): preview the row and move DOM focus onto it.
@@ -312,6 +343,17 @@ export function Workspace({
         [visibleIds, notes, nav],
     );
 
+    const handleMoveFolder = useCallback(
+        (from: string, to: string) => {
+            // Optimistically follow the move with the rail's local state, so the moved/renamed
+            // folder keeps its selection and expand state instead of resetting to All Notes.
+            setSelectedFolder((cur) => (cur ? reprefixPath(cur, from, to) : cur));
+            setCollapsedFolders((prev) => new Set([...prev].map((p) => reprefixPath(p, from, to))));
+            void notes.moveFolder(from, to);
+        },
+        [notes],
+    );
+
     const handleRename = useCallback(
         (id: string, title: string) => {
             void (async () => {
@@ -347,7 +389,7 @@ export function Workspace({
         if (!pendingListFocus) return;
         listRef.current?.focusSelected();
         setPendingListFocus(false);
-    }, [pendingListFocus, rows, nav.selectedId]);
+    }, [pendingListFocus, listNotes, nav.selectedId]);
 
     useShortcuts({
         createNote: handleCreate,
@@ -358,6 +400,23 @@ export function Workspace({
         selectNextNote: () => browseRelative(1),
         selectPrevNote: () => browseRelative(-1),
         toggleSidebar: toggleCollapsed,
+        toggleFolderRail: () => {
+            const inRail =
+                document.activeElement instanceof HTMLElement &&
+                Boolean(document.activeElement.closest('.folder-rail'));
+            if (!railOpen) {
+                // Closed → open and move focus into it.
+                setRailOpen(true);
+                setPendingRailFocus(true);
+            } else if (inRail) {
+                // Open and focused → close, returning focus to the list.
+                setRailOpen(false);
+                listRef.current?.focusSelected();
+            } else {
+                // Open but focus elsewhere → step into the rail.
+                railRef.current?.focusSelected();
+            }
+        },
         peekSidebar: () => {
             if (!collapsed) return; // docked: no-op
             if (peeked) {
@@ -373,10 +432,17 @@ export function Workspace({
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
         renameSelected: () => {
-            // F2 fires even while typing; ignore it when the in-editor title is focused so it
-            // doesn't open a second rename surface in the list instead of acting on the title.
+            // F2 fires even while typing. Context-aware: a focused folder row → rename the folder;
+            // the in-editor title handles F2 itself; otherwise rename the selected note.
             const el = document.activeElement;
-            if (el instanceof HTMLElement && el.closest('.note-title')) return;
+            if (el instanceof HTMLElement) {
+                const folderRow = el.closest('.folder-rail__row[data-path]');
+                if (folderRow) {
+                    railRef.current?.startRename(folderRow.getAttribute('data-path') ?? '');
+                    return;
+                }
+                if (el.closest('.note-title')) return;
+            }
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
         moveSelected: () => {
@@ -428,9 +494,25 @@ export function Workspace({
                 }
             >
                 <aside className="workspace__sidebar">
+                    {railOpen ? (
+                        <FolderRail
+                            ref={railRef}
+                            rows={folderRows}
+                            selectedFolder={selectedFolder}
+                            allNotesCount={notes.notes.length}
+                            onSelectFolder={setSelectedFolder}
+                            onToggleCollapse={toggleCollapse}
+                            onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
+                            onRemoveFolder={(path) => void notes.removeFolder(path)}
+                            onMoveFolder={handleMoveFolder}
+                            onTogglePin={notes.togglePin}
+                            onMoveTo={(id, dest) => void notes.move(id, dest)}
+                            onFocusList={() => listRef.current?.focusSelected()}
+                        />
+                    ) : null}
                     <NoteList
                         ref={listRef}
-                        rows={rows}
+                        notes={listNotes}
                         selectedId={nav.selectedId}
                         query={query}
                         showCrumbs={searching}
@@ -446,9 +528,6 @@ export function Workspace({
                             nav.escapeToSearch();
                         }}
                         onCreate={handleCreate}
-                        onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
-                        onRemoveFolder={(path) => void notes.removeFolder(path)}
-                        onToggleCollapse={toggleCollapse}
                         folderPaths={notes.folders}
                         onMoveTo={(id, dest) => void notes.move(id, dest)}
                         onRename={handleRename}
@@ -457,6 +536,9 @@ export function Workspace({
                         onSortChange={notes.setSortMode}
                         pinnedIds={notes.metadata.pinned}
                         onTogglePin={notes.togglePin}
+                        railOpen={railOpen}
+                        onToggleRail={toggleRail}
+                        onFocusRail={() => railRef.current?.focusSelected()}
                     />
                 </aside>
 

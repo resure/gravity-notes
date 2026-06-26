@@ -1,6 +1,7 @@
 .workspace {
-    /* Width of the notes sidebar. */
+    /* Width of the notes list column, and of the folder rail beside it. */
     --sidebar-width: 280px;
+    --rail-width: 200px;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -16,7 +17,9 @@
 }
 
 .workspace__sidebar {
-    width: var(--sidebar-width);
+    /* A flex row: the optional folder rail, then the notes list. Sizes to its children, so the
+       collapse/peek transforms below slide the whole region (rail + list) as one unit. */
+    display: flex;
     flex-shrink: 0;
     height: 100%;
     min-height: 0;

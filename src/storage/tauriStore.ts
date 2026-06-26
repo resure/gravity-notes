@@ -193,6 +193,20 @@ export class TauriNoteStore implements NoteStore {
         await invoke('notes_remove_dir', {dir: this.dir, path});
     }
 
+    async moveFolder(fromPath: string, toPath: string): Promise<void> {
+        const from = sanitizeDir(fromPath);
+        const to = sanitizeDir(toPath);
+        if (!from || from === to) return;
+        if (to === from || to.startsWith(`${from}/`)) {
+            throw new Error('Cannot move a folder into itself');
+        }
+        // Collision: a folder/file already at `to` (the Rust side re-checks before renaming).
+        if (await this.exists(to)) throw new NameCollisionError(from, basename(to));
+        // notes_move_dir creates `to`'s parent, atomically renames the directory, and prunes `from`'s
+        // now-empty ancestors (notes' mtimes are preserved — a pure relocation).
+        await invoke('notes_move_dir', {dir: this.dir, from, to});
+    }
+
     async listFolders(): Promise<string[]> {
         return invoke<string[]>('notes_list_folders', {dir: this.dir});
     }

@@ -98,6 +98,14 @@ export interface NoteStore {
     /** Remove an empty folder's marker (the caller ensures it holds no notes). */
     removeFolder(path: string): Promise<void>;
     /**
+     * Move (or rename) a folder: re-home every note and marker under `fromPath` so it lives under
+     * `toPath` instead (`fromPath/Sub/Note.md` → `toPath/Sub/Note.md`). A rename is the same op with
+     * `toPath` keeping `fromPath`'s parent; a reparent changes the parent. Throws
+     * {@link NameCollisionError} when `toPath` already exists, and is a no-op when `fromPath === toPath`.
+     * The caller re-prefixes the metadata (pins / created / active) via `withReprefixed`.
+     */
+    moveFolder(fromPath: string, toPath: string): Promise<void>;
+    /**
      * Every folder path (POSIX), including deliberately-empty ones, for rendering the tree. Folders
      * implied by a note's path are included alongside explicitly-created empty ones.
      */

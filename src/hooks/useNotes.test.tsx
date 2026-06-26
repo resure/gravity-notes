@@ -418,6 +418,8 @@ class DeferredSaveStore implements NoteStore {
 
     async removeFolder(): Promise<void> {}
 
+    async moveFolder(): Promise<void> {}
+
     async listFolders(): Promise<string[]> {
         return [];
     }
@@ -684,6 +686,34 @@ class ControllableStore implements NoteStore {
         this.folderMarkers.delete(path);
     }
 
+    async moveFolder(fromPath: string, toPath: string): Promise<void> {
+        if (!fromPath || fromPath === toPath) return;
+        if (toPath === fromPath || toPath.startsWith(`${fromPath}/`)) {
+            throw new Error('Cannot move a folder into itself');
+        }
+        const toPrefix = `${toPath}/`;
+        const occupied =
+            [...this.files.keys()].some((id) => id === toPath || id.startsWith(toPrefix)) ||
+            [...this.folderMarkers].some((f) => f === toPath || f.startsWith(toPrefix));
+        if (occupied) {
+            throw new NameCollisionError(fromPath, toPath.slice(toPath.lastIndexOf('/') + 1));
+        }
+        const prefix = `${fromPath}/`;
+        const rekey = (id: string) => toPath + id.slice(fromPath.length);
+        for (const [id, f] of [...this.files]) {
+            if (id === fromPath || id.startsWith(prefix)) {
+                this.files.set(rekey(id), f); // pure relocation: content + mtime preserved
+                this.files.delete(id);
+            }
+        }
+        for (const marker of [...this.folderMarkers]) {
+            if (marker === fromPath || marker.startsWith(prefix)) {
+                this.folderMarkers.delete(marker);
+                this.folderMarkers.add(rekey(marker));
+            }
+        }
+    }
+
     async listFolders(): Promise<string[]> {
         const set = new Set(this.folderMarkers);
         for (const id of this.files.keys()) {
@@ -750,6 +780,68 @@ describe('useNotes — move (folders)', () => {
             await hook.result.current.move('A.md', 'Work');
         });
         expect(hook.result.current.metadata.pinned).toEqual(['Work/A.md']);
+    });
+
+    it('moveFolder re-homes the open note in place (no remount) and re-keys metadata', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/Plan.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('Work/Plan.md');
+        });
+        const session = hook.result.current.sessionId;
+        act(() => {
+            hook.result.current.togglePin('Work'); // pin the folder too
+        });
+
+        await act(async () => {
+            await hook.result.current.moveFolder('Work', 'Archive/Work');
+        });
+
+        expect(hook.result.current.note?.id).toBe('Archive/Work/Plan.md');
+        expect(hook.result.current.activeId).toBe('Archive/Work/Plan.md');
+        expect(hook.result.current.note?.content).toBe('body');
+        expect(hook.result.current.sessionId).toBe(session); // editor instance kept
+        expect(hook.result.current.notes.map((n) => n.id)).toEqual(['Archive/Work/Plan.md']);
+        expect(hook.result.current.metadata.pinned).toEqual(['Archive/Work']);
+        expect((await store.readMetadata()).active).toBe('Archive/Work/Plan.md');
+        expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('moveFolder reports a collision and leaves the source intact', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'a');
+        store.seed('Archive/B.md', 'b');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+
+        await act(async () => {
+            await hook.result.current.moveFolder('Work', 'Archive');
+        });
+
+        expect(onError).toHaveBeenCalled();
+        expect(hook.result.current.notes.map((n) => n.id).sort()).toEqual([
+            'Archive/B.md',
+            'Work/A.md',
+        ]);
+    });
+
+    it('moveFolder refuses to nest a folder in itself', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'a');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+
+        await act(async () => {
+            await hook.result.current.moveFolder('Work', 'Work/Sub');
+        });
+
+        expect(onError).toHaveBeenCalledWith(expect.stringMatching(/itself/i));
+        expect(hook.result.current.notes.map((n) => n.id)).toEqual(['Work/A.md']);
     });
 
     it('refuses a move onto an existing same-leaf note, leaving the source open and intact', async () => {
