@@ -43,11 +43,22 @@ Markdown files, and they are yours.
 | `⌘⇧Enter` / `⌘N`         | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
 | `⌘\`                     | Toggle the sidebar                                                                                                                      |
 | `⌘'`                     | Peek the collapsed sidebar / focus the list                                                                                             |
+| `⌘⇧\`                    | Toggle the folder rail                                                                                                                  |
 | `⌘⇧;`                    | Toggle WYSIWYG / Markup                                                                                                                 |
 | `⌘⇧P`                    | Toggle read-only preview                                                                                                                |
 | `⌘⇧K`                    | Insert link (in the editor)                                                                                                             |
-| `F2`                     | Rename the selected note                                                                                                                |
+| `F2`                     | Rename the selected note, or the focused folder in the rail                                                                             |
+| `⌘⇧M`                    | Move the selected note to a folder                                                                                                      |
 | `⌘/`                     | Show the shortcut help                                                                                                                  |
+
+### Folders
+
+A **folder rail** (toggle with `⌘⇧\`) lists your folders left of the notes list; it's off by default,
+so the app stays a two-pane view until you want it. Selecting a folder scopes the notes list to it
+(**All Notes** shows everything), while search stays global. **New note** (`⌘N`) lands in the selected
+folder. Drag a note onto a folder to file it, or drag a folder onto another to nest it (onto **All
+Notes** to move it back to the root). Double-click or `F2` renames a folder; with a folder focused, `n`
+makes a subfolder and `⌫` removes an empty one.
 
 ## Requirements
 
