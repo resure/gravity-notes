@@ -6,7 +6,7 @@ import {
     useState,
 } from 'react';
 
-import {ArrowsExpand, Pencil, Xmark} from '@gravity-ui/icons';
+import {ChevronsExpandUpRight, Pencil, Xmark} from '@gravity-ui/icons';
 import type {ReactNodeViewProps} from '@gravity-ui/markdown-editor';
 import {Icon} from '@gravity-ui/uikit';
 import {createPortal} from 'react-dom';
@@ -33,9 +33,15 @@ function isCaption(alt: string, src: string): boolean {
 
 /** Full-size overlay for an image, portaled to <body> so it isn't clipped by the editor. */
 function Lightbox({src, alt, onClose}: {src: string; alt: string; onClose: () => void}) {
+    const closeRef = useRef<HTMLButtonElement>(null);
     useEffect(() => {
+        // Move focus out of the editor's contenteditable while the overlay is open. Otherwise, with
+        // the image node still selected, the Escape keypress is inserted INTO that node (a literal
+        // U+001B), corrupting the saved Markdown. preventDefault is a second guard.
+        closeRef.current?.focus();
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
+                e.preventDefault();
                 e.stopPropagation();
                 onClose();
             }
@@ -47,6 +53,7 @@ function Lightbox({src, alt, onClose}: {src: string; alt: string; onClose: () =>
     return createPortal(
         <div className="attachment-lightbox" onClick={onClose} role="presentation">
             <button
+                ref={closeRef}
                 type="button"
                 className="attachment-lightbox__close"
                 aria-label="Close"
@@ -193,7 +200,7 @@ export function AttachmentImageView({node, view, updateAttributes}: ReactNodeVie
                         aria-label="View full size"
                         onClick={() => setZoom(true)}
                     >
-                        <Icon data={ArrowsExpand} size={14} />
+                        <Icon data={ChevronsExpandUpRight} size={14} />
                     </button>
                     <button
                         type="button"
@@ -238,7 +245,14 @@ export function AttachmentImageView({node, view, updateAttributes}: ReactNodeVie
                 <span className="attachment-figure__caption">{alt}</span>
             ) : null}
             {zoom && resolved ? (
-                <Lightbox src={resolved} alt={alt} onClose={() => setZoom(false)} />
+                <Lightbox
+                    src={resolved}
+                    alt={alt}
+                    onClose={() => {
+                        setZoom(false);
+                        view.focus(); // return focus to the editor (it was moved to the overlay)
+                    }}
+                />
             ) : null}
         </span>
     );
