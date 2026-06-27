@@ -203,6 +203,12 @@ export class TauriNoteStore implements NoteStore {
         return path;
     }
 
+    async writeAttachmentAt(ref: string, blob: Blob): Promise<void> {
+        // attachment_write already writes at an exact path (creating parent folders), so reuse it.
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+        await invoke('attachment_write', {dir: this.dir, path: ref, bytes});
+    }
+
     async readAttachment(ref: string): Promise<Blob> {
         const bytes = await invoke<number[] | null>('attachment_read', {dir: this.dir, name: ref});
         if (bytes === null) throw notFound(ref);

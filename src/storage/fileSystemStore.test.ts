@@ -569,6 +569,18 @@ describe('FileSystemNoteStore', () => {
         it('lists nothing before any attachment exists', async () => {
             expect(await store.listAttachments()).toEqual([]);
         });
+
+        it('writeAttachmentAt writes at the exact ref and overwrites', async () => {
+            await store.writeAttachmentAt('Attachments/exact.png', new Blob(['v1']));
+            expect(await (await store.readAttachment('Attachments/exact.png')).text()).toBe('v1');
+
+            await store.writeAttachmentAt('Attachments/exact.png', new Blob(['v2']));
+            expect(await (await store.readAttachment('Attachments/exact.png')).text()).toBe('v2');
+            // No unique-name resolution: still a single file at the exact ref.
+            expect((await store.listAttachments()).map((a) => a.ref)).toEqual([
+                'Attachments/exact.png',
+            ]);
+        });
     });
 
     describe('save conflict detection', () => {

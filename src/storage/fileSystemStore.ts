@@ -265,6 +265,13 @@ export class FileSystemNoteStore implements NoteStore {
         return joinPath(ATTACHMENTS_DIR, leaf);
     }
 
+    async writeAttachmentAt(ref: string, blob: Blob): Promise<void> {
+        const dir = await this.resolveDir(dirname(ref), true);
+        if (!dir) throw new Error('Could not open the Attachments folder');
+        const handle = await dir.getFileHandle(basename(ref), {create: true});
+        await writeFile(handle, blob);
+    }
+
     async readAttachment(ref: string): Promise<Blob> {
         const handle = await this.fileHandle(ref);
         if (!handle) throw notFound(ref);

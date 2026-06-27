@@ -210,6 +210,12 @@ export class IndexedDbNoteStore implements NoteStore {
         return id;
     }
 
+    async writeAttachmentAt(ref: string, blob: Blob): Promise<void> {
+        await this.run(ATTACHMENTS_STORE, 'readwrite', (store) =>
+            store.put({id: ref, blob, updatedAt: Date.now()} satisfies AttachmentRecord),
+        );
+    }
+
     async readAttachment(ref: string): Promise<Blob> {
         const record = await this.run<AttachmentRecord | undefined>(
             ATTACHMENTS_STORE,

@@ -107,6 +107,12 @@ export interface NoteStore {
      */
     writeAttachment(file: File): Promise<string>;
     /**
+     * Write an attachment at an *exact* `Attachments/<name>` reference, overwriting any existing file
+     * there (no unique-name resolution). Used by import/restore, where renaming would orphan the
+     * `![](Attachments/<name>)` references in the notes being imported alongside it.
+     */
+    writeAttachmentAt(ref: string, blob: Blob): Promise<void>;
+    /**
      * Read an attachment's bytes for display, by its `Attachments/<name>` reference. Throws a
      * `NotFoundError` `DOMException` when the attachment is gone. The caller turns the `Blob` into a
      * displayable object URL.

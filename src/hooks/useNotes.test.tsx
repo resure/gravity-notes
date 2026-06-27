@@ -416,6 +416,8 @@ class DeferredSaveStore implements NoteStore {
         throw new Error('not used in these tests');
     }
 
+    async writeAttachmentAt(): Promise<void> {}
+
     async readAttachment(): Promise<Blob> {
         throw new Error('not used in these tests');
     }
@@ -693,6 +695,8 @@ class ControllableStore implements NoteStore {
     async writeAttachment(): Promise<string> {
         throw new Error('not used in these tests');
     }
+
+    async writeAttachmentAt(): Promise<void> {}
 
     async readAttachment(): Promise<Blob> {
         throw new Error('not used in these tests');
