@@ -56,6 +56,16 @@ export class AttachmentUrlCache {
         this.urls.set(ref, URL.createObjectURL(blob));
     }
 
+    /** Revoke and drop a single ref's object URL — call after deleting that attachment. */
+    forget(ref: string): void {
+        const url = this.urls.get(ref);
+        if (url) {
+            URL.revokeObjectURL(url);
+            this.urls.delete(ref);
+        }
+        this.pending.delete(ref);
+    }
+
     /** Revoke every object URL this cache created (call when the cache is retired). */
     dispose(): void {
         for (const url of this.urls.values()) URL.revokeObjectURL(url);

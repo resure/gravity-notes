@@ -4,22 +4,13 @@ import transform from '@diplodoc/transform';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
-import {isAttachmentRef} from '../storage/noteText';
+import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
 
 import './NotePreview.css';
 
 interface NotePreviewProps {
     /** The Markdown to render (captured from the editor when preview is toggled on). */
     markup: string;
-}
-
-/** Every distinct `Attachments/…` image src referenced in the Markdown (for pre-resolution). */
-function attachmentRefs(markup: string): string[] {
-    const refs = new Set<string>();
-    for (const match of markup.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)/g)) {
-        if (isAttachmentRef(match[1])) refs.add(match[1]);
-    }
-    return [...refs];
 }
 
 /**
@@ -85,7 +76,7 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
         // Render right away (correct for note text and any already-cached/seeded images)…
         setRendered(render());
         // …then, once any not-yet-read attachments resolve, re-render so their <img>s point at blobs.
-        const refs = attachmentRefs(markup);
+        const refs = attachmentRefsIn(markup);
         if (refs.length === 0 || !cache) return undefined;
         let alive = true;
         Promise.all(refs.map((r) => cache.resolve(r).catch(() => undefined))).then(() => {

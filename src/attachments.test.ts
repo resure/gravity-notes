@@ -74,6 +74,19 @@ describe('AttachmentUrlCache', () => {
         expect(reads()).toBe(0);
     });
 
+    it('forget revokes and drops a single ref (next resolve re-reads)', async () => {
+        const {store, reads} = fakeStore();
+        const cache = new AttachmentUrlCache(store);
+        const first = await cache.resolve('Attachments/cat.png');
+
+        cache.forget('Attachments/cat.png');
+
+        expect(revoked).toEqual([first]);
+        expect(cache.peek('Attachments/cat.png')).toBeUndefined();
+        await cache.resolve('Attachments/cat.png');
+        expect(reads()).toBe(2); // re-read after forget
+    });
+
     it('dispose revokes every created URL and clears the cache', async () => {
         const {store} = fakeStore();
         const cache = new AttachmentUrlCache(store);
