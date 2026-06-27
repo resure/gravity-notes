@@ -6,6 +6,7 @@ import type {Note} from '../storage/types';
 
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
+import {attachmentImageExtension} from './editor/attachmentImageExtension';
 import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBody';
 import {isCaretOnFirstLine} from './editorCaret';
 
@@ -32,6 +33,12 @@ interface EditorPaneProps {
     onRename: (id: string, nextTitle: string) => void | Promise<boolean>;
     /** Fired when an otherwise-unhandled Escape bubbles out of the editor (exit to the list). */
     onEscape: () => void;
+    /**
+     * Persist a dropped/pasted/inserted image to the active store and return its stable
+     * `Attachments/…` reference (written into the Markdown as the image `src`). Wired to the editor's
+     * upload handler, which drives drag-drop, paste, and the image command alike.
+     */
+    onUploadFile: (file: File) => Promise<string>;
 }
 
 /**
@@ -42,9 +49,14 @@ interface EditorPaneProps {
  * the body is a read-only render and the title is read-only.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, autofocus, preview = false, onChange, onRename, onEscape},
+    {note, autofocus, preview = false, onChange, onRename, onEscape, onUploadFile},
     ref,
 ) {
+    // Stable across the editor's life (EditorPane remounts per session); read latest via a ref so the
+    // upload handler — captured once in useMarkdownEditor's []-deps — always calls the current one.
+    const uploadRef = useRef(onUploadFile);
+    uploadRef.current = onUploadFile;
+
     const editor = useMarkdownEditor(
         {
             md: {html: false},
@@ -54,8 +66,20 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             // saving a note strips the blank lines the user typed for spacing. With it, an empty
             // row is serialized as a `&nbsp;` line so the gap survives save/reload.
             experimental: {preserveEmptyRows: true},
-            // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
-            wysiwygConfig: {extensionOptions: {link: {linkKey: 'Mod-Shift-k'}}},
+            // Persist dropped/pasted/inserted images under Attachments/ and return their stable ref
+            // as the image src (drives drag-drop, paste, and the image command via one handler).
+            handlers: {
+                uploadFile: async (file) => {
+                    const url = await uploadRef.current(file);
+                    return {url, name: file.name};
+                },
+            },
+            wysiwygConfig: {
+                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
+                extensionOptions: {link: {linkKey: 'Mod-Shift-k'}},
+                // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean).
+                extensions: attachmentImageExtension,
+            },
         },
         [],
     );

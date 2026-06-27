@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
 import {Text, useToaster} from '@gravity-ui/uikit';
 
+import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
@@ -79,6 +80,21 @@ export function Workspace({
     );
 
     const notes = useNotes(store, onError);
+
+    // One attachment URL cache per store: resolves `Attachments/…` refs to object URLs for the
+    // editor NodeView and preview, then revokes them all when the store changes / on unmount.
+    const attachmentCache = useMemo(() => new AttachmentUrlCache(store), [store]);
+    useEffect(() => () => attachmentCache.dispose(), [attachmentCache]);
+    // Persist a dropped/pasted/inserted image, then seed its object URL so it renders instantly.
+    const handleUploadFile = useCallback(
+        async (file: File): Promise<string> => {
+            const ref = await store.writeAttachment(file);
+            attachmentCache.seed(ref, file);
+            return ref;
+        },
+        [store, attachmentCache],
+    );
+
     const orderedNotes = useMemo(
         () => orderNotes(notes.notes, notes.metadata),
         [notes.notes, notes.metadata],
@@ -516,154 +532,159 @@ export function Workspace({
     });
 
     return (
-        <div className="workspace">
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept=".md,.zip"
-                multiple
-                hidden
-                onChange={(event) => {
-                    handleImportFiles(event.target.files);
-                    event.target.value = ''; // allow re-importing the same file
-                }}
-            />
-            <TopBar
-                storageLabel={storageLabel}
-                onChangeStorage={handleChangeStorage}
-                onExport={handleExport}
-                onImport={handleImportClick}
-                onOpenHelp={() => setHelpOpen(true)}
-                themePref={themePref}
-                onChangeThemePref={onChangeThemePref}
-                onToggleCollapsed={toggleCollapsed}
-                saveState={notes.saveState}
-                query={query}
-                onQueryChange={setQuery}
-                searchInputRef={searchInputRef}
-                notes={filteredNotes}
-                searchLoading={searchLoading}
-                selectedId={nav.selectedId}
-                onCommit={nav.commit}
-                onCreate={(title) => handleCreate(title, '')}
-                onClose={nav.closeFromSearch}
-                onEnterList={enterList}
-                onFocusList={() => listRef.current?.focusSelected()}
-            />
+        <AttachmentsContext.Provider value={attachmentCache}>
+            <div className="workspace">
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".md,.zip"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                        handleImportFiles(event.target.files);
+                        event.target.value = ''; // allow re-importing the same file
+                    }}
+                />
+                <TopBar
+                    storageLabel={storageLabel}
+                    onChangeStorage={handleChangeStorage}
+                    onExport={handleExport}
+                    onImport={handleImportClick}
+                    onOpenHelp={() => setHelpOpen(true)}
+                    themePref={themePref}
+                    onChangeThemePref={onChangeThemePref}
+                    onToggleCollapsed={toggleCollapsed}
+                    saveState={notes.saveState}
+                    query={query}
+                    onQueryChange={setQuery}
+                    searchInputRef={searchInputRef}
+                    notes={filteredNotes}
+                    searchLoading={searchLoading}
+                    selectedId={nav.selectedId}
+                    onCommit={nav.commit}
+                    onCreate={(title) => handleCreate(title, '')}
+                    onClose={nav.closeFromSearch}
+                    onEnterList={enterList}
+                    onFocusList={() => listRef.current?.focusSelected()}
+                />
 
-            <div
-                className={
-                    'workspace__body' +
-                    (collapsed ? ' workspace__body_collapsed' : '') +
-                    (collapsed && peeked ? ' workspace__body_peeked' : '')
-                }
-            >
-                <aside className="workspace__sidebar">
-                    {railOpen ? (
-                        <FolderRail
-                            ref={railRef}
-                            rows={folderRows}
-                            selectedFolder={selectedFolder}
-                            allNotesCount={notes.notes.length}
-                            onSelectFolder={handleSelectFolder}
-                            onToggleCollapse={toggleCollapse}
-                            onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
-                            onRemoveFolder={(path) => void notes.removeFolder(path)}
-                            onMoveFolder={handleMoveFolder}
+                <div
+                    className={
+                        'workspace__body' +
+                        (collapsed ? ' workspace__body_collapsed' : '') +
+                        (collapsed && peeked ? ' workspace__body_peeked' : '')
+                    }
+                >
+                    <aside className="workspace__sidebar">
+                        {railOpen ? (
+                            <FolderRail
+                                ref={railRef}
+                                rows={folderRows}
+                                selectedFolder={selectedFolder}
+                                allNotesCount={notes.notes.length}
+                                onSelectFolder={handleSelectFolder}
+                                onToggleCollapse={toggleCollapse}
+                                onCreateFolder={(parent, name) =>
+                                    void notes.createFolder(parent, name)
+                                }
+                                onRemoveFolder={(path) => void notes.removeFolder(path)}
+                                onMoveFolder={handleMoveFolder}
+                                onTogglePin={notes.togglePin}
+                                onMoveTo={(id, dest) => void notes.move(id, dest)}
+                                onFocusList={() => listRef.current?.focusSelected()}
+                            />
+                        ) : null}
+                        <NoteList
+                            ref={listRef}
+                            notes={listNotes}
+                            selectedId={nav.selectedId}
+                            query={query}
+                            scopeLabel={
+                                selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
+                            }
+                            showCrumbs={searching || selectedFolder === null}
+                            snippetById={snippetById}
+                            searchInputRef={searchInputRef}
+                            onBrowse={nav.browse}
+                            onCommit={(id) => {
+                                nav.commit(id);
+                                setPeeked(false);
+                            }}
+                            onEscapeList={() => {
+                                setPeeked(false);
+                                nav.escapeToSearch();
+                            }}
+                            onCreate={handleCreate}
+                            onRequestMove={setMovingNoteId}
+                            onRename={handleRename}
+                            onDelete={handleDelete}
+                            sortMode={notes.metadata.sort}
+                            onSortChange={notes.setSortMode}
+                            pinnedIds={notes.metadata.pinned}
                             onTogglePin={notes.togglePin}
-                            onMoveTo={(id, dest) => void notes.move(id, dest)}
-                            onFocusList={() => listRef.current?.focusSelected()}
+                            railOpen={railOpen}
+                            onToggleRail={toggleRail}
+                            onFocusRail={() => railRef.current?.focusSelected()}
                         />
-                    ) : null}
-                    <NoteList
-                        ref={listRef}
-                        notes={listNotes}
-                        selectedId={nav.selectedId}
-                        query={query}
-                        scopeLabel={
-                            selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
-                        }
-                        showCrumbs={searching || selectedFolder === null}
-                        snippetById={snippetById}
-                        searchInputRef={searchInputRef}
-                        onBrowse={nav.browse}
-                        onCommit={(id) => {
-                            nav.commit(id);
-                            setPeeked(false);
-                        }}
-                        onEscapeList={() => {
-                            setPeeked(false);
-                            nav.escapeToSearch();
-                        }}
-                        onCreate={handleCreate}
-                        onRequestMove={setMovingNoteId}
-                        onRename={handleRename}
-                        onDelete={handleDelete}
-                        sortMode={notes.metadata.sort}
-                        onSortChange={notes.setSortMode}
-                        pinnedIds={notes.metadata.pinned}
-                        onTogglePin={notes.togglePin}
-                        railOpen={railOpen}
-                        onToggleRail={toggleRail}
-                        onFocusRail={() => railRef.current?.focusSelected()}
-                    />
-                </aside>
+                    </aside>
 
-                <main className="workspace__editor">
-                    {notes.note ? (
-                        <>
-                            {notes.conflict ? (
-                                <div className="workspace__conflict">
-                                    <ConflictBanner
-                                        deleted={notes.conflict.deleted}
-                                        onReload={() => void notes.reloadDisk()}
-                                        onKeepMine={() => void notes.keepMine()}
-                                        onSaveAsCopy={() =>
-                                            void notes.saveAsCopy().then((id) => {
-                                                if (id) nav.setSelected(id);
-                                            })
-                                        }
-                                        onDiscard={() => {
-                                            nav.setSelected(null);
-                                            notes.discard();
-                                        }}
+                    <main className="workspace__editor">
+                        {notes.note ? (
+                            <>
+                                {notes.conflict ? (
+                                    <div className="workspace__conflict">
+                                        <ConflictBanner
+                                            deleted={notes.conflict.deleted}
+                                            onReload={() => void notes.reloadDisk()}
+                                            onKeepMine={() => void notes.keepMine()}
+                                            onSaveAsCopy={() =>
+                                                void notes.saveAsCopy().then((id) => {
+                                                    if (id) nav.setSelected(id);
+                                                })
+                                            }
+                                            onDiscard={() => {
+                                                nav.setSelected(null);
+                                                notes.discard();
+                                            }}
+                                        />
+                                    </div>
+                                ) : null}
+                                <div className="workspace__panes">
+                                    <EditorPane
+                                        ref={editorRef}
+                                        key={notes.sessionId}
+                                        note={notes.note}
+                                        autofocus={nav.autofocus}
+                                        preview={previewMode}
+                                        onChange={notes.edit}
+                                        onRename={handleEditorRename}
+                                        onEscape={handleEditorEscape}
+                                        onUploadFile={handleUploadFile}
                                     />
                                 </div>
-                            ) : null}
-                            <div className="workspace__panes">
-                                <EditorPane
-                                    ref={editorRef}
-                                    key={notes.sessionId}
-                                    note={notes.note}
-                                    autofocus={nav.autofocus}
-                                    preview={previewMode}
-                                    onChange={notes.edit}
-                                    onRename={handleEditorRename}
-                                    onEscape={handleEditorEscape}
-                                />
+                            </>
+                        ) : (
+                            <div className="workspace__placeholder">
+                                <Text variant="body-2" color="secondary">
+                                    Select a note, or create a new one to start writing.
+                                </Text>
                             </div>
-                        </>
-                    ) : (
-                        <div className="workspace__placeholder">
-                            <Text variant="body-2" color="secondary">
-                                Select a note, or create a new one to start writing.
-                            </Text>
-                        </div>
-                    )}
-                </main>
+                        )}
+                    </main>
+                </div>
+
+                <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+                <MoveToDialog
+                    open={movingNote !== null}
+                    note={movingNote ? {id: movingNote.id, title: movingNote.title} : null}
+                    folders={notes.folders}
+                    notes={notes.notes}
+                    metadata={notes.metadata}
+                    onMove={handleMoveTo}
+                    onClose={() => setMovingNoteId(null)}
+                />
             </div>
-
-            <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
-
-            <MoveToDialog
-                open={movingNote !== null}
-                note={movingNote ? {id: movingNote.id, title: movingNote.title} : null}
-                folders={notes.folders}
-                notes={notes.notes}
-                metadata={notes.metadata}
-                onMove={handleMoveTo}
-                onClose={() => setMovingNoteId(null)}
-            />
-        </div>
+        </AttachmentsContext.Provider>
     );
 }

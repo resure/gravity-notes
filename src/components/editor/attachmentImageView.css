@@ -1,0 +1,14 @@
+.attachment-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+/* Placeholder shown while an attachment's bytes resolve to an object URL. */
+.attachment-image_loading {
+    display: inline-block;
+    min-width: 80px;
+    min-height: 48px;
+    background: var(--g-color-base-generic);
+    border-radius: 4px;
+}
