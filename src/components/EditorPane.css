@@ -11,10 +11,10 @@
     padding-top: 8px;
 }
 
-/* Comfortable reading rhythm: a relaxed line-height, with paragraph spacing still minimal because
-   blank lines between paragraphs are real empty rows (preserveEmptyRows) that carry the gap — not
-   margins. The content typography lives deep in the YFM stylesheets; the extra .ProseMirror.yfm
-   classes outrank it so these win without !important. */
+/* Comfortable reading rhythm: a relaxed line-height. Blank lines between paragraphs are real empty
+   rows (preserveEmptyRows) that carry most of the gap, but a small paragraph bottom-margin gives
+   adjacent paragraphs (no explicit blank line) a little air too. The content typography lives deep in
+   the YFM stylesheets; the extra .ProseMirror.yfm classes outrank it so these win without !important. */
 .editor-pane .g-md-editor.ProseMirror.yfm {
     line-height: 1.2;
 }
@@ -23,6 +23,11 @@
     margin-top: 0;
     margin-bottom: 1px;
     line-height: 1.35;
+}
+
+/* A touch of margin between paragraphs (list items stay tight, above). */
+.editor-pane .g-md-editor.ProseMirror.yfm p {
+    margin-bottom: 6px;
 }
 
 /* Block elements get real air above them. The paragraph above has an almost-zero bottom margin, so
