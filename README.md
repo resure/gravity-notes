@@ -137,17 +137,15 @@ Key modules:
 
 ### Backlog
 
-- Tune line-height, padding before/after code blocks, height of inline code blocks
-
 - Tab-to-complete in the search box, nvALT-style
 
 - Wiki-style links between notes, backlinks
 - Recent-note history (cmd+[] - back/forward through visited notes)
 
 - Trash bin for deleted notes
-- Media attachments, with separate view for files management (and preview)
-
-- Folders support?
+- Media attachments — core done (drag-drop / paste / image-command into a root `Attachments/` folder,
+  rendered in editor + preview across all backends). Management view, orphan GC, and
+  export/import of attachments are still open — see `TODO.md`.
 
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
@@ -155,6 +153,3 @@ Key modules:
 - Proper signed desktop macOS app
 - Mobile view
 - Mobile app
-
-- Tags?
-- Daily notes?
