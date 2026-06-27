@@ -25,9 +25,15 @@
     line-height: 1.35;
 }
 
-/* A touch of margin between paragraphs (list items stay tight, above). */
+/* A touch of margin between paragraphs. */
 .editor-pane .g-md-editor.ProseMirror.yfm p {
     margin-bottom: 6px;
+}
+
+/* …but YFM wraps each list item's text in its own <p>, so the rule above would balloon the gap
+   between list items. Keep list paragraphs tight so lists stay compact. */
+.editor-pane .g-md-editor.ProseMirror.yfm li p {
+    margin-bottom: 0;
 }
 
 /* Block elements get real air above them. The paragraph above has an almost-zero bottom margin, so
@@ -44,20 +50,20 @@
     margin-bottom: 4px;
 }
 .editor-pane .g-md-editor.ProseMirror.yfm h1 {
-    margin-top: 28px;
+    margin-top: 24px;
 }
 .editor-pane .g-md-editor.ProseMirror.yfm h2 {
-    margin-top: 22px;
+    margin-top: 19px;
 }
 .editor-pane .g-md-editor.ProseMirror.yfm h3 {
-    margin-top: 18px;
+    margin-top: 15px;
 }
 .editor-pane .g-md-editor.ProseMirror.yfm h4 {
-    margin-top: 14px;
+    margin-top: 12px;
 }
 .editor-pane .g-md-editor.ProseMirror.yfm h5,
 .editor-pane .g-md-editor.ProseMirror.yfm h6 {
-    margin-top: 10px;
+    margin-top: 9px;
 }
 
 /* No empty gap when a heading (or any block) opens the note — the editor's top padding
