@@ -21,15 +21,18 @@ Shipped so far:
 - **Editor affordances.** The custom image NodeView supports drag-to-resize (persisted as imsize
   `=WxH`), an alt-text editor (shown as a caption when set; the default filename isn't), click-to-zoom
   (full-size overlay), a selection ring, and an "image not found" state.
+- **Duplicate note** (`useNotes.duplicate`, ⌘D / row menu) copies the body verbatim, so the copy
+  shares the original's attachments (no byte copy).
+
+Lifecycle policy (decided 2026-06-28): attachments are **shared**, never owned by one note.
+Deleting a note, or removing an image while editing, **keeps** the file (a future trash/restore will
+want it); cleanup is **manual** via Manage attachments → "Delete unused". So there is intentionally
+**no** automatic orphan GC on delete.
 
 Still to do:
 
-- **Orphan garbage collection (automatic).** The management view surfaces orphans and offers manual
-  "Delete unused", but deleting a _note_ still leaves its images behind. Optionally prompt/auto-clean
-  an attachment when the last note referencing it is deleted.
-
 - **Tauri IPC efficiency.** `attachment_write`/`attachment_read` move bytes as JSON number arrays.
   Switch to a raw-bytes transport (e.g. `tauri::ipc::Response` / typed-array args) for large images.
-
 - **Verify the `/image` slash command** surfaces the upload action in our editor config (toolbar
   button, drag-drop, and paste already route through the upload handler).
+- **(Future) trash / restore for deleted notes** — the reason attachments are kept on delete.
