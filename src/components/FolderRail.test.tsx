@@ -144,12 +144,25 @@ describe('FolderRail — keyboard', () => {
         expect(props.onToggleCollapse).toHaveBeenCalledWith('Work');
     });
 
-    it('moves into the notes list on Enter', async () => {
+    it('dives into the notes list on Enter over a leaf folder', async () => {
         const user = userEvent.setup();
-        const {props} = setup({selectedFolder: 'Work'});
+        const {props} = setup({selectedFolder: 'Work'}); // default Work is a leaf
         screen.getByRole('treeitem', {name: /Work/}).focus();
         await user.keyboard('{Enter}');
         expect(props.onFocusList).toHaveBeenCalledTimes(1);
+        expect(props.onToggleCollapse).not.toHaveBeenCalled();
+    });
+
+    it('toggles (reveal/conceal) a folder with subfolders on Enter', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({
+            selectedFolder: 'Work',
+            rows: [folder('Work', {hasChildren: true, collapsed: false})],
+        });
+        screen.getByRole('treeitem', {name: /Work/}).focus();
+        await user.keyboard('{Enter}');
+        expect(props.onToggleCollapse).toHaveBeenCalledWith('Work');
+        expect(props.onFocusList).not.toHaveBeenCalled();
     });
 });
 
@@ -195,6 +208,33 @@ describe('FolderRail — folder actions', () => {
         await user.type(await screen.findByPlaceholderText('Folder name'), 'Plans{Enter}');
         expect(props.onCreateFolder).toHaveBeenCalledWith('Work', 'Plans');
     });
+
+    it('renders the new-subfolder editor directly under its parent, not at the top', async () => {
+        const user = userEvent.setup();
+        setup(); // rows: Work, Personal
+        await user.click(screen.getByRole('button', {name: 'Work actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /New subfolder/}));
+        const inputRow = (await screen.findByPlaceholderText('Folder name')).closest(
+            '.folder-rail__row',
+        );
+        const rows = [...document.querySelectorAll('.folder-rail__items .folder-rail__row')];
+        const workRow = screen.getByRole('treeitem', {name: /Work/});
+        const personalRow = screen.getByRole('treeitem', {name: /Personal/});
+        // The editor sits immediately after Work and before the next sibling — not floating at the top.
+        expect(rows.indexOf(inputRow as Element)).toBe(rows.indexOf(workRow) + 1);
+        expect(rows.indexOf(inputRow as Element)).toBeLessThan(rows.indexOf(personalRow));
+    });
+
+    it('expands a collapsed parent when starting a new subfolder', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({
+            rows: [folder('Work', {hasChildren: true, collapsed: true}), folder('Personal')],
+        });
+        await user.click(screen.getByRole('button', {name: 'Work actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /New subfolder/}));
+        // The collapsed parent is expanded so the editor (and the folder once created) are visible.
+        expect(props.onToggleCollapse).toHaveBeenCalledWith('Work');
+    });
 });
 
 describe('FolderRail — drag and drop', () => {
@@ -232,6 +272,14 @@ describe('FolderRail — focus handle', () => {
         const {ref} = setup({selectedFolder: null});
         ref.current?.focusSelected();
         expect(screen.getByRole('treeitem', {name: /All Notes/})).toHaveFocus();
+    });
+
+    it('selectRelative() moves the folder selection (⌘J/⌘K)', () => {
+        const {props, ref} = setup({selectedFolder: 'Work'}); // order: All Notes, Work, Personal
+        act(() => ref.current?.selectRelative(1));
+        expect(props.onSelectFolder).toHaveBeenCalledWith('Personal');
+        act(() => ref.current?.selectRelative(-1));
+        expect(props.onSelectFolder).toHaveBeenLastCalledWith(null); // back up to All Notes
     });
 });
 

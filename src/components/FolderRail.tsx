@@ -1,4 +1,13 @@
-import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
+import {
+    Fragment,
+    forwardRef,
+    useCallback,
+    useEffect,
+    useImperativeHandle,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import type {DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent} from 'react';
 
 import {
@@ -31,6 +40,8 @@ export interface FolderRailHandle {
     focusSelected(): void;
     /** Begin inline-renaming a folder (the global F2 shortcut, when a folder row is focused). */
     startRename(path: string): void;
+    /** Move the folder selection by `delta` rows (the global ⌘J/⌘K, when the rail is focused). */
+    selectRelative(delta: number): void;
 }
 
 export interface FolderRailProps {
@@ -60,7 +71,7 @@ export interface FolderRailProps {
 
 /** Left padding (px) for a row at the given tree depth. */
 function indentFor(depth: number): number {
-    return 10 + depth * 14;
+    return 2 + depth * 14;
 }
 
 /** Whether dropping the dragged folder onto `target` (`''` = root) is forbidden (self / descendant). */
@@ -97,10 +108,13 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const renameInputRef = useRef<HTMLInputElement>(null);
 
     // The flat keyboard order: All Notes, then each visible folder row.
-    const navItems: {key: string; folder: string | null; row?: FolderRow}[] = [
-        {key: ALL_KEY, folder: null},
-        ...rows.map((row) => ({key: row.path, folder: row.path, row})),
-    ];
+    const navItems = useMemo<{key: string; folder: string | null; row?: FolderRow}[]>(
+        () => [
+            {key: ALL_KEY, folder: null},
+            ...rows.map((row) => ({key: row.path, folder: row.path, row})),
+        ],
+        [rows],
+    );
     const selectedKey = selectedFolder === null ? ALL_KEY : selectedFolder;
     // The tabbable row: the selected one if it's visible, else fall back to All Notes.
     const focusableKey = navItems.some((i) => i.key === selectedKey) ? selectedKey : ALL_KEY;
@@ -112,7 +126,15 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         if (renaming) renameInputRef.current?.focus();
     }, [renaming]);
 
-    const focusRow = (key: string) => itemRefs.current.get(key)?.focus();
+    const focusRow = useCallback((key: string) => itemRefs.current.get(key)?.focus(), []);
+
+    const select = useCallback(
+        (item: {key: string; folder: string | null}) => {
+            onSelectFolder(item.folder);
+            focusRow(item.key);
+        },
+        [onSelectFolder, focusRow],
+    );
 
     useImperativeHandle(
         ref,
@@ -123,14 +145,18 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             startRename(path: string) {
                 setRenaming({path, value: basename(path)});
             },
+            selectRelative(delta: number) {
+                const index = navItems.findIndex((i) => i.key === selectedKey);
+                // Nothing selected yet: a step down starts at the top, a step up at the bottom.
+                let from = index;
+                if (index === -1) from = delta > 0 ? -1 : navItems.length;
+                const next = navItems[from + delta];
+                if (next) select(next);
+            },
         }),
-        [focusableKey],
+        // navItems/selectedKey are recomputed each render, so the handle always sees the live tree.
+        [focusableKey, navItems, selectedKey, select, focusRow],
     );
-
-    const select = (item: {key: string; folder: string | null}) => {
-        onSelectFolder(item.folder);
-        focusRow(item.key);
-    };
 
     const submitNewFolder = () => {
         const name = newFolderName.trim();
@@ -138,6 +164,13 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         setNewFolderParent(null);
         setNewFolderName('');
         if (parent !== null && name) onCreateFolder(parent, name);
+    };
+
+    // Begin a new subfolder under `row`: expand it first (if collapsed) so the editor — and the
+    // folder once created — are visible beneath their parent rather than hidden.
+    const startNewSubfolder = (row: FolderRow) => {
+        if (row.collapsed) onToggleCollapse(row.path);
+        setNewFolderParent(row.path);
     };
 
     const submitRename = () => {
@@ -175,19 +208,20 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             collapseOrSelectParent(row);
         } else if (bare && event.key === 'Enter') {
             event.preventDefault();
-            onFocusList();
+            // Enter reveals/conceals a folder with subfolders; a leaf folder (nothing to toggle)
+            // dives into its notes instead.
+            if (row && row.hasChildren) onToggleCollapse(row.path);
+            else onFocusList();
         }
     };
 
-    // n / Backspace|Delete over a focused folder: new subfolder, or remove an empty one.
-    const onActionKey = (
-        event: ReactKeyboardEvent<HTMLDivElement>,
-        folder: string | null,
-        row: FolderRow | undefined,
-    ) => {
+    // n / Backspace|Delete over a focused row: new (sub)folder, or remove an empty one. `row` is
+    // undefined for the All Notes row, where `n` makes a root folder.
+    const onActionKey = (event: ReactKeyboardEvent<HTMLDivElement>, row: FolderRow | undefined) => {
         if (event.key === 'n') {
             event.preventDefault();
-            setNewFolderParent(folder ?? '');
+            if (row) startNewSubfolder(row);
+            else setNewFolderParent(''); // All Notes → a new root folder
         } else if ((event.key === 'Backspace' || event.key === 'Delete') && row) {
             event.preventDefault();
             if (row.noteCount === 0 && !row.hasChildren) onRemoveFolder(row.path);
@@ -197,7 +231,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, key: string) => {
         const index = navItems.findIndex((i) => i.key === key);
         if (index === -1) return;
-        const {folder, row} = navItems[index];
+        const {row} = navItems[index];
         // Bare keys (no ⌘/⌃/⌥) so ⌘J/⌘K and ⌘↵ still reach the global handler.
         const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
         // Vertical move: arrows or vim j/k → select the neighbor row.
@@ -211,7 +245,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             return;
         }
         if (bare && (event.key === 'n' || event.key === 'Backspace' || event.key === 'Delete')) {
-            onActionKey(event, folder, row);
+            onActionKey(event, row);
             return;
         }
         onHorizontalKey(event, row, bare);
@@ -272,6 +306,8 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 {allNotesCount > 0 ? (
                     <span className="folder-rail__count">{allNotesCount}</span>
                 ) : null}
+                {/* Reserve the same trailing slot as a folder row's ⋯ menu, so counts line up. */}
+                <span className="folder-rail__actions-spacer" aria-hidden />
             </div>
         );
     };
@@ -288,6 +324,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 className="folder-rail__input"
                 controlRef={renameInputRef}
                 size="s"
+                view="clear"
                 value={renaming?.value ?? ''}
                 onUpdate={(value) => setRenaming((r) => (r ? {...r, value} : r))}
                 onBlur={submitRename}
@@ -401,7 +438,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                             {
                                 text: 'New subfolder',
                                 iconStart: <Icon data={FolderPlus} />,
-                                action: () => setNewFolderParent(row.path),
+                                action: () => startNewSubfolder(row),
                             },
                             {
                                 text: 'Delete folder',
@@ -418,43 +455,53 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         );
     };
 
+    // The inline new-folder editor, indented to its parent's child depth ('' root = depth 0).
+    const renderNewFolderInput = () => (
+        <div
+            className="folder-rail__row"
+            style={{
+                paddingInlineStart: indentFor(
+                    newFolderParent ? newFolderParent.split('/').length : 0,
+                ),
+            }}
+        >
+            <span className="folder-rail__caret" />
+            <Icon className="folder-rail__icon" data={Folder} size={16} aria-hidden />
+            <TextInput
+                className="folder-rail__input"
+                controlRef={newFolderInputRef}
+                size="s"
+                view="clear"
+                placeholder="Folder name"
+                value={newFolderName}
+                onUpdate={setNewFolderName}
+                onBlur={submitNewFolder}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitNewFolder();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setNewFolderParent(null);
+                        setNewFolderName('');
+                    }
+                }}
+            />
+        </div>
+    );
+
     return (
         <div className="folder-rail">
             <div className="folder-rail__items" role="tree" aria-label="Folders">
                 {renderAllNotes()}
-                {newFolderParent === null ? null : (
-                    <div
-                        className="folder-rail__row"
-                        style={{
-                            paddingInlineStart: indentFor(
-                                newFolderParent ? newFolderParent.split('/').length : 0,
-                            ),
-                        }}
-                    >
-                        <span className="folder-rail__caret" />
-                        <Icon className="folder-rail__icon" data={Folder} size={16} aria-hidden />
-                        <TextInput
-                            className="folder-rail__input"
-                            controlRef={newFolderInputRef}
-                            size="s"
-                            placeholder="Folder name"
-                            value={newFolderName}
-                            onUpdate={setNewFolderName}
-                            onBlur={submitNewFolder}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    submitNewFolder();
-                                } else if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    setNewFolderParent(null);
-                                    setNewFolderName('');
-                                }
-                            }}
-                        />
-                    </div>
-                )}
-                {rows.map(renderFolder)}
+                {/* A new root folder sits at the top; a new subfolder renders under its parent row. */}
+                {newFolderParent === '' ? renderNewFolderInput() : null}
+                {rows.map((row) => (
+                    <Fragment key={row.path}>
+                        {renderFolder(row)}
+                        {newFolderParent === row.path ? renderNewFolderInput() : null}
+                    </Fragment>
+                ))}
             </div>
             <div className="folder-rail__footer">
                 <Button

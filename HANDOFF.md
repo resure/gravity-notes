@@ -14,7 +14,7 @@ themselves drag to reparent (or onto "All Notes" → root) and rename in place (
 menu). Works on **all three backends** — in-browser (IndexedDB), desktop (Tauri/Rust), and the
 **Chromium web folder backend (FSA)**.
 
-- **Verification:** 506 TS tests + 10 Rust tests, `npm run typecheck`, `npm run lint` (0 errors),
+- **Verification:** 523 TS tests + 10 Rust tests, `npm run typecheck`, `npm run lint` (0 errors),
   `npm run build` — all green.
 - **Run it:** `npm run dev` (in-browser, or a Chromium folder) or `npm run tauri:dev` (desktop).
   Toggle the folder rail with **⌘⇧\\** or the folder button in the list toolbar.
@@ -68,15 +68,23 @@ menu). Works on **all three backends** — in-browser (IndexedDB), desktop (Taur
   takes `parentPath`.
 - **`src/tree.ts`** — pure `buildFolderTree(folders, notes, metadata, collapsed) → FolderRow[]`
   (folders only; recursive note counts; pin-ordering) + `notesInFolder(notes, folder|null)` (direct
-  children; `null` = All Notes).
+  children; `null` = All Notes) + `buildMoveTargets(folders, notes, metadata, currentFolder,
+collapsed, query) → MoveTargetRow[]` (the move picker's tree: reuses `buildFolderTree`, marks the
+  current folder `disabled`, name-filters to matches + ancestors, flags `matched` for highlight).
+- **`src/components/MoveToDialog.tsx`** — the tree-shaped, filterable "Move to…" picker (combobox
+  pattern: an autofocused filter field over a `listbox` of indented folder rows; `aria-activedescendant`
+  drives the highlight). Typeahead highlights the first match; ↑↓ move it (skipping the disabled
+  current folder), ⏎ moves, Esc cancels, click picks, carets collapse (unfiltered). Root is a row
+  named "Root" that filters uniformly. State is **lifted to `Workspace`** (`movingNoteId`), where the
+  full folders/notes/metadata live; `NoteList` just emits `onRequestMove(id)` and ⌘⇧M sets it directly.
 - **`src/components/FolderRail.tsx`** — the folder rail: an "All Notes" row + the folder tree (caret
   collapse, pin, a quiet count that yields to the ⋯ menu on hover, inline new-folder/rename editors),
   **drag-and-drop** (note→folder, folder→folder reparent, →root; self/descendant-guarded), and
   roving-tabindex keyboard nav (↑↓ select, →/← expand/collapse or step to parent, Enter → list, `n`
   new subfolder, `⌫` delete-empty, double-click/F2 rename). Footer "New Folder". `tree`/`treeitem` ARIA.
 - **`src/components/NoteList.tsx`** — a **flat** note list again (`notes: NoteMeta[]`): rename / delete
-  / pin, "Move to…" picker, draggable notes, search crumbs. Toolbar = rail toggle + sort + New; ←
-  steps focus into the rail.
+  / pin, "Move to…" (emits `onRequestMove`; the picker is owned by `Workspace`), draggable notes,
+  search crumbs. Toolbar = rail toggle + sort + New; ← steps focus into the rail.
 - **`src/components/Workspace.tsx`** — owns persisted `selectedFolder`, `railOpen`, and
   `collapsedFolders`; builds the rail tree; scopes the list to the selected folder's direct notes
   (global ranked results while searching); routes ⌘J/⌘K + delete-neighbor through the flat list; wires
@@ -93,7 +101,9 @@ gestures · **10** folder move/rename (subtree re-key via `moveFolder` + `withRe
 backends + Rust `notes_move_dir`; live-editor-safe re-point) · **11** web/FSA folder ops (recursive
 walk, path-aware ops, `.gnkeep` + prune, nested case-only rename) · **rail UX** (collapsible 3-pane,
 flat folder-scoped list, global search, ⌘⇧\\) · **rail v2** (folder drag-and-drop + reparent, drop-to-
-root, inline rename, in-rail keys `n`/`⌫`/F2, quiet hover-yielding counts, footer New-Folder).
+root, inline rename, in-rail keys `n`/`⌫`/F2, quiet hover-yielding counts, footer New-Folder) · **move
+picker v2** (`MoveToDialog`: tree-shaped + name-filter typeahead + current-folder excluded; state
+lifted to `Workspace`, `NoteList` emits `onRequestMove`).
 
 Deferred:
 
@@ -104,16 +114,15 @@ Deferred:
 Resolved: the dead-FSA surface (phase 11); keyboard collapse/expand (→/←) + folder nav in the rail;
 drop-to-root; `tree`/`treeitem` ARIA; **folder rename** (double-click / F2 / menu) and **folder
 drag-and-drop** to reparent (phase 10); the "strange numbers / paddings" (quiet hover-yielding counts,
-even 30px rows, footer New-Folder).
+even 30px rows, footer New-Folder); **move picker polish** (`MoveToDialog`: tree-shaped + name-filter
+typeahead + current-folder excluded; visually browser-verified across tree / filter / current states).
 
 Still open:
 
-1. **Move picker polish** — ⌘⇧M is still a flat list of full paths (no tree shape / typeahead, and it
-   doesn't exclude the note's current folder). The rail makes it secondary, but it's still the path.
-2. **Empty/placeholder states** — the create-first-folder moment, and an empty selected folder.
-3. **Nested import** (phase 12) — `transfer.ts` still flattens zip subfolders.
-4. **Drag affordance polish** — no autoscroll near the rail edges; only a row highlight (no drop-line).
-5. Confirm the **rail defaults** and **⌘N-into-folder** feel right; consider auto-previewing the first
+1. **Empty/placeholder states** — the create-first-folder moment, and an empty selected folder.
+2. **Nested import** (phase 12) — `transfer.ts` still flattens zip subfolders.
+3. **Drag affordance polish** — no autoscroll near the rail edges; only a row highlight (no drop-line).
+4. Confirm the **rail defaults** and **⌘N-into-folder** feel right; consider auto-previewing the first
    note when you enter a folder.
 
 ## Resuming
@@ -128,12 +137,13 @@ Still open:
 1. **See it:** `npm run dev`, open the rail with ⌘⇧\\. Folders are real on in-browser + desktop + the
    Chromium folder backend. Try: create / rename / delete folders, drag a note onto a folder, drag a
    folder onto another (reparent) or onto "All Notes" (→ root), ⌘N into the selected folder.
-2. **Highest-value next:** the **move picker** (⌘⇧M) is still a flat path list — make it tree-shaped /
-   filterable and exclude the note's current folder. Then **empty/placeholder states**, then **nested
-   import** (phase 12 — `transfer.ts` flattens zip subfolders; preserve the paths).
+2. **Highest-value next:** **empty/placeholder states** (the create-first-folder moment + an empty
+   selected folder), then **nested import** (phase 12 — `transfer.ts` flattens zip subfolders; preserve
+   the paths). The move picker (⌘⇧M) is done — tree-shaped, name-filter typeahead, current folder
+   greyed/disabled (`MoveToDialog`).
 3. **Visual caveat:** the rail polish (counts, padding, footer) shipped but was **not screenshot-
    verified by the agent** (no browser tooling in that session) — eyeball it and tweak `FolderRail.css`
-   if anything's off.
+   if anything's off. (The move picker _was_ browser-verified this session.)
 
 ### Gotchas / things to watch
 

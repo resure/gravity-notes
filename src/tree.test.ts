@@ -55,15 +55,18 @@ describe('buildFolderTree', () => {
         expect(rows[0].noteCount).toBe(0);
     });
 
-    it('counts notes recursively for the badge', () => {
-        const rows = buildFolderTree(
-            ['A', 'A/B'],
-            [note('A/x.md'), note('A/B/y.md'), note('A/B/z.md')],
-            meta(),
-            new Set(),
-        );
-        expect(rows.find((r) => r.path === 'A')?.noteCount).toBe(3);
+    it('counts only direct notes when expanded (subfolders show their own counts)', () => {
+        const notes = [note('A/x.md'), note('A/B/y.md'), note('A/B/z.md')];
+        const rows = buildFolderTree(['A', 'A/B'], notes, meta(), new Set());
+        expect(rows.find((r) => r.path === 'A')?.noteCount).toBe(1); // just A/x.md
         expect(rows.find((r) => r.path === 'A/B')?.noteCount).toBe(2);
+    });
+
+    it('rolls the count up recursively for a collapsed folder', () => {
+        const notes = [note('A/x.md'), note('A/B/y.md'), note('A/B/z.md')];
+        const rows = buildFolderTree(['A', 'A/B'], notes, meta(), new Set(['A']));
+        // A is collapsed, so it summarizes its whole hidden subtree (1 direct + 2 under A/B).
+        expect(rows.find((r) => r.path === 'A')?.noteCount).toBe(3);
     });
 
     it('orders each level: pinned folders first, then by name', () => {

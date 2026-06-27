@@ -333,6 +333,18 @@ export function Workspace({
         [visibleIds, nav, enterList],
     );
 
+    // ⌘J/⌘K: move the folder cursor when the rail is focused, otherwise the notes cursor.
+    const moveCursor = useCallback(
+        (delta: number) => {
+            const el = document.activeElement;
+            const inRail =
+                railOpen && el instanceof HTMLElement && Boolean(el.closest('.folder-rail'));
+            if (inRail) railRef.current?.selectRelative(delta);
+            else browseRelative(delta);
+        },
+        [railOpen, browseRelative],
+    );
+
     const handleDelete = useCallback(
         (id: string) => {
             const ids = visibleIds;
@@ -423,8 +435,8 @@ export function Workspace({
             searchInputRef.current?.focus();
             searchInputRef.current?.select(); // select any existing query so typing replaces it
         },
-        selectNextNote: () => browseRelative(1),
-        selectPrevNote: () => browseRelative(-1),
+        selectNextNote: () => moveCursor(1),
+        selectPrevNote: () => moveCursor(-1),
         toggleSidebar: toggleCollapsed,
         toggleFolderRail: () => {
             const inRail =
