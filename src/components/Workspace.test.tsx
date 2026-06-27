@@ -659,6 +659,15 @@ describe('Workspace — move picker', () => {
             expect(ids).toContain('Work/Beta.md');
         });
     });
+
+    it('⌘⇧⌫ opens the delete confirmation for the selected note', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await user.click(await screen.findByRole('option', {name: /Beta/}));
+        fireEvent.keyDown(document, {key: 'Backspace', metaKey: true, shiftKey: true});
+        // The confirm dialog appears, naming the selected note (it isn't deleted until confirmed).
+        expect(await screen.findByText(/Delete "Beta"\?/)).toBeInTheDocument();
+    });
 });
 
 describe('Workspace — folder auto-preview', () => {

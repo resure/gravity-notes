@@ -11,7 +11,8 @@ export type ShortcutAction =
     | 'togglePreview'
     | 'openHelp'
     | 'renameSelected'
-    | 'moveSelected';
+    | 'moveSelected'
+    | 'deleteSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
@@ -150,6 +151,14 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
         // 'm' is a letter, so the shifted event.key ('M') matches case-insensitively — no code needed.
         global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true},
+    },
+    {
+        keys: 'mod+shift+backspace',
+        description: 'Delete selected note (asks to confirm)',
+        group: 'Editing',
+        // Backspace is unaffected by Shift, so a key match is enough; fires while editing too, but
+        // the confirm dialog guards against an accidental delete.
+        global: {trigger: 'mod', key: 'Backspace', action: 'deleteSelected', shift: true},
     },
     {
         keys: 'mod+/',

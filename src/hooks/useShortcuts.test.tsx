@@ -17,6 +17,7 @@ function makeActions(): ShortcutActions {
         openHelp: vi.fn(),
         renameSelected: vi.fn(),
         moveSelected: vi.fn(),
+        deleteSelected: vi.fn(),
     };
 }
 
@@ -120,6 +121,20 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: 'M', metaKey: true, shiftKey: true});
         expect(actions.moveSelected).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes the selected note on mod+shift+backspace', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'Backspace', metaKey: true, shiftKey: true});
+        expect(actions.deleteSelected).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not delete on mod+backspace without shift', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'Backspace', metaKey: true});
+        expect(actions.deleteSelected).not.toHaveBeenCalled();
     });
 
     it('opens help on mod+/', () => {

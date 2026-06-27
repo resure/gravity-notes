@@ -27,6 +27,8 @@ export interface NoteListHandle {
     focusRow(id: string): void;
     /** Begin inline-renaming the given note (used by the global F2 shortcut). */
     startRename(id: string): void;
+    /** Open the delete-confirmation for the given note (used by the global ⌘⇧⌫ shortcut). */
+    requestDelete(id: string): void;
 }
 
 export interface NoteListProps {
@@ -184,6 +186,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             startRename(id: string) {
                 const note = notes.find((n) => n.id === id);
                 if (note) beginRename(id, note.title);
+            },
+            requestDelete(id: string) {
+                const note = notes.find((n) => n.id === id);
+                if (note) setDeleting({id, title: note.title});
             },
         }),
         [focusableId, notes, searchInputRef],
