@@ -27,8 +27,6 @@ export interface NoteListHandle {
     focusRow(id: string): void;
     /** Begin inline-renaming the given note (used by the global F2 shortcut). */
     startRename(id: string): void;
-    /** Open the "Move to…" folder picker for the given note (used by the global ⌘⇧M shortcut). */
-    startMove(id: string): void;
 }
 
 export interface NoteListProps {
@@ -51,10 +49,8 @@ export interface NoteListProps {
     onEscapeList: () => void;
     /** Create a note in the currently-selected folder. */
     onCreate: () => void;
-    /** All folder paths, for the "Move to…" picker. */
-    folderPaths: string[];
-    /** Move a note into a folder (`''` = root) — the picker target. */
-    onMoveTo: (id: string, destFolder: string) => void;
+    /** Ask to move a note — opens the "Move to…" picker (owned by the workspace). */
+    onRequestMove: (id: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
@@ -122,8 +118,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onCommit,
         onEscapeList,
         onCreate,
-        folderPaths,
-        onMoveTo,
+        onRequestMove,
         onRename,
         onDelete,
         sortMode,
@@ -139,8 +134,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
-    // The note whose "Move to…" picker is open (null = closed).
-    const [movingNote, setMovingNote] = useState<{id: string; title: string} | null>(null);
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -188,10 +181,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             startRename(id: string) {
                 const note = notes.find((n) => n.id === id);
                 if (note) beginRename(id, note.title);
-            },
-            startMove(id: string) {
-                const note = notes.find((n) => n.id === id);
-                if (note) setMovingNote({id, title: note.title});
             },
         }),
         [focusableId, notes, searchInputRef],
@@ -340,8 +329,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         {
                                             text: 'Move to…',
                                             iconStart: <Icon data={Folder} />,
-                                            action: () =>
-                                                setMovingNote({id: note.id, title: note.title}),
+                                            action: () => onRequestMove(note.id),
                                         },
                                         {
                                             text: 'Delete',
@@ -454,42 +442,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     propsButtonApply={{view: 'outlined-danger'}}
                     onClickButtonApply={confirmDelete}
                     onClickButtonCancel={() => setDeleting(null)}
-                />
-            </Dialog>
-
-            <Dialog open={movingNote !== null} onClose={() => setMovingNote(null)} size="s">
-                <Dialog.Header caption={movingNote ? `Move “${movingNote.title}” to…` : 'Move'} />
-                <Dialog.Body>
-                    <div className="note-list__move-list">
-                        <Button
-                            view="flat"
-                            width="max"
-                            onClick={() => {
-                                if (movingNote) onMoveTo(movingNote.id, '');
-                                setMovingNote(null);
-                            }}
-                        >
-                            <Icon data={Folder} /> Root
-                        </Button>
-                        {folderPaths.map((path) => (
-                            <Button
-                                key={path}
-                                className="note-list__move-option"
-                                view="flat"
-                                width="max"
-                                onClick={() => {
-                                    if (movingNote) onMoveTo(movingNote.id, path);
-                                    setMovingNote(null);
-                                }}
-                            >
-                                <Icon data={Folder} /> {path}
-                            </Button>
-                        ))}
-                    </div>
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonCancel="Cancel"
-                    onClickButtonCancel={() => setMovingNote(null)}
                 />
             </Dialog>
         </div>

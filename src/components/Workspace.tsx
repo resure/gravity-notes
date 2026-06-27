@@ -14,6 +14,7 @@ import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {FolderRail, type FolderRailHandle} from './FolderRail';
+import {MoveToDialog} from './MoveToDialog';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
@@ -154,6 +155,13 @@ export function Workspace({
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
+    // The note whose "Move to…" picker is open (null = closed). Lifted here, where the full
+    // folder/notes/metadata the tree picker needs already live.
+    const [movingNoteId, setMovingNoteId] = useState<string | null>(null);
+    const movingNote = useMemo(
+        () => (movingNoteId ? (notes.notes.find((n) => n.id === movingNoteId) ?? null) : null),
+        [movingNoteId, notes.notes],
+    );
     // Read-only preview mode, kept here so it persists as the open note changes.
     const [previewMode, setPreviewMode] = useState(false);
     const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
@@ -354,6 +362,24 @@ export function Workspace({
         [notes],
     );
 
+    // Commit the move picker: move the note, then keep it selected at its new id (it may have left
+    // the folder-scoped list) and restore list focus — mirroring rename.
+    const handleMoveTo = useCallback(
+        (dest: string) => {
+            const id = movingNoteId;
+            setMovingNoteId(null);
+            if (!id) return;
+            void (async () => {
+                const newId = await notes.move(id, dest);
+                if (newId) {
+                    nav.setSelected(newId);
+                    setPendingListFocus(true);
+                }
+            })();
+        },
+        [movingNoteId, notes, nav],
+    );
+
     const handleRename = useCallback(
         (id: string, title: string) => {
             void (async () => {
@@ -446,7 +472,7 @@ export function Workspace({
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
         moveSelected: () => {
-            if (nav.selectedId) listRef.current?.startMove(nav.selectedId);
+            if (nav.selectedId) setMovingNoteId(nav.selectedId);
         },
     });
 
@@ -528,8 +554,7 @@ export function Workspace({
                             nav.escapeToSearch();
                         }}
                         onCreate={handleCreate}
-                        folderPaths={notes.folders}
-                        onMoveTo={(id, dest) => void notes.move(id, dest)}
+                        onRequestMove={setMovingNoteId}
                         onRename={handleRename}
                         onDelete={handleDelete}
                         sortMode={notes.metadata.sort}
@@ -587,6 +612,16 @@ export function Workspace({
             </div>
 
             <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+            <MoveToDialog
+                open={movingNote !== null}
+                note={movingNote ? {id: movingNote.id, title: movingNote.title} : null}
+                folders={notes.folders}
+                notes={notes.notes}
+                metadata={notes.metadata}
+                onMove={handleMoveTo}
+                onClose={() => setMovingNoteId(null)}
+            />
         </div>
     );
 }

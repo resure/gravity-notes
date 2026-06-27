@@ -626,3 +626,37 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 });
+
+describe('Workspace — move picker', () => {
+    function renderWithFolder() {
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Beta.md', 'b', 200);
+        dir.seedFile('Work/Existing.md', 'x', 50); // makes the "Work" folder exist
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={vi.fn()}
+            />,
+        );
+        return {store};
+    }
+
+    it('⌘⇧M opens the picker for the selected note and moves it into a folder', async () => {
+        const user = userEvent.setup();
+        const {store} = renderWithFolder();
+        await user.click(await screen.findByRole('option', {name: /Beta/}));
+        // ⌘⇧M opens the move picker scoped to the selected note.
+        fireEvent.keyDown(document, {key: 'm', metaKey: true, shiftKey: true});
+        expect(await screen.findByText(/Move .*Beta.* to/)).toBeInTheDocument();
+        // Pick the "Work" folder; the note file moves under it.
+        await user.click(screen.getByRole('option', {name: 'Work'}));
+        await waitFor(async () => {
+            const ids = (await store.list()).map((n) => n.id);
+            expect(ids).toContain('Work/Beta.md');
+        });
+    });
+});

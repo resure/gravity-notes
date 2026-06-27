@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 
 import {DEFAULT_METADATA} from './storage/metadata';
 import type {NoteMeta, NotesMetadata} from './storage/types';
-import {buildFolderTree, notesInFolder} from './tree';
+import {buildFolderTree, buildMoveTargets, notesInFolder} from './tree';
 
 const note = (id: string, updatedAt = 1): NoteMeta => ({
     id,
@@ -99,5 +99,60 @@ describe('notesInFolder', () => {
 
     it('returns the root-level notes for the empty-string root', () => {
         expect(notesInFolder(notes, '').map((n) => n.id)).toEqual(['Root.md']);
+    });
+});
+
+describe('buildMoveTargets', () => {
+    const FOLDERS = ['Work', 'Work/Projects', 'Work/Archive', 'Personal'];
+
+    /** Compact view: "<indent><name>" with a "*" when matched and a "!" when disabled. */
+    function shapeTargets(rows: ReturnType<typeof buildMoveTargets>): string[] {
+        return rows.map(
+            (r) =>
+                `${'  '.repeat(r.depth)}${r.name}${r.matched ? '*' : ''}${r.disabled ? '!' : ''}`,
+        );
+    }
+
+    it('returns the whole collapse-respecting tree when there is no filter', () => {
+        const rows = buildMoveTargets(FOLDERS, [], meta(), 'Personal', new Set(), '');
+        // Ordering mirrors the rail: by name per level (Personal < Work), the current folder disabled.
+        expect(shapeTargets(rows)).toEqual([
+            'Personal!', // the note's current folder is disabled (a no-op move)
+            'Work',
+            '  Archive',
+            '  Projects',
+        ]);
+    });
+
+    it('respects the picker’s own collapse set (unfiltered)', () => {
+        const rows = buildMoveTargets(FOLDERS, [], meta(), '', new Set(['Work']), '');
+        expect(shapeTargets(rows)).toEqual(['Personal', 'Work']);
+        const work = rows.find((r) => r.path === 'Work');
+        expect(work?.collapsed).toBe(true);
+        expect(work?.hasChildren).toBe(true);
+    });
+
+    it('filters by folder name and keeps ancestors for context', () => {
+        const rows = buildMoveTargets(FOLDERS, [], meta(), '', new Set(), 'arch');
+        // Work is kept only as the matched Archive's ancestor (not itself a match).
+        expect(shapeTargets(rows)).toEqual(['Work', '  Archive*']);
+    });
+
+    it('ignores collapse while filtering (matched subtree is force-shown)', () => {
+        const rows = buildMoveTargets(FOLDERS, [], meta(), '', new Set(['Work']), 'proj');
+        expect(shapeTargets(rows)).toEqual(['Work', '  Projects*']);
+        // No carets while filtering — the subtree is always expanded.
+        expect(rows.every((r) => !r.hasChildren)).toBe(true);
+    });
+
+    it('marks the current folder disabled even when it matches the filter', () => {
+        const rows = buildMoveTargets(FOLDERS, [], meta(), 'Work/Projects', new Set(), 'proj');
+        const projects = rows.find((r) => r.path === 'Work/Projects');
+        expect(projects?.matched).toBe(true);
+        expect(projects?.disabled).toBe(true);
+    });
+
+    it('returns nothing when no folder name matches', () => {
+        expect(buildMoveTargets(FOLDERS, [], meta(), '', new Set(), 'zzz')).toEqual([]);
     });
 });

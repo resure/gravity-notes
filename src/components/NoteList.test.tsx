@@ -25,8 +25,7 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         onCommit: vi.fn(),
         onEscapeList: vi.fn(),
         onCreate: vi.fn(),
-        folderPaths: [],
-        onMoveTo: vi.fn(),
+        onRequestMove: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
         sortMode: 'updated',
@@ -413,23 +412,12 @@ describe('NoteList — pinning', () => {
 });
 
 describe('NoteList — move picker', () => {
-    it('moves a note via the "Move to…" picker', async () => {
+    it('requests a move via the row "Move to…" menu (the workspace owns the picker)', async () => {
         const user = userEvent.setup();
-        const {props} = setup({folderPaths: ['Work', 'Archive']});
+        const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
-        // The picker lists Root + every folder; pick one.
-        expect(await screen.findByRole('button', {name: 'Root'})).toBeInTheDocument();
-        await user.click(screen.getByRole('button', {name: 'Archive'}));
-        expect(props.onMoveTo).toHaveBeenCalledWith('Beta.md', 'Archive');
-    });
-
-    it('opens the Move picker via the startMove handle (⌘⇧M)', async () => {
-        const {ref} = setup({folderPaths: ['Work']});
-        act(() => {
-            ref.current?.startMove('Alpha.md');
-        });
-        expect(await screen.findByRole('button', {name: 'Work'})).toBeInTheDocument();
+        expect(props.onRequestMove).toHaveBeenCalledWith('Beta.md');
     });
 });
