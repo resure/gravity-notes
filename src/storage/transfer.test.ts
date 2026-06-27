@@ -4,7 +4,7 @@ import {strFromU8, unzipSync, zipSync} from 'fflate';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {IndexedDbNoteStore} from './indexedDbStore';
-import {buildExportZip, importNotes} from './transfer';
+import {buildExportZip, emptyFolderMarkers, importNotes} from './transfer';
 
 function seedStore() {
     return new IndexedDbNoteStore();
@@ -36,6 +36,41 @@ describe('transfer — export', () => {
         expect(Object.keys(entries).sort()).toEqual(['Alpha.md', 'Beta.md']);
         // Canonical "blank line at EOF" shape, like the file-system store writes.
         expect(strFromU8(entries['Alpha.md'])).toBe('hello alpha\n\n');
+    });
+
+    it('nests a note under its folder path in the zip', async () => {
+        const store = seedStore();
+        const meta = await store.create('Plan', 'Work/Projects');
+        await store.save(meta.id, 'plan body', meta.updatedAt ?? 0);
+
+        const {zip} = await buildExportZip(store);
+        const entries = unzipSync(zip);
+        expect(Object.keys(entries)).toEqual(['Work/Projects/Plan.md']);
+    });
+
+    it('emits a .gnkeep marker only for empty folders, deepest per branch', async () => {
+        const store = seedStore();
+        // Work holds a note (implied by its path); Archive and Archive/2023 are empty.
+        const meta = await store.create('Note', 'Work');
+        await store.save(meta.id, 'work note', meta.updatedAt ?? 0);
+        await store.createFolder('', 'Archive');
+        await store.createFolder('Archive', '2023');
+
+        const {zip} = await buildExportZip(store);
+        const keys = Object.keys(unzipSync(zip)).sort();
+        // Work is implied by its note; only the deepest empty folder gets a marker (Archive is
+        // rebuilt from Archive/2023's marker on import).
+        expect(keys).toEqual(['Archive/2023/.gnkeep', 'Work/Note.md']);
+    });
+});
+
+describe('emptyFolderMarkers', () => {
+    it('keeps empty folders and drops ones that contain notes', () => {
+        expect(emptyFolderMarkers(['Work', 'Archive'], ['Work/Note.md'])).toEqual(['Archive']);
+    });
+
+    it('prunes an empty ancestor when an empty descendant carries the marker', () => {
+        expect(emptyFolderMarkers(['Archive', 'Archive/2023'], [])).toEqual(['Archive/2023']);
     });
 });
 
@@ -85,6 +120,21 @@ describe('transfer — import', () => {
         expect((await store.get('Work/Projects/Plan.md')).content).toBe('plan body');
     });
 
+    it('recreates an empty folder from its .gnkeep marker without counting it', async () => {
+        const store = seedStore();
+        const zip = zipSync({
+            'Top.md': new TextEncoder().encode('top body'),
+            'Archive/2023/.gnkeep': new Uint8Array(),
+        });
+        const count = await importNotes(store, [
+            new File([zip as BlobPart], 'notes.zip', {type: 'application/zip'}),
+        ]);
+        // The marker is not a note.
+        expect(count).toBe(1);
+        // But its (and its ancestor's) folder is rebuilt.
+        expect((await store.listFolders()).sort()).toEqual(['Archive', 'Archive/2023']);
+    });
+
     it('round-trips export → import preserving content', async () => {
         const source = seedStore();
         await withContent(source, 'Roundtrip', 'keep me exactly');
@@ -95,5 +145,19 @@ describe('transfer — import', () => {
         await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
 
         expect((await target.get('Roundtrip.md')).content).toBe('keep me exactly');
+    });
+
+    it('round-trips an empty folder through export → import', async () => {
+        const source = seedStore();
+        await withContent(source, 'Kept', 'note body');
+        await source.createFolder('', 'EmptyOnPurpose');
+        const {zip} = await buildExportZip(source);
+
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const target = new IndexedDbNoteStore();
+        await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
+
+        expect((await target.listFolders()).sort()).toEqual(['EmptyOnPurpose']);
+        expect((await target.get('Kept.md')).content).toBe('note body');
     });
 });
