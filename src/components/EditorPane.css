@@ -71,6 +71,7 @@
     height: 100%;
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain; /* keep scroll momentum inside the editor (no chaining to the shell) */
 }
 
 .editor-pane__body {
