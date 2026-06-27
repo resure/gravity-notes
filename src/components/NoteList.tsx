@@ -35,6 +35,8 @@ export interface NoteListProps {
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
+    /** The selected folder's display name (null = All Notes), for the empty-state copy. */
+    scopeLabel: string | null;
     /** Show each note's folder path as a dimmed crumb (flat search mode, across all folders). */
     showCrumbs: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
@@ -111,6 +113,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         notes,
         selectedId,
         query,
+        scopeLabel,
         showCrumbs,
         snippetById,
         searchInputRef,
@@ -373,6 +376,31 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         );
     };
 
+    // Empty-state copy, tailored to context: a no-match search, an empty selected folder, or a
+    // truly empty store. A quiet second line points at the way to add a note.
+    const renderEmpty = () => {
+        const q = query.trim();
+        if (q) return <Text color="secondary">No match — press Enter to create “{q}”</Text>;
+        if (scopeLabel) {
+            return (
+                <>
+                    <Text color="secondary">No notes in “{scopeLabel}”</Text>
+                    <Text color="hint" variant="caption-2">
+                        “New” adds a note here
+                    </Text>
+                </>
+            );
+        }
+        return (
+            <>
+                <Text color="secondary">No notes yet</Text>
+                <Text color="hint" variant="caption-2">
+                    Type to search, or press Enter to create
+                </Text>
+            </>
+        );
+    };
+
     return (
         <div className="note-list">
             <div className="note-list__toolbar">
@@ -410,16 +438,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
             <div className="note-list__items" role="listbox" aria-label="Notes">
                 {notes.length === 0 ? (
-                    <div className="note-list__empty">
-                        <Text color="secondary">
-                            {query.trim()
-                                ? `No match — press Enter to create "${query.trim()}"`
-                                : 'No notes here yet. Create your first one.'}
-                        </Text>
-                    </div>
-                ) : (
-                    notes.map(renderNote)
-                )}
+                    <div className="note-list__empty">{renderEmpty()}</div>
+                ) : null}
+                {notes.map(renderNote)}
             </div>
 
             <Dialog
