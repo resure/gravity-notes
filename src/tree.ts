@@ -56,11 +56,15 @@ export function buildFolderTree(
         else childFolders.set(parent, [folder]);
     }
 
-    // Recursive note counts: each note increments every one of its ancestor folders.
-    const noteCounts = new Map<string, number>();
+    // Two tallies per folder: notes *directly* inside it, and notes anywhere beneath it (recursive).
+    // Each note bumps its own folder's direct count, and every ancestor's recursive count.
+    const directCounts = new Map<string, number>();
+    const recursiveCounts = new Map<string, number>();
     for (const note of notes) {
-        for (let p = dirname(note.id); p; p = dirname(p)) {
-            noteCounts.set(p, (noteCounts.get(p) ?? 0) + 1);
+        const own = dirname(note.id);
+        if (own) directCounts.set(own, (directCounts.get(own) ?? 0) + 1);
+        for (let p = own; p; p = dirname(p)) {
+            recursiveCounts.set(p, (recursiveCounts.get(p) ?? 0) + 1);
         }
     }
 
@@ -80,7 +84,9 @@ export function buildFolderTree(
                 collapsed: isCollapsed,
                 pinned: pinned.has(folder),
                 hasChildren: (childFolders.get(folder)?.length ?? 0) > 0,
-                noteCount: noteCounts.get(folder) ?? 0,
+                // Expanded → just this folder's own notes (its subfolders show their own counts
+                // below); collapsed → the recursive rollup that summarizes the hidden subtree.
+                noteCount: (isCollapsed ? recursiveCounts : directCounts).get(folder) ?? 0,
             });
             if (!isCollapsed) emit(folder, depth + 1);
         }

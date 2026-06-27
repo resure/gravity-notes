@@ -52,7 +52,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
+    width: 14px;
     flex-shrink: 0;
     color: var(--g-color-text-hint);
 }
@@ -95,9 +95,18 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* Row actions reveal on hover/focus and take the count's place, so the two never crowd each other. */
-.folder-rail__actions {
+/* The ⋯ menu reveals on hover/focus in a fixed-width trailing slot (the width of the s icon button),
+   present on every row — incl. the empty spacer on "All Notes" — so the count keeps a single aligned
+   position across all rows and stays visible when the menu appears (it no longer takes the count's place). */
+.folder-rail__actions,
+.folder-rail__actions-spacer {
     flex-shrink: 0;
+    width: 24px;
+}
+
+.folder-rail__actions {
+    display: flex;
+    justify-content: center;
     opacity: 0;
 }
 
@@ -106,15 +115,20 @@
     opacity: 1;
 }
 
-.folder-rail__row:hover .folder-rail__count,
-.folder-rail__row:focus-within .folder-rail__count {
-    display: none;
-}
-
-/* Inline name field for the new-folder and rename editors. */
+/* Inline name field for the new-folder and rename editors: borderless (view="clear") with no leading
+   pad, so the editable text sits exactly where the static folder name was — no rightward jump when
+   you start renaming. A faint row tint signals edit mode in place of the (removed) input border. */
 .folder-rail__input {
     flex: 1;
     min-width: 0;
+}
+
+.folder-rail .folder-rail__input .g-text-input__control {
+    padding-inline-start: 0;
+}
+
+.folder-rail__row:has(.folder-rail__input) {
+    background-color: var(--g-color-base-generic);
 }
 
 /* A quiet "New Folder" affordance docked at the bottom (Apple-Notes / Things style). */
