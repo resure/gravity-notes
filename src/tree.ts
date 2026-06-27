@@ -98,3 +98,65 @@ export function notesInFolder(notes: NoteMeta[], folder: string | null): NoteMet
     if (folder === null) return notes;
     return notes.filter((note) => dirname(note.id) === folder);
 }
+
+/** One destination row in the "Move to…" picker (the `''` root is rendered separately). */
+export interface MoveTargetRow {
+    /** Full POSIX folder path. */
+    path: string;
+    /** Last path segment, for display. */
+    name: string;
+    depth: number;
+    /** Has a *subfolder* — drives the disclosure caret (only meaningful unfiltered). */
+    hasChildren: boolean;
+    collapsed: boolean;
+    /** The note's current folder: moving there is a no-op, so the row is shown disabled. */
+    disabled: boolean;
+    /** The folder name matches the active filter — for match highlight + default focus. */
+    matched: boolean;
+}
+
+/**
+ * Folder rows for the "Move to…" picker. Reuses the rail's tree shape (synthesized ancestors,
+ * pinned-first ordering), but:
+ *  - marks the note's `currentFolder` `disabled` (moving there is a no-op),
+ *  - with an empty `query`, respects the picker's own `collapsed` set (a tidy, collapsible tree),
+ *  - with a `query`, ignores collapse and keeps only folders whose *name* matches (case-insensitive
+ *    substring) plus their ancestors, so the surviving rows stay a connected, indented tree.
+ */
+export function buildMoveTargets(
+    folders: string[],
+    notes: NoteMeta[],
+    metadata: NotesMetadata,
+    currentFolder: string,
+    collapsed: ReadonlySet<string>,
+    query: string,
+): MoveTargetRow[] {
+    const q = query.trim().toLowerCase();
+    const toTarget = (row: FolderRow, matched: boolean): MoveTargetRow => ({
+        path: row.path,
+        name: row.name,
+        depth: row.depth,
+        // No carets while filtering — the matched subtree is force-shown.
+        hasChildren: q ? false : row.hasChildren,
+        collapsed: q ? false : row.collapsed,
+        disabled: row.path === currentFolder,
+        matched,
+    });
+
+    if (!q) {
+        return buildFolderTree(folders, notes, metadata, collapsed).map((row) =>
+            toTarget(row, false),
+        );
+    }
+
+    // Fully-expanded tree, then keep matches and their ancestors (for indentation context).
+    const full = buildFolderTree(folders, notes, metadata, new Set());
+    const matches = (path: string) => basename(path).toLowerCase().includes(q);
+    const keep = new Set<string>();
+    for (const row of full) {
+        if (matches(row.path)) {
+            for (let p = row.path; p; p = dirname(p)) keep.add(p);
+        }
+    }
+    return full.filter((row) => keep.has(row.path)).map((row) => toTarget(row, matches(row.path)));
+}
