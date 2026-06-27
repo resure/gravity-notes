@@ -175,6 +175,20 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         [onSelectFolder, focusRow],
     );
 
+    // After a rename/reparent re-keys the subtree, the new row only appears once the move resolves and
+    // the tree refreshes. Remember the destination and, when it shows up, select + focus it — so the
+    // folder you just renamed stays put under the cursor instead of the focus dropping to the body.
+    const pendingRenameToRef = useRef<string | null>(null);
+    useEffect(() => {
+        const to = pendingRenameToRef.current;
+        if (to === null || !navItems.some((i) => i.key === to)) return;
+        pendingRenameToRef.current = null;
+        // Already the selected folder (you renamed the one you were in): just restore focus, so its
+        // open note isn't re-previewed. Otherwise select it (scopes the list) and focus it.
+        if (selectedKey === to) focusRow(to);
+        else select({key: to, folder: to});
+    }, [navItems, selectedKey, select, focusRow]);
+
     useImperativeHandle(
         ref,
         () => ({
@@ -218,7 +232,10 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         if (!current) return;
         const leaf = sanitizeSegment(current.value.trim());
         const next = joinPath(dirname(current.path), leaf);
-        if (current.value.trim() && next !== current.path) onMoveFolder(current.path, next);
+        if (current.value.trim() && next !== current.path) {
+            pendingRenameToRef.current = next; // select + focus it once the refreshed tree shows it
+            onMoveFolder(current.path, next);
+        }
     };
 
     // ← behavior: collapse an expanded folder, else step up to (and select) its parent.
