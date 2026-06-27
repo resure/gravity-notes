@@ -2,6 +2,7 @@ import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} f
 import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
 
 import {
+    Copy,
     Ellipsis,
     Folder,
     Folders,
@@ -55,6 +56,8 @@ export interface NoteListProps {
     onCreate: () => void;
     /** Ask to move a note — opens the "Move to…" picker (owned by the workspace). */
     onRequestMove: (id: string) => void;
+    /** Duplicate a note (shares its attachments). */
+    onDuplicate: (id: string) => void;
     onRename: (id: string, nextTitle: string) => void;
     onDelete: (id: string) => void;
     sortMode: SortMode;
@@ -124,6 +127,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onEscapeList,
         onCreate,
         onRequestMove,
+        onDuplicate,
         onRename,
         onDelete,
         sortMode,
@@ -339,6 +343,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                             text: 'Move to…',
                                             iconStart: <Icon data={Folder} />,
                                             action: () => onRequestMove(note.id),
+                                        },
+                                        {
+                                            text: 'Duplicate',
+                                            iconStart: <Icon data={Copy} />,
+                                            action: () => onDuplicate(note.id),
                                         },
                                         {
                                             text: 'Delete',

@@ -322,6 +322,19 @@ export function Workspace({
         [notes, nav, selectedFolder],
     );
 
+    // Duplicate a note: copy it (shared attachments), then select the copy with its title armed for
+    // focus, so the user can immediately rename it.
+    const handleDuplicate = useCallback(
+        (id: string) => {
+            nav.prepareCreate();
+            void (async () => {
+                const newId = await notes.duplicate(id);
+                if (newId) nav.setSelected(newId);
+            })();
+        },
+        [notes, nav],
+    );
+
     // Enter the list from the search box (↓/↑): preview the row and move DOM focus onto it.
     const enterList = useCallback(
         (id: string) => {
@@ -528,6 +541,9 @@ export function Workspace({
         moveSelected: () => {
             if (nav.selectedId) setMovingNoteId(nav.selectedId);
         },
+        duplicateSelected: () => {
+            if (nav.selectedId) handleDuplicate(nav.selectedId);
+        },
         deleteSelected: () => {
             if (nav.selectedId) listRef.current?.requestDelete(nav.selectedId);
         },
@@ -619,6 +635,7 @@ export function Workspace({
                             }}
                             onCreate={handleCreate}
                             onRequestMove={setMovingNoteId}
+                            onDuplicate={handleDuplicate}
                             onRename={handleRename}
                             onDelete={handleDelete}
                             sortMode={notes.metadata.sort}

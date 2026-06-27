@@ -27,6 +27,7 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         onEscapeList: vi.fn(),
         onCreate: vi.fn(),
         onRequestMove: vi.fn(),
+        onDuplicate: vi.fn(),
         onRename: vi.fn(),
         onDelete: vi.fn(),
         sortMode: 'updated',
@@ -426,5 +427,16 @@ describe('NoteList — move picker', () => {
         await user.click(within(beta).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
         expect(props.onRequestMove).toHaveBeenCalledWith('Beta.md');
+    });
+});
+
+describe('NoteList — duplicate', () => {
+    it('duplicates a note via the row menu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Duplicate/}));
+        expect(props.onDuplicate).toHaveBeenCalledWith('Beta.md');
     });
 });

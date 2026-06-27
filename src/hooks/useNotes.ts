@@ -11,7 +11,7 @@ import {
     withReprefixed,
     withSortMode,
 } from '../storage/metadata';
-import {titleFromFileName} from '../storage/noteText';
+import {dirname, titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -64,6 +64,12 @@ export interface UseNotes {
      * return its id (null on failure).
      */
     create(title?: string, parentPath?: string): Promise<string | null>;
+    /**
+     * Duplicate a note: copy its body verbatim into a new "<Title> copy" in the same folder, open it,
+     * and return its id (null on error). Attachments are *shared* — the copy keeps the same
+     * `Attachments/…` references, so no image bytes are duplicated.
+     */
+    duplicate(id: string): Promise<string | null>;
     /** Rename a note; returns the resulting id (unchanged on a no-op/collision, null on error). */
     rename(id: string, nextTitle: string): Promise<string | null>;
     /** Move a note into another folder (`destFolder`, `''` = root); returns the resulting id (null on error). */
@@ -256,6 +262,28 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 return meta.id;
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to create note');
+                return null;
+            }
+        },
+        [flush, store, persistMetadata, refresh, open, onError],
+    );
+
+    const duplicate = useCallback(
+        async (id: string): Promise<string | null> => {
+            await flush();
+            try {
+                // Copy the body verbatim so the copy shares the original's attachment refs.
+                const source = await store.get(id);
+                const meta = await store.create(`${titleFromFileName(id)} copy`, dirname(id));
+                const saved = await store.save(meta.id, source.content, meta.updatedAt ?? 0);
+                await persistMetadata(
+                    withCreatedStamp(metadataRef.current, meta.id, saved.updatedAt ?? 0),
+                );
+                await refresh();
+                await open(meta.id); // open after the body is written, so the editor shows the copy
+                return meta.id;
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to duplicate note');
                 return null;
             }
         },
@@ -717,6 +745,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         open,
         close,
         create,
+        duplicate,
         rename,
         move,
         remove,
