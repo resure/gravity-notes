@@ -510,6 +510,9 @@ export function Workspace({
         moveSelected: () => {
             if (nav.selectedId) setMovingNoteId(nav.selectedId);
         },
+        deleteSelected: () => {
+            if (nav.selectedId) listRef.current?.requestDelete(nav.selectedId);
+        },
     });
 
     return (
