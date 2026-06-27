@@ -982,4 +982,43 @@ describe('useNotes — folders', () => {
         expect(hook.result.current.folders).not.toContain('Temp');
         expect(hook.result.current.metadata.pinned).not.toContain('Temp');
     });
+
+    it('removeFolder refuses a folder that still holds a note', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+
+        await act(async () => {
+            await hook.result.current.create('Note', 'Work');
+        });
+        await waitFor(() => expect(hook.result.current.folders).toContain('Work'));
+
+        await act(async () => {
+            await hook.result.current.removeFolder('Work');
+        });
+
+        expect(onError).toHaveBeenCalledWith('Only empty folders can be deleted.');
+        expect(hook.result.current.folders).toContain('Work'); // untouched
+    });
+
+    it('removeFolder refuses a folder that still has a subfolder', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+
+        await act(async () => {
+            await hook.result.current.createFolder('', 'Parent');
+            await hook.result.current.createFolder('Parent', 'Child');
+        });
+        await waitFor(() => expect(hook.result.current.folders).toContain('Parent/Child'));
+
+        await act(async () => {
+            await hook.result.current.removeFolder('Parent');
+        });
+
+        expect(onError).toHaveBeenCalledWith('Only empty folders can be deleted.');
+        expect(hook.result.current.folders).toContain('Parent');
+    });
 });

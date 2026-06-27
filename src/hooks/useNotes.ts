@@ -276,6 +276,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     const removeFolder = useCallback(
         async (path: string): Promise<void> => {
+            // Only empty folders may be deleted — refuse if any note lives under it (directly or in a
+            // subfolder) or it still has a subfolder. Enforced here at the seam so every backend
+            // behaves the same (the rail also disables the action; this is the authoritative guard).
+            const hasNotes = notes.some((n) => n.id.startsWith(`${path}/`));
+            const hasSubfolder = folders.some((f) => f.startsWith(`${path}/`));
+            if (hasNotes || hasSubfolder) {
+                onError('Only empty folders can be deleted.');
+                return;
+            }
             try {
                 await store.removeFolder(path);
                 // refresh() reconciles against the new folder set, which drops a pin on the gone folder.
@@ -284,7 +293,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to remove folder');
             }
         },
-        [store, refresh, onError],
+        [store, refresh, onError, notes, folders],
     );
 
     const moveFolder = useCallback(
