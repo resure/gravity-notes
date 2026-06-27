@@ -57,8 +57,10 @@ class FakeFileHandle {
         let buffer = '';
         let aborted = false;
         return {
-            async write(contents: string) {
-                buffer += contents;
+            async write(contents: string | Blob) {
+                // Attachments are written as Blobs; read their text so the fake can store them like
+                // any other file (tests only exercise text-bearing payloads).
+                buffer += typeof contents === 'string' ? contents : await contents.text();
             },
             async close() {
                 if (aborted) return;

@@ -2,17 +2,20 @@ import {invoke} from '@tauri-apps/api/core';
 
 import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
+    ATTACHMENTS_DIR,
     MD_EXT,
     basename,
     canonicalBody,
     dirname,
     joinPath,
+    mimeFromName,
     previewFromContent,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
+    uniqueAttachmentName,
     uniqueName,
 } from './noteText';
 import {
@@ -181,6 +184,24 @@ export class TauriNoteStore implements NoteStore {
 
     async remove(id: string): Promise<void> {
         await invoke('notes_remove', {dir: this.dir, name: id});
+    }
+
+    async writeAttachment(file: File): Promise<string> {
+        const leaf = await uniqueAttachmentName(file.name, (name) =>
+            this.exists(joinPath(ATTACHMENTS_DIR, name)),
+        );
+        const path = joinPath(ATTACHMENTS_DIR, leaf);
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        await invoke('attachment_write', {dir: this.dir, path, bytes});
+        return path;
+    }
+
+    async readAttachment(ref: string): Promise<Blob> {
+        const bytes = await invoke<number[] | null>('attachment_read', {dir: this.dir, name: ref});
+        if (bytes === null) throw notFound(ref);
+        // The Rust side returns raw bytes without a MIME type; tag the Blob from the extension so
+        // SVGs (which need an explicit type to render in <img>) and the like display correctly.
+        return new Blob([new Uint8Array(bytes)], {type: mimeFromName(ref)});
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {

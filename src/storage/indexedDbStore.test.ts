@@ -314,6 +314,38 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('attachments', () => {
+        const file = (name: string, body: string) => new File([body], name, {type: 'image/png'});
+
+        it('stores a blob, returns a stable ref, and reads it back', async () => {
+            const ref = await store.writeAttachment(file('cat.png', 'PNGBYTES'));
+
+            expect(ref).toBe('Attachments/cat.png');
+            expect(await (await store.readAttachment(ref)).text()).toBe('PNGBYTES');
+        });
+
+        it('resolves name collisions, keeping the extension', async () => {
+            const first = await store.writeAttachment(file('cat.png', 'a'));
+            const second = await store.writeAttachment(file('cat.png', 'b'));
+
+            expect(first).toBe('Attachments/cat.png');
+            expect(second).toBe('Attachments/cat-2.png');
+            expect(await (await store.readAttachment(second)).text()).toBe('b');
+        });
+
+        it('does not surface attachments as notes or folders', async () => {
+            await store.create('Real');
+            await store.writeAttachment(file('cat.png', 'x'));
+
+            expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
+            expect(await store.listFolders()).toEqual([]);
+        });
+
+        it('throws when reading a missing attachment', async () => {
+            await expect(store.readAttachment('Attachments/missing.png')).rejects.toThrow();
+        });
+    });
+
     describe('metadata', () => {
         it('returns defaults when nothing is stored', async () => {
             expect(await store.readMetadata()).toEqual({

@@ -1,5 +1,6 @@
 import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
+    ATTACHMENTS_DIR,
     FOLDER_MARKER,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
@@ -13,6 +14,7 @@ import {
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
+    uniqueAttachmentName,
     uniqueName,
 } from './noteText';
 import {
@@ -29,10 +31,10 @@ import {
  * left dangling. The File System Access API commits a writable atomically only on close(), so the
  * original file is untouched if write() throws before then.
  */
-async function writeFile(handle: FileSystemFileHandle, text: string): Promise<void> {
+async function writeFile(handle: FileSystemFileHandle, data: string | Blob): Promise<void> {
     const writable = await handle.createWritable();
     try {
-        await writable.write(text);
+        await writable.write(data);
         await writable.close();
     } catch (err) {
         try {
@@ -253,6 +255,21 @@ export class FileSystemNoteStore implements NoteStore {
         await this.pruneEmptyAncestors(dirname(id));
     }
 
+    async writeAttachment(file: File): Promise<string> {
+        const dir = await this.resolveDir(ATTACHMENTS_DIR, true);
+        if (!dir) throw new Error('Could not open the Attachments folder');
+        const leaf = await uniqueAttachmentName(file.name, (name) => this.existsIn(dir, name));
+        const handle = await dir.getFileHandle(leaf, {create: true});
+        await writeFile(handle, file);
+        return joinPath(ATTACHMENTS_DIR, leaf);
+    }
+
+    async readAttachment(ref: string): Promise<Blob> {
+        const handle = await this.fileHandle(ref);
+        if (!handle) throw notFound(ref);
+        return handle.getFile(); // a File is already a Blob
+    }
+
     async createFolder(parentPath: string, name: string): Promise<string> {
         const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
         const dir = await this.resolveDir(path, true);
@@ -318,6 +335,8 @@ export class FileSystemNoteStore implements NoteStore {
             for await (const handle of dir.values()) {
                 // Skip non-directories and dot-folders (.git, .obsidian, …).
                 if (handle.kind !== 'directory' || handle.name.startsWith('.')) continue;
+                // The root Attachments/ folder is media storage, not a user folder — hide it.
+                if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                 const path = `${prefix}${handle.name}`;
                 out.push(path);
                 await recurse(handle, `${path}/`);
@@ -339,6 +358,8 @@ export class FileSystemNoteStore implements NoteStore {
             for await (const handle of dir.values()) {
                 if (handle.kind === 'directory') {
                     if (handle.name.startsWith('.')) continue; // skip dot-dirs (.git, .obsidian, …)
+                    // Don't descend the root Attachments/ folder — its files aren't notes.
+                    if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                     yield* recurse(handle, `${prefix}${handle.name}/`);
                 } else if (handle.name.toLowerCase().endsWith(MD_EXT)) {
                     yield {id: `${prefix}${handle.name}`, handle};

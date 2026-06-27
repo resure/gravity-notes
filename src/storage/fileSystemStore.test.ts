@@ -514,6 +514,40 @@ describe('FileSystemNoteStore', () => {
         });
     });
 
+    describe('attachments', () => {
+        const file = (name: string, body: string) => new File([body], name, {type: 'image/png'});
+
+        it('stores under Attachments/, returns a stable ref, and reads the bytes back', async () => {
+            const ref = await store.writeAttachment(file('cat.png', 'PNGBYTES'));
+
+            expect(ref).toBe('Attachments/cat.png');
+            expect(await (await store.readAttachment(ref)).text()).toBe('PNGBYTES');
+        });
+
+        it('resolves name collisions, keeping the extension', async () => {
+            const first = await store.writeAttachment(file('cat.png', 'a'));
+            const second = await store.writeAttachment(file('cat.png', 'b'));
+
+            expect(first).toBe('Attachments/cat.png');
+            expect(second).toBe('Attachments/cat-2.png');
+            expect(await (await store.readAttachment(second)).text()).toBe('b');
+        });
+
+        it('hides the Attachments folder from the note list and folder tree', async () => {
+            await store.writeAttachment(file('cat.png', 'x'));
+            dir.seedFile('Real.md', 'note', 1);
+            // A stray .md inside Attachments/ must not be treated as a note.
+            dir.seedFile('Attachments/Stray.md', 'nope', 2);
+
+            expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
+            expect(await store.listFolders()).toEqual([]);
+        });
+
+        it('throws when reading a missing attachment', async () => {
+            await expect(store.readAttachment('Attachments/missing.png')).rejects.toThrow();
+        });
+    });
+
     describe('save conflict detection', () => {
         it('throws ConflictError when the file changed on disk since the baseline', async () => {
             dir.seedFile('Note.md', 'original', 100);

@@ -89,6 +89,18 @@ export interface NoteStore {
     /** Delete a note. */
     remove(id: string): Promise<void>;
     /**
+     * Store a binary media attachment under the root `Attachments/` folder, resolving name
+     * collisions (`foo.png` → `foo 2.png`). Returns its stable, root-relative reference
+     * (`Attachments/foo.png`) — the exact string written into a note's Markdown as the image `src`.
+     */
+    writeAttachment(file: File): Promise<string>;
+    /**
+     * Read an attachment's bytes for display, by its `Attachments/<name>` reference. Throws a
+     * `NotFoundError` `DOMException` when the attachment is gone. The caller turns the `Blob` into a
+     * displayable object URL.
+     */
+    readAttachment(ref: string): Promise<Blob>;
+    /**
      * Create an (initially empty) folder at `parentPath`/`name` and return its POSIX path. A
      * deliberately-empty folder persists — a `.gnkeep` marker on disk, or a marker entry in-browser
      * — so the auto-prune of emptied folders never destroys one the user created on purpose.

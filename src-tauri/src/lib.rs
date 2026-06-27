@@ -29,6 +29,9 @@ const MD_EXT: &str = ".md";
 const FOLDER_MARKER: &str = ".gnkeep";
 /// The metadata sidecar — ignored by the empty-folder prune (it only ever lives at the root).
 const METADATA_FILENAME: &str = ".gravity-notes.json";
+/// Root-level media-attachments folder (mirrors `ATTACHMENTS_DIR` in noteText.ts). Excluded from the
+/// note walk and folder tree — it's storage, not a user folder.
+const ATTACHMENTS_DIR: &str = "Attachments";
 /// Bytes of each file scanned for the list-preview snippet. Mirrors `PREVIEW_SCAN_BYTES`
 /// in `src/storage/noteText.ts`; the preview text itself is derived TS-side.
 const PREVIEW_SCAN_BYTES: u64 = 500;
@@ -161,6 +164,10 @@ fn collect_md(root: &Path, current: &Path, full: bool, out: &mut Vec<Found>) -> 
             if name.starts_with('.') {
                 continue;
             }
+            // The root Attachments/ folder holds media, not notes — don't descend it.
+            if current == root && name == ATTACHMENTS_DIR {
+                continue;
+            }
             collect_md(root, &entry.path(), full, out)?;
         } else if file_type.is_file() && is_md(&name) {
             let path = entry.path();
@@ -278,6 +285,29 @@ fn notes_remove(dir: String, name: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Write a binary media attachment atomically, creating any missing parent folders (e.g. the
+/// `Attachments/` folder on first use). The collision-free name is resolved TS-side via `notes_exists`.
+#[tauri::command]
+fn attachment_write(dir: String, path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let target = resolve_within(&dir, &path)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(stringify)?;
+    }
+    write_atomic(&target, &bytes).map_err(stringify)
+}
+
+/// Read a binary media attachment's bytes, or `None` if it no longer exists (mapped to a not-found
+/// on the TS side, like `notes_read_opt`).
+#[tauri::command]
+fn attachment_read(dir: String, name: String) -> Result<Option<Vec<u8>>, String> {
+    let path = resolve_within(&dir, &name)?;
+    match fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Whether `dir` holds nothing worth keeping: no `.md`, no `.gnkeep`, no subdirectory. The sidecar
 /// is ignored; an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
 /// can't race a concurrent write. Anything else (a note, a marker, a subdir) keeps the folder.
@@ -373,6 +403,10 @@ fn collect_folders(root: &Path, current: &Path, out: &mut Vec<String>) -> std::i
         if name.starts_with('.') {
             continue;
         }
+        // The root Attachments/ folder is media storage, not a user folder — hide it from the tree.
+        if current == root && name == ATTACHMENTS_DIR {
+            continue;
+        }
         let path = entry.path();
         out.push(
             path.strip_prefix(root)
@@ -436,6 +470,8 @@ pub fn run() {
             notes_write,
             notes_rename,
             notes_remove,
+            attachment_write,
+            attachment_read,
             notes_exists,
             notes_stat,
             notes_create_folder,
@@ -623,6 +659,42 @@ mod tests {
 
         assert!(notes_move_dir(s(&dir), "Work".into(), "Archive".into()).is_err());
         assert!(dir.join("Work").join("A.md").is_file()); // source intact
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attachment_round_trips_and_rejects_traversal() {
+        let dir = temp_dir();
+        let bytes = vec![0u8, 1, 2, 254, 255];
+
+        // Writing the first attachment creates the Attachments/ folder; read returns the same bytes.
+        attachment_write(s(&dir), "Attachments/pic.png".into(), bytes.clone()).unwrap();
+        assert!(dir.join("Attachments").join("pic.png").is_file());
+        let read = attachment_read(s(&dir), "Attachments/pic.png".into()).unwrap();
+        assert_eq!(read, Some(bytes));
+
+        // A missing attachment reads as None (mapped to not-found TS-side), not an error.
+        assert_eq!(attachment_read(s(&dir), "Attachments/missing.png".into()).unwrap(), None);
+
+        // Both arguments are containment-guarded.
+        assert!(attachment_write(s(&dir), "../evil.png".into(), vec![1]).is_err());
+        assert!(attachment_read(s(&dir), "../../etc/passwd".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attachments_folder_is_hidden_from_notes_and_folder_listings() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Note.md".into(), "x".into()).unwrap();
+        attachment_write(s(&dir), "Attachments/pic.png".into(), vec![1, 2, 3]).unwrap();
+        // A stray .md inside Attachments/ must not be picked up as a note.
+        fs::write(dir.join("Attachments").join("Stray.md"), "nope").unwrap();
+
+        let notes: Vec<String> = notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
+        assert_eq!(notes, vec!["Note.md"]);
+        assert!(notes_list_folders(s(&dir)).unwrap().is_empty());
 
         let _ = fs::remove_dir_all(&dir);
     }

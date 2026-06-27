@@ -14,6 +14,20 @@ export const MD_EXT = '.md';
 export const FOLDER_MARKER = '.gnkeep';
 
 /**
+ * The single root-level folder that holds media attachments (images), one spelling shared by every
+ * backend. An attachment reference inside a note's Markdown is always root-relative to this folder —
+ * `Attachments/foo.png` — regardless of how deep the note itself is nested, so a note can move
+ * between folders without its image links ever needing to be rewritten. The folder is excluded from
+ * the note listing and the folder tree (it's storage, not a user folder).
+ */
+export const ATTACHMENTS_DIR = 'Attachments';
+
+/** Whether a Markdown image `src` points at an in-vault attachment (vs. an external/data/blob URL). */
+export function isAttachmentRef(src: string): boolean {
+    return src.startsWith(`${ATTACHMENTS_DIR}/`);
+}
+
+/**
  * The leaf (last `/` segment) of a note id. A flat id (no slash) is its own leaf, so this is a no-op
  * for non-nested notes.
  */
@@ -66,6 +80,8 @@ export const PREVIEW_SCAN_BYTES = 500;
  */
 export function previewFromContent(text: string): string {
     return text
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images → drop (no alt text in the flowing preview)
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → keep just the link text
         .replace(/^\s{0,3}#{1,6}\s+/gm, '') // ATX heading markers
         .replace(/^\s*>\s?/gm, '') // blockquotes
         .replace(/^\s*[-*+]\s+/gm, '') // bullets
@@ -128,4 +144,60 @@ export async function uniqueName(
         }
     }
     throw new Error(`Could not find a free file name for "${base}"`);
+}
+
+/**
+ * Split a file name into `[base, ext]`, where `ext` includes the leading dot (`foo.png` →
+ * `['foo', '.png']`). A name with no dot, or a leading-dot dotfile (`.gnkeep`), has no extension.
+ */
+export function splitExt(name: string): [base: string, ext: string] {
+    const dot = name.lastIndexOf('.');
+    return dot <= 0 ? [name, ''] : [name.slice(0, dot), name.slice(dot)];
+}
+
+/**
+ * Resolve a free attachment file name, preserving the original extension and appending "-2", "-3", …
+ * to the base on collision (`foo.png` → `foo-2.png`). The base is sanitized like a note title and
+ * then made URL-safe — whitespace, parentheses, and brackets collapse to hyphens — so the Markdown
+ * image link (`![](Attachments/<name>)`) needs no escaping and round-trips through any Markdown
+ * renderer (an unescaped space or `)` would otherwise break the link). The extension is kept verbatim.
+ */
+export async function uniqueAttachmentName(
+    desiredName: string,
+    exists: (candidate: string) => Promise<boolean>,
+): Promise<string> {
+    const [rawBase, ext] = splitExt(desiredName);
+    const cleaned = sanitizeSegment(rawBase)
+        .replace(/[()[\]\s]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    const base = cleaned || 'file';
+    for (let i = 1; i <= 100000; i++) {
+        const candidate = (i === 1 ? base : `${base}-${i}`) + ext;
+        if (!(await exists(candidate))) {
+            return candidate;
+        }
+    }
+    throw new Error(`Could not find a free file name for "${desiredName}"`);
+}
+
+const MIME_BY_EXT: Readonly<Record<string, string>> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.avif': 'image/avif',
+    '.bmp': 'image/bmp',
+};
+
+/**
+ * Best-effort MIME type for a file name's extension, used to tag a `Blob` rebuilt from raw bytes (the
+ * Tauri backend reads bytes without a stored type). Empty string when unknown — browsers still sniff
+ * image content for `<img>`, so an unknown type is harmless.
+ */
+export function mimeFromName(name: string): string {
+    const [, ext] = splitExt(name);
+    return MIME_BY_EXT[ext.toLowerCase()] ?? '';
 }

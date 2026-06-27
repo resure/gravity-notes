@@ -1,18 +1,23 @@
 import {describe, expect, it} from 'vitest';
 
 import {
+    ATTACHMENTS_DIR,
     FOLDER_MARKER,
     MD_EXT,
     basename,
     canonicalBody,
     dirname,
+    isAttachmentRef,
     joinPath,
+    mimeFromName,
     previewFromContent,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
+    splitExt,
     stripTrailingNewlines,
     titleFromFileName,
+    uniqueAttachmentName,
     uniqueName,
 } from './noteText';
 
@@ -182,5 +187,72 @@ describe('previewFromContent', () => {
 
     it('renders preserved empty-row markers as spaces', () => {
         expect(previewFromContent('a\n\n&nbsp;\n\nb')).toBe('a b');
+    });
+
+    it('drops image syntax and keeps just link text', () => {
+        expect(previewFromContent('See ![a cat](Attachments/cat.png) here')).toBe('See here');
+        expect(previewFromContent('Read the [docs](https://example.com) now')).toBe(
+            'Read the docs now',
+        );
+    });
+});
+
+describe('isAttachmentRef', () => {
+    it('matches root-relative Attachments paths only', () => {
+        expect(isAttachmentRef(`${ATTACHMENTS_DIR}/cat.png`)).toBe(true);
+        expect(isAttachmentRef('https://example.com/cat.png')).toBe(false);
+        expect(isAttachmentRef('data:image/png;base64,AAAA')).toBe(false);
+        expect(isAttachmentRef('blob:http://localhost/abc')).toBe(false);
+        // A nested folder that merely ends in "Attachments" is not the root media folder.
+        expect(isAttachmentRef('Work/Attachments/cat.png')).toBe(false);
+    });
+});
+
+describe('splitExt', () => {
+    it('splits the trailing extension, keeping the dot', () => {
+        expect(splitExt('foo.png')).toEqual(['foo', '.png']);
+        expect(splitExt('a.b.jpeg')).toEqual(['a.b', '.jpeg']);
+    });
+
+    it('treats a dotless name or a leading-dot dotfile as having no extension', () => {
+        expect(splitExt('README')).toEqual(['README', '']);
+        expect(splitExt('.gnkeep')).toEqual(['.gnkeep', '']);
+    });
+});
+
+describe('uniqueAttachmentName', () => {
+    const existsIn = (taken: Set<string>) => (candidate: string) =>
+        Promise.resolve(taken.has(candidate));
+
+    it('keeps the extension and returns the name unchanged when free', async () => {
+        expect(await uniqueAttachmentName('photo.png', existsIn(new Set()))).toBe('photo.png');
+    });
+
+    it('appends "-2", "-3", … to the base (before the extension) on collision', async () => {
+        expect(await uniqueAttachmentName('photo.png', existsIn(new Set(['photo.png'])))).toBe(
+            'photo-2.png',
+        );
+        expect(
+            await uniqueAttachmentName(
+                'photo.png',
+                existsIn(new Set(['photo.png', 'photo-2.png'])),
+            ),
+        ).toBe('photo-3.png');
+    });
+
+    it('makes the base URL-safe (no spaces/parens/brackets that would break the link)', async () => {
+        expect(await uniqueAttachmentName('a/b:c.png', existsIn(new Set()))).toBe('a-b-c.png');
+        expect(await uniqueAttachmentName('my pic.png', existsIn(new Set()))).toBe('my-pic.png');
+        expect(await uniqueAttachmentName('shot (1).png', existsIn(new Set()))).toBe('shot-1.png');
+    });
+});
+
+describe('mimeFromName', () => {
+    it('maps known image extensions (case-insensitively) and empty-strings the unknown', () => {
+        expect(mimeFromName('cat.PNG')).toBe('image/png');
+        expect(mimeFromName('cat.jpg')).toBe('image/jpeg');
+        expect(mimeFromName('cat.svg')).toBe('image/svg+xml');
+        expect(mimeFromName('cat.xyz')).toBe('');
+        expect(mimeFromName('noext')).toBe('');
     });
 });

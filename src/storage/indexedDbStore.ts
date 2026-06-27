@@ -1,5 +1,6 @@
 import {parseMetadata} from './metadata';
 import {
+    ATTACHMENTS_DIR,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
     basename,
@@ -12,6 +13,7 @@ import {
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
+    uniqueAttachmentName,
     uniqueName,
 } from './noteText';
 import {
@@ -24,9 +26,11 @@ import {
 } from './types';
 
 const DB_NAME = 'gravity-notes-data';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const NOTES_STORE = 'notes';
 const KV_STORE = 'kv';
+/** Object store holding binary media attachments, keyed by their `Attachments/<name>` reference. */
+const ATTACHMENTS_STORE = 'attachments';
 const METADATA_KEY = 'metadata';
 /** KV key holding the list of deliberately-empty folder paths (no real directories in-browser). */
 const FOLDERS_KEY = 'folders';
@@ -36,6 +40,12 @@ interface NoteRecord {
     id: string;
     content: string;
     updatedAt: number;
+}
+
+/** One attachment row: the `Attachments/<name>` reference key and the raw bytes. */
+interface AttachmentRecord {
+    id: string;
+    blob: Blob;
 }
 
 function notFound(id: string): DOMException {
@@ -186,6 +196,28 @@ export class IndexedDbNoteStore implements NoteStore {
         await this.run(NOTES_STORE, 'readwrite', (store) => store.delete(id));
     }
 
+    async writeAttachment(file: File): Promise<string> {
+        const leaf = await uniqueAttachmentName(file.name, (name) =>
+            this.attachmentExists(joinPath(ATTACHMENTS_DIR, name)),
+        );
+        const id = joinPath(ATTACHMENTS_DIR, leaf);
+        // Store the File directly — IndexedDB structured-clones Blobs, preserving its MIME type.
+        await this.run(ATTACHMENTS_STORE, 'readwrite', (store) =>
+            store.add({id, blob: file} satisfies AttachmentRecord),
+        );
+        return id;
+    }
+
+    async readAttachment(ref: string): Promise<Blob> {
+        const record = await this.run<AttachmentRecord | undefined>(
+            ATTACHMENTS_STORE,
+            'readonly',
+            (store) => store.get(ref) as IDBRequest<AttachmentRecord | undefined>,
+        );
+        if (!record) throw notFound(ref);
+        return record.blob;
+    }
+
     async createFolder(parentPath: string, name: string): Promise<string> {
         const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
         const folders = await this.readFolders();
@@ -299,6 +331,10 @@ export class IndexedDbNoteStore implements NoteStore {
                     if (!db.objectStoreNames.contains(KV_STORE)) {
                         db.createObjectStore(KV_STORE);
                     }
+                    // v2: media attachments, keyed by their `Attachments/<name>` reference.
+                    if (!db.objectStoreNames.contains(ATTACHMENTS_STORE)) {
+                        db.createObjectStore(ATTACHMENTS_STORE, {keyPath: 'id'});
+                    }
                 };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
@@ -342,6 +378,15 @@ export class IndexedDbNoteStore implements NoteStore {
     private async exists(id: string): Promise<boolean> {
         const key = await this.run<IDBValidKey | undefined>(
             NOTES_STORE,
+            'readonly',
+            (store) => store.getKey(id) as IDBRequest<IDBValidKey | undefined>,
+        );
+        return key !== undefined;
+    }
+
+    private async attachmentExists(id: string): Promise<boolean> {
+        const key = await this.run<IDBValidKey | undefined>(
+            ATTACHMENTS_STORE,
             'readonly',
             (store) => store.getKey(id) as IDBRequest<IDBValidKey | undefined>,
         );
