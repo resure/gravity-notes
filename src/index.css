@@ -3,6 +3,13 @@ body,
 #root {
     height: 100%;
     margin: 0;
+    /* The app shell is a fixed-height layout; only the list and editor panes scroll. Lock the shell
+       so it can never scroll as a whole, and disable overscroll so the desktop app's WKWebView
+       doesn't rubber-band / inertially drag the entire window (Chromium ignores the slack; WKWebView
+       doesn't). Without this, a momentary overflow (e.g. toggling the editor preview with ⌘⇧P) lets
+       you scroll the whole app out of view in the desktop build. */
+    overflow: hidden;
+    overscroll-behavior: none;
 }
 
 /* The app icon's orange (mid-tone of the disc gradient). Single source of truth for the menu orb

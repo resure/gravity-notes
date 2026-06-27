@@ -26,6 +26,7 @@
 .note-list__items {
     flex: 1;
     overflow-y: auto;
+    overscroll-behavior: contain; /* keep scroll momentum inside the list (no chaining to the shell) */
     padding: 0;
 }
 
