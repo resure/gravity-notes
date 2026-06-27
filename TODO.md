@@ -5,22 +5,22 @@ intentionally cut from a shipped feature so the gaps are explicit.
 
 ## Media attachments — follow-ups
 
-The first round shipped the core: drag-drop / paste / image-command upload into the editor, storage
-under a root `Attachments/` folder across all three backends (FSA-web, Tauri/Rust, IndexedDB), and
-rendering in both the editor and the read-only preview. Image refs in Markdown are root-relative
-(`Attachments/foo.png`), resolved to `blob:` URLs at display time so saved notes stay clean.
+Shipped so far:
+
+- **Core.** Drag-drop / paste / image-command upload into the editor, storage under a root
+  `Attachments/` folder across all three backends (FSA-web, Tauri/Rust, IndexedDB), and rendering in
+  both the editor and the read-only preview. Image refs in Markdown are root-relative
+  (`Attachments/foo.png`), resolved to `blob:` URLs at display time so saved notes stay clean.
+- **Management view.** TopBar → "Manage attachments…" dialog lists every attachment with a thumbnail,
+  size, and a "used by N notes" / "Unused" badge (orphan detection), with per-file delete and a bulk
+  "Delete unused". Seam methods `listAttachments()` / `removeAttachment(ref)` (+ Rust
+  `attachment_list` / `attachment_remove`) back it.
 
 Still to do:
 
-- **Attachments management view.** A UI to list, preview (thumbnails), and delete attachments —
-  e.g. a TopBar/storage-menu entry. Needs new `NoteStore` methods `listAttachments()` and
-  `removeAttachment(ref)` (the same per-backend pattern as `writeAttachment`/`readAttachment`; a Rust
-  `attachment_list`/`attachment_remove` pair for the Tauri backend).
-
-- **Orphan garbage collection.** Deleting a note does **not** delete its images today (an attachment
-  may be referenced by more than one note). Add detection of attachments unreferenced by any note,
-  surfaced in the management view (and/or an opt-in cleanup). Depends on `listAttachments` +
-  `removeAttachment`.
+- **Orphan garbage collection (automatic).** The management view surfaces orphans and offers manual
+  "Delete unused", but deleting a _note_ still leaves its images behind. Optionally prompt/auto-clean
+  an attachment when the last note referencing it is deleted.
 
 - **Attachment export / import.** `src/storage/transfer.ts` currently zips only `.md` note bodies, so
   attachments do **not** survive export/import yet — most consequential for the IndexedDB backend,
