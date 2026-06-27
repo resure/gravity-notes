@@ -15,17 +15,15 @@ Shipped so far:
   size, and a "used by N notes" / "Unused" badge (orphan detection), with per-file delete and a bulk
   "Delete unused". Seam methods `listAttachments()` / `removeAttachment(ref)` (+ Rust
   `attachment_list` / `attachment_remove`) back it.
+- **Export / import.** The export zip now bundles `Attachments/` bytes at their exact refs, and import
+  restores them (skip-if-exists) via `writeAttachmentAt(ref, blob)`, so images survive a roundtrip —
+  including the IndexedDB backend, whose attachments live in the DB rather than on disk.
 
 Still to do:
 
 - **Orphan garbage collection (automatic).** The management view surfaces orphans and offers manual
   "Delete unused", but deleting a _note_ still leaves its images behind. Optionally prompt/auto-clean
   an attachment when the last note referencing it is deleted.
-
-- **Attachment export / import.** `src/storage/transfer.ts` currently zips only `.md` note bodies, so
-  attachments do **not** survive export/import yet — most consequential for the IndexedDB backend,
-  whose attachments live in the DB rather than as files on disk. Extend the zip to bundle the
-  `Attachments/` bytes and restore them on import.
 
 - **Editor image affordances.** The custom attachment NodeView renders a clean `<img>` but drops the
   package's resize handles and the hover settings popover (alt/title editing). Re-add resize + an

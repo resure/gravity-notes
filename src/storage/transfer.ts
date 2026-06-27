@@ -5,6 +5,7 @@ import {
     MD_EXT,
     canonicalBody,
     dirname,
+    isAttachmentRef,
     sanitizeDir,
     titleFromFileName,
 } from './noteText';
@@ -63,6 +64,12 @@ export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array
     for (const folder of emptyFolderMarkers(folders, noteIds)) {
         files[`${folder}/${FOLDER_MARKER}`] = new Uint8Array();
     }
+    // Bundle media attachments under `Attachments/` (at their exact refs), so images survive the
+    // roundtrip — essential for the IndexedDB backend, whose attachments live in the DB, not on disk.
+    for (const att of await store.listAttachments()) {
+        const blob = await store.readAttachment(att.ref);
+        files[att.ref] = new Uint8Array(await blob.arrayBuffer());
+    }
     return {zip: zipSync(files), count: metas.length};
 }
 
@@ -99,6 +106,9 @@ async function importOne(
  */
 export async function importNotes(store: NoteStore, files: FileList | File[]): Promise<number> {
     let count = 0;
+    // Don't clobber attachments already in the target: a ref present here is left as-is (an imported
+    // note then resolves to the existing file). Restoring into a fresh store writes them all.
+    const existingAttachments = new Set((await store.listAttachments()).map((a) => a.ref));
     for (const file of Array.from(files)) {
         const lower = file.name.toLowerCase();
         if (lower.endsWith('.zip')) {
@@ -109,6 +119,15 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
                     // survives the roundtrip. It's not a note, so it doesn't count toward the total.
                     const dir = sanitizeDir(dirname(path));
                     if (dir) await store.createFolder(dirname(dir), baseName(dir));
+                    continue;
+                }
+                if (isAttachmentRef(path)) {
+                    // A media attachment: restore it at its exact ref so the importing notes'
+                    // `![](Attachments/<name>)` links keep resolving. Skip if already present.
+                    if (!existingAttachments.has(path)) {
+                        await store.writeAttachmentAt(path, new Blob([bytes as BlobPart]));
+                        existingAttachments.add(path);
+                    }
                     continue;
                 }
                 if (!path.toLowerCase().endsWith(MD_EXT)) continue; // skip dir entries / non-md

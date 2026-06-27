@@ -143,10 +143,10 @@ Key modules:
 - Recent-note history (cmd+[] - back/forward through visited notes)
 
 - Trash bin for deleted notes
-- Media attachments — core + management view done (drag-drop / paste / image-command into a root
-  `Attachments/` folder, rendered in editor + preview across all backends; a "Manage attachments"
-  dialog lists/usage-flags/deletes them). Automatic orphan cleanup and attachment export/import are
-  still open — see `TODO.md`.
+- Media attachments — core + management view + export/import done (drag-drop / paste / image-command
+  into a root `Attachments/` folder, rendered in editor + preview across all backends; a "Manage
+  attachments" dialog lists/usage-flags/deletes them; export/import bundles the bytes). Automatic
+  orphan cleanup on note delete is still open — see `TODO.md`.
 
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`

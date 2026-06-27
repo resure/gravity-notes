@@ -161,3 +161,48 @@ describe('transfer — import', () => {
         expect((await target.get('Kept.md')).content).toBe('note body');
     });
 });
+
+describe('transfer — attachments', () => {
+    it('bundles attachments into the export zip at their exact refs', async () => {
+        const store = seedStore();
+        await withContent(store, 'Note', '![c](Attachments/cat.png)');
+        await store.writeAttachmentAt('Attachments/cat.png', new Blob(['PNGBYTES']));
+
+        const {zip} = await buildExportZip(store);
+        const entries = unzipSync(zip);
+
+        expect(Object.keys(entries)).toContain('Attachments/cat.png');
+        expect(strFromU8(entries['Attachments/cat.png'])).toBe('PNGBYTES');
+    });
+
+    it('restores attachments (bytes + exact ref) on import into a fresh store', async () => {
+        const store = seedStore();
+        await withContent(store, 'Note', '![c](Attachments/cat.png)');
+        await store.writeAttachmentAt('Attachments/cat.png', new Blob(['PNGBYTES']));
+        const {zip} = await buildExportZip(store);
+
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const target = new IndexedDbNoteStore();
+        await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
+
+        expect((await target.listAttachments()).map((a) => a.ref)).toEqual(['Attachments/cat.png']);
+        expect(await (await target.readAttachment('Attachments/cat.png')).text()).toBe('PNGBYTES');
+        // The imported note still references the same path, so the image still resolves.
+        expect((await target.get('Note.md')).content).toContain('Attachments/cat.png');
+    });
+
+    it('does not clobber an attachment that already exists in the target', async () => {
+        const store = seedStore();
+        await withContent(store, 'Note', '![c](Attachments/cat.png)');
+        await store.writeAttachmentAt('Attachments/cat.png', new Blob(['IMPORTED']));
+        const {zip} = await buildExportZip(store);
+
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const target = new IndexedDbNoteStore();
+        await target.writeAttachmentAt('Attachments/cat.png', new Blob(['ORIGINAL']));
+        await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
+
+        // The pre-existing file wins (skip-if-exists), so it isn't overwritten by the import.
+        expect(await (await target.readAttachment('Attachments/cat.png')).text()).toBe('ORIGINAL');
+    });
+});
