@@ -288,9 +288,25 @@ export class FileSystemNoteStore implements NoteStore {
         if (await this.resolveDir(to)) {
             throw new NameCollisionError(from, basename(to));
         }
-        // No atomic directory rename in the FSA: copy the whole subtree to the destination, then
-        // drop the source and prune its now-empty ancestors (a marked sibling survives).
-        await this.copyTree(from, to);
+        // No atomic directory rename in the FSA, so this is copy-then-delete — made failure-atomic:
+        // (1) copy the whole subtree to the destination; if anything fails mid-copy, delete the
+        // partial destination so a failed move never leaves an orphaned half-tree (which would also
+        // block a retry by tripping the collision guard above); (2) verify the copy is complete
+        // before destroying the source — only then drop `from` and prune its now-empty ancestors
+        // (a marked sibling survives). The source is untouched until the copy is proven complete, so
+        // an in-process failure can never lose notes. (A hard crash mid-copy can still leave a
+        // partial destination — harmless orphan data, source intact — which the FSA can't prevent
+        // without an atomic rename.)
+        try {
+            await this.copyTree(from, to);
+        } catch (err) {
+            await this.discardDir(to);
+            throw err;
+        }
+        if (!(await this.treesMatch(from, to))) {
+            await this.discardDir(to);
+            throw new Error(`Folder move verification failed for "${from}"`);
+        }
         const parent = await this.resolveDir(dirname(from));
         if (parent) await parent.removeEntry(basename(from), {recursive: true});
         await this.pruneEmptyAncestors(dirname(from));
@@ -330,6 +346,39 @@ export class FileSystemNoteStore implements NoteStore {
             }
         };
         yield* recurse(this.dir, '');
+    }
+
+    /** Best-effort recursive delete of a folder by path; a missing folder is a no-op (rollback aid). */
+    private async discardDir(path: string): Promise<void> {
+        const parent = await this.resolveDir(dirname(path));
+        if (!parent) return;
+        try {
+            await parent.removeEntry(basename(path), {recursive: true});
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') return;
+            throw err;
+        }
+    }
+
+    /** Total number of files (any kind, recursively) under a folder path; `0` for a missing folder. */
+    private async countFiles(path: string): Promise<number> {
+        const dir = await this.resolveDir(path);
+        if (!dir) return 0;
+        let count = 0;
+        const recurse = async (handle: FileSystemDirectoryHandle): Promise<void> => {
+            for await (const child of handle.values()) {
+                if (child.kind === 'directory') await recurse(child);
+                else count += 1;
+            }
+        };
+        await recurse(dir);
+        return count;
+    }
+
+    /** Whether `to` holds at least as many files as `from` — a cheap "copy looks complete" check. */
+    private async treesMatch(from: string, to: string): Promise<boolean> {
+        const [a, b] = await Promise.all([this.countFiles(from), this.countFiles(to)]);
+        return b >= a;
     }
 
     /** Recursively copy every file under `from` into `to` (creating dirs), `.gnkeep` markers included. */

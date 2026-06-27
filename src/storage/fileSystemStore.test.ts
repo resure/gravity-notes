@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
@@ -218,6 +218,36 @@ describe('FileSystemNoteStore', () => {
         it('refuses to move a folder into its own descendant', async () => {
             await store.create('A', 'Work/Sub');
             await expect(store.moveFolder('Work', 'Work/Sub/Deep')).rejects.toThrow(/itself/i);
+        });
+
+        it('rolls back the partial destination when the copy fails mid-way', async () => {
+            await store.create('A', 'Work');
+            await store.create('B', 'Work');
+            // Make copying the *second* file into the destination throw, simulating a mid-copy
+            // failure (quota, permission, a bad file). The move must leave the source intact and
+            // remove the half-written destination, so the data is safe and a retry isn't blocked.
+            const real = FakeDirectoryHandle.prototype.getFileHandle;
+            const spy = vi
+                .spyOn(FakeDirectoryHandle.prototype, 'getFileHandle')
+                .mockImplementation(async function (
+                    this: FakeDirectoryHandle,
+                    name: string,
+                    options?: {create?: boolean},
+                ) {
+                    if (name === 'B.md' && options?.create) throw new Error('disk full');
+                    return real.call(this, name, options);
+                });
+            try {
+                await expect(store.moveFolder('Work', 'Archive')).rejects.toThrow(/disk full/);
+            } finally {
+                spy.mockRestore();
+            }
+            // Source untouched, and no orphaned partial "Archive" left behind.
+            expect((await store.list()).map((m) => m.id).sort()).toEqual([
+                'Work/A.md',
+                'Work/B.md',
+            ]);
+            expect(await store.listFolders()).toEqual(['Work']);
         });
     });
 
