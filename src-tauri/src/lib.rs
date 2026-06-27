@@ -54,6 +54,15 @@ struct NoteHead {
     head: String,
 }
 
+/// One stored attachment, for the management view.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentEntry {
+    name: String,
+    size: f64,
+    modified_ms: f64,
+}
+
 fn is_md(name: &str) -> bool {
     name.to_lowercase().ends_with(MD_EXT)
 }
@@ -308,6 +317,48 @@ fn attachment_read(dir: String, name: String) -> Result<Option<Vec<u8>>, String>
     }
 }
 
+/// List every file in the root `Attachments/` folder (non-recursive; dotfiles skipped), with size
+/// and mtime — for the management view. An absent folder yields an empty list.
+#[tauri::command]
+fn attachment_list(dir: String) -> Result<Vec<AttachmentEntry>, String> {
+    let folder = Path::new(&dir).join(ATTACHMENTS_DIR);
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+        Err(err) => return Err(err.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(stringify)?;
+        let meta = entry.metadata().map_err(stringify)?;
+        if !meta.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        out.push(AttachmentEntry {
+            name,
+            size: meta.len() as f64,
+            modified_ms: modified_ms(&meta),
+        });
+    }
+    Ok(out)
+}
+
+/// Delete a media attachment by its path; a missing file is a no-op (the management view may race a
+/// concurrent delete). Containment-guarded like every other path argument.
+#[tauri::command]
+fn attachment_remove(dir: String, name: String) -> Result<(), String> {
+    let path = resolve_within(&dir, &name)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Whether `dir` holds nothing worth keeping: no `.md`, no `.gnkeep`, no subdirectory. The sidecar
 /// is ignored; an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
 /// can't race a concurrent write. Anything else (a note, a marker, a subdir) keeps the folder.
@@ -472,6 +523,8 @@ pub fn run() {
             notes_remove,
             attachment_write,
             attachment_read,
+            attachment_list,
+            attachment_remove,
             notes_exists,
             notes_stat,
             notes_create_folder,
@@ -680,6 +733,35 @@ mod tests {
         // Both arguments are containment-guarded.
         assert!(attachment_write(s(&dir), "../evil.png".into(), vec![1]).is_err());
         assert!(attachment_read(s(&dir), "../../etc/passwd".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attachment_list_and_remove() {
+        let dir = temp_dir();
+        // No folder yet → empty list, not an error.
+        assert!(attachment_list(s(&dir)).unwrap().is_empty());
+
+        attachment_write(s(&dir), "Attachments/cat.png".into(), vec![1, 2, 3]).unwrap();
+        attachment_write(s(&dir), "Attachments/dog.gif".into(), vec![9]).unwrap();
+        // A dotfile in the folder must be ignored by the listing.
+        fs::write(dir.join("Attachments").join(".keep"), b"").unwrap();
+
+        let mut names: Vec<String> =
+            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        names.sort();
+        assert_eq!(names, vec!["cat.png", "dog.gif"]);
+        let cat = attachment_list(s(&dir)).unwrap().into_iter().find(|a| a.name == "cat.png").unwrap();
+        assert_eq!(cat.size, 3.0);
+
+        attachment_remove(s(&dir), "Attachments/cat.png".into()).unwrap();
+        let names: Vec<String> =
+            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        assert_eq!(names, vec!["dog.gif"]);
+        // Removing a missing file is a no-op; traversal is rejected.
+        assert!(attachment_remove(s(&dir), "Attachments/gone.png".into()).is_ok());
+        assert!(attachment_remove(s(&dir), "../escape.png".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -19,6 +19,7 @@ import {
     uniqueName,
 } from './noteText';
 import {
+    type AttachmentMeta,
     ConflictError,
     NameCollisionError,
     type Note,
@@ -37,6 +38,12 @@ interface NoteHead {
     name: string;
     modifiedMs: number;
     head: string;
+}
+/** One attachment as returned by the Rust `attachment_list` command. */
+interface AttachmentEntry {
+    name: string;
+    size: number;
+    modifiedMs: number;
 }
 
 /** Mirror the web backend's deleted-note signal so `useNotes` maps it to a "deleted" conflict. */
@@ -202,6 +209,20 @@ export class TauriNoteStore implements NoteStore {
         // The Rust side returns raw bytes without a MIME type; tag the Blob from the extension so
         // SVGs (which need an explicit type to render in <img>) and the like display correctly.
         return new Blob([new Uint8Array(bytes)], {type: mimeFromName(ref)});
+    }
+
+    async listAttachments(): Promise<AttachmentMeta[]> {
+        const entries = await invoke<AttachmentEntry[]>('attachment_list', {dir: this.dir});
+        return entries.map((entry) => ({
+            ref: joinPath(ATTACHMENTS_DIR, entry.name),
+            name: entry.name,
+            size: entry.size,
+            updatedAt: entry.modifiedMs,
+        }));
+    }
+
+    async removeAttachment(ref: string): Promise<void> {
+        await invoke('attachment_remove', {dir: this.dir, name: ref});
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {

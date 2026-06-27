@@ -420,6 +420,12 @@ class DeferredSaveStore implements NoteStore {
         throw new Error('not used in these tests');
     }
 
+    async listAttachments(): Promise<never[]> {
+        return [];
+    }
+
+    async removeAttachment(): Promise<void> {}
+
     async createFolder(parentPath: string, name: string): Promise<string> {
         return parentPath ? `${parentPath}/${name}` : name;
     }
@@ -691,6 +697,12 @@ class ControllableStore implements NoteStore {
     async readAttachment(): Promise<Blob> {
         throw new Error('not used in these tests');
     }
+
+    async listAttachments(): Promise<never[]> {
+        return [];
+    }
+
+    async removeAttachment(): Promise<void> {}
 
     async createFolder(parentPath: string, name: string): Promise<string> {
         const path = parentPath ? `${parentPath}/${name}` : name;

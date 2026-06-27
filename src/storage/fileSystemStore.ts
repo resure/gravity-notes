@@ -18,6 +18,7 @@ import {
     uniqueName,
 } from './noteText';
 import {
+    type AttachmentMeta,
     ConflictError,
     NameCollisionError,
     type Note,
@@ -268,6 +269,35 @@ export class FileSystemNoteStore implements NoteStore {
         const handle = await this.fileHandle(ref);
         if (!handle) throw notFound(ref);
         return handle.getFile(); // a File is already a Blob
+    }
+
+    async listAttachments(): Promise<AttachmentMeta[]> {
+        const dir = await this.resolveDir(ATTACHMENTS_DIR);
+        if (!dir) return [];
+        const out: AttachmentMeta[] = [];
+        for await (const handle of dir.values()) {
+            // Skip dotfiles (markers/temps); only real files are attachments.
+            if (handle.kind !== 'file' || handle.name.startsWith('.')) continue;
+            const file = await (handle as FileSystemFileHandle).getFile();
+            out.push({
+                ref: joinPath(ATTACHMENTS_DIR, handle.name),
+                name: handle.name,
+                size: file.size,
+                updatedAt: file.lastModified,
+            });
+        }
+        return out;
+    }
+
+    async removeAttachment(ref: string): Promise<void> {
+        const dir = await this.resolveDir(ATTACHMENTS_DIR);
+        if (!dir) return;
+        try {
+            await dir.removeEntry(basename(ref));
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') return;
+            throw err;
+        }
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {

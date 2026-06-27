@@ -546,6 +546,29 @@ describe('FileSystemNoteStore', () => {
         it('throws when reading a missing attachment', async () => {
             await expect(store.readAttachment('Attachments/missing.png')).rejects.toThrow();
         });
+
+        it('lists stored attachments with name + size, and deletes by ref', async () => {
+            await store.writeAttachment(file('cat.png', 'PNG'));
+            await store.writeAttachment(file('dog.gif', 'GIFBYTES'));
+
+            const listed = await store.listAttachments();
+            expect(listed.map((a) => a.ref).sort()).toEqual([
+                'Attachments/cat.png',
+                'Attachments/dog.gif',
+            ]);
+            expect(listed.find((a) => a.name === 'dog.gif')?.size).toBe('GIFBYTES'.length);
+
+            await store.removeAttachment('Attachments/cat.png');
+            expect((await store.listAttachments()).map((a) => a.ref)).toEqual([
+                'Attachments/dog.gif',
+            ]);
+            // Removing a missing attachment is a no-op.
+            await expect(store.removeAttachment('Attachments/gone.png')).resolves.toBeUndefined();
+        });
+
+        it('lists nothing before any attachment exists', async () => {
+            expect(await store.listAttachments()).toEqual([]);
+        });
     });
 
     describe('save conflict detection', () => {

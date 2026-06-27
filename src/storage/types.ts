@@ -28,6 +28,18 @@ export interface Note extends NoteMeta {
     content: string;
 }
 
+/** Descriptor for one stored media attachment (for the management view). */
+export interface AttachmentMeta {
+    /** Stable `Attachments/<name>` reference — the string a note's Markdown carries as the img src. */
+    ref: string;
+    /** File name leaf (e.g. `photo.png`). */
+    name: string;
+    /** Size in bytes. */
+    size: number;
+    /** Last-modified epoch ms, when the backend can provide it. */
+    updatedAt?: number;
+}
+
 /** How the note list is ordered. */
 export type SortMode = 'updated' | 'title' | 'title-desc' | 'created';
 
@@ -100,6 +112,10 @@ export interface NoteStore {
      * displayable object URL.
      */
     readAttachment(ref: string): Promise<Blob>;
+    /** List every stored attachment (for the management view); empty when there are none. */
+    listAttachments(): Promise<AttachmentMeta[]>;
+    /** Delete an attachment by its `Attachments/<name>` reference; a missing attachment is a no-op. */
+    removeAttachment(ref: string): Promise<void>;
     /**
      * Create an (initially empty) folder at `parentPath`/`name` and return its POSIX path. A
      * deliberately-empty folder persists — a `.gnkeep` marker on disk, or a marker entry in-browser

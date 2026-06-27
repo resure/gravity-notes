@@ -4,6 +4,7 @@ import {
     ATTACHMENTS_DIR,
     FOLDER_MARKER,
     MD_EXT,
+    attachmentRefsIn,
     basename,
     canonicalBody,
     dirname,
@@ -205,6 +206,18 @@ describe('isAttachmentRef', () => {
         expect(isAttachmentRef('blob:http://localhost/abc')).toBe(false);
         // A nested folder that merely ends in "Attachments" is not the root media folder.
         expect(isAttachmentRef('Work/Attachments/cat.png')).toBe(false);
+    });
+});
+
+describe('attachmentRefsIn', () => {
+    it('collects distinct attachment image refs, ignoring external images and links', () => {
+        const md =
+            '![a](Attachments/cat.png)\n\n![b](https://x/y.png)\n\n[link](Attachments/not-an-image.png)\n\n![c](Attachments/cat.png) ![d](Attachments/dog.png)';
+        expect(attachmentRefsIn(md).sort()).toEqual(['Attachments/cat.png', 'Attachments/dog.png']);
+    });
+
+    it('returns an empty array when there are no attachment images', () => {
+        expect(attachmentRefsIn('# Title\n\njust text')).toEqual([]);
     });
 });
 

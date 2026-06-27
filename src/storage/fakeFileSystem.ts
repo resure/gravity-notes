@@ -37,6 +37,10 @@ class FakeFileHandle {
             get lastModified() {
                 return file.lastModified;
             },
+            // Byte length stand-in (char count); attachments list() reads this for the size column.
+            get size() {
+                return file.content.length;
+            },
             async text() {
                 return file.content;
             },

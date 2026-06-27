@@ -17,6 +17,7 @@ import {
     uniqueName,
 } from './noteText';
 import {
+    type AttachmentMeta,
     ConflictError,
     NameCollisionError,
     type Note,
@@ -42,10 +43,11 @@ interface NoteRecord {
     updatedAt: number;
 }
 
-/** One attachment row: the `Attachments/<name>` reference key and the raw bytes. */
+/** One attachment row: the `Attachments/<name>` reference key, the raw bytes, and its write time. */
 interface AttachmentRecord {
     id: string;
     blob: Blob;
+    updatedAt: number;
 }
 
 function notFound(id: string): DOMException {
@@ -203,7 +205,7 @@ export class IndexedDbNoteStore implements NoteStore {
         const id = joinPath(ATTACHMENTS_DIR, leaf);
         // Store the File directly — IndexedDB structured-clones Blobs, preserving its MIME type.
         await this.run(ATTACHMENTS_STORE, 'readwrite', (store) =>
-            store.add({id, blob: file} satisfies AttachmentRecord),
+            store.add({id, blob: file, updatedAt: Date.now()} satisfies AttachmentRecord),
         );
         return id;
     }
@@ -216,6 +218,24 @@ export class IndexedDbNoteStore implements NoteStore {
         );
         if (!record) throw notFound(ref);
         return record.blob;
+    }
+
+    async listAttachments(): Promise<AttachmentMeta[]> {
+        const records = await this.run<AttachmentRecord[]>(
+            ATTACHMENTS_STORE,
+            'readonly',
+            (store) => store.getAll() as IDBRequest<AttachmentRecord[]>,
+        );
+        return records.map((record) => ({
+            ref: record.id,
+            name: basename(record.id),
+            size: record.blob.size,
+            updatedAt: record.updatedAt,
+        }));
+    }
+
+    async removeAttachment(ref: string): Promise<void> {
+        await this.run(ATTACHMENTS_STORE, 'readwrite', (store) => store.delete(ref));
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {

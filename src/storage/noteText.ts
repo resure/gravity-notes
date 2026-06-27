@@ -28,6 +28,19 @@ export function isAttachmentRef(src: string): boolean {
 }
 
 /**
+ * Every distinct `Attachments/…` reference used as an image src in a note's Markdown. Drives both the
+ * preview's blob-URL resolution and the management view's orphan (unreferenced) detection. Attachment
+ * names are URL-safe (no spaces/parens — see {@link uniqueAttachmentName}), so a simple scan suffices.
+ */
+export function attachmentRefsIn(content: string): string[] {
+    const refs = new Set<string>();
+    for (const match of content.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)/g)) {
+        if (isAttachmentRef(match[1])) refs.add(match[1]);
+    }
+    return [...refs];
+}
+
+/**
  * The leaf (last `/` segment) of a note id. A flat id (no slash) is its own leaf, so this is a no-op
  * for non-nested notes.
  */
