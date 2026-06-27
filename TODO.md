@@ -18,16 +18,15 @@ Shipped so far:
 - **Export / import.** The export zip now bundles `Attachments/` bytes at their exact refs, and import
   restores them (skip-if-exists) via `writeAttachmentAt(ref, blob)`, so images survive a roundtrip —
   including the IndexedDB backend, whose attachments live in the DB rather than on disk.
+- **Editor affordances.** The custom image NodeView supports drag-to-resize (persisted as imsize
+  `=WxH`), an alt-text editor (shown as a caption when set; the default filename isn't), click-to-zoom
+  (full-size overlay), a selection ring, and an "image not found" state.
 
 Still to do:
 
 - **Orphan garbage collection (automatic).** The management view surfaces orphans and offers manual
   "Delete unused", but deleting a _note_ still leaves its images behind. Optionally prompt/auto-clean
   an attachment when the last note referencing it is deleted.
-
-- **Editor image affordances.** The custom attachment NodeView renders a clean `<img>` but drops the
-  package's resize handles and the hover settings popover (alt/title editing). Re-add resize + an
-  alt/title editor for attachment images.
 
 - **Tauri IPC efficiency.** `attachment_write`/`attachment_read` move bytes as JSON number arrays.
   Switch to a raw-bytes transport (e.g. `tauri::ipc::Response` / typed-array args) for large images.
