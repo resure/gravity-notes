@@ -1,6 +1,6 @@
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 
-import {MD_EXT, canonicalBody, titleFromFileName} from './noteText';
+import {MD_EXT, canonicalBody, dirname, sanitizeDir, titleFromFileName} from './noteText';
 import type {NoteStore} from './types';
 
 /** Last path segment of a (possibly nested) zip entry / file name. */
@@ -50,10 +50,16 @@ export async function exportNotes(
     return count;
 }
 
-async function importOne(store: NoteStore, filename: string, content: string): Promise<void> {
+async function importOne(
+    store: NoteStore,
+    filename: string,
+    content: string,
+    parentPath = '',
+): Promise<void> {
     const title = titleFromFileName(baseName(filename));
-    // create() sanitizes the title and resolves collisions; save() writes the body.
-    const meta = await store.create(title);
+    // create() sanitizes the title + folder path, creates the folder if needed, and resolves
+    // collisions; save() writes the body.
+    const meta = await store.create(title, parentPath || undefined);
     await store.save(meta.id, content, meta.updatedAt ?? 0);
 }
 
@@ -70,7 +76,9 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
             const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
             for (const [path, bytes] of Object.entries(entries)) {
                 if (!path.toLowerCase().endsWith(MD_EXT)) continue; // skip dir entries / non-md
-                await importOne(store, path, strFromU8(bytes));
+                // Preserve the entry's subfolder path (sanitized: drops `.`/`..`), so a zip exported
+                // with nested folders re-imports into the same structure instead of flattening.
+                await importOne(store, path, strFromU8(bytes), sanitizeDir(dirname(path)));
                 count += 1;
             }
         } else if (lower.endsWith(MD_EXT)) {

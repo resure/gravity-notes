@@ -69,6 +69,22 @@ describe('transfer — import', () => {
         expect((await store.list()).map((m) => m.title).sort()).toEqual(['One', 'Two']);
     });
 
+    it('preserves nested zip subfolders on import (phase 12)', async () => {
+        const store = seedStore();
+        const zip = zipSync({
+            'Work/Projects/Plan.md': new TextEncoder().encode('plan body'),
+            'Work/Note.md': new TextEncoder().encode('work note'),
+            'Top.md': new TextEncoder().encode('top body'),
+        });
+        const count = await importNotes(store, [
+            new File([zip as BlobPart], 'notes.zip', {type: 'application/zip'}),
+        ]);
+        expect(count).toBe(3);
+        const ids = (await store.list()).map((m) => m.id).sort();
+        expect(ids).toEqual(['Top.md', 'Work/Note.md', 'Work/Projects/Plan.md']);
+        expect((await store.get('Work/Projects/Plan.md')).content).toBe('plan body');
+    });
+
     it('round-trips export → import preserving content', async () => {
         const source = seedStore();
         await withContent(source, 'Roundtrip', 'keep me exactly');
