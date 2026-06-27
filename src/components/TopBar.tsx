@@ -6,6 +6,7 @@ import {
     CircleQuestion,
     Folder,
     LayoutSideContent,
+    Picture,
 } from '@gravity-ui/icons';
 import {DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 
@@ -25,6 +26,8 @@ export interface TopBarProps {
     onExport: () => void;
     /** Import .md files / a zip into the current store. */
     onImport: () => void;
+    /** Open the media-attachments manager. */
+    onManageAttachments: () => void;
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
@@ -74,6 +77,7 @@ export function TopBar({
     onChangeStorage,
     onExport,
     onImport,
+    onManageAttachments,
     onOpenHelp,
     themePref,
     onChangeThemePref,
@@ -167,6 +171,11 @@ export function TopBar({
                 text: 'Import .md files…',
                 iconStart: <Icon data={ArrowUpFromLine} />,
                 action: onImport,
+            },
+            {
+                text: 'Manage attachments…',
+                iconStart: <Icon data={Picture} />,
+                action: onManageAttachments,
             },
             {
                 text: 'Change storage…',

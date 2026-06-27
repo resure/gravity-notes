@@ -12,6 +12,7 @@ import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
 
+import {AttachmentsDialog} from './AttachmentsDialog';
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {FolderRail, type FolderRailHandle} from './FolderRail';
@@ -170,6 +171,7 @@ export function Workspace({
         }
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // The note whose "Move to…" picker is open (null = closed). Lifted here, where the full
     // folder/notes/metadata the tree picker needs already live.
@@ -550,6 +552,7 @@ export function Workspace({
                     onChangeStorage={handleChangeStorage}
                     onExport={handleExport}
                     onImport={handleImportClick}
+                    onManageAttachments={() => setAttachmentsOpen(true)}
                     onOpenHelp={() => setHelpOpen(true)}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
@@ -674,6 +677,14 @@ export function Workspace({
                 </div>
 
                 <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+                <AttachmentsDialog
+                    open={attachmentsOpen}
+                    store={store}
+                    cache={attachmentCache}
+                    onClose={() => setAttachmentsOpen(false)}
+                    onError={onError}
+                />
 
                 <MoveToDialog
                     open={movingNote !== null}
