@@ -107,6 +107,45 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const newFolderInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
 
+    // Edge autoscroll: while a drag hovers near the top/bottom of the scroll area, keep scrolling so
+    // off-screen folders are reachable. A rAF loop runs while `scrollDirRef` is non-zero.
+    const itemsRef = useRef<HTMLDivElement>(null);
+    const scrollDirRef = useRef(0);
+    const rafRef = useRef<number | null>(null);
+    const stepAutoScroll = useCallback(() => {
+        const el = itemsRef.current;
+        if (!el || scrollDirRef.current === 0) {
+            rafRef.current = null;
+            return;
+        }
+        el.scrollTop += scrollDirRef.current * 8;
+        rafRef.current = requestAnimationFrame(stepAutoScroll);
+    }, []);
+    const updateAutoScroll = useCallback(
+        (clientY: number) => {
+            const el = itemsRef.current;
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const EDGE = 28;
+            let dir = 0;
+            if (clientY < rect.top + EDGE) dir = -1;
+            else if (clientY > rect.bottom - EDGE) dir = 1;
+            scrollDirRef.current = dir;
+            if (dir !== 0 && rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(stepAutoScroll);
+            }
+        },
+        [stepAutoScroll],
+    );
+    const stopAutoScroll = useCallback(() => {
+        scrollDirRef.current = 0;
+        if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+    }, []);
+    useEffect(() => stopAutoScroll, [stopAutoScroll]);
+
     // The flat keyboard order: All Notes, then each visible folder row.
     const navItems = useMemo<{key: string; folder: string | null; row?: FolderRow}[]>(
         () => [
@@ -263,6 +302,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const onRowDrop = (event: ReactDragEvent, target: string) => {
         event.preventDefault();
         setDropTarget(null);
+        stopAutoScroll();
         const folderPath = draggingFolder ?? event.dataTransfer.getData(FOLDER_MIME);
         if (folderPath) {
             if (isInvalidFolderDrop(target, folderPath)) return;
@@ -373,6 +413,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 onDragEnd={() => {
                     setDraggingFolder(null);
                     setDropTarget(null);
+                    stopAutoScroll();
                 }}
                 onClick={() => select({key: row.path, folder: row.path})}
                 onDoubleClick={() => setRenaming({path: row.path, value: row.name})}
@@ -491,8 +532,17 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     );
 
     return (
-        <div className="folder-rail">
-            <div className="folder-rail__items" role="tree" aria-label="Folders">
+        // Drag autoscroll lives on the wrapper (not the role="tree" list) so the tree stays
+        // non-interactive; the rAF loop scrolls the inner items container via itemsRef.
+        <div
+            className="folder-rail"
+            onDragOver={(e) => updateAutoScroll(e.clientY)}
+            onDrop={stopAutoScroll}
+            onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) stopAutoScroll();
+            }}
+        >
+            <div ref={itemsRef} className="folder-rail__items" role="tree" aria-label="Folders">
                 {renderAllNotes()}
                 {/* A new root folder sits at the top; a new subfolder renders under its parent row. */}
                 {newFolderParent === '' ? renderNewFolderInput() : null}
@@ -502,6 +552,14 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                         {newFolderParent === row.path ? renderNewFolderInput() : null}
                     </Fragment>
                 ))}
+                {/* First-run nudge: no folders yet, and not already typing a new one. */}
+                {rows.length === 0 && newFolderParent === null ? (
+                    <div className="folder-rail__hint">
+                        <Text color="hint" variant="caption-2">
+                            No folders yet. Add one to group your notes.
+                        </Text>
+                    </div>
+                ) : null}
             </div>
             <div className="folder-rail__footer">
                 <Button

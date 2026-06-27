@@ -660,3 +660,28 @@ describe('Workspace — move picker', () => {
         });
     });
 });
+
+describe('Workspace — folder auto-preview', () => {
+    it('previews the first note of a folder when it is selected', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Root.md', 'r', 100);
+        dir.seedFile('Work/Inside.md', 'i', 50);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={vi.fn()}
+            />,
+        );
+        await screen.findByRole('option', {name: /Root/});
+        // Open the folder rail, then select the Work folder.
+        fireEvent.keyDown(document, {key: '\\', code: 'Backslash', metaKey: true, shiftKey: true});
+        await user.click(await screen.findByRole('treeitem', {name: /Work/}));
+        // The folder's first note is previewed in the editor.
+        await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveValue('Inside'));
+    });
+});

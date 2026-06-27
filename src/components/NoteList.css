@@ -30,7 +30,10 @@
 }
 
 .note-list__empty {
-    padding: 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 24px 16px;
     text-align: center;
 }
 

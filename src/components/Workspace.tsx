@@ -313,6 +313,19 @@ export function Workspace({
         [nav],
     );
 
+    // Selecting a folder previews its first note in the editor (nvALT-style), without taking focus
+    // off the rail — so arrowing through folders flips through their leads. Skipped while searching
+    // (the list is global then); an empty folder leaves the editor as-is.
+    const handleSelectFolder = useCallback(
+        (folder: string | null) => {
+            setSelectedFolder(folder);
+            if (searching) return;
+            const first = notesInFolder(orderedNotes, folder)[0];
+            if (first) nav.browse(first.id);
+        },
+        [searching, orderedNotes, nav],
+    );
+
     // ⌘J / ⌘K: browse to the next / previous note in the current list, from anywhere. Mirrors
     // ↓/↑ in the list (preview + focus the row); clamps at the ends; picks the first/last when
     // nothing is selected yet.
@@ -538,7 +551,7 @@ export function Workspace({
                             rows={folderRows}
                             selectedFolder={selectedFolder}
                             allNotesCount={notes.notes.length}
-                            onSelectFolder={setSelectedFolder}
+                            onSelectFolder={handleSelectFolder}
                             onToggleCollapse={toggleCollapse}
                             onCreateFolder={(parent, name) => void notes.createFolder(parent, name)}
                             onRemoveFolder={(path) => void notes.removeFolder(path)}
@@ -553,6 +566,9 @@ export function Workspace({
                         notes={listNotes}
                         selectedId={nav.selectedId}
                         query={query}
+                        scopeLabel={
+                            selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
+                        }
                         showCrumbs={searching}
                         snippetById={snippetById}
                         searchInputRef={searchInputRef}

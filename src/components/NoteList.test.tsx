@@ -19,6 +19,7 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         notes: NOTES,
         selectedId: 'Alpha.md',
         query: '',
+        scopeLabel: null,
         showCrumbs: false,
         searchInputRef: createRef<HTMLInputElement>(),
         onBrowse: vi.fn(),
@@ -146,9 +147,15 @@ describe('NoteList — list & a11y', () => {
         expect(props.onEscapeList).toHaveBeenCalledTimes(1);
     });
 
-    it('shows the empty state when there are no notes', () => {
-        setup({notes: []});
-        expect(screen.getByText(/No notes here yet/)).toBeInTheDocument();
+    it('shows the All-Notes empty state when there are no notes', () => {
+        setup({notes: [], scopeLabel: null});
+        expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
+    });
+
+    it('names the folder in the empty state of an empty selected folder', () => {
+        setup({notes: [], scopeLabel: 'Work'});
+        expect(screen.getByText(/No notes in/)).toBeInTheDocument();
+        expect(screen.getByText(/Work/)).toBeInTheDocument();
     });
 
     it('shows a body preview snippet and a formatted date', () => {
@@ -332,7 +339,7 @@ describe('NoteList — search display', () => {
 
     it('hints note creation when filtered to empty with a query', () => {
         setup({notes: [], query: 'zzz'});
-        expect(screen.getByText(/create "zzz"/i)).toBeInTheDocument();
+        expect(screen.getByText(/create .zzz./i)).toBeInTheDocument();
     });
 });
 

@@ -80,6 +80,11 @@ describe('FolderRail — render & selection', () => {
         const work = screen.getByRole('treeitem', {name: /Work/});
         expect(within(work).getByText('2')).toBeInTheDocument();
     });
+
+    it('shows a first-run hint when there are no folders', () => {
+        setup({rows: []});
+        expect(screen.getByText(/No folders yet/)).toBeInTheDocument();
+    });
 });
 
 describe('FolderRail — collapse', () => {
