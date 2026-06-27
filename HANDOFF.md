@@ -14,7 +14,7 @@ themselves drag to reparent (or onto "All Notes" → root) and rename in place (
 menu). Works on **all three backends** — in-browser (IndexedDB), desktop (Tauri/Rust), and the
 **Chromium web folder backend (FSA)**.
 
-- **Verification:** 523 TS tests + 10 Rust tests, `npm run typecheck`, `npm run lint` (0 errors),
+- **Verification:** 532 TS tests + 10 Rust tests, `npm run typecheck`, `npm run lint` (0 errors),
   `npm run build` — all green.
 - **Run it:** `npm run dev` (in-browser, or a Chromium folder) or `npm run tauri:dev` (desktop).
   Toggle the folder rail with **⌘⇧\\** or the folder button in the list toolbar.
@@ -105,9 +105,7 @@ root, inline rename, in-rail keys `n`/`⌫`/F2, quiet hover-yielding counts, foo
 picker v2** (`MoveToDialog`: tree-shaped + name-filter typeahead + current-folder excluded; state
 lifted to `Workspace`, `NoteList` emits `onRequestMove`).
 
-Deferred:
-
-- **Phase 12 — nested import**: `transfer.ts` should preserve zip subfolder paths (currently flattens).
+Deferred: none — phase 12 (nested import) shipped.
 
 ## UX backlog (next focus)
 
@@ -115,15 +113,19 @@ Resolved: the dead-FSA surface (phase 11); keyboard collapse/expand (→/←) + 
 drop-to-root; `tree`/`treeitem` ARIA; **folder rename** (double-click / F2 / menu) and **folder
 drag-and-drop** to reparent (phase 10); the "strange numbers / paddings" (quiet hover-yielding counts,
 even 30px rows, footer New-Folder); **move picker polish** (`MoveToDialog`: tree-shaped + name-filter
-typeahead + current-folder excluded; visually browser-verified across tree / filter / current states).
+typeahead + current-folder excluded); **rail-count fixes** (visible on hover, aligned, direct-when-
+expanded / rollup-when-collapsed); **tighter left padding**; **subfolder editor under its parent** (+
+auto-expand); **seamless inline rename** (borderless, no text jump); **rail keyboard** (⌘J/⌘K between
+folders, Enter reveals/conceals); **empty/placeholder states** (folder-named list empty state, "no
+folders yet" rail nudge); **folder auto-preview** (selecting a folder previews its first note);
+**drag affordance** (edge autoscroll + solid drop ring); **nested import** (phase 12). All
+browser-verified this session.
 
 Still open:
 
-1. **Empty/placeholder states** — the create-first-folder moment, and an empty selected folder.
-2. **Nested import** (phase 12) — `transfer.ts` still flattens zip subfolders.
-3. **Drag affordance polish** — no autoscroll near the rail edges; only a row highlight (no drop-line).
-4. Confirm the **rail defaults** and **⌘N-into-folder** feel right; consider auto-previewing the first
-   note when you enter a folder.
+1. Confirm the **rail defaults** and **⌘N-into-folder** feel right in daily use.
+2. Crash-safety hardening around the FSA copy-then-delete folder move (see Gotchas).
+3. The optimistic-reprefix corner in `Workspace.handleMoveFolder` (see Gotchas).
 
 ## Resuming
 
@@ -137,13 +139,12 @@ Still open:
 1. **See it:** `npm run dev`, open the rail with ⌘⇧\\. Folders are real on in-browser + desktop + the
    Chromium folder backend. Try: create / rename / delete folders, drag a note onto a folder, drag a
    folder onto another (reparent) or onto "All Notes" (→ root), ⌘N into the selected folder.
-2. **Highest-value next:** **empty/placeholder states** (the create-first-folder moment + an empty
-   selected folder), then **nested import** (phase 12 — `transfer.ts` flattens zip subfolders; preserve
-   the paths). The move picker (⌘⇧M) is done — tree-shaped, name-filter typeahead, current folder
-   greyed/disabled (`MoveToDialog`).
-3. **Visual caveat:** the rail polish (counts, padding, footer) shipped but was **not screenshot-
-   verified by the agent** (no browser tooling in that session) — eyeball it and tweak `FolderRail.css`
-   if anything's off. (The move picker _was_ browser-verified this session.)
+2. **Highest-value next:** the folder UX backlog is essentially cleared — what remains is daily-use
+   tuning (rail defaults, ⌘N-into-folder feel) and the two crash-safety/optimistic-reprefix
+   hardening items in Gotchas. Otherwise this branch is **merge-ready** (see "Before merge").
+3. **Browser-verified this session:** move picker (tree/filter/current), rail counts (hover +
+   alignment + direct/rollup), left padding, subfolder-under-parent, seamless rename, ⌘J/⌘K +
+   Enter folder keys, empty states, folder auto-preview, drop ring. Nested import is unit-covered.
 
 ### Gotchas / things to watch
 
@@ -160,5 +161,5 @@ Still open:
 ### Before merge
 
 - Delete this `HANDOFF.md`.
-- Decide whether **phase 12 (nested import)** blocks merge — it's the only deferred capability.
+- All planned capabilities (incl. phase 12 nested import) are shipped — no deferred blockers.
 - Optionally curate/squash the branch's granular phase commits if a linear history is preferred.
