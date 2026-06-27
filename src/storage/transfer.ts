@@ -1,11 +1,31 @@
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 
-import {MD_EXT, canonicalBody, dirname, sanitizeDir, titleFromFileName} from './noteText';
+import {
+    FOLDER_MARKER,
+    MD_EXT,
+    canonicalBody,
+    dirname,
+    sanitizeDir,
+    titleFromFileName,
+} from './noteText';
 import type {NoteStore} from './types';
 
 /** Last path segment of a (possibly nested) zip entry / file name. */
 function baseName(path: string): string {
     return path.split('/').pop() ?? path;
+}
+
+/**
+ * The minimal set of folders worth an empty-folder marker in an export: folders that hold no notes
+ * anywhere beneath them, pruned to the deepest such folders (a kept folder's ancestors get rebuilt
+ * automatically when its marker is imported, so one marker per empty branch suffices). A folder that
+ * contains notes needs no marker — its nested note paths already imply it. Pure, so it's
+ * unit-testable without a store.
+ */
+export function emptyFolderMarkers(folders: string[], noteIds: string[]): string[] {
+    const hasNotes = (folder: string) => noteIds.some((id) => id.startsWith(`${folder}/`));
+    const empty = folders.filter((folder) => folder && !hasNotes(folder));
+    return empty.filter((folder) => !empty.some((other) => other.startsWith(`${folder}/`)));
 }
 
 function downloadBlob(bytes: Uint8Array, filename: string, type: string): void {
@@ -29,10 +49,19 @@ function downloadBlob(bytes: Uint8Array, filename: string, type: string): void {
 export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array; count: number}> {
     const metas = await store.list();
     const files: Record<string, Uint8Array> = {};
+    const noteIds: string[] = [];
     for (const meta of metas) {
         const note = await store.get(meta.id);
         const name = note.id.toLowerCase().endsWith(MD_EXT) ? note.id : note.id + MD_EXT;
         files[name] = strToU8(canonicalBody(note.content));
+        noteIds.push(name);
+    }
+    // Preserve deliberately-empty folders: a `.gnkeep` marker per empty branch, so an
+    // export → import roundtrip rebuilds the same tree. Folders that hold notes are already implied
+    // by those notes' nested paths and need no marker.
+    const folders = await store.listFolders();
+    for (const folder of emptyFolderMarkers(folders, noteIds)) {
+        files[`${folder}/${FOLDER_MARKER}`] = new Uint8Array();
     }
     return {zip: zipSync(files), count: metas.length};
 }
@@ -75,6 +104,13 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
         if (lower.endsWith('.zip')) {
             const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
             for (const [path, bytes] of Object.entries(entries)) {
+                if (baseName(path) === FOLDER_MARKER) {
+                    // An empty-folder marker (see buildExportZip): recreate the folder so the tree
+                    // survives the roundtrip. It's not a note, so it doesn't count toward the total.
+                    const dir = sanitizeDir(dirname(path));
+                    if (dir) await store.createFolder(dirname(dir), baseName(dir));
+                    continue;
+                }
                 if (!path.toLowerCase().endsWith(MD_EXT)) continue; // skip dir entries / non-md
                 // Preserve the entry's subfolder path (sanitized: drops `.`/`..`), so a zip exported
                 // with nested folders re-imports into the same structure instead of flattening.

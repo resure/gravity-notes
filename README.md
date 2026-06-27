@@ -18,7 +18,8 @@ Markdown files, and they are yours.
 - **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers, or natively
   in the desktop app), or in-browser/in-app storage that works everywhere
 - **Export / import**: download all notes as a `.md` zip, or import `.md` files / a zip — so you own
-  your data regardless of backend, and can migrate between them
+  your data regardless of backend, and can migrate between them. Your **folder structure** is
+  preserved both ways, including deliberately-empty folders (kept alive by a `.gnkeep` marker)
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
   (updated, created, title A→Z / Z→A)
 - **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
