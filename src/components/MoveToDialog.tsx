@@ -242,7 +242,7 @@ export function MoveToDialog({
     };
 
     return (
-        <Dialog open={open} onClose={onClose} size="s">
+        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock>
             <Dialog.Header caption={note ? `Move “${note.title}” to…` : 'Move'} />
             <Dialog.Body>
                 <TextInput

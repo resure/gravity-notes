@@ -464,6 +464,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 onClose={() => setDeleting(null)}
                 onEnterKeyDown={confirmDelete}
                 size="s"
+                disableBodyScrollLock
             >
                 <Dialog.Header caption="Delete note" />
                 <Dialog.Body>
