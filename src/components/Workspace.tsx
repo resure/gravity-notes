@@ -379,10 +379,21 @@ export function Workspace({
     const handleMoveFolder = useCallback(
         (from: string, to: string) => {
             // Optimistically follow the move with the rail's local state, so the moved/renamed
-            // folder keeps its selection and expand state instead of resetting to All Notes.
+            // folder keeps its selection and expand state instead of the list-validation effect
+            // racing the refresh and snapping back to All Notes.
             setSelectedFolder((cur) => (cur ? reprefixPath(cur, from, to) : cur));
             setCollapsedFolders((prev) => new Set([...prev].map((p) => reprefixPath(p, from, to))));
-            void notes.moveFolder(from, to);
+            void notes.moveFolder(from, to).then((moved) => {
+                // The move was rejected (collision) or a no-op: the folders never changed, so undo
+                // the optimistic re-prefix (inverse: to → from) instead of leaving selection on a
+                // path that doesn't exist.
+                if (!moved) {
+                    setSelectedFolder((cur) => (cur ? reprefixPath(cur, to, from) : cur));
+                    setCollapsedFolders(
+                        (prev) => new Set([...prev].map((p) => reprefixPath(p, to, from))),
+                    );
+                }
+            });
         },
         [notes],
     );

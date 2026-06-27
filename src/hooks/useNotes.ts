@@ -73,8 +73,12 @@ export interface UseNotes {
     createFolder(parentPath: string, name: string): Promise<void>;
     /** Remove an empty folder (its marker) and refresh; unpins it if it was pinned. */
     removeFolder(path: string): Promise<void>;
-    /** Move/rename a folder, re-keying its whole subtree; re-points the open note if it's inside. */
-    moveFolder(fromPath: string, toPath: string): Promise<void>;
+    /**
+     * Move/rename a folder, re-keying its whole subtree; re-points the open note if it's inside.
+     * Resolves `true` when the move actually happened, `false` when it was rejected or a no-op — so
+     * a caller that optimistically followed the move (e.g. the rail's selection) can revert.
+     */
+    moveFolder(fromPath: string, toPath: string): Promise<boolean>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
     /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
@@ -284,18 +288,18 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     );
 
     const moveFolder = useCallback(
-        async (fromPath: string, toPath: string): Promise<void> => {
-            if (!fromPath || fromPath === toPath) return;
+        async (fromPath: string, toPath: string): Promise<boolean> => {
+            if (!fromPath || fromPath === toPath) return false;
             if (toPath === fromPath || toPath.startsWith(`${fromPath}/`)) {
                 onError('Cannot move a folder into itself.');
-                return;
+                return false;
             }
             const activeId = metadataRef.current.active;
             const activeInside =
                 activeId !== null && (activeId === fromPath || activeId.startsWith(`${fromPath}/`));
             if (activeInside && conflict) {
                 onError('Resolve the conflict before moving this folder.');
-                return;
+                return false;
             }
             // Flush any pending edit (against the OLD ids) before the subtree is re-keyed.
             await flush();
@@ -329,12 +333,14 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     await repointOpenNote(activeId, toPath + activeId.slice(fromPath.length));
                 }
                 await refresh();
+                return true;
             } catch (err) {
                 if (err instanceof NameCollisionError) {
                     onError(err.message);
                 } else {
                     onError(err instanceof Error ? err.message : 'Failed to move folder');
                 }
+                return false;
             } finally {
                 moveInProgressRef.current = false;
             }

@@ -685,3 +685,47 @@ describe('Workspace — folder auto-preview', () => {
         await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveValue('Inside'));
     });
 });
+
+describe('Workspace — folder move', () => {
+    it('reverts the rail selection when a folder rename collides', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Work/Note.md', 'w', 100);
+        dir.seedFile('Archive/Other.md', 'a', 50); // makes "Archive" already exist → rename collides
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={vi.fn()}
+            />,
+        );
+        await screen.findByRole('option', {name: /Note/});
+        fireEvent.keyDown(document, {key: '\\', code: 'Backslash', metaKey: true, shiftKey: true});
+        const work = await screen.findByRole('treeitem', {name: /Work/});
+        await user.click(work);
+        await waitFor(() => expect(work).toHaveAttribute('aria-selected', 'true'));
+
+        // Rename Work → Archive: the store hard-fails (Archive exists). The optimistic re-prefix
+        // briefly points selection at "Archive", but the failed move must revert it to "Work".
+        await user.dblClick(screen.getByText('Work'));
+        const input = screen.getByDisplayValue('Work');
+        await user.clear(input);
+        await user.type(input, 'Archive{Enter}');
+
+        // The move was rejected, so Work survives and selection reverts to it — not stranded on the
+        // unrelated, pre-existing Archive folder.
+        await waitFor(() =>
+            expect(screen.getByRole('treeitem', {name: /Work/})).toHaveAttribute(
+                'aria-selected',
+                'true',
+            ),
+        );
+        expect(screen.getByRole('treeitem', {name: /Archive/})).toHaveAttribute(
+            'aria-selected',
+            'false',
+        );
+    });
+});
