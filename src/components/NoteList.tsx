@@ -37,7 +37,7 @@ export interface NoteListProps {
     query: string;
     /** The selected folder's display name (null = All Notes), for the empty-state copy. */
     scopeLabel: string | null;
-    /** Show each note's folder path as a dimmed crumb (flat search mode, across all folders). */
+    /** Show each note's folder as a chip (when the list spans folders: All Notes / flat search). */
     showCrumbs: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
     snippetById?: Map<string, string>;
@@ -349,16 +349,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                             <Text variant="caption-2" color="secondary" className="note-list__date">
                                 {formatNoteDate(note.updatedAt)}
                             </Text>
-                            {crumb ? (
-                                <Text
-                                    variant="caption-2"
-                                    color="secondary"
-                                    className="note-list__crumb"
-                                    ellipsis
-                                >
-                                    {crumb}
-                                </Text>
-                            ) : null}
                             {previewText ? (
                                 <Text
                                     variant="caption-2"
@@ -370,6 +360,26 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 </Text>
                             ) : null}
                         </div>
+                        {crumb ? (
+                            // Apple-Notes-style folder chip: which folder this note lives in, shown
+                            // when the list spans folders (All Notes / search). Its own line below.
+                            <div className="note-list__folder">
+                                <Icon
+                                    data={Folder}
+                                    size={12}
+                                    className="note-list__folder-icon"
+                                    aria-hidden
+                                />
+                                <Text
+                                    variant="caption-2"
+                                    color="secondary"
+                                    className="note-list__folder-name"
+                                    ellipsis
+                                >
+                                    {crumb}
+                                </Text>
+                            </div>
+                        ) : null}
                     </>
                 )}
             </div>

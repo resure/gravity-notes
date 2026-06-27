@@ -119,8 +119,22 @@
     color: var(--g-color-text-warning);
 }
 
-/* Dimmed folder-path crumb shown on a note row in flat search results. */
-.note-list__crumb {
+/* Apple-Notes-style folder chip on its own line: which folder a note lives in, shown when the list
+   spans folders (All Notes / search). A folder glyph + the (dimmed) folder path. */
+.note-list__folder {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-top: 1px;
+    opacity: 0.75;
+}
+
+.note-list__folder-icon {
     flex-shrink: 0;
-    opacity: 0.7;
+    color: var(--g-color-text-secondary);
+}
+
+.note-list__folder-name {
+    min-width: 0;
 }

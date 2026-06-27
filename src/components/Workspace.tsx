@@ -580,7 +580,7 @@ export function Workspace({
                         scopeLabel={
                             selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
                         }
-                        showCrumbs={searching}
+                        showCrumbs={searching || selectedFolder === null}
                         snippetById={snippetById}
                         searchInputRef={searchInputRef}
                         onBrowse={nav.browse}
