@@ -214,6 +214,16 @@ describe('TopBar — inline autocomplete', () => {
         fireEvent.change(input, {target: {value: 'xy'}});
         expect(input.value).toBe('xy');
     });
+
+    it('keeps the typed prefix verbatim — a lowercase query is not capitalised to match the title', () => {
+        renderWithProviders(<StatefulTopBar onCommit={vi.fn()} />);
+        const input = screen.getByPlaceholderText(SEARCH) as HTMLInputElement;
+        // Top title is "Alpha"; typing "al" should keep the lowercase prefix and only adopt the
+        // suffix, yielding "alpha" (not "Alpha"). The casing stays the user's.
+        fireEvent.change(input, {target: {value: 'al'}});
+        expect(input.value).toBe('alpha');
+        expect(input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)).toBe('pha');
+    });
 });
 
 describe('TopBar — orb menu', () => {

@@ -106,9 +106,12 @@ export function TopBar({
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
 
-    // nvALT inline autocomplete: as the user types *forward*, the top match's title fills the box
-    // with the un-typed suffix selected; Tab (or →) accepts it, Backspace removes it. `query` stays
-    // the real typed text driving the search — `completion` is only what the box displays.
+    // nvALT inline autocomplete: as the user types *forward*, the top match's title is appended to
+    // the box with the un-typed suffix selected; Tab (or →) accepts it, Backspace removes it. The
+    // typed prefix is kept verbatim and only the suffix is adopted from the match, so the match is
+    // case-insensitive but the box never rewrites what the user typed (typing "n" against "Node"
+    // stays "n", not "N"). `query` stays the real typed text driving the search — `completion` is
+    // only what the box displays.
     const [completing, setCompleting] = useState(false);
     const topTitle = notes[0]?.title ?? '';
     const completion =
@@ -116,7 +119,7 @@ export function TopBar({
         query.length > 0 &&
         topTitle.length > query.length &&
         topTitle.toLowerCase().startsWith(query.toLowerCase())
-            ? topTitle
+            ? query + topTitle.slice(query.length)
             : '';
     const displayValue = completion || query;
 
