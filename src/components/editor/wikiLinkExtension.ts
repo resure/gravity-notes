@@ -1,7 +1,7 @@
 import {type ExtensionBuilder} from '@gravity-ui/markdown-editor';
 import {InputRule} from 'prosemirror-inputrules';
 import type {Node as ProseMirrorNode} from 'prosemirror-model';
-import {Plugin, PluginKey} from 'prosemirror-state';
+import {type EditorState, Plugin, PluginKey, TextSelection} from 'prosemirror-state';
 import {Decoration, DecorationSet, type EditorView} from 'prosemirror-view';
 
 import type {NoteMeta} from '../../storage/types';
@@ -28,6 +28,8 @@ export interface WikiLinkOptions {
     viewRef?: {current: EditorView | null};
     /** Drive the `[[` autocomplete popup (state pushed up to EditorPane to render). */
     onSuggest?: WikiLinkSuggestSink;
+    /** Drive the edit tooltip shown while the caret sits in a link (state pushed up to EditorPane). */
+    onTooltip?: WikiLinkTooltipSink;
 }
 
 /** A snapshot the editor pushes to EditorPane to render the `[[` suggestion popup, or null to hide it. */
@@ -46,6 +48,26 @@ export interface WikiLinkSuggestState {
     close(): void;
 }
 
+/** A snapshot EditorPane renders as the edit tooltip while the caret is in a link, or null to hide it. */
+export type WikiLinkTooltipSink = (state: WikiLinkTooltipState | null) => void;
+
+export interface WikiLinkTooltipState {
+    /** The `<a>` element to anchor the tooltip to. */
+    anchor: HTMLElement;
+    /** The link's current target/text. */
+    target: string;
+    /** Whether the target resolves to a note (false → following it would create the note). */
+    broken: boolean;
+    /** Follow the link — open the note (creating it if missing). */
+    open(): void;
+    /** Replace the link's text + mark with `next`, re-targeting it. */
+    setTarget(next: string): void;
+    /** Strip the link mark, leaving the text as plain text. */
+    unlink(): void;
+    /** Return keyboard focus to the editor (the caret stays put). */
+    refocus(): void;
+}
+
 /** PluginKey for the broken-link decorations, so EditorPane can nudge a refresh on notes changes. */
 const BROKEN_KEY = new PluginKey<DecorationSet>('wikiLinkBroken');
 
@@ -54,6 +76,70 @@ function wikiAnchor(event: MouseEvent): HTMLElement | null {
     const target = event.target as HTMLElement | null;
     const anchor = target?.closest('a.wiki-link');
     return anchor instanceof HTMLElement ? anchor : null;
+}
+
+/** The contiguous `[[wiki link]]` mark range touched by a collapsed caret, or null. */
+function wikiLinkRange(state: EditorState): {from: number; to: number; target: string} | null {
+    const sel = state.selection;
+    if (!sel.empty) return null;
+    const markType = state.schema.marks[WIKI_LINK_MARK];
+    if (!markType) return null;
+    const $pos = sel.$from;
+    if (!$pos.parent.isTextblock) return null;
+    const pos = sel.from;
+    const base = $pos.start();
+    let hit: {from: number; to: number} | null = null;
+    let run: {from: number; to: number} | null = null;
+    $pos.parent.forEach((child, offset) => {
+        const from = base + offset;
+        const to = from + child.nodeSize;
+        if (child.isText && markType.isInSet(child.marks)) {
+            if (run && run.to === from)
+                run.to = to; // extend the contiguous run in place
+            else run = {from, to};
+            if (pos >= run.from && pos <= run.to) hit = run; // caret touches this run (incl. edges)
+        } else {
+            run = null;
+        }
+    });
+    if (!hit) return null;
+    const range: {from: number; to: number} = hit;
+    return {from: range.from, to: range.to, target: state.doc.textBetween(range.from, range.to)};
+}
+
+/** The rendered `<a class="wiki-link">` element for the link starting at `from`, if reachable. */
+function wikiAnchorAt(view: EditorView, from: number): HTMLElement | null {
+    const {node} = view.domAtPos(from + 1); // a position inside the link's text
+    const el = node instanceof HTMLElement ? node : node.parentElement;
+    return el?.closest('a.wiki-link') ?? null;
+}
+
+/** Strip the wiki-link mark over `[from,to]`, keeping the text; caret lands at the end. */
+function unlinkWikiLink(view: EditorView, from: number, to: number): void {
+    const markType = view.state.schema.marks[WIKI_LINK_MARK];
+    const tr = view.state.tr.removeMark(from, to, markType);
+    tr.setSelection(TextSelection.create(tr.doc, to));
+    view.dispatch(tr);
+    view.focus();
+}
+
+/** Replace the link over `[from,to]` with `target` (re-marked); empty target unlinks it instead. */
+function replaceWikiLink(view: EditorView, from: number, to: number, target: string): void {
+    const next = target.trim();
+    if (!next) {
+        unlinkWikiLink(view, from, to);
+        return;
+    }
+    const markType = view.state.schema.marks[WIKI_LINK_MARK];
+    const tr = view.state.tr.replaceWith(
+        from,
+        to,
+        view.state.schema.text(next, [markType.create()]),
+    );
+    tr.setSelection(TextSelection.create(tr.doc, from + next.length));
+    tr.removeStoredMark(markType);
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
 }
 
 /** Recompute which `[[links]]` in the doc don't resolve, decorating them with a broken-state class. */
@@ -228,6 +314,45 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
             }),
         builder.Priority.Low,
     );
+
+    // Edit tooltip: while the caret sits in a link, push its details up so EditorPane can offer
+    // open / re-target / unlink — the wiki-link counterpart of the editor's URL-link tooltip.
+    if (opts.onTooltip) {
+        const onTooltip = opts.onTooltip;
+        builder.addPlugin(
+            () =>
+                new Plugin({
+                    view(editorView) {
+                        const push = () => {
+                            const range = wikiLinkRange(editorView.state);
+                            const anchor = range && wikiAnchorAt(editorView, range.from);
+                            if (!range || !anchor) {
+                                onTooltip(null);
+                                return;
+                            }
+                            onTooltip({
+                                anchor,
+                                target: range.target,
+                                broken:
+                                    resolveWikiLink(
+                                        range.target,
+                                        opts.getCurrentId(),
+                                        opts.getNotes(),
+                                    ) === null,
+                                open: () => opts.onOpen(range.target),
+                                setTarget: (next) =>
+                                    replaceWikiLink(editorView, range.from, range.to, next),
+                                unlink: () => unlinkWikiLink(editorView, range.from, range.to),
+                                refocus: () => editorView.focus(),
+                            });
+                        };
+                        push();
+                        return {update: push, destroy: () => onTooltip(null)};
+                    },
+                }),
+            builder.Priority.Low,
+        );
+    }
 
     // The `[[` autocomplete popup (note picker). Kept in its own module; no-op when no sink is wired.
     if (opts.onSuggest) {

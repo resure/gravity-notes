@@ -52,3 +52,69 @@
     font-size: 0.85em;
     white-space: nowrap;
 }
+
+/* The edit tooltip shown while the caret is in a link. */
+.wiki-tooltip {
+    padding: 4px;
+    max-width: 380px;
+}
+.wiki-tooltip__info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+}
+.wiki-tooltip__target {
+    overflow: hidden;
+    color: var(--g-color-text-link);
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.wiki-tooltip__target_broken {
+    color: var(--g-color-text-secondary);
+}
+.wiki-tooltip__actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.wiki-tooltip__edit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 240px;
+}
+.wiki-tooltip__list {
+    display: flex;
+    max-height: 200px;
+    flex-direction: column;
+    overflow-y: auto;
+}
+.wiki-tooltip__option {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+.wiki-tooltip__option_active {
+    background: var(--g-color-base-selection);
+}
+.wiki-tooltip__option-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.wiki-tooltip__option-path {
+    margin-left: auto;
+    color: var(--g-color-text-secondary);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
