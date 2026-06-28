@@ -41,6 +41,46 @@ function withResolvedImages(html: string, cache: AttachmentUrlCache): string {
 }
 
 /**
+ * Render `[[wiki links]]` in the transformed HTML as styled link spans, so preview mode matches the
+ * editor (where they show bracket-less) instead of leaking raw `[[Title]]`. Walks text nodes only,
+ * skipping code / existing links, and leaves the text verbatim otherwise. Read-only: preview doesn't
+ * navigate (mirrors the editor, where a plain click edits rather than follows). The `@diplodoc`
+ * transform has no `[[ ]]` syntax, so — like images — we post-process its output.
+ */
+export function withWikiLinks(html: string): string {
+    if (!html.includes('[[')) return html;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const link = /\[\[([^[\]\n]+)\]\]/g;
+    const targets: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node as Text;
+        if (!text.nodeValue?.includes('[[')) continue;
+        if (text.parentElement?.closest('code, pre, a')) continue;
+        link.lastIndex = 0;
+        if (link.test(text.nodeValue)) targets.push(text);
+    }
+    if (targets.length === 0) return html;
+    for (const node of targets) {
+        const text = node.nodeValue ?? '';
+        const frag = doc.createDocumentFragment();
+        let last = 0;
+        link.lastIndex = 0;
+        for (let match = link.exec(text); match; match = link.exec(text)) {
+            if (match.index > last) frag.append(text.slice(last, match.index));
+            const span = doc.createElement('span');
+            span.className = 'wiki-link';
+            span.textContent = match[1];
+            frag.append(span);
+            last = match.index + match[0].length;
+        }
+        if (last < text.length) frag.append(text.slice(last));
+        node.parentNode?.replaceChild(frag, node);
+    }
+    return doc.body.innerHTML;
+}
+
+/**
  * Read-only rendered view of a note's Markdown, for preview mode. Renders YFM HTML via the
  * editor's own transformer so it matches the WYSIWYG output, into a `.yfm` container that
  * picks up the globally-loaded YFM styles. The root is programmatically focusable so an
@@ -65,7 +105,7 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             try {
                 // @diplodoc/transform escapes raw HTML and sanitizes its output by default, matching
                 // the editor's no-raw-HTML policy; we only swap attachment img srcs afterward.
-                let html = transform(markup).result.html;
+                let html = withWikiLinks(transform(markup).result.html);
                 if (cache) html = withResolvedImages(html, cache);
                 return {html, error: false};
             } catch {

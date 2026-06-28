@@ -13,8 +13,11 @@ import {
     withRenamed,
     withReprefixed,
     withSortMode,
+    withTrashEmptied,
+    withTrashed,
+    withoutTrashEntry,
 } from './metadata';
-import type {NoteMeta} from './types';
+import type {NoteMeta, TrashEntry} from './types';
 
 const note = (id: string, title: string, updatedAt: number): NoteMeta => ({id, title, updatedAt});
 
@@ -85,6 +88,7 @@ describe('immutable transforms', () => {
         pinned: ['A.md'],
         created: {'A.md': 1},
         active: 'A.md',
+        trashed: [],
     } as const;
 
     it('withSortMode sets the sort without mutating the input', () => {
@@ -131,6 +135,7 @@ describe('active transforms', () => {
         pinned: [],
         created: {},
         active: 'A.md',
+        trashed: [],
     } as const;
 
     it('withActive sets the active id', () => {
@@ -168,6 +173,7 @@ describe('reconcile', () => {
             pinned: ['A.md', 'ghost.md'],
             created: {'A.md': 1, 'ghost.md': 2},
             active: 'ghost.md',
+            trashed: [],
         } as const;
         const next = reconcile(meta, ['A.md', 'B.md']);
         expect(next.pinned).toEqual(['A.md']);
@@ -182,6 +188,7 @@ describe('reconcile', () => {
             pinned: [],
             created: {},
             active: 'A.md',
+            trashed: [],
         } as const;
         expect(reconcile(meta, ['A.md']).active).toBe('A.md');
     });
@@ -193,6 +200,7 @@ describe('reconcile', () => {
             pinned: ['Work/Roadmap.md', 'gone.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2},
             active: 'Work/Roadmap.md',
+            trashed: [],
         } as const;
         // recursive listing => an absent nested id is genuinely dead and gets pruned.
         const next = reconcile(meta, ['Inbox.md'], {recursive: true});
@@ -208,6 +216,7 @@ describe('reconcile', () => {
             pinned: ['Work/Roadmap.md', 'gone.md', 'Inbox.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2, 'Inbox.md': 3},
             active: 'Work/Roadmap.md',
+            trashed: [],
         } as const;
         // Non-recursive backend only sees top-level 'Inbox.md'. The nested pin/created/active must
         // survive (the backend can't prove them dead); the dead *root* id 'gone.md' is still pruned.
@@ -292,5 +301,114 @@ describe('withReprefixed', () => {
         const meta = {...DEFAULT_METADATA, pinned: ['Workshop/A.md', 'Work/B.md']};
         const next = withReprefixed(meta, 'Work', 'Done');
         expect(next.pinned).toEqual(['Workshop/A.md', 'Done/B.md']);
+    });
+
+    it('remaps a trashed note’s recorded original folder under the moved prefix', () => {
+        const meta = {
+            ...DEFAULT_METADATA,
+            trashed: [
+                {id: '.trash/A.md', title: 'A', originalPath: 'Work/Sub', trashedAt: 5},
+                {id: '.trash/B.md', title: 'B', originalPath: 'Other', trashedAt: 6},
+            ],
+        };
+        const next = withReprefixed(meta, 'Work', 'Archive/Work');
+        expect(next.trashed.map((t) => t.originalPath)).toEqual(['Archive/Work/Sub', 'Other']);
+    });
+});
+
+describe('trash registry', () => {
+    const entry = (id: string, originalPath = '', trashedAt = 1): TrashEntry => ({
+        id,
+        title: id.replace(/^\.trash\//, '').replace(/\.md$/, ''),
+        originalPath,
+        trashedAt,
+    });
+
+    it('parseMetadata keeps well-formed trashed entries and drops junk', () => {
+        const parsed = parseMetadata({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            trashed: [
+                {id: '.trash/A.md', title: 'A', originalPath: 'Work', trashedAt: 10},
+                {id: '.trash/B.md'}, // missing fields → coerced with defaults
+                {title: 'no id'}, // no id → dropped
+                'nope', // not an object → dropped
+            ],
+        });
+        expect(parsed.trashed).toEqual([
+            {id: '.trash/A.md', title: 'A', originalPath: 'Work', trashedAt: 10},
+            {id: '.trash/B.md', title: '', originalPath: '', trashedAt: 0},
+        ]);
+    });
+
+    it('parseMetadata defaults trashed to [] when absent or not an array', () => {
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}}).trashed,
+        ).toEqual([]);
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}, trashed: 'x'})
+                .trashed,
+        ).toEqual([]);
+    });
+
+    it('withTrashed records the entry (newest first) and drops the original id from pins/created/active', () => {
+        const meta = {
+            ...DEFAULT_METADATA,
+            pinned: ['Work/A.md', 'Keep.md'],
+            created: {'Work/A.md': 1, 'Keep.md': 2},
+            active: 'Work/A.md',
+            trashed: [entry('.trash/Old.md')],
+        };
+        const next = withTrashed(meta, 'Work/A.md', entry('.trash/A.md', 'Work', 99));
+        expect(next.pinned).toEqual(['Keep.md']);
+        expect(next.created).toEqual({'Keep.md': 2});
+        expect(next.active).toBeNull();
+        expect(next.trashed.map((t) => t.id)).toEqual(['.trash/A.md', '.trash/Old.md']);
+    });
+
+    it('withoutTrashEntry removes one entry by its trash id', () => {
+        const meta = {...DEFAULT_METADATA, trashed: [entry('.trash/A.md'), entry('.trash/B.md')]};
+        expect(withoutTrashEntry(meta, '.trash/A.md').trashed.map((t) => t.id)).toEqual([
+            '.trash/B.md',
+        ]);
+    });
+
+    it('withTrashEmptied clears the registry', () => {
+        const meta = {...DEFAULT_METADATA, trashed: [entry('.trash/A.md')]};
+        expect(withTrashEmptied(meta).trashed).toEqual([]);
+    });
+
+    it('withTrashed preserves the original created stamp on the entry, then drops it from created', () => {
+        const meta = {
+            ...DEFAULT_METADATA,
+            created: {'A.md': 111},
+            trashed: [],
+        };
+        const next = withTrashed(meta, 'A.md', {
+            id: '.trash/A.md',
+            title: 'A',
+            originalPath: '',
+            trashedAt: 222,
+            created: meta.created['A.md'],
+        });
+        expect(next.created).toEqual({}); // dropped from the live created map
+        expect(next.trashed[0].created).toBe(111); // but preserved on the entry for restore
+    });
+
+    it('parseMetadata round-trips a trash entry created stamp and omits it when absent', () => {
+        const parsed = parseMetadata({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            trashed: [
+                {id: '.trash/A.md', title: 'A', originalPath: '', trashedAt: 1, created: 111},
+                {id: '.trash/B.md', title: 'B', originalPath: '', trashedAt: 2},
+            ],
+        });
+        expect(parsed.trashed[0].created).toBe(111);
+        expect(parsed.trashed[1].created).toBeUndefined();
     });
 });

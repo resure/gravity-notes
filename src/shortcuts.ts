@@ -4,6 +4,8 @@ export type ShortcutAction =
     | 'focusSearch'
     | 'selectNextNote'
     | 'selectPrevNote'
+    | 'historyBack'
+    | 'historyForward'
     | 'toggleSidebar'
     | 'toggleFolderRail'
     | 'peekSidebar'
@@ -33,6 +35,12 @@ export interface GlobalBinding {
     shift?: boolean;
     /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod→true, bare→false. */
     inTyping?: boolean;
+    /**
+     * Handle in the capture phase and `stopPropagation`, so the key never reaches the editor. Needed
+     * when the chord collides with an editor binding we must override — e.g. ⌘[/⌘] (history) shadow
+     * the markdown editor's list outdent/indent (still reachable via Tab/⇧Tab).
+     */
+    capture?: boolean;
 }
 
 /** One row of the keyboard-shortcut help sheet, and (optionally) its global binding. */
@@ -62,6 +70,32 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Preview previous note (works while editing)',
         group: 'Navigation',
         global: {trigger: 'mod', key: 'k', action: 'selectPrevNote'},
+    },
+    {
+        keys: 'mod+[',
+        description: 'Go back (previously viewed note)',
+        group: 'Navigation',
+        // Match the physical Bracket key (layout-independent) and grab it in the capture phase so the
+        // editor's ⌘[ list-outdent never also fires — outdent stays on ⇧Tab.
+        global: {
+            trigger: 'mod',
+            key: '[',
+            code: 'BracketLeft',
+            action: 'historyBack',
+            capture: true,
+        },
+    },
+    {
+        keys: 'mod+]',
+        description: 'Go forward (next viewed note)',
+        group: 'Navigation',
+        global: {
+            trigger: 'mod',
+            key: ']',
+            code: 'BracketRight',
+            action: 'historyForward',
+            capture: true,
+        },
     },
     {
         keys: 'enter',

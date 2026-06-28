@@ -1,15 +1,16 @@
-import type {NoteMeta, NotesMetadata, SortMode} from './types';
+import type {NoteMeta, NotesMetadata, SortMode, TrashEntry} from './types';
 
 /** Sidecar file holding the folder's notes metadata. Not a `.md` file, so `list()` ignores it. */
 export const METADATA_FILENAME = '.gravity-notes.json';
 
-/** The metadata for a folder with no pins, no stamps, the default sort, and nothing open. */
+/** The metadata for a folder with no pins, no stamps, the default sort, nothing open, empty trash. */
 export const DEFAULT_METADATA: NotesMetadata = {
     version: 1,
     sort: 'updated',
     pinned: [],
     created: {},
     active: null,
+    trashed: [],
 };
 
 const SORT_MODES: readonly SortMode[] = ['updated', 'title', 'title-desc', 'created'];
@@ -31,11 +32,28 @@ export function parseMetadata(raw: unknown): NotesMetadata {
         }
     }
     const active = typeof obj.active === 'string' ? obj.active : null;
-    return {version: 1, sort, pinned, created, active};
+    const trashed = Array.isArray(obj.trashed) ? obj.trashed.flatMap(parseTrashEntry) : [];
+    return {version: 1, sort, pinned, created, active, trashed};
+}
+
+/** Coerce one raw trash entry to a well-formed {@link TrashEntry}; drop it (empty array) if junk. */
+function parseTrashEntry(raw: unknown): TrashEntry[] {
+    if (typeof raw !== 'object' || raw === null) return [];
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.id !== 'string' || obj.id === '') return [];
+    return [
+        {
+            id: obj.id,
+            title: typeof obj.title === 'string' ? obj.title : '',
+            originalPath: typeof obj.originalPath === 'string' ? obj.originalPath : '',
+            trashedAt: typeof obj.trashedAt === 'number' ? obj.trashedAt : 0,
+            ...(typeof obj.created === 'number' ? {created: obj.created} : {}),
+        },
+    ];
 }
 
 function cloneDefault(): NotesMetadata {
-    return {version: 1, sort: 'updated', pinned: [], created: {}, active: null};
+    return {version: 1, sort: 'updated', pinned: [], created: {}, active: null, trashed: []};
 }
 
 export function withSortMode(meta: NotesMetadata, sort: SortMode): NotesMetadata {
@@ -83,11 +101,15 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
         id === from || id.startsWith(prefix) ? to + id.slice(from.length) : id;
     const created: Record<string, number> = {};
     for (const [id, time] of Object.entries(meta.created)) created[remap(id)] = time;
+    // A trashed note's id lives under `.trash/` (untouched), but its recorded original folder shares
+    // the moved prefix — remap it so a later restore still lands in the renamed folder.
+    const trashed = meta.trashed.map((t) => ({...t, originalPath: remap(t.originalPath)}));
     return {
         ...meta,
         pinned: meta.pinned.map(remap),
         created,
         active: meta.active ? remap(meta.active) : null,
+        trashed,
     };
 }
 
@@ -100,6 +122,34 @@ export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
         created,
         active: meta.active === id ? null : meta.active,
     };
+}
+
+/**
+ * Soft-delete: record a trashed note. `originalId` is the live id being trashed — dropped from pins /
+ * created / active exactly like {@link withRemoved} (a trashed note is no longer a live note) — and
+ * `entry` is prepended to the trash registry (newest first). The entry's `id` is the new trash id; it
+ * should carry the note's prior `created` stamp (which `withRemoved` is about to drop) so a later
+ * restore can reinstate it.
+ */
+export function withTrashed(
+    meta: NotesMetadata,
+    originalId: string,
+    entry: TrashEntry,
+): NotesMetadata {
+    return {
+        ...withRemoved(meta, originalId),
+        trashed: [entry, ...meta.trashed.filter((t) => t.id !== entry.id)],
+    };
+}
+
+/** Drop one trash entry by its trash id — used after both restore and permanent delete (purge). */
+export function withoutTrashEntry(meta: NotesMetadata, trashId: string): NotesMetadata {
+    return {...meta, trashed: meta.trashed.filter((t) => t.id !== trashId)};
+}
+
+/** Empty the whole trash registry. */
+export function withTrashEmptied(meta: NotesMetadata): NotesMetadata {
+    return {...meta, trashed: []};
 }
 
 /**

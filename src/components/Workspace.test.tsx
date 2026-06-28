@@ -125,7 +125,7 @@ describe('Workspace — nvALT navigation', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        await user.click(screen.getByRole('button', {name: 'Delete'}));
+        await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
 
         await waitFor(() =>
             expect(screen.queryByRole('option', {name: /Beta/})).not.toBeInTheDocument(),
@@ -665,8 +665,38 @@ describe('Workspace — move picker', () => {
         renderWorkspace();
         await user.click(await screen.findByRole('option', {name: /Beta/}));
         fireEvent.keyDown(document, {key: 'Backspace', metaKey: true, shiftKey: true});
-        // The confirm dialog appears, naming the selected note (it isn't deleted until confirmed).
-        expect(await screen.findByText(/Delete "Beta"\?/)).toBeInTheDocument();
+        // The confirm dialog appears, naming the selected note (it isn't trashed until confirmed).
+        expect(await screen.findByText(/Move "Beta" to the Trash\?/)).toBeInTheDocument();
+    });
+});
+
+describe('Workspace — trash', () => {
+    it('deletes a note to the Trash, then restores it from the Trash dialog', async () => {
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+
+        // Delete Beta → confirm "Move to Trash" → it leaves the list.
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
+        await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
+        await waitFor(() =>
+            expect(screen.queryByRole('option', {name: /Beta/})).not.toBeInTheDocument(),
+        );
+
+        // The orb menu's Trash item now shows a count and opens the trash view holding Beta.
+        await user.click(await screen.findByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Trash \(1\)/}));
+        const dialog = await screen.findByRole('dialog');
+        expect(await within(dialog).findByText('Beta')).toBeInTheDocument();
+
+        // Restore it → it leaves the trash (now empty) and is written back to its folder.
+        await user.click(within(dialog).getByRole('button', {name: /Restore Beta/}));
+        expect(await within(dialog).findByText(/Trash is empty/)).toBeInTheDocument();
+        await waitFor(async () =>
+            expect((await store.list()).map((n) => n.id)).toContain('Beta.md'),
+        );
     });
 });
 

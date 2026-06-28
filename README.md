@@ -22,9 +22,18 @@ Markdown files, and they are yours.
   preserved both ways, including deliberately-empty folders (kept alive by a `.gnkeep` marker)
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
   (updated, created, title A→Z / Z→A)
+- **Trash**: deleting a note moves it to a Trash (a hidden `.trash/` folder, so it leaves your notes
+  but isn't erased) you can **restore** from — back to its original folder — or **empty**. Open it from
+  the storage menu (the `⋯` orb)
 - **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
   passage shown as a snippet in the list (multi-word queries match all terms)
 - Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode
+- **`[[wiki links]]`** between notes: type `[[` for a note picker, or write them by hand. They render
+  like links (no brackets) and ⌘-click follows them — creating the note if it doesn't exist yet;
+  unresolved links are dimmed. Stored verbatim as `[[Title]]`, so they're Obsidian-compatible
+- **Backlinks**: a "linked references" panel under each note lists every note that links to it, with
+  the surrounding context
+- **Recent-note history**: `⌘[` / `⌘]` step back / forward through the notes you've visited, browser-style
 - Debounced **autosave**, with a status indicator and unsaved-changes guards
 - **Conflict handling** when a note changes underneath you (reload / keep mine / save a copy / discard)
 - Light / dark / system theme
@@ -33,24 +42,32 @@ Markdown files, and they are yours.
 
 ### Keyboard shortcuts
 
-| Keys                     | Action                                                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Type in the search box   | Full-text search of titles + bodies (ranked); `Enter` opens the top match, or creates a note titled with the query when nothing matches |
-| `↑` / `↓` (or `k` / `j`) | Preview the previous / next note                                                                                                        |
-| `⌘J` / `⌘K`              | Preview next / previous note (works while editing)                                                                                      |
-| `Enter`                  | Edit the selected note                                                                                                                  |
-| `Esc`                    | Editor → list → search (then close / clear)                                                                                             |
-| `⌘L`                     | Jump to the search box (`⌘L` in the desktop app; browsers reserve it)                                                                   |
-| `⌘⇧Enter` / `⌘N`         | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
-| `⌘\`                     | Toggle the sidebar                                                                                                                      |
-| `⌘'`                     | Peek the collapsed sidebar / focus the list                                                                                             |
-| `⌘⇧\`                    | Toggle the folder rail                                                                                                                  |
-| `⌘⇧;`                    | Toggle WYSIWYG / Markup                                                                                                                 |
-| `⌘⇧P`                    | Toggle read-only preview                                                                                                                |
-| `⌘⇧K`                    | Insert link (in the editor)                                                                                                             |
-| `F2`                     | Rename the selected note, or the focused folder in the rail                                                                             |
-| `⌘⇧M`                    | Move the selected note to a folder                                                                                                      |
-| `⌘/`                     | Show the shortcut help                                                                                                                  |
+| Keys                      | Action                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Type in the search box    | Full-text search of titles + bodies (ranked); `Enter` opens the top match, or creates a note titled with the query when nothing matches |
+| `Tab` (in the search box) | Accept the inline autocomplete — fill the box with the top match's title (nvALT-style)                                                  |
+| `↑` / `↓` (or `k` / `j`)  | Preview the previous / next note                                                                                                        |
+| `⌘J` / `⌘K`               | Preview next / previous note (works while editing)                                                                                      |
+| `⌘[` / `⌘]`               | Go back / forward through visited notes (browser-style history)                                                                         |
+| `Enter`                   | Edit the selected note                                                                                                                  |
+| `Esc`                     | Editor → list → search (then close / clear)                                                                                             |
+| `⌘L`                      | Jump to the search box (`⌘L` in the desktop app; browsers reserve it)                                                                   |
+| `⌘⇧Enter` / `⌘N`          | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
+| `⌘\`                      | Toggle the sidebar                                                                                                                      |
+| `⌘'`                      | Peek the collapsed sidebar / focus the list                                                                                             |
+| `⌘⇧\`                     | Toggle the folder rail                                                                                                                  |
+| `⌘⇧;`                     | Toggle WYSIWYG / Markup                                                                                                                 |
+| `⌘⇧P`                     | Toggle read-only preview                                                                                                                |
+| `⌘⇧K`                     | Insert link (in the editor)                                                                                                             |
+| `[[`                      | Open the wiki-link note picker (in the editor)                                                                                          |
+| `⌘-click` a link          | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed)                                             |
+| `F2`                      | Rename the selected note, or the focused folder in the rail                                                                             |
+| `⌘⇧M`                     | Move the selected note to a folder                                                                                                      |
+| `⌘⇧⌫`                     | Move the selected note to the Trash (recoverable)                                                                                       |
+| `⌘/`                      | Show the shortcut help                                                                                                                  |
+
+**Right-click** a note or folder for its actions (pin, rename, move, duplicate, delete, …) — the same
+menu the row's `⋯` button opens, at the cursor.
 
 ### Folders
 
@@ -140,16 +157,6 @@ Key modules:
 
 ### Backlog
 
-- cmd+click on link should open it (without first opening popup for editing link)
-- ability to right click with mouse to open context menu for notes and folders
-
-- Tab-to-complete in the search box, nvALT-style
-
-- Wiki-style links between notes, backlinks
-- Recent-note history (cmd+[] - back/forward through visited notes)
-
-- Trash bin for deleted notes
-
 - Notion-like font, width and density setting for each note? And ability to set default for all notes
 
 - Versioning / snapshots (with manual snapshopts?)
@@ -160,5 +167,5 @@ Key modules:
 - Mobile app
 
 - Preview style (typography) should look more similar to editor style
-- Automatic deleted notes and unused attachments cleanup (after 30 days?)
+- Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Cmd+z for undoing deleting of notes and moves between folders?

@@ -1,12 +1,22 @@
-import {forwardRef, useEffect, useImperativeHandle, useRef} from 'react';
+import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
 import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
+import type {EditorView} from 'prosemirror-view';
 
-import type {Note} from '../storage/types';
+import type {Note, NoteMeta} from '../storage/types';
 
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
+import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
+import {WikiLinkTooltip} from './editor/WikiLinkTooltip';
 import {attachmentImageExtension} from './editor/attachmentImageExtension';
+import {openLinkExtension} from './editor/openLinkExtension';
+import {
+    type WikiLinkSuggestState,
+    type WikiLinkTooltipState,
+    refreshWikiLinks,
+    wikiLinkExtension,
+} from './editor/wikiLinkExtension';
 import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBody';
 import {isCaretOnFirstLine} from './editorCaret';
 
@@ -39,6 +49,10 @@ interface EditorPaneProps {
      * upload handler, which drives drag-drop, paste, and the image command alike.
      */
     onUploadFile: (file: File) => Promise<string>;
+    /** Every note (id + title), for `[[wiki link]]` resolution, the `[[` picker, and broken-state styling. */
+    wikiNotes: NoteMeta[];
+    /** Follow a `[[link]]` (⌘/Ctrl-click): resolve the title to a note and open it, creating it if missing. */
+    onOpenWikiLink: (target: string) => void;
 }
 
 /**
@@ -49,13 +63,35 @@ interface EditorPaneProps {
  * the body is a read-only render and the title is read-only.
  */
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {note, autofocus, preview = false, onChange, onRename, onEscape, onUploadFile},
+    {
+        note,
+        autofocus,
+        preview = false,
+        onChange,
+        onRename,
+        onEscape,
+        onUploadFile,
+        wikiNotes,
+        onOpenWikiLink,
+    },
     ref,
 ) {
     // Stable across the editor's life (EditorPane remounts per session); read latest via a ref so the
     // upload handler — captured once in useMarkdownEditor's []-deps — always calls the current one.
     const uploadRef = useRef(onUploadFile);
     uploadRef.current = onUploadFile;
+
+    // Same trick for the wiki-link extension (also captured once): the notes list, the open note's id
+    // (which can change in place on rename), and the follow-link handler are all read live via refs.
+    const wikiNotesRef = useRef(wikiNotes);
+    wikiNotesRef.current = wikiNotes;
+    const noteIdRef = useRef(note.id);
+    noteIdRef.current = note.id;
+    const onOpenWikiLinkRef = useRef(onOpenWikiLink);
+    onOpenWikiLinkRef.current = onOpenWikiLink;
+    const wikiViewRef = useRef<EditorView | null>(null);
+    const [wikiSuggest, setWikiSuggest] = useState<WikiLinkSuggestState | null>(null);
+    const [wikiTooltip, setWikiTooltip] = useState<WikiLinkTooltipState | null>(null);
 
     const editor = useMarkdownEditor(
         {
@@ -77,8 +113,20 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             wysiwygConfig: {
                 // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
                 extensionOptions: {link: {linkKey: 'Mod-Shift-k'}},
-                // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean).
-                extensions: attachmentImageExtension,
+                // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
+                // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
+                extensions: (builder) => {
+                    attachmentImageExtension(builder);
+                    openLinkExtension(builder);
+                    wikiLinkExtension(builder, {
+                        getNotes: () => wikiNotesRef.current,
+                        getCurrentId: () => noteIdRef.current,
+                        onOpen: (target) => onOpenWikiLinkRef.current(target),
+                        viewRef: wikiViewRef,
+                        onSuggest: setWikiSuggest,
+                        onTooltip: setWikiTooltip,
+                    });
+                },
             },
         },
         [],
@@ -122,6 +170,17 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             editor.off('change', handleChange);
         };
     }, [editor, note.content, onChange]);
+
+    // A link's broken state depends on the notes list and this note's id, neither of which is a doc
+    // edit — so nudge the editor to re-evaluate them whenever that set changes (e.g. the target note
+    // is created or renamed). Cheap: it only re-scans this note's own `[[links]]`.
+    const wikiSignature = useMemo(
+        () => note.id + ' ' + wikiNotes.map((n) => n.id).join('\n'),
+        [note.id, wikiNotes],
+    );
+    useEffect(() => {
+        refreshWikiLinks(wikiViewRef.current);
+    }, [wikiSignature]);
 
     // Focus on (re)mount per the autofocus intent: the title for a new note, else the body
     // (the preview surface when previewing). `editor` changes per mount (sessionId key).
@@ -244,6 +303,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     />
                 )}
             </div>
+            <WikiLinkSuggest state={wikiSuggest} />
+            <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
         </div>
     );
 });

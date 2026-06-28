@@ -28,6 +28,17 @@ export interface Note extends NoteMeta {
     content: string;
 }
 
+/**
+ * A trashed note for the trash view: the backend's trash-location meta (`listTrash()`) enriched with
+ * the original folder + deletion time from the {@link NotesMetadata.trashed} registry.
+ */
+export interface TrashedNote extends NoteMeta {
+    /** Original folder the note was deleted from (`''` = root). */
+    originalPath: string;
+    /** Deletion time (epoch ms). */
+    trashedAt: number;
+}
+
 /** Descriptor for one stored media attachment (for the management view). */
 export interface AttachmentMeta {
     /** Stable `Attachments/<name>` reference — the string a note's Markdown carries as the img src. */
@@ -43,6 +54,24 @@ export interface AttachmentMeta {
 /** How the note list is ordered. */
 export type SortMode = 'updated' | 'title' | 'title-desc' | 'created';
 
+/**
+ * Registry entry for one trashed note. The bytes live in the backend's `.trash/` area (keyed by the
+ * entry's `id`); this records what the backend can't infer — where the note came from and when it was
+ * deleted — so the trash view can show "deleted X ago" and restore it to its original folder.
+ */
+export interface TrashEntry {
+    /** Trash-location id (`.trash/<leaf>.md`) — the handle passed to `restore`/`purge`. */
+    id: string;
+    /** Display title at deletion time (the original leaf, sans `.md`). */
+    title: string;
+    /** Original folder the note was deleted from (`''` = root), where `restore` sends it back. */
+    originalPath: string;
+    /** Deletion time (epoch ms). */
+    trashedAt: number;
+    /** The note's original creation stamp, preserved so a restore can reinstate it (undefined if none). */
+    created?: number;
+}
+
 /** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
 export interface NotesMetadata {
     /** Schema version for forward-compatibility. */
@@ -55,6 +84,12 @@ export interface NotesMetadata {
     created: Readonly<Record<string, number>>;
     /** The single open / last-open note id, or null when none is open. Restored on reload. */
     active: string | null;
+    /**
+     * Trashed-note registry: original folder + deletion time per trashed note. The backend owns the
+     * trashed bytes (under `.trash/`); this supplies the metadata it can't derive. The displayed
+     * trash list comes from `listTrash()` (authoritative for existence) enriched by these entries.
+     */
+    trashed: readonly TrashEntry[];
 }
 
 export interface NoteStore {
@@ -98,8 +133,32 @@ export interface NoteStore {
      * source is gone (mapped to a deleted-conflict, exactly like `get`).
      */
     move(id: string, destFolder: string): Promise<NoteMeta>;
-    /** Delete a note. */
+    /** Permanently delete a note. (The UI routes deletes through `trash` instead.) */
     remove(id: string): Promise<void>;
+    /**
+     * Soft-delete a note: move its file into the backend's `.trash/` area, resolving name collisions
+     * there, and return its new trash-location id (`.trash/<leaf>.md`). The note leaves the listing,
+     * the folder tree, and the search corpus (`.trash/` is excluded everywhere). The original folder
+     * and deletion time are recorded by the caller in {@link NotesMetadata.trashed}, not on disk.
+     */
+    trash(id: string): Promise<string>;
+    /**
+     * List every trashed note (its `.trash/<leaf>.md` id, title, mtime, and a preview snippet). The
+     * authoritative source for what is in the trash; the caller enriches each with the original folder
+     * and deletion time from {@link NotesMetadata.trashed}. Empty when the trash is empty.
+     */
+    listTrash(): Promise<NoteMeta[]>;
+    /**
+     * Restore a trashed note (by its trash-location id) into `destFolder` (`''` = root), re-creating
+     * that folder if it was removed meanwhile and resolving a name collision by uniquifying the leaf.
+     * Returns the restored note's new live meta (with its post-restore `updatedAt`). Throws a
+     * `NotFoundError` `DOMException` when the trashed file is already gone.
+     */
+    restore(trashId: string, destFolder: string): Promise<NoteMeta>;
+    /** Permanently delete one trashed note by its trash-location id; a missing one is a no-op. */
+    purge(trashId: string): Promise<void>;
+    /** Permanently delete every trashed note (empty the trash). */
+    emptyTrash(): Promise<void>;
     /**
      * Store a binary media attachment under the root `Attachments/` folder, resolving name
      * collisions (`foo.png` → `foo 2.png`). Returns its stable, root-relative reference

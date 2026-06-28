@@ -16,6 +16,12 @@
     padding: 8px var(--editor-gutter, 16px) 16px;
 }
 
+/* [[wiki links]] post-processed into spans (see withWikiLinks) read as links, matching the editor.
+   Read-only here, so no pointer cursor — preview doesn't navigate. */
+.note-preview__body .wiki-link {
+    color: var(--g-color-text-link);
+}
+
 /* Mirror the editor's Apple-Notes rhythm (see EditorPane.css) onto the diplodoc-rendered preview
    HTML so read-only preview looks like the WYSIWYG surface. Both are `.yfm` content; the editor
    overrides live on its ProseMirror node, so the same rules are duplicated here for the static

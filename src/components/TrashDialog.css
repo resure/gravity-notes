@@ -1,0 +1,63 @@
+.trash__center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    text-align: center;
+}
+
+/* Count + hint, above the list. */
+.trash__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.trash__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.trash__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Leads with text (no thumbnail), so it needs a real left inset inside the rounded highlight —
+       4px reads as cramped against the row background. */
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+.trash__row:hover {
+    background: var(--g-color-base-generic);
+}
+
+.trash__meta {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.trash__name {
+    display: block;
+}
+
+.trash__sub {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+/* The "came from" folder chip in a row's sub-line. */
+.trash__folder {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--g-color-text-secondary);
+}

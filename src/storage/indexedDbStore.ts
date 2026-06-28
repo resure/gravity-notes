@@ -3,6 +3,7 @@ import {
     ATTACHMENTS_DIR,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
+    TRASH_DIR,
     basename,
     canonicalBody,
     dirname,
@@ -27,11 +28,17 @@ import {
 } from './types';
 
 const DB_NAME = 'gravity-notes-data';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const NOTES_STORE = 'notes';
 const KV_STORE = 'kv';
 /** Object store holding binary media attachments, keyed by their `Attachments/<name>` reference. */
 const ATTACHMENTS_STORE = 'attachments';
+/**
+ * Object store holding trashed (soft-deleted) notes, keyed by their `.trash/<leaf>.md` id — isolated
+ * from {@link NOTES_STORE} so trashed rows never surface in `list`/`getAll`/`listFolders` (the
+ * filesystem backends get this isolation for free from the dot-folder skip).
+ */
+const TRASH_STORE = 'trash';
 const METADATA_KEY = 'metadata';
 /** KV key holding the list of deliberately-empty folder paths (no real directories in-browser). */
 const FOLDERS_KEY = 'folders';
@@ -198,6 +205,75 @@ export class IndexedDbNoteStore implements NoteStore {
         await this.run(NOTES_STORE, 'readwrite', (store) => store.delete(id));
     }
 
+    async trash(id: string): Promise<string> {
+        const record = await this.getRecord(id);
+        if (!record) throw notFound(id);
+        // Uniquify within the trash keyspace so two same-named notes can both be trashed.
+        const leaf = await uniqueName(titleFromFileName(id), (name) =>
+            this.keyExists(TRASH_STORE, joinPath(TRASH_DIR, name)),
+        );
+        const trashId = joinPath(TRASH_DIR, leaf);
+        // Move the row from notes → trash in one transaction (content + mtime preserved).
+        await this.runAcross([NOTES_STORE, TRASH_STORE], 'readwrite', (tx) => {
+            tx.objectStore(TRASH_STORE).put({
+                id: trashId,
+                content: record.content,
+                updatedAt: record.updatedAt,
+            } satisfies NoteRecord);
+            return tx.objectStore(NOTES_STORE).delete(id);
+        });
+        return trashId;
+    }
+
+    async listTrash(): Promise<NoteMeta[]> {
+        const records = await this.run<NoteRecord[]>(
+            TRASH_STORE,
+            'readonly',
+            (store) => store.getAll() as IDBRequest<NoteRecord[]>,
+        );
+        // The trash view shows only title + folder + age, so don't derive a body preview here.
+        const metas: NoteMeta[] = records.map((record) => ({
+            id: record.id,
+            title: titleFromFileName(record.id),
+            updatedAt: record.updatedAt,
+        }));
+        metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return metas;
+    }
+
+    async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
+        const record = await this.run<NoteRecord | undefined>(
+            TRASH_STORE,
+            'readonly',
+            (store) => store.get(trashId) as IDBRequest<NoteRecord | undefined>,
+        );
+        if (!record) throw notFound(trashId);
+        const dir = sanitizeDir(destFolder);
+        // The original leaf may be taken now — uniquify against the live notes in that folder.
+        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
+            this.exists(joinPath(dir, name)),
+        );
+        const newId = joinPath(dir, leaf);
+        const updatedAt = record.updatedAt;
+        await this.runAcross([NOTES_STORE, TRASH_STORE], 'readwrite', (tx) => {
+            tx.objectStore(NOTES_STORE).put({
+                id: newId,
+                content: record.content,
+                updatedAt,
+            } satisfies NoteRecord);
+            return tx.objectStore(TRASH_STORE).delete(trashId);
+        });
+        return {id: newId, title: titleFromFileName(newId), updatedAt};
+    }
+
+    async purge(trashId: string): Promise<void> {
+        await this.run(TRASH_STORE, 'readwrite', (store) => store.delete(trashId));
+    }
+
+    async emptyTrash(): Promise<void> {
+        await this.run(TRASH_STORE, 'readwrite', (store) => store.clear());
+    }
+
     async writeAttachment(file: File): Promise<string> {
         const leaf = await uniqueAttachmentName(file.name, (name) =>
             this.attachmentExists(joinPath(ATTACHMENTS_DIR, name)),
@@ -361,6 +437,10 @@ export class IndexedDbNoteStore implements NoteStore {
                     if (!db.objectStoreNames.contains(ATTACHMENTS_STORE)) {
                         db.createObjectStore(ATTACHMENTS_STORE, {keyPath: 'id'});
                     }
+                    // v3: trashed notes, keyed by their `.trash/<leaf>.md` id.
+                    if (!db.objectStoreNames.contains(TRASH_STORE)) {
+                        db.createObjectStore(TRASH_STORE, {keyPath: 'id'});
+                    }
                 };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
@@ -375,10 +455,23 @@ export class IndexedDbNoteStore implements NoteStore {
         mode: IDBTransactionMode,
         op: (store: IDBObjectStore) => IDBRequest<T>,
     ): Promise<T> {
+        return this.runAcross([storeName], mode, (tx) => op(tx.objectStore(storeName)));
+    }
+
+    /**
+     * Run an operation across several object stores in one transaction (so a cross-store move — e.g.
+     * notes ↔ trash — commits atomically); resolves once it commits. The op's returned request is the
+     * one whose result is surfaced (let the last write be the one whose value the caller wants).
+     */
+    private async runAcross<T>(
+        storeNames: string[],
+        mode: IDBTransactionMode,
+        op: (transaction: IDBTransaction) => IDBRequest<T>,
+    ): Promise<T> {
         const db = await this.openDb();
         return new Promise<T>((resolve, reject) => {
-            const transaction = db.transaction(storeName, mode);
-            const request = op(transaction.objectStore(storeName));
+            const transaction = db.transaction(storeNames, mode);
+            const request = op(transaction);
             let result: T;
             request.onsuccess = () => {
                 result = request.result;
@@ -411,8 +504,12 @@ export class IndexedDbNoteStore implements NoteStore {
     }
 
     private async attachmentExists(id: string): Promise<boolean> {
+        return this.keyExists(ATTACHMENTS_STORE, id);
+    }
+
+    private async keyExists(storeName: string, id: string): Promise<boolean> {
         const key = await this.run<IDBValidKey | undefined>(
-            ATTACHMENTS_STORE,
+            storeName,
             'readonly',
             (store) => store.getKey(id) as IDBRequest<IDBValidKey | undefined>,
         );

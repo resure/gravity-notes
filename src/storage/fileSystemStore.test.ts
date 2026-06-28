@@ -647,6 +647,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 active: null,
+                trashed: [],
             });
             // A fresh object, never the shared DEFAULT_METADATA singleton.
             expect(meta).not.toBe(DEFAULT_METADATA);
@@ -659,6 +660,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
                 active: null,
+                trashed: [],
             });
             const meta = await store.readMetadata();
             expect(meta.sort).toBe('title');
@@ -675,6 +677,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 active: null,
+                trashed: [],
             });
         });
 
@@ -686,9 +689,74 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 active: null,
+                trashed: [],
             });
             const metas = await store.list();
             expect(metas.map((m) => m.id)).toEqual(['Real.md']);
+        });
+    });
+
+    describe('trash', () => {
+        it('moves a note to the trash (out of the listing), then restores it to its folder', async () => {
+            dir.seedFile('Work/Plan.md', 'body', 100);
+
+            const trashId = await store.trash('Work/Plan.md');
+            expect(trashId).toBe('.trash/Plan.md');
+            // Gone from the note listing and the folder tree (`.trash/` is a dot-dir, skipped).
+            expect((await store.list()).map((m) => m.id)).toEqual([]);
+            expect(await store.listFolders()).toEqual([]);
+            const trashed = await store.listTrash();
+            expect(trashed.map((t) => t.id)).toEqual(['.trash/Plan.md']);
+            expect(trashed[0].title).toBe('Plan');
+
+            const restored = await store.restore('.trash/Plan.md', 'Work');
+            expect(restored.id).toBe('Work/Plan.md');
+            expect((await store.get('Work/Plan.md')).content).toBe('body');
+            expect(await store.listTrash()).toEqual([]);
+        });
+
+        it('uniquifies names within the trash so same-named notes coexist', async () => {
+            dir.seedFile('A/Note.md', 'a', 1);
+            dir.seedFile('B/Note.md', 'b', 2);
+
+            expect(await store.trash('A/Note.md')).toBe('.trash/Note.md');
+            expect(await store.trash('B/Note.md')).toBe('.trash/Note 2.md');
+            expect((await store.listTrash()).map((t) => t.id).sort()).toEqual([
+                '.trash/Note 2.md',
+                '.trash/Note.md',
+            ]);
+        });
+
+        it('restore resolves a collision when the original name is taken again', async () => {
+            dir.seedFile('Note.md', 'first', 1);
+            await store.trash('Note.md');
+            dir.seedFile('Note.md', 'second', 2); // a fresh note reclaims the name
+
+            const restored = await store.restore('.trash/Note.md', '');
+            expect(restored.id).toBe('Note 2.md');
+            expect((await store.get('Note 2.md')).content).toBe('first');
+        });
+
+        it('purge deletes one trashed note; emptyTrash clears the rest and the folder', async () => {
+            dir.seedFile('A.md', 'a', 1);
+            dir.seedFile('B.md', 'b', 2);
+            const a = await store.trash('A.md');
+            await store.trash('B.md');
+
+            await store.purge(a);
+            expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/B.md']);
+
+            await store.emptyTrash();
+            expect(await store.listTrash()).toEqual([]);
+            expect(dir.paths().some((p) => p.startsWith('.trash/'))).toBe(false);
+        });
+
+        it('tolerates an absent trash and reports a missing restore', async () => {
+            expect(await store.listTrash()).toEqual([]);
+            await store.emptyTrash(); // no-op when there is no trash folder
+            await expect(store.restore('.trash/Ghost.md', '')).rejects.toMatchObject({
+                name: 'NotFoundError',
+            });
         });
     });
 });

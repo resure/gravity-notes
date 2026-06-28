@@ -3,16 +3,21 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
+import {useBacklinks} from '../hooks/useBacklinks';
+import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {orderNotes} from '../storage/metadata';
+import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
+import {resolveWikiLink} from '../wikiLinks';
 
 import {AttachmentsDialog} from './AttachmentsDialog';
+import {BacklinksPanel} from './BacklinksPanel';
 import {ConflictBanner} from './ConflictBanner';
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {FolderRail, type FolderRailHandle} from './FolderRail';
@@ -20,6 +25,7 @@ import {MoveToDialog} from './MoveToDialog';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
+import {TrashDialog} from './TrashDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
@@ -123,6 +129,9 @@ export function Workspace({
         loading: searchLoading,
     } = useNoteSearch(orderedNotes, store);
 
+    // Backlinks for the open note ("linked references"), from a lazily-loaded body corpus.
+    const {backlinks} = useBacklinks(store, notes.notes, notes.activeId);
+
     // Which folders are collapsed in the tree (persisted). A toggle rebuilds the set immutably.
     const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(loadCollapsedFolders);
     useEffect(() => {
@@ -187,7 +196,11 @@ export function Workspace({
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+    const [trashOpen, setTrashOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
+    // Set after following a wiki link to a freshly-created note, to land the caret in its body once
+    // the new editor has mounted (a brand-new note has no body yet, so there's nothing else to focus).
+    const [pendingEditorFocus, setPendingEditorFocus] = useState(false);
     // The note whose "Move to…" picker is open (null = closed). Lifted here, where the full
     // folder/notes/metadata the tree picker needs already live.
     const [movingNoteId, setMovingNoteId] = useState<string | null>(null);
@@ -237,6 +250,24 @@ export function Workspace({
         editorRef,
         listRef,
         searchInputRef,
+    });
+
+    // Browser-style ⌘[/⌘] back/forward across visited notes. Records every note that becomes active;
+    // navigation commits the note (opens + focuses it, like clicking it open), and a deleted note in
+    // the trail is skipped. `exists` reads a Set so a long trail stays cheap to validate.
+    const noteIdSet = useMemo(() => new Set(notes.notes.map((n) => n.id)), [notes.notes]);
+    const historyExists = useCallback((id: string) => noteIdSet.has(id), [noteIdSet]);
+    const historyNavigate = useCallback(
+        (id: string) => {
+            nav.commit(id);
+            setPeeked(false);
+        },
+        [nav],
+    );
+    const history = useNoteHistory({
+        activeId: notes.activeId,
+        exists: historyExists,
+        navigate: historyNavigate,
     });
 
     // Land in the search box on first load (nvALT: ready to type); a restored note is previewed unfocused.
@@ -350,6 +381,40 @@ export function Workspace({
         [notes, nav],
     );
 
+    // Follow a [[wiki link]] (⌘/Ctrl-click in the editor): resolve the title to a note and open it.
+    // If nothing matches, create the note (Obsidian-style) in the current note's folder and open it
+    // with the caret in the body. The title is the link's leaf, stripped of any |alias / #heading.
+    const handleOpenWikiLink = useCallback(
+        (target: string) => {
+            const fromId = notes.activeId ?? '';
+            const existing = resolveWikiLink(target, fromId, notes.notes);
+            if (existing) {
+                nav.commit(existing);
+                setPeeked(false);
+                return;
+            }
+            const ref = target.split('|', 1)[0].split('#', 1)[0].trim();
+            const title = sanitizeTitle(titleFromFileName(ref));
+            if (!ref || title === 'Untitled') return; // nothing meaningful to create
+            void (async () => {
+                const newId = await notes.create(title, dirname(fromId));
+                if (newId) {
+                    nav.setSelected(newId);
+                    setPendingEditorFocus(true);
+                    setPeeked(false);
+                }
+            })();
+        },
+        [notes, nav],
+    );
+
+    // Land focus in the editor body after a wiki link created + opened a new note (its session bumped).
+    useEffect(() => {
+        if (!pendingEditorFocus) return;
+        editorRef.current?.focus();
+        setPendingEditorFocus(false);
+    }, [pendingEditorFocus, notes.sessionId]);
+
     // Enter the list from the search box (↓/↑): preview the row and move DOM focus onto it.
     const enterList = useCallback(
         (id: string) => {
@@ -404,22 +469,29 @@ export function Workspace({
         [railOpen, browseRelative],
     );
 
+    // Delete = move to Trash (recoverable). Keep selection on a neighbor when the open note goes, and
+    // confirm the move with a toast so the user knows where it went (the confirm dialog lives in the list).
     const handleDelete = useCallback(
         (id: string) => {
             const ids = visibleIds;
             const idx = ids.indexOf(id);
             const neighbor = ids[idx + 1] ?? ids[idx - 1] ?? null;
             const wasActive = notes.activeId === id;
+            const title = notes.notes.find((n) => n.id === id)?.title ?? titleFromFileName(id);
             void (async () => {
-                await notes.remove(id);
+                // Only confirm + move the cursor when the trash actually succeeded — trash() returns
+                // false (and has already surfaced an error toast) on a conflict/failure.
+                const ok = await notes.trash(id);
+                if (!ok) return;
                 if (wasActive) {
                     if (neighbor) nav.browse(neighbor);
                     else nav.setSelected(null);
                 }
+                notify(`Moved “${title}” to Trash`);
             })();
         },
         // eslint wants the whole `notes`/`nav` objects here, not their members.
-        [visibleIds, notes, nav],
+        [visibleIds, notes, nav, notify],
     );
 
     const handleMoveFolder = useCallback(
@@ -507,6 +579,8 @@ export function Workspace({
         },
         selectNextNote: () => moveCursor(1),
         selectPrevNote: () => moveCursor(-1),
+        historyBack: history.goBack,
+        historyForward: history.goForward,
         toggleSidebar: toggleCollapsed,
         toggleFolderRail: () => {
             const inRail =
@@ -584,6 +658,8 @@ export function Workspace({
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={() => setAttachmentsOpen(true)}
+                    onOpenTrash={() => setTrashOpen(true)}
+                    trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
@@ -697,8 +773,17 @@ export function Workspace({
                                         onRename={handleEditorRename}
                                         onEscape={handleEditorEscape}
                                         onUploadFile={handleUploadFile}
+                                        wikiNotes={notes.notes}
+                                        onOpenWikiLink={handleOpenWikiLink}
                                     />
                                 </div>
+                                <BacklinksPanel
+                                    backlinks={backlinks}
+                                    onOpen={(id) => {
+                                        nav.commit(id);
+                                        setPeeked(false);
+                                    }}
+                                />
                             </>
                         ) : (
                             <div className="workspace__placeholder">
@@ -718,6 +803,21 @@ export function Workspace({
                     cache={attachmentCache}
                     onClose={() => setAttachmentsOpen(false)}
                     onError={onError}
+                />
+
+                <TrashDialog
+                    open={trashOpen}
+                    notes={notes.trashedNotes}
+                    onRefresh={notes.refreshTrash}
+                    onRestore={(id) =>
+                        void notes.restoreFromTrash(id).then((newId) => {
+                            // Select the restored note so it's focused once the dialog closes.
+                            if (newId) nav.setSelected(newId);
+                        })
+                    }
+                    onPurge={(id) => void notes.purgeFromTrash(id)}
+                    onEmpty={() => void notes.emptyTrash()}
+                    onClose={() => setTrashOpen(false)}
                 />
 
                 <MoveToDialog

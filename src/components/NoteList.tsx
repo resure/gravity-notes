@@ -17,7 +17,7 @@ import {
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
 import {escapeRegExp, tokenizeQuery} from '../search';
-import {dirname} from '../storage/noteText';
+import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
@@ -111,11 +111,6 @@ export function formatNoteDate(ts: number | undefined): string {
     return `${dd}.${mo}.${yy}`;
 }
 
-/** Folder path as a readable crumb: "Work/Sub" → "Work / Sub". */
-function folderCrumb(id: string): string {
-    return dirname(id).split('/').join(' / ');
-}
-
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
         notes,
@@ -147,6 +142,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
+    // The note + viewport point for an open right-click context menu (null = closed).
+    const [contextMenu, setContextMenu] = useState<{note: NoteMeta; x: number; y: number} | null>(
+        null,
+    );
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -262,6 +261,58 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         }
     };
 
+    // The per-note action list, shared by the row's ⋯ menu and the right-click context menu.
+    const noteMenuItems = (note: NoteMeta) => {
+        const pinned = pinnedIds.includes(note.id);
+        return [
+            {
+                text: pinned ? 'Unpin' : 'Pin to top',
+                iconStart: <Icon data={pinned ? PinSlash : Pin} />,
+                action: () => onTogglePin(note.id),
+            },
+            {
+                text: 'Rename',
+                iconStart: <Icon data={Pencil} />,
+                action: () => beginRename(note.id, note.title),
+            },
+            {
+                text: 'Move to…',
+                iconStart: <Icon data={Folder} />,
+                action: () => onRequestMove(note.id),
+            },
+            {
+                text: 'Duplicate',
+                iconStart: <Icon data={Copy} />,
+                action: () => onDuplicate(note.id),
+            },
+            // Desktop only: revealed in Finder when the backend supports it.
+            ...(onReveal
+                ? [
+                      {
+                          text: 'Reveal in Finder',
+                          iconStart: <Icon data={FolderOpen} />,
+                          action: () => onReveal(note.id),
+                      },
+                  ]
+                : []),
+            {
+                text: 'Delete',
+                theme: 'danger' as const,
+                iconStart: <Icon data={TrashBin} />,
+                action: () => setDeleting({id: note.id, title: note.title}),
+            },
+        ];
+    };
+
+    // A zero-size virtual anchor at the right-click point, so the context menu opens at the cursor.
+    const contextAnchor = useMemo(
+        () =>
+            contextMenu
+                ? {getBoundingClientRect: () => new DOMRect(contextMenu.x, contextMenu.y, 0, 0)}
+                : undefined,
+        [contextMenu],
+    );
+
     const renderNote = (note: NoteMeta) => {
         const selected = note.id === selectedId;
         const editing = note.id === editingId;
@@ -269,7 +320,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         const pinned = pinnedIds.includes(note.id);
         // A full-text body match shows its surrounding snippet in place of the head-of-note preview.
         const previewText = snippetById?.get(note.id) ?? note.preview;
-        const crumb = showCrumbs ? folderCrumb(note.id) : '';
+        const crumb = showCrumbs ? formatCrumb(dirname(note.id)) : '';
         return (
             <div
                 key={note.id}
@@ -284,6 +335,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 draggable={!editing}
                 onDragStart={(e) => e.dataTransfer.setData('text/plain', note.id)}
                 onClick={() => !editing && browseRow(note.id)}
+                onContextMenu={(e) => {
+                    if (editing) return;
+                    e.preventDefault();
+                    browseRow(note.id);
+                    setContextMenu({note, x: e.clientX, y: e.clientY});
+                }}
                 onKeyDown={(e) => onItemKeyDown(e, note.id)}
             >
                 {editing ? (
@@ -332,45 +389,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                             <Icon data={Ellipsis} />
                                         </Button>
                                     )}
-                                    items={[
-                                        {
-                                            text: pinned ? 'Unpin' : 'Pin to top',
-                                            iconStart: <Icon data={pinned ? PinSlash : Pin} />,
-                                            action: () => onTogglePin(note.id),
-                                        },
-                                        {
-                                            text: 'Rename',
-                                            iconStart: <Icon data={Pencil} />,
-                                            action: () => beginRename(note.id, note.title),
-                                        },
-                                        {
-                                            text: 'Move to…',
-                                            iconStart: <Icon data={Folder} />,
-                                            action: () => onRequestMove(note.id),
-                                        },
-                                        {
-                                            text: 'Duplicate',
-                                            iconStart: <Icon data={Copy} />,
-                                            action: () => onDuplicate(note.id),
-                                        },
-                                        // Desktop only: revealed in Finder when the backend supports it.
-                                        ...(onReveal
-                                            ? [
-                                                  {
-                                                      text: 'Reveal in Finder',
-                                                      iconStart: <Icon data={FolderOpen} />,
-                                                      action: () => onReveal(note.id),
-                                                  },
-                                              ]
-                                            : []),
-                                        {
-                                            text: 'Delete',
-                                            theme: 'danger',
-                                            iconStart: <Icon data={TrashBin} />,
-                                            action: () =>
-                                                setDeleting({id: note.id, title: note.title}),
-                                        },
-                                    ]}
+                                    items={noteMenuItems(note)}
                                 />
                             </div>
                         </div>
@@ -489,22 +508,36 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 size="s"
                 disableBodyScrollLock
             >
-                <Dialog.Header caption="Delete note" />
+                <Dialog.Header caption="Move to Trash" />
                 <Dialog.Body>
                     <Text>
                         {deleting
-                            ? `Delete "${deleting.title}"? This permanently removes the file from your folder.`
+                            ? `Move "${deleting.title}" to the Trash? You can restore it later from the Trash.`
                             : ''}
                     </Text>
                 </Dialog.Body>
                 <Dialog.Footer
-                    textButtonApply="Delete"
+                    textButtonApply="Move to Trash"
                     textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'outlined-danger'}}
+                    propsButtonApply={{view: 'action'}}
                     onClickButtonApply={confirmDelete}
                     onClickButtonCancel={() => setDeleting(null)}
                 />
             </Dialog>
+
+            {/* Right-click context menu — one instance, controlled and anchored to the cursor via a
+                virtual element, so it needs no trigger of its own. Gravity substitutes its default ⋯
+                switcher button when renderSwitcher returns null/undefined, so return a hidden element
+                instead — otherwise that kebab leaks into the list as a stray bottom-left button. */}
+            <DropdownMenu
+                open={contextMenu !== null}
+                onOpenToggle={(open: boolean) => {
+                    if (!open) setContextMenu(null);
+                }}
+                renderSwitcher={() => <span hidden />}
+                popupProps={{anchorElement: contextAnchor}}
+                items={contextMenu ? noteMenuItems(contextMenu.note) : []}
+            />
         </div>
     );
 });

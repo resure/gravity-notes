@@ -127,3 +127,9 @@
 .editor-pane .g-md-editor ul > li:has(.g-md-checkbox) {
     margin-left: -2px;
 }
+
+/* While ⌘/Ctrl is held (class toggled by openLinkExtension), links read as clickable — show the
+   pointer cursor so the affordance matches the ⌘-click-to-open behaviour. */
+.editor-pane .g-md-editor.g-prosemirror_mod-pressed a {
+    cursor: pointer;
+}

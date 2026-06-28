@@ -28,6 +28,17 @@ export function isAttachmentRef(src: string): boolean {
 }
 
 /**
+ * The single root-level folder that holds trashed (soft-deleted) notes, one spelling shared by every
+ * backend. Deleting a note moves its `.md` file here instead of erasing it; the trash view restores
+ * or permanently removes it. The leading dot is deliberate: every backend's note/folder walk already
+ * skips dot-directories (`walkNotes`/`listFolders`, the Rust `collect_md`/`collect_folders`), so trash
+ * is automatically excluded from the listing, the folder tree, the search corpus, and wiki-link
+ * resolution with no extra filtering — and it stays hidden in Finder. A trashed note's id is
+ * `.trash/<leaf>.md`; the original folder + deletion time live in the metadata sidecar, not on disk.
+ */
+export const TRASH_DIR = '.trash';
+
+/**
  * Every distinct `Attachments/…` reference used as an image src in a note's Markdown. Drives both the
  * preview's blob-URL resolution and the management view's orphan (unreferenced) detection. Attachment
  * names are URL-safe (no spaces/parens — see {@link uniqueAttachmentName}), so a simple scan suffices.
@@ -64,6 +75,11 @@ export function joinPath(parent: string, leaf: string): string {
     return dir ? `${dir}/${leaf}` : leaf;
 }
 
+/** A folder path rendered as a readable crumb: `'Work/Sub'` → `'Work / Sub'`; `''` (root) stays `''`. */
+export function formatCrumb(path: string): string {
+    return path ? path.split('/').join(' / ') : '';
+}
+
 /**
  * Strip the `.md` extension off the *leaf* to get a display title. Basename-first, so a nested id
  * (`Work/Roadmap.md`) yields just `Roadmap`, never the folder prefix; a flat id is unaffected.
@@ -95,10 +111,12 @@ export function previewFromContent(text: string): string {
     return text
         .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images → drop (no alt text in the flowing preview)
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → keep just the link text
+        .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
         .replace(/^\s{0,3}#{1,6}\s+/gm, '') // ATX heading markers
         .replace(/^\s*>\s?/gm, '') // blockquotes
         .replace(/^\s*[-*+]\s+/gm, '') // bullets
         .replace(/^\s*\d+\.\s+/gm, '') // ordered lists
+        .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
         .replace(/[*_`~]/g, '') // inline emphasis / code / strike
         .replace(/\\$/gm, '') // hard-line-break backslashes
         .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
