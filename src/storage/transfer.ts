@@ -1,12 +1,15 @@
 import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 
 import {
+    ATTACHMENTS_DIR,
     FOLDER_MARKER,
     MD_EXT,
     canonicalBody,
     dirname,
     isAttachmentRef,
+    joinPath,
     sanitizeDir,
+    sanitizeSegment,
     titleFromFileName,
 } from './noteText';
 import type {NoteStore} from './types';
@@ -40,7 +43,9 @@ function downloadBlob(bytes: Uint8Array, filename: string, type: string): void {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(url);
+    // Defer the revoke past the current task: revoking synchronously after click() can cancel a
+    // large download mid-flight in some browsers (the URL is freed before the fetch starts).
+    setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /**
@@ -94,7 +99,9 @@ async function importOne(
 ): Promise<void> {
     const title = titleFromFileName(baseName(filename));
     // create() sanitizes the title + folder path, creates the folder if needed, and resolves
-    // collisions; save() writes the body.
+    // collisions; save() writes the body. Note: the zip carries no per-note `created` stamp, so
+    // import doesn't preserve creation time/ordering — `create()` stamps each note "now". A
+    // 'created'-sorted list of imported notes reflects import order, not the original order.
     const meta = await store.create(title, parentPath || undefined);
     await store.save(meta.id, content, meta.updatedAt ?? 0);
 }
@@ -107,7 +114,12 @@ async function importOne(
 export async function importNotes(store: NoteStore, files: FileList | File[]): Promise<number> {
     let count = 0;
     // Don't clobber attachments already in the target: a ref present here is left as-is (an imported
-    // note then resolves to the existing file). Restoring into a fresh store writes them all.
+    // note then resolves to the existing file). Restoring into a fresh store writes them all. The
+    // comparison is by EXACT ref — case-insensitive matching would, on the case-sensitive IndexedDB
+    // backend, drop a genuinely-distinct `Attachments/Cat.png` when `Attachments/cat.png` exists,
+    // breaking the imported note's link. (On a case-insensitive folder backend an exact-case variant
+    // from a foreign zip can still overwrite an existing file, but an export→import round-trip always
+    // uses the exact stored name, so that's a rare, foreign-zip-only edge.)
     const existingAttachments = new Set((await store.listAttachments()).map((a) => a.ref));
     for (const file of Array.from(files)) {
         const lower = file.name.toLowerCase();
@@ -122,11 +134,14 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
                     continue;
                 }
                 if (isAttachmentRef(path)) {
-                    // A media attachment: restore it at its exact ref so the importing notes'
-                    // `![](Attachments/<name>)` links keep resolving. Skip if already present.
-                    if (!existingAttachments.has(path)) {
-                        await store.writeAttachmentAt(path, new Blob([bytes as BlobPart]));
-                        existingAttachments.add(path);
+                    // A media attachment: restore it so the importing notes' `![](Attachments/<name>)`
+                    // links keep resolving. `isAttachmentRef` only checks the `Attachments/` prefix, so
+                    // rebuild the ref as a flat, sanitized `Attachments/<name>` — a crafted zip path
+                    // like `Attachments/../x` can't then traverse out of the attachments folder.
+                    const ref = joinPath(ATTACHMENTS_DIR, sanitizeSegment(baseName(path)));
+                    if (!existingAttachments.has(ref)) {
+                        await store.writeAttachmentAt(ref, new Blob([bytes as BlobPart]));
+                        existingAttachments.add(ref);
                     }
                     continue;
                 }

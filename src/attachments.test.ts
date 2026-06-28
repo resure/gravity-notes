@@ -103,7 +103,10 @@ describe('AttachmentUrlCache', () => {
     it('seed() is a no-op when resolve() is already in-flight for the same ref', async () => {
         let release!: (blob: Blob) => void;
         const store = {
-            readAttachment: () => new Promise<Blob>((res) => (release = res)),
+            readAttachment: () =>
+                new Promise<Blob>((res) => {
+                    release = res;
+                }),
         } as unknown as NoteStore;
         const cache = new AttachmentUrlCache(store);
 
@@ -120,7 +123,10 @@ describe('AttachmentUrlCache', () => {
     it('forget() called on an in-flight read suppresses the URL that would have been created', async () => {
         let release!: (blob: Blob) => void;
         const store = {
-            readAttachment: () => new Promise<Blob>((res) => (release = res)),
+            readAttachment: () =>
+                new Promise<Blob>((res) => {
+                    release = res;
+                }),
         } as unknown as NoteStore;
         const cache = new AttachmentUrlCache(store);
 

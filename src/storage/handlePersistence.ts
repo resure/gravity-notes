@@ -99,10 +99,13 @@ export function loadFolderPath(): Promise<string | undefined> {
 
 /** Forget the chosen backend and any stored folder handle/path (back to the first-run choice). */
 export function clearStorageChoice(): Promise<void> {
-    return tx('readwrite', (store) => store.delete(HANDLE_KEY))
-        .then(() => tx('readwrite', (store) => store.delete(FOLDER_PATH_KEY)))
-        .then(() => tx('readwrite', (store) => store.delete(BACKEND_KEY)))
-        .then(() => undefined);
+    // All three deletes in one readwrite transaction: a single connection and one atomic commit
+    // (the earlier requests share the transaction; we return the last so `tx` resolves on commit).
+    return tx('readwrite', (store) => {
+        store.delete(HANDLE_KEY);
+        store.delete(FOLDER_PATH_KEY);
+        return store.delete(BACKEND_KEY);
+    }).then(() => undefined);
 }
 
 /** Check the current permission state without prompting. */

@@ -145,6 +145,20 @@ describe('IndexedDbNoteStore', () => {
             );
             expect(await store.stat('Old.md')).not.toBeNull();
         });
+
+        it('does not overwrite the colliding target (atomic add, not put)', async () => {
+            const old = await store.create('Old');
+            await store.save('Old.md', 'source body', old.updatedAt ?? 0);
+            const taken = await store.create('Taken');
+            await store.save('Taken.md', 'target body', taken.updatedAt ?? 0);
+
+            await expect(store.rename('Old.md', 'Taken')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Both rows survive untouched: the target keeps its own body (no clobber), source intact.
+            expect((await store.get('Taken.md')).content).toBe('target body');
+            expect((await store.get('Old.md')).content).toBe('source body');
+        });
     });
 
     describe('folders: nested create / move', () => {
@@ -211,6 +225,20 @@ describe('IndexedDbNoteStore', () => {
             expect(await store.stat('Inbox/Note.md')).not.toBeNull();
         });
 
+        it('does not overwrite the destination note on a colliding move (atomic add)', async () => {
+            const src = await store.create('Note', 'Inbox');
+            await store.save('Inbox/Note.md', 'source body', src.updatedAt ?? 0);
+            const dest = await store.create('Note', 'Archive');
+            await store.save('Archive/Note.md', 'dest body', dest.updatedAt ?? 0);
+
+            await expect(store.move('Inbox/Note.md', 'Archive')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // The destination keeps its own body; the source is untouched (transaction rolled back).
+            expect((await store.get('Archive/Note.md')).content).toBe('dest body');
+            expect((await store.get('Inbox/Note.md')).content).toBe('source body');
+        });
+
         it('throws NotFoundError when moving a missing note', async () => {
             await expect(store.move('Ghost/Note.md', 'Archive')).rejects.toMatchObject({
                 name: 'NotFoundError',
@@ -257,6 +285,21 @@ describe('IndexedDbNoteStore', () => {
             await store.removeFolder('Temp');
             expect(await store.listFolders()).not.toContain('Temp');
         });
+
+        it('rejects a reserved folder name (Attachments / dot-prefixed)', async () => {
+            // Parity with the folder backends: such a folder would exist but be hidden from the tree.
+            await expect(store.createFolder('', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.createFolder('Work', 'attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.createFolder('', '.trash')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Nothing was created.
+            expect(await store.listFolders()).toEqual([]);
+        });
     });
 
     describe('folders: moveFolder (rename + reparent)', () => {
@@ -299,6 +342,19 @@ describe('IndexedDbNoteStore', () => {
         it('refuses to move a folder into its own descendant', async () => {
             await store.create('A', 'Work/Sub');
             await expect(store.moveFolder('Work', 'Work/Sub/Deep')).rejects.toThrow(/itself/i);
+        });
+
+        it('rejects renaming a folder onto a reserved leaf', async () => {
+            await store.create('A', 'Work');
+            // The destination leaf is reserved (dot-prefixed / Attachments) — parity with createFolder.
+            await expect(store.moveFolder('Work', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.moveFolder('Work', 'Done/.hidden')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Source intact.
+            expect(await store.stat('Work/A.md')).not.toBeNull();
         });
     });
 

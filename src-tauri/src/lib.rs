@@ -68,9 +68,11 @@ fn is_md(name: &str) -> bool {
 }
 
 /// Resolve a caller-supplied relative `name` to an absolute path inside `dir`, rejecting any
-/// attempt to escape the picked notes folder. A purely *lexical* check (no filesystem access), so
-/// it validates a path whose parent directories don't exist yet — letting `notes_write` create a
-/// brand-new nested folder while still refusing `../`, absolute paths, and root/prefix components.
+/// attempt to escape the picked notes folder. A lexical pass first refuses `../`, absolute paths,
+/// and root/prefix components; then a filesystem pass ({@link confine_to_root}) refuses a path that
+/// escapes via a *symlink* component — which the lexical check can't see. A not-yet-created nested
+/// path (a brand-new note) resolves only as far as its real parent, so `notes_write` can still
+/// create fresh folders.
 fn resolve_within(dir: &str, name: &str) -> Result<PathBuf, String> {
     let rel = Path::new(name);
     if rel.is_absolute() {
@@ -89,7 +91,45 @@ fn resolve_within(dir: &str, name: &str) -> Result<PathBuf, String> {
     if !out.starts_with(dir) {
         return Err(format!("invalid note path: \"{name}\""));
     }
+    confine_to_root(dir, &out)?;
     Ok(out)
+}
+
+/// Reject a resolved path whose deepest *existing* ancestor escapes the (canonicalized) root via a
+/// symlink. The lexical check in {@link resolve_within} only inspects path text, so a symlink named
+/// e.g. `Esc` -> `/outside` lets `Esc/file.md` pass while `fs::write`/`read`/`remove` follow the link
+/// out of the folder. Here we canonicalize the deepest path component that actually exists (the
+/// target itself, if present; otherwise walk up to its real parent) and require it still sits inside
+/// the canonicalized root — closing the symlink-escape hole while still allowing brand-new paths.
+fn confine_to_root(dir: &str, out: &Path) -> Result<(), String> {
+    let canon_root = fs::canonicalize(dir).map_err(stringify)?;
+    let mut probe: &Path = out;
+    loop {
+        match fs::canonicalize(probe) {
+            Ok(real) => {
+                return if real.starts_with(&canon_root) {
+                    Ok(())
+                } else {
+                    Err(format!("invalid note path: \"{}\"", out.display()))
+                };
+            }
+            // This component doesn't exist yet — step up to its parent and resolve that instead.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => match probe.parent() {
+                Some(parent) => probe = parent,
+                None => return Ok(()),
+            },
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+}
+
+/// Whether two paths resolve to the same real file. Used so a case-only rename (`note.md` ->
+/// `Note.md`) on a case-insensitive filesystem isn't mistaken for clobbering a *different* note.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
 }
 
 /// Epoch milliseconds of a file's mtime; `0.0` if the platform can't report it.
@@ -299,14 +339,27 @@ fn notes_read_opt(dir: String, name: String) -> Result<Option<NoteFull>, String>
         Err(err) => return Err(err.to_string()),
     };
     let bytes = fs::read(&path).map_err(stringify)?;
+    // Strict UTF-8 decode for a single-note load: a lossy decode would silently replace invalid
+    // bytes with U+FFFD, and the next autosave would then write that corruption back over the
+    // original file. Surfacing an error instead keeps the note from opening-then-clobbering. (The
+    // recursive corpus/preview reads stay lossy — they're search-only and never written back, and a
+    // preview head slice can legitimately cut a multi-byte char at the byte boundary.)
+    let content =
+        String::from_utf8(bytes).map_err(|_| format!("\"{name}\" is not valid UTF-8 text"))?;
     Ok(Some(NoteFull {
         name,
         modified_ms: modified_ms(&meta),
-        content: String::from_utf8_lossy(&bytes).into_owned(),
+        content,
     }))
 }
 
 /// Write a file atomically, creating any missing parent folders, and return its new mtime.
+///
+/// Optimistic-concurrency note: the conflict check lives in `tauriStore.save` (stat, compare to the
+/// caller's baseline, then write). Like the web `FileSystemNoteStore` — which also can't write
+/// atomically-with-a-check — there's a small stat→write window where a concurrent external edit
+/// could be lost. This is an accepted, backend-agnostic limitation (the on-disk file is never
+/// truncated thanks to {@link write_atomic}); it isn't re-checked here.
 #[tauri::command]
 fn notes_write(dir: String, name: String, content: String) -> Result<f64, String> {
     let path = resolve_within(&dir, &name)?;
@@ -325,6 +378,13 @@ fn notes_write(dir: String, name: String, content: String) -> Result<f64, String
 fn notes_rename(dir: String, from: String, to: String) -> Result<f64, String> {
     let from_path = resolve_within(&dir, &from)?;
     let to_path = resolve_within(&dir, &to)?;
+    // Refuse to clobber a *different* existing file. The TS layer pre-checks collisions, but make
+    // the primitive itself non-destructive (a no-clobber rename). A case-only rename (note.md ->
+    // Note.md) on a case-insensitive FS resolves both sides to the same inode — that's allowed (it's
+    // how the case actually changes); the TS side routes it through a distinct temp name anyway.
+    if to_path.exists() && !same_file(&from_path, &to_path) {
+        return Err(format!("\"{to}\" already exists"));
+    }
     if let Some(parent) = to_path.parent() {
         fs::create_dir_all(parent).map_err(stringify)?;
     }
@@ -459,10 +519,24 @@ fn notes_create_folder(dir: String, path: String) -> Result<(), String> {
     write_atomic(&folder.join(FOLDER_MARKER), b"").map_err(stringify)
 }
 
-/// Remove an empty folder: drop its `.gnkeep`, then remove the (now-empty) directory.
+/// Remove an empty folder: drop its `.gnkeep`, then remove the (now-empty) directory. Emptiness is
+/// checked *first* (only the marker may remain): otherwise dropping `.gnkeep` and then failing
+/// `remove_dir` on a non-empty folder would strip the keep-alive marker off a folder left in place.
+/// A missing folder is a no-op.
 #[tauri::command]
 fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     let folder = resolve_within(&dir, &path)?;
+    let entries = match fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(stringify)?;
+        if entry.file_name() != FOLDER_MARKER {
+            return Err(format!("\"{path}\" is not empty"));
+        }
+    }
     let _ = fs::remove_file(folder.join(FOLDER_MARKER));
     fs::remove_dir(&folder).map_err(stringify)
 }
@@ -966,9 +1040,10 @@ mod tests {
     }
 
     #[test]
-    fn write_into_a_not_yet_existent_nested_dir_succeeds_without_canonicalizing() {
-        // The lexical guard must validate a path whose parent doesn't exist yet (no fs::canonicalize
-        // of the target), so create_dir_all can then make it.
+    fn write_into_a_not_yet_existent_nested_dir_succeeds_via_ancestor_confinement() {
+        // A path whose parents don't exist yet must still validate, so create_dir_all can make it.
+        // confine_to_root doesn't canonicalize the (non-existent) target — it climbs to the deepest
+        // *existing* ancestor (here, the root) and confines against that, then returns the lexical join.
         let dir = temp_dir();
         let path = resolve_within(&s(&dir), "A/B/C/Deep.md").unwrap();
         assert!(path.starts_with(&dir));
@@ -989,6 +1064,73 @@ mod tests {
         assert!(reveal_path(s(&dir), "../../Applications".into()).is_err());
         // An in-bounds path that doesn't exist is reported, not launched on nothing.
         assert!(reveal_path(s(&dir), "Nope.md".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_paths_that_escape_through_an_in_root_symlink() {
+        use std::os::unix::fs::symlink;
+        let dir = temp_dir();
+        // A sibling directory OUTSIDE the picked folder, holding a secret.
+        let outside = temp_dir();
+        fs::write(outside.join("secret.md"), "secret").unwrap();
+        // A symlink *inside* the picked folder pointing at that outside directory. Lexically,
+        // `escape/...` looks contained; only resolving the link reveals the escape.
+        symlink(&outside, dir.join("escape")).unwrap();
+
+        // Reading through the symlink (existing target) is refused.
+        assert!(notes_read_opt(s(&dir), "escape/secret.md".into()).is_err());
+        assert!(reveal_path(s(&dir), "escape/secret.md".into()).is_err());
+        // Writing through the symlink (non-existent target, parent is the link) is refused too, and
+        // nothing lands outside the folder.
+        assert!(notes_write(s(&dir), "escape/evil.md".into(), "x".into()).is_err());
+        assert!(attachment_write(s(&dir), "escape/evil.png".into(), vec![1]).is_err());
+        assert!(!outside.join("evil.md").exists());
+        assert!(!outside.join("evil.png").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn rename_refuses_to_clobber_a_different_note() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "A.md".into(), "aaa".into()).unwrap();
+        notes_write(s(&dir), "B.md".into(), "bbb".into()).unwrap();
+
+        // Renaming A onto the existing, distinct B must fail and leave both intact.
+        assert!(notes_rename(s(&dir), "A.md".into(), "B.md".into()).is_err());
+        assert_eq!(notes_read_opt(s(&dir), "A.md".into()).unwrap().unwrap().content, "aaa");
+        assert_eq!(notes_read_opt(s(&dir), "B.md".into()).unwrap().unwrap().content, "bbb");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_dir_refuses_a_non_empty_folder_and_keeps_its_marker() {
+        let dir = temp_dir();
+        notes_create_folder(s(&dir), "Keep".into()).unwrap();
+        notes_write(s(&dir), "Keep/Note.md".into(), "x".into()).unwrap();
+
+        // The folder still holds a note, so removal is refused — and the .gnkeep marker survives.
+        assert!(notes_remove_dir(s(&dir), "Keep".into()).is_err());
+        assert!(dir.join("Keep").join(FOLDER_MARKER).is_file());
+        assert!(dir.join("Keep").join("Note.md").is_file());
+        // A missing folder is a no-op.
+        assert!(notes_remove_dir(s(&dir), "Nope".into()).is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reading_a_non_utf8_note_errors_instead_of_corrupting_it() {
+        let dir = temp_dir();
+        // Invalid UTF-8 bytes (a lone 0xFF) — a lossy decode would replace them with U+FFFD and the
+        // next save would write that corruption back. We surface an error instead.
+        fs::write(dir.join("Latin1.md"), [0x68, 0x69, 0xff]).unwrap();
+        assert!(notes_read_opt(s(&dir), "Latin1.md".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

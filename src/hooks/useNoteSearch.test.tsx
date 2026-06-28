@@ -117,4 +117,15 @@ describe('useNoteSearch — full-text body matching', () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Alpha.md']);
     });
+
+    it('clears loading after a getAll rejection (degrades to title-only, Enter can fall through)', async () => {
+        const store = makeStore();
+        store.getAll.mockRejectedValueOnce(new Error('disk gone'));
+        const {result} = renderHook(() => useNoteSearch(NOTES, store));
+        // A query with no title match: if `loading` stuck true, TopBar would swallow Enter-to-create.
+        act(() => result.current.setQuery('kubernetes'));
+        expect(result.current.loading).toBe(true);
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.filteredNotes).toEqual([]); // title-only, nothing matches → create path
+    });
 });

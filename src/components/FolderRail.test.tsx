@@ -260,10 +260,12 @@ describe('FolderRail — folder actions', () => {
 });
 
 describe('FolderRail — drag and drop', () => {
-    // A note drag carries only `text/plain` — `getData` of any other type is empty, like a real one.
+    // A real note drag (from NoteList) carries its id on the custom `application/x-gravity-note`
+    // MIME (and text/plain too); the rail gates the move on the custom one.
     const noteDt = (id: string) => ({
         setData: vi.fn(),
-        getData: (type: string) => (type === 'text/plain' ? id : ''),
+        getData: (type: string) =>
+            type === 'application/x-gravity-note' || type === 'text/plain' ? id : '',
     });
 
     it('moves a dropped note into the folder', () => {
@@ -280,6 +282,18 @@ describe('FolderRail — drag and drop', () => {
         fireEvent.dragOver(screen.getByText('All Notes'), {dataTransfer});
         fireEvent.drop(screen.getByText('All Notes'), {dataTransfer});
         expect(props.onMoveTo).toHaveBeenCalledWith('Work/Note.md', '');
+    });
+
+    it('ignores a foreign drag carrying only text/plain (no custom note MIME)', () => {
+        const {props} = setup();
+        // A drag from outside the app: arbitrary text on text/plain, but no `x-gravity-note`.
+        const dataTransfer = {
+            setData: vi.fn(),
+            getData: (type: string) => (type === 'text/plain' ? 'https://evil.example/' : ''),
+        };
+        fireEvent.dragOver(screen.getByText('Work'), {dataTransfer});
+        fireEvent.drop(screen.getByText('Work'), {dataTransfer});
+        expect(props.onMoveTo).not.toHaveBeenCalled();
     });
 });
 
@@ -338,7 +352,8 @@ describe('FolderRail — folder drag and drop', () => {
         const {props} = setup({rows: [folder('Work')]});
         const dataTransfer = {
             setData: vi.fn(),
-            getData: (type: string) => (type === 'text/plain' ? 'Note.md' : ''),
+            getData: (type: string) =>
+                type === 'application/x-gravity-note' || type === 'text/plain' ? 'Note.md' : '',
         };
         fireEvent.dragOver(screen.getByText('Work'), {dataTransfer});
         fireEvent.drop(screen.getByText('Work'), {dataTransfer});

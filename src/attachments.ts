@@ -23,10 +23,35 @@ export class AttachmentUrlCache {
      * write a stale URL back into the cache.
      */
     private readonly generations = new Map<string, number>();
+    /**
+     * Listeners notified when a specific ref is forgotten — so a mounted image view can re-resolve
+     * (and flip to its broken state) the instant its attachment is deleted, instead of holding a
+     * dead `blob:` URL until some unrelated re-render.
+     */
+    private readonly listeners = new Map<string, Set<() => void>>();
     /** Set once the cache is retired, so a read resolving after dispose() can't mint a leaking URL. */
     private disposed = false;
 
     constructor(private readonly store: NoteStore) {}
+
+    /**
+     * Subscribe to {@link forget} of a single `ref`; returns an unsubscribe function. A live NodeView
+     * uses this to react the moment its attachment is removed from the manager.
+     */
+    subscribe(ref: string, listener: () => void): () => void {
+        let set = this.listeners.get(ref);
+        if (!set) {
+            set = new Set();
+            this.listeners.set(ref, set);
+        }
+        set.add(listener);
+        return () => {
+            const current = this.listeners.get(ref);
+            if (!current) return;
+            current.delete(listener);
+            if (current.size === 0) this.listeners.delete(ref);
+        };
+    }
 
     /** Synchronously return an already-resolved object URL for `ref`, or `undefined` if not yet read. */
     peek(ref: string): string | undefined {
@@ -82,6 +107,8 @@ export class AttachmentUrlCache {
         // Advance the generation so any in-flight resolve() for this ref bails in its .then()
         // instead of writing a stale URL back into the cache.
         this.generations.set(ref, (this.generations.get(ref) ?? 0) + 1);
+        // Wake any live view of this ref so it can re-resolve (now a not-found → broken state).
+        this.notify(ref);
     }
 
     /** Revoke every object URL this cache created (call when the cache is retired). */
@@ -92,6 +119,13 @@ export class AttachmentUrlCache {
         this.urls.clear();
         this.pending.clear();
         this.generations.clear();
+        this.listeners.clear();
+    }
+
+    private notify(ref: string): void {
+        const set = this.listeners.get(ref);
+        if (!set) return;
+        for (const listener of [...set]) listener();
     }
 }
 

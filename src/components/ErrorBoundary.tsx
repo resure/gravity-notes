@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                     <Text variant="header-1">Something broke</Text>
                     <Text color="secondary">
                         Gravity Notes hit an unexpected error. Your notes are plain files on disk
-                        and are safe. Reload to continue.
+                        and are safe. Try again, or reload to continue.
                     </Text>
                     {error.message ? (
                         <Text color="danger" className="error-boundary__detail">
@@ -45,7 +45,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                         </Text>
                     ) : null}
                     <div className="error-boundary__actions">
-                        <Button view="action" size="l" onClick={() => window.location.reload()}>
+                        {/* Clear the caught error and re-render the tree: a transient crash can
+                            recover without a full reload (losing in-flight state). */}
+                        <Button view="action" size="l" onClick={() => this.setState({error: null})}>
+                            Try again
+                        </Button>
+                        <Button view="flat" size="l" onClick={() => window.location.reload()}>
                             Reload
                         </Button>
                     </div>

@@ -45,8 +45,13 @@ export const TRASH_DIR = '.trash';
  */
 export function attachmentRefsIn(content: string): string[] {
     const refs = new Set<string>();
-    for (const match of content.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)/g)) {
-        if (isAttachmentRef(match[1])) refs.add(match[1]);
+    // A Markdown image destination is either an angle-bracketed `<...>` (which may contain spaces) or
+    // a bare token up to the next whitespace/`)`. Handle both so a hand-edited/imported note using the
+    // `![](<Attachments/a b.png>)` form is still detected — otherwise such a ref would render broken
+    // *and* be counted "unused" (deletable) by the attachments manager.
+    for (const match of content.matchAll(/!\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))/g)) {
+        const dest = (match[1] ?? match[2] ?? '').trim();
+        if (isAttachmentRef(dest)) refs.add(dest);
     }
     return [...refs];
 }
@@ -146,6 +151,25 @@ export function sanitizeSegment(title: string): string {
  * path, never by what the user types into a title.
  */
 export const sanitizeTitle = sanitizeSegment;
+
+/**
+ * Whether a folder-name segment collides with storage the backends own and hide from the tree —
+ * the root `Attachments/` media folder, or any dot-prefixed name (`.trash`, the `.gravity-notes.json`
+ * sidecar, `.gnkeep`, …), all of which the note/folder walks deliberately skip. A *user* folder with
+ * such a name would exist on disk but be invisible in the app (its notes would vanish from the tree
+ * yet still feed search). Folder create/rename/move reject these so that can't happen.
+ *
+ * The `Attachments` check is case-INSENSITIVE on purpose: the backends the app targets (macOS desktop,
+ * macOS/Windows Chromium) all sit on case-insensitive filesystems, where `attachments` / `ATTACHMENTS`
+ * resolve to the very same directory as the `Attachments/` media store — so every casing must be
+ * reserved. (On a rare case-sensitive volume the exact-case walk wouldn't hide a lowercase folder, so
+ * this conservatively over-reserves there; preferable to silently merging a user folder into media
+ * storage on the common case.)
+ */
+export function isReservedSegment(segment: string): boolean {
+    const trimmed = segment.trim();
+    return trimmed.startsWith('.') || trimmed.toLowerCase() === ATTACHMENTS_DIR.toLowerCase();
+}
 
 /**
  * Clean a user-supplied POSIX-relative folder path: sanitize each segment, and drop empty, `.`, and

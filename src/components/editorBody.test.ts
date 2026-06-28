@@ -114,5 +114,13 @@ describe('editorBody', () => {
             removeEmptyFirstLine(editor);
             expect(ops).toEqual([]);
         });
+
+        it('does not delete a non-empty first block (self-protecting guard)', () => {
+            // The helper only owns the empty paragraph it added; a first block with content must
+            // survive even when more blocks follow.
+            const {editor, ops} = makeEditor({firstChild: TEXT_PARA, childCount: 2});
+            removeEmptyFirstLine(editor);
+            expect(ops).toEqual([]);
+        });
     });
 });

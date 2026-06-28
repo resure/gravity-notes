@@ -74,8 +74,9 @@ export function useNoteHistory({activeId, exists, navigate}: NoteHistoryDeps): U
             syncFlags();
             return;
         }
-        // A genuine new visit: drop any forward tail, append, and cap from the front.
-        const next = entries.slice(0, i + 1);
+        // A genuine new visit: drop any forward tail, prune now-dead (deleted/renamed) ids from the
+        // retained prefix so the cap counts only reachable notes, then append and cap from the front.
+        const next = entries.slice(0, i + 1).filter((id) => existsRef.current(id));
         next.push(activeId);
         if (next.length > MAX_ENTRIES) next.splice(0, next.length - MAX_ENTRIES);
         entriesRef.current = next;

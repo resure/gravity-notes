@@ -79,4 +79,22 @@ describe('useNoteHistory', () => {
         expect(result.current.canGoBack).toBe(false);
         expect(result.current.canGoForward).toBe(false);
     });
+
+    it('prunes dead ids from the trail on a new visit so they do not consume the cap', () => {
+        // Visit 100 distinct live notes (filling the cap exactly), then delete most of them.
+        const ids = Array.from({length: 100}, (_, i) => `n${i}.md`);
+        const {result, navigate, live, visit} = setup(ids[0], [...ids, 'fresh.md']);
+        for (let i = 1; i < ids.length; i++) visit(ids[i]);
+
+        // Kill every entry except the first; without pruning, these dead ids would still occupy the
+        // 100-slot cap and push the still-live n0 off the front on the next append.
+        for (let i = 1; i < ids.length; i++) live.delete(ids[i]);
+
+        visit('fresh.md'); // a genuine new visit — prunes the dead prefix, then appends.
+
+        // n0 (still live) must remain reachable: from fresh, stepping back skips all the dead ids and
+        // lands on n0 — proving the dead ids were dropped, not merely skipped past a truncated trail.
+        act(() => result.current.goBack());
+        expect(navigate).toHaveBeenLastCalledWith('n0.md');
+    });
 });
