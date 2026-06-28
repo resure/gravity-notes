@@ -61,6 +61,32 @@ function buildTrashView(
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
 const AUTOSAVE_DELAY = 500;
+/** Ceil a single backend write so a hung save can't block every note op indefinitely. */
+const SAVE_TIMEOUT_MS = 15_000;
+/** Retry a transient save failure a few times (capped backoff) before leaving it to the user. */
+const MAX_SAVE_RETRIES = 5;
+const RETRY_MAX_DELAY = 30_000;
+
+/**
+ * Race `promise` against a `ms` deadline. The underlying promise still settles in the background
+ * (it can't be cancelled) — this just stops the caller from awaiting it forever; on timeout it
+ * rejects so the caller can surface an error and move on instead of hanging.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (err) => {
+                clearTimeout(timer);
+                reject(err);
+            },
+        );
+    });
+}
 
 /** A detected external change to the open note. */
 export interface NoteConflict {
@@ -212,6 +238,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
      * a half-moved (old, now-gone) id and raise a spurious deleted-conflict.
      */
     const moveInProgressRef = useRef(false);
+    /** Backoff retry counter for a transient save failure; reset on success and on a fresh edit. */
+    const retryRef = useRef(0);
+    /** Latest `flush`, so it can re-arm its own retry timer without a circular `useCallback` dep. */
+    const flushRef = useRef<() => Promise<void>>(async () => {});
+    /** Latest `conflict`, read inside the long-lived window listeners so they needn't re-subscribe. */
+    const conflictRef = useRef<NoteConflict | null>(null);
 
     const refresh = useCallback(async () => {
         const [list, folderList] = await Promise.all([store.list(), store.listFolders()]);
@@ -253,8 +285,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         if (!pending) return;
         pendingRef.current = null;
         try {
-            const meta = await store.save(pending.id, pending.content, baselineRef.current ?? 0);
+            // Ceil the write so a hung backend (a stuck FSA permission prompt, a wedged IPC call)
+            // can't freeze every lifecycle transition that awaits flush().
+            const meta = await withTimeout(
+                store.save(pending.id, pending.content, baselineRef.current ?? 0),
+                SAVE_TIMEOUT_MS,
+                'Save',
+            );
             baselineRef.current = meta.updatedAt ?? null;
+            retryRef.current = 0;
             setSaveState('saved');
             bumpInList(pending.id, meta.updatedAt, pending.content);
         } catch (err) {
@@ -269,10 +308,24 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 setSaveState('conflict');
             } else {
                 setSaveState('error');
-                onError(err instanceof Error ? err.message : 'Failed to save note');
+                // Surface the failure once per burst; then retry with capped backoff so a transient
+                // write error self-heals instead of stranding the edit until the next keystroke.
+                if (retryRef.current === 0) {
+                    onError(err instanceof Error ? err.message : 'Failed to save note');
+                }
+                if (pendingRef.current && retryRef.current < MAX_SAVE_RETRIES) {
+                    retryRef.current += 1;
+                    const delay = Math.min(AUTOSAVE_DELAY * 2 ** retryRef.current, RETRY_MAX_DELAY);
+                    timerRef.current = setTimeout(() => void flushRef.current(), delay);
+                }
             }
         }
     }, [store, onError, bumpInList, clearTimer]);
+
+    // Keep the schedule target current so flush can re-arm its own retry without a circular dep.
+    useEffect(() => {
+        flushRef.current = flush;
+    }, [flush]);
 
     const open = useCallback(
         async (id: string) => {
@@ -291,6 +344,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 // slow earlier load can't land the editor on the wrong note.
                 if (generation !== openGenerationRef.current) return;
                 baselineRef.current = loaded.updatedAt ?? null;
+                // Drop an edit re-queued for the outgoing note during the load gap (or restored by a
+                // failed flush): it would otherwise flush later against this note's baseline and raise
+                // a spurious conflict. Matches the conflict-on-navigate abandon behavior.
+                if (pendingRef.current && pendingRef.current.id !== id) {
+                    pendingRef.current = null;
+                    clearTimer();
+                }
                 setNote(loaded);
                 bumpSession();
                 setConflict(null);
@@ -301,7 +361,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 onError(err instanceof Error ? err.message : 'Failed to open note');
             }
         },
-        [flush, store, persistMetadata, onError, bumpSession],
+        [flush, store, persistMetadata, onError, bumpSession, clearTimer],
     );
 
     const close = useCallback(async () => {
@@ -460,26 +520,41 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             await flush();
             try {
                 const meta = await store.rename(id, nextTitle);
+                // A no-op rename (same leaf): nothing re-keys on disk, so just report the id.
+                if (meta.id === id) return meta.id;
                 const wasActive = metadataRef.current.active === id;
-                if (meta.id !== id) {
-                    await persistMetadata(withRenamed(metadataRef.current, id, meta.id));
-                    if (pendingRef.current?.id === id) pendingRef.current = null;
-                }
-                await refresh();
-                if (wasActive && meta.id !== id) {
-                    // Update the open note's identity in place — same content, same editor
-                    // instance (no sessionId bump), so the caret/focus survives the rename.
-                    baselineRef.current = meta.updatedAt ?? null;
+                // A keystroke during the flush/rename await may have re-queued an edit for the renamed
+                // note (the editor stays live — no remount). Kill its timer so it can't flush against
+                // the old, now-gone id; we carry it over and re-arm below — exactly like move().
+                const pendingForRenamed = pendingRef.current?.id === id;
+                if (pendingForRenamed) clearTimer();
+                // Reconcile identity in a fixed order so any edit() racing the persist below reads a
+                // consistent (new) id. The editor instance is kept (no sessionId bump), so the
+                // caret/focus survive the rename — like move(), keeping the in-memory body.
+                if (wasActive) {
                     setNote((prev) =>
                         prev && prev.id === id
                             ? {...prev, id: meta.id, title: meta.title, updatedAt: meta.updatedAt}
                             : prev,
                     );
-                    // The guard at the top blocks renaming the open note while it's conflicted;
-                    // clear defensively so a successful rename always lands in a clean state.
+                }
+                // persistMetadata sets metadataRef.current.active synchronously, so by the time it
+                // awaits the write a racing edit() already sees the NEW id (never re-tags the dead one).
+                await persistMetadata(withRenamed(metadataRef.current, id, meta.id));
+                if (wasActive) {
+                    baselineRef.current = meta.updatedAt ?? null; // re-seed the conflict baseline
                     setConflict(null);
                     setSaveState('idle');
                 }
+                if (pendingForRenamed) {
+                    // Carry the in-flight keystrokes to the new id (do NOT drop them, even if the
+                    // preceding flush failed) and re-arm a fresh autosave so they still get written.
+                    pendingRef.current = {id: meta.id, content: pendingRef.current?.content ?? ''};
+                    clearTimer();
+                    setSaveState('saving');
+                    timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
+                }
+                await refresh();
                 return meta.id;
             } catch (err) {
                 if (err instanceof NameCollisionError) {
@@ -490,7 +565,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 return null;
             }
         },
-        [conflict, flush, store, persistMetadata, refresh, onError],
+        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
     );
 
     const move = useCallback(
@@ -696,6 +771,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             pendingRef.current = {id, content};
             if (conflict) return; // autosave is paused until the conflict is resolved
             setSaveState('saving');
+            retryRef.current = 0; // a fresh edit is a fresh save attempt
             clearTimer();
             timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
         },
@@ -729,7 +805,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 // The file was deleted on disk — recreate it with our content rather than abandoning
                 // the user to "Save as copy". create() reuses the same name when it's free, so the
                 // id usually survives; adopt the resulting id in place if it differs.
-                const recreated = await store.create(note?.title ?? 'Note');
+                const recreated = await store.create(note?.title ?? 'Note', dirname(conflict.id));
                 const meta = await store.save(recreated.id, content, recreated.updatedAt ?? 0);
                 baselineRef.current = meta.updatedAt ?? null;
                 if (recreated.id !== conflict.id) {
@@ -772,7 +848,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         const title = note?.title ?? 'Note';
         pendingRef.current = null;
         try {
-            const copy = await store.create(`${title} (conflicted copy)`);
+            const copy = await store.create(`${title} (conflicted copy)`, dirname(conflict.id));
             await store.save(copy.id, content, copy.updatedAt ?? 0);
             await persistMetadata(
                 withCreatedStamp(metadataRef.current, copy.id, copy.updatedAt ?? 0),
@@ -861,6 +937,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         };
     }, []);
 
+    // Mirror `conflict` into a ref so the long-lived window listeners below read the latest value
+    // without re-subscribing (and churning the beforeunload handler) on every conflict change.
+    useEffect(() => {
+        conflictRef.current = conflict;
+    }, [conflict]);
+
     // Best-effort save when hidden; warn before unload if edits are unsaved.
     useEffect(() => {
         const onHide = () => void flush();
@@ -868,7 +950,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             // Capture intent BEFORE flushing: flush() nulls pendingRef synchronously (an async fn
             // runs to its first await), so checking it after would always read null and the prompt
             // would never fire for a normal pending edit.
-            const hasUnsaved = Boolean(pendingRef.current || conflict);
+            const hasUnsaved = Boolean(pendingRef.current || conflictRef.current);
             void flush();
             if (hasUnsaved) {
                 event.preventDefault();
@@ -882,14 +964,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             document.removeEventListener('visibilitychange', onHide);
             window.removeEventListener('beforeunload', onBeforeUnload);
         };
-    }, [flush, conflict]);
+    }, [flush]);
 
     // Detect an external change to the open note when returning to the tab/window.
     useEffect(() => {
         const check = async () => {
             if (document.visibilityState !== 'visible') return;
             const id = metadataRef.current.active;
-            if (!id || conflict || pendingRef.current || moveInProgressRef.current) return;
+            if (!id || conflictRef.current || pendingRef.current || moveInProgressRef.current)
+                return;
             let diskMtime: number | null;
             try {
                 diskMtime = await store.stat(id);
@@ -913,7 +996,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onFocus);
         };
-    }, [conflict, store]);
+    }, [store]);
 
     return {
         notes,

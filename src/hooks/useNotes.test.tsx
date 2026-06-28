@@ -646,6 +646,47 @@ describe('useNotes — save lifecycle hardening', () => {
         expect(hook.result.current.note?.id).toBe('C.md');
         expect(hook.result.current.activeId).toBe('C.md');
     });
+
+    it('carries a pending edit across a rename instead of dropping it', async () => {
+        const store = new DeferredSaveStore();
+        store.seed('Old.md', 'v0');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('Old.md');
+        });
+
+        act(() => {
+            hook.result.current.edit('v1');
+        });
+        // rename()'s leading flush() hangs on the deferred save. While it's hung, type v2 — that
+        // edit (re-queued for Old.md) must be carried to New.md, not dropped (the M1 regression).
+        let rename: Promise<string | null> = Promise.resolve(null);
+        act(() => {
+            rename = hook.result.current.rename('Old.md', 'New');
+        });
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        act(() => {
+            hook.result.current.edit('v2');
+        });
+        // Complete the flush (v1) so rename proceeds and carries v2 to New.md.
+        await act(async () => {
+            store.saveDeferred?.resolve();
+            await rename;
+        });
+        // Flush the carried edit and let it succeed.
+        act(() => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            store.saveDeferred?.resolve();
+        });
+        expect((await store.get('New.md')).content).toBe('v2');
+    });
 });
 
 /**
