@@ -519,6 +519,33 @@ fn stringify(err: impl std::fmt::Display) -> String {
     err.to_string()
 }
 
+/// Open an external link in the user's default browser (macOS `open`). WKWebView won't navigate to
+/// external origins on its own, so ⌘-click on a note's link routes here. Restricted to web/mail/tel
+/// schemes so a crafted note can't shell out to a local file or app URL.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    const ALLOWED: [&str; 4] = ["http://", "https://", "mailto:", "tel:"];
+    if !ALLOWED.iter().any(|scheme| url.starts_with(scheme)) {
+        return Err(format!("refusing to open \"{url}\""));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg(&url)
+            .status()
+            .map_err(stringify)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("could not open \"{url}\""))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("open is only supported on macOS".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -556,6 +583,7 @@ pub fn run() {
             notes_exists,
             notes_stat,
             reveal_path,
+            open_external,
             notes_create_folder,
             notes_remove_dir,
             notes_move_dir,

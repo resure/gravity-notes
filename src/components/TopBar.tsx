@@ -1,3 +1,4 @@
+import {useLayoutEffect, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
 import {
@@ -98,7 +99,44 @@ export function TopBar({
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
 
+    // nvALT inline autocomplete: as the user types *forward*, the top match's title fills the box
+    // with the un-typed suffix selected; Tab (or →) accepts it, Backspace removes it. `query` stays
+    // the real typed text driving the search — `completion` is only what the box displays.
+    const [completing, setCompleting] = useState(false);
+    const topTitle = notes[0]?.title ?? '';
+    const completion =
+        completing &&
+        query.length > 0 &&
+        topTitle.length > query.length &&
+        topTitle.toLowerCase().startsWith(query.toLowerCase())
+            ? topTitle
+            : '';
+    const displayValue = completion || query;
+
+    // After a forward keystroke, select the suffix so the next character replaces it. The box value
+    // already shows the full title; this just highlights the part the user hasn't typed yet.
+    useLayoutEffect(() => {
+        if (!completion) return;
+        searchInputRef.current?.setSelectionRange(query.length, completion.length);
+    }, [completion, query, searchInputRef]);
+
+    const onSearchUpdate = (next: string) => {
+        // A longer value means a forward keystroke → offer a completion. Anything else (delete, clear,
+        // or replacing the selected suffix) suppresses completion for this round so deletion works.
+        setCompleting(next.length > query.length);
+        onQueryChange(next);
+    };
+
     const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Tab' && completion) {
+            // Accept the suggestion: commit the full title and collapse the highlighted suffix to a
+            // caret at the end (so further typing appends instead of replacing the selection).
+            event.preventDefault();
+            setCompleting(false);
+            onQueryChange(completion);
+            searchInputRef.current?.setSelectionRange(completion.length, completion.length);
+            return;
+        }
         if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
             if (!query.trim()) {
                 // Empty box: step onto the previously selected note's row (don't jump to the
@@ -125,6 +163,7 @@ export function TopBar({
             }
         } else if (event.key === 'Escape') {
             event.preventDefault();
+            setCompleting(false);
             if (query) onQueryChange('');
             else onClose();
         } else if (event.key === 'ArrowDown' && notes.length > 0) {
@@ -228,8 +267,8 @@ export function TopBar({
             <TextInput
                 className="topbar__search"
                 controlRef={searchInputRef}
-                value={query}
-                onUpdate={onQueryChange}
+                value={displayValue}
+                onUpdate={onSearchUpdate}
                 placeholder="Search or create a note…"
                 // Placeholders aren't a reliable accessible name; name the field explicitly.
                 controlProps={{'aria-label': 'Search or create a note'}}

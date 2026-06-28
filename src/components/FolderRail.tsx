@@ -107,6 +107,10 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     // The folder/All-Notes row a drag is hovering (the key), and the folder currently being dragged.
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
+    // The folder + viewport point for an open right-click context menu (null = closed).
+    const [contextMenu, setContextMenu] = useState<{row: FolderRow; x: number; y: number} | null>(
+        null,
+    );
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const newFolderInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
@@ -402,10 +406,58 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         </div>
     );
 
+    // The per-folder action list, shared by the row's ⋯ menu and the right-click context menu.
+    const folderMenuItems = (row: FolderRow) => {
+        const deletable = row.noteCount === 0 && !row.hasChildren;
+        return [
+            {
+                text: row.pinned ? 'Unpin' : 'Pin to top',
+                iconStart: <Icon data={row.pinned ? PinSlash : Pin} />,
+                action: () => onTogglePin(row.path),
+            },
+            {
+                text: 'Rename',
+                iconStart: <Icon data={Pencil} />,
+                action: () => setRenaming({path: row.path, value: row.name}),
+            },
+            {
+                text: 'New subfolder',
+                iconStart: <Icon data={FolderPlus} />,
+                action: () => startNewSubfolder(row),
+            },
+            // Desktop only: revealed in Finder when the backend supports it.
+            ...(onReveal
+                ? [
+                      {
+                          text: 'Reveal in Finder',
+                          iconStart: <Icon data={FolderOpen} />,
+                          action: () => onReveal(row.path),
+                      },
+                  ]
+                : []),
+            {
+                text: 'Delete folder',
+                theme: 'danger' as const,
+                iconStart: <Icon data={TrashBin} />,
+                // Only a truly empty folder (no notes, no subfolders) can be removed.
+                disabled: !deletable,
+                action: () => onRemoveFolder(row.path),
+            },
+        ];
+    };
+
+    // A zero-size virtual anchor at the right-click point, so the context menu opens at the cursor.
+    const contextAnchor = useMemo(
+        () =>
+            contextMenu
+                ? {getBoundingClientRect: () => new DOMRect(contextMenu.x, contextMenu.y, 0, 0)}
+                : undefined,
+        [contextMenu],
+    );
+
     const renderFolder = (row: FolderRow) => {
         if (renaming?.path === row.path) return renderRenameInput(row);
         const selected = selectedFolder === row.path;
-        const deletable = row.noteCount === 0 && !row.hasChildren;
         return (
             <div
                 key={row.path}
@@ -437,6 +489,11 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     stopAutoScroll();
                 }}
                 onClick={() => select({key: row.path, folder: row.path})}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    select({key: row.path, folder: row.path});
+                    setContextMenu({row, x: e.clientX, y: e.clientY});
+                }}
                 onDoubleClick={() => setRenaming({path: row.path, value: row.name})}
                 onKeyDown={(e) => onRowKeyDown(e, row.path)}
                 onDragOver={(e) => onRowDragOver(e, row.path, row.path)}
@@ -486,41 +543,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                                 <Icon data={Ellipsis} />
                             </Button>
                         )}
-                        items={[
-                            {
-                                text: row.pinned ? 'Unpin' : 'Pin to top',
-                                iconStart: <Icon data={row.pinned ? PinSlash : Pin} />,
-                                action: () => onTogglePin(row.path),
-                            },
-                            {
-                                text: 'Rename',
-                                iconStart: <Icon data={Pencil} />,
-                                action: () => setRenaming({path: row.path, value: row.name}),
-                            },
-                            {
-                                text: 'New subfolder',
-                                iconStart: <Icon data={FolderPlus} />,
-                                action: () => startNewSubfolder(row),
-                            },
-                            // Desktop only: revealed in Finder when the backend supports it.
-                            ...(onReveal
-                                ? [
-                                      {
-                                          text: 'Reveal in Finder',
-                                          iconStart: <Icon data={FolderOpen} />,
-                                          action: () => onReveal(row.path),
-                                      },
-                                  ]
-                                : []),
-                            {
-                                text: 'Delete folder',
-                                theme: 'danger',
-                                iconStart: <Icon data={TrashBin} />,
-                                // Only a truly empty folder (no notes, no subfolders) can be removed.
-                                disabled: !deletable,
-                                action: () => onRemoveFolder(row.path),
-                            },
-                        ]}
+                        items={folderMenuItems(row)}
                     />
                 </div>
             </div>
@@ -604,6 +627,17 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     New Folder
                 </Button>
             </div>
+
+            {/* Right-click context menu — one instance, anchored to the cursor via a virtual element. */}
+            <DropdownMenu
+                open={contextMenu !== null}
+                onOpenToggle={(open: boolean) => {
+                    if (!open) setContextMenu(null);
+                }}
+                renderSwitcher={() => null}
+                popupProps={{anchorElement: contextAnchor}}
+                items={contextMenu ? folderMenuItems(contextMenu.row) : []}
+            />
         </div>
     );
 });

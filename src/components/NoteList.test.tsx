@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -460,5 +460,21 @@ describe('NoteList — reveal in Finder', () => {
         // The menu opened (Rename is present) but Reveal is not.
         expect(await screen.findByRole('menuitem', {name: /Rename/})).toBeInTheDocument();
         expect(screen.queryByRole('menuitem', {name: /Reveal in Finder/})).not.toBeInTheDocument();
+    });
+});
+
+describe('NoteList — right-click context menu', () => {
+    it('opens the row action menu on right-click and runs an action', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        fireEvent.contextMenu(screen.getByRole('option', {name: /Alpha/}));
+        await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
+        expect(props.onRequestMove).toHaveBeenCalledWith('Alpha.md');
+    });
+
+    it('previews the right-clicked note (so the menu acts on what you clicked)', () => {
+        const {props} = setup({selectedId: 'Alpha.md'});
+        fireEvent.contextMenu(screen.getByRole('option', {name: /Beta/}));
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
     });
 });

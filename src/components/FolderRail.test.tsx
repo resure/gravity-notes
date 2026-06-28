@@ -417,3 +417,19 @@ describe('FolderRail — in-rail keys', () => {
         expect(props.onRemoveFolder).not.toHaveBeenCalled();
     });
 });
+
+describe('FolderRail — right-click context menu', () => {
+    it('opens the folder action menu on right-click and runs an action', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Work', {noteCount: 2})]});
+        fireEvent.contextMenu(screen.getByRole('treeitem', {name: /Work/}));
+        await user.click(await screen.findByRole('menuitem', {name: /Pin to top/}));
+        expect(props.onTogglePin).toHaveBeenCalledWith('Work');
+    });
+
+    it('does not show a context menu on the All Notes row', () => {
+        setup();
+        fireEvent.contextMenu(screen.getByRole('treeitem', {name: /All Notes/}));
+        expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+    });
+});

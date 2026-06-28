@@ -147,6 +147,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
+    // The note + viewport point for an open right-click context menu (null = closed).
+    const [contextMenu, setContextMenu] = useState<{note: NoteMeta; x: number; y: number} | null>(
+        null,
+    );
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -262,6 +266,58 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         }
     };
 
+    // The per-note action list, shared by the row's ⋯ menu and the right-click context menu.
+    const noteMenuItems = (note: NoteMeta) => {
+        const pinned = pinnedIds.includes(note.id);
+        return [
+            {
+                text: pinned ? 'Unpin' : 'Pin to top',
+                iconStart: <Icon data={pinned ? PinSlash : Pin} />,
+                action: () => onTogglePin(note.id),
+            },
+            {
+                text: 'Rename',
+                iconStart: <Icon data={Pencil} />,
+                action: () => beginRename(note.id, note.title),
+            },
+            {
+                text: 'Move to…',
+                iconStart: <Icon data={Folder} />,
+                action: () => onRequestMove(note.id),
+            },
+            {
+                text: 'Duplicate',
+                iconStart: <Icon data={Copy} />,
+                action: () => onDuplicate(note.id),
+            },
+            // Desktop only: revealed in Finder when the backend supports it.
+            ...(onReveal
+                ? [
+                      {
+                          text: 'Reveal in Finder',
+                          iconStart: <Icon data={FolderOpen} />,
+                          action: () => onReveal(note.id),
+                      },
+                  ]
+                : []),
+            {
+                text: 'Delete',
+                theme: 'danger' as const,
+                iconStart: <Icon data={TrashBin} />,
+                action: () => setDeleting({id: note.id, title: note.title}),
+            },
+        ];
+    };
+
+    // A zero-size virtual anchor at the right-click point, so the context menu opens at the cursor.
+    const contextAnchor = useMemo(
+        () =>
+            contextMenu
+                ? {getBoundingClientRect: () => new DOMRect(contextMenu.x, contextMenu.y, 0, 0)}
+                : undefined,
+        [contextMenu],
+    );
+
     const renderNote = (note: NoteMeta) => {
         const selected = note.id === selectedId;
         const editing = note.id === editingId;
@@ -284,6 +340,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 draggable={!editing}
                 onDragStart={(e) => e.dataTransfer.setData('text/plain', note.id)}
                 onClick={() => !editing && browseRow(note.id)}
+                onContextMenu={(e) => {
+                    if (editing) return;
+                    e.preventDefault();
+                    browseRow(note.id);
+                    setContextMenu({note, x: e.clientX, y: e.clientY});
+                }}
                 onKeyDown={(e) => onItemKeyDown(e, note.id)}
             >
                 {editing ? (
@@ -332,45 +394,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                             <Icon data={Ellipsis} />
                                         </Button>
                                     )}
-                                    items={[
-                                        {
-                                            text: pinned ? 'Unpin' : 'Pin to top',
-                                            iconStart: <Icon data={pinned ? PinSlash : Pin} />,
-                                            action: () => onTogglePin(note.id),
-                                        },
-                                        {
-                                            text: 'Rename',
-                                            iconStart: <Icon data={Pencil} />,
-                                            action: () => beginRename(note.id, note.title),
-                                        },
-                                        {
-                                            text: 'Move to…',
-                                            iconStart: <Icon data={Folder} />,
-                                            action: () => onRequestMove(note.id),
-                                        },
-                                        {
-                                            text: 'Duplicate',
-                                            iconStart: <Icon data={Copy} />,
-                                            action: () => onDuplicate(note.id),
-                                        },
-                                        // Desktop only: revealed in Finder when the backend supports it.
-                                        ...(onReveal
-                                            ? [
-                                                  {
-                                                      text: 'Reveal in Finder',
-                                                      iconStart: <Icon data={FolderOpen} />,
-                                                      action: () => onReveal(note.id),
-                                                  },
-                                              ]
-                                            : []),
-                                        {
-                                            text: 'Delete',
-                                            theme: 'danger',
-                                            iconStart: <Icon data={TrashBin} />,
-                                            action: () =>
-                                                setDeleting({id: note.id, title: note.title}),
-                                        },
-                                    ]}
+                                    items={noteMenuItems(note)}
                                 />
                             </div>
                         </div>
@@ -505,6 +529,17 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     onClickButtonCancel={() => setDeleting(null)}
                 />
             </Dialog>
+
+            {/* Right-click context menu — one instance, anchored to the cursor via a virtual element. */}
+            <DropdownMenu
+                open={contextMenu !== null}
+                onOpenToggle={(open: boolean) => {
+                    if (!open) setContextMenu(null);
+                }}
+                renderSwitcher={() => null}
+                popupProps={{anchorElement: contextAnchor}}
+                items={contextMenu ? noteMenuItems(contextMenu.note) : []}
+            />
         </div>
     );
 });

@@ -1,4 +1,4 @@
-import {createRef} from 'react';
+import {createRef, useRef, useState} from 'react';
 
 import {fireEvent, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -138,6 +138,77 @@ describe('TopBar — search keyboard model', () => {
         fireEvent.keyDown(input, {key: 'Enter', metaKey: true, shiftKey: true});
         expect(props.onCommit).not.toHaveBeenCalled();
         expect(props.onCreate).not.toHaveBeenCalled();
+    });
+});
+
+// A stateful host that actually threads `query` through, the way Workspace does — needed because the
+// inline autocomplete derives the completion from the live query, not a frozen prop.
+function StatefulTopBar({onCommit}: {onCommit: () => void}) {
+    const [query, setQuery] = useState('');
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const noop = () => {};
+    return (
+        <TopBar
+            storageLabel="notes"
+            onChangeStorage={noop}
+            onExport={noop}
+            onImport={noop}
+            onManageAttachments={noop}
+            onOpenHelp={noop}
+            themePref="light"
+            onChangeThemePref={noop}
+            onToggleCollapsed={noop}
+            saveState="idle"
+            query={query}
+            onQueryChange={setQuery}
+            searchInputRef={searchInputRef}
+            notes={NOTES}
+            searchLoading={false}
+            selectedId="Alpha.md"
+            onCommit={onCommit}
+            onCreate={noop}
+            onClose={noop}
+            onEnterList={noop}
+            onFocusList={noop}
+        />
+    );
+}
+
+describe('TopBar — inline autocomplete', () => {
+    it('completes to the top match with the un-typed suffix selected as you type forward', () => {
+        renderWithProviders(<StatefulTopBar onCommit={vi.fn()} />);
+        const input = screen.getByPlaceholderText(SEARCH) as HTMLInputElement;
+        // Typing "Al" forward: top title is "Alpha", so the box shows it with "pha" selected.
+        fireEvent.change(input, {target: {value: 'Al'}});
+        expect(input.value).toBe('Alpha');
+        expect(input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0)).toBe('pha');
+    });
+
+    it('accepts the completion on Tab (full title, selection collapsed)', () => {
+        renderWithProviders(<StatefulTopBar onCommit={vi.fn()} />);
+        const input = screen.getByPlaceholderText(SEARCH) as HTMLInputElement;
+        fireEvent.change(input, {target: {value: 'Al'}});
+        fireEvent.keyDown(input, {key: 'Tab'});
+        expect(input.value).toBe('Alpha');
+        // No suffix is selected once accepted.
+        expect(input.selectionStart).toBe(input.selectionEnd);
+    });
+
+    it('removes the completion when the suffix is deleted (no re-completion)', () => {
+        renderWithProviders(<StatefulTopBar onCommit={vi.fn()} />);
+        const input = screen.getByPlaceholderText(SEARCH) as HTMLInputElement;
+        fireEvent.change(input, {target: {value: 'Al'}}); // shows "Alpha", "pha" selected
+        // Backspace deletes the selected suffix → the box is left with the typed prefix.
+        fireEvent.change(input, {target: {value: 'Al'}});
+        expect(input.value).toBe('Al');
+    });
+
+    it('does not complete when the top match does not start with the query', () => {
+        renderWithProviders(<StatefulTopBar onCommit={vi.fn()} />);
+        const input = screen.getByPlaceholderText(SEARCH) as HTMLInputElement;
+        // "xy" prefixes neither Alpha nor Beta, so the box stays as typed.
+        fireEvent.change(input, {target: {value: 'xy'}});
+        expect(input.value).toBe('xy');
     });
 });
 

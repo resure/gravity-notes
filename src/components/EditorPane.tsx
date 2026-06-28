@@ -7,6 +7,7 @@ import type {Note} from '../storage/types';
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 import {attachmentImageExtension} from './editor/attachmentImageExtension';
+import {openLinkExtension} from './editor/openLinkExtension';
 import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBody';
 import {isCaretOnFirstLine} from './editorCaret';
 
@@ -77,8 +78,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             wysiwygConfig: {
                 // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
                 extensionOptions: {link: {linkKey: 'Mod-Shift-k'}},
-                // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean).
-                extensions: attachmentImageExtension,
+                // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
+                // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
+                extensions: (builder) => {
+                    attachmentImageExtension(builder);
+                    openLinkExtension(builder);
+                },
             },
         },
         [],
