@@ -87,25 +87,37 @@ export function AttachmentImageView({node, view, updateAttributes}: ReactNodeVie
     const [dragWidth, setDragWidth] = useState<number | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
     const dragRef = useRef<{startX: number; startW: number; max: number} | null>(null);
+    /** Detach the active resize-drag's window listeners — set on pointerdown, cleared on pointerup. */
+    const dragCleanupRef = useRef<(() => void) | null>(null);
     useEffect(() => {
         if (dragWidth !== null && widthAttr === String(dragWidth)) setDragWidth(null);
     }, [widthAttr, dragWidth]);
+    // If the NodeView unmounts mid-resize (the image deleted while a drag is in progress), the
+    // pointerup that would normally remove these listeners never fires — detach them on unmount so
+    // they can't leak onto window with a stale dragRef.
+    useEffect(() => () => dragCleanupRef.current?.(), []);
 
     const onResizeDown = (event: ReactPointerEvent) => {
         event.preventDefault();
         const startW = imgRef.current?.getBoundingClientRect().width ?? 0;
         dragRef.current = {startX: event.clientX, startW, max: view.dom.clientWidth || 2000};
-        const onMove = (e: PointerEvent) => {
+        // Hoisted declarations so the three handlers can reference each other freely (onUp detaches,
+        // detach removes onUp) without a use-before-define hazard.
+        function onMove(e: PointerEvent) {
             const d = dragRef.current;
             if (!d) return;
             const next = Math.round(
                 Math.min(Math.max(d.startW + (e.clientX - d.startX), MIN_WIDTH), d.max),
             );
             setDragWidth(next);
-        };
-        const onUp = () => {
+        }
+        function detach() {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+        }
+        function onUp() {
+            detach();
+            dragCleanupRef.current = null;
             const d = dragRef.current;
             dragRef.current = null;
             if (d && imgRef.current) {
@@ -113,9 +125,10 @@ export function AttachmentImageView({node, view, updateAttributes}: ReactNodeVie
                     width: String(Math.round(imgRef.current.getBoundingClientRect().width)),
                 });
             }
-        };
+        }
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        dragCleanupRef.current = detach;
     };
 
     // Alt editing.

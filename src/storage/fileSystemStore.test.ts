@@ -206,6 +206,23 @@ describe('FileSystemNoteStore', () => {
             expect(await store.listFolders()).toEqual(['Archive', 'Archive/Empty']);
         });
 
+        it('copies a non-md binary file byte-for-byte (no UTF-8 corruption)', async () => {
+            // Bytes that are NOT valid UTF-8 — a decode/encode round-trip would replace 0xff/0xfe/…
+            // with U+FFFD and mangle the file. A user may keep such a file beside their notes; moving
+            // the folder must copy it intact (the headline interop-with-external-tools case).
+            const bytes = Uint8Array.of(0xff, 0xfe, 0x00, 0x80, 0x42, 0x69, 0x6e, 0xfd);
+            dir.seedBytes('Work/diagram.bin', bytes);
+            await store.create('Note', 'Work');
+
+            await store.moveFolder('Work', 'Archive');
+
+            const moved = await (
+                await dir.getDirectoryHandle('Archive')
+            ).getFileHandle('diagram.bin');
+            const roundtripped = new Uint8Array(await (await moved.getFile()).arrayBuffer());
+            expect(Array.from(roundtripped)).toEqual(Array.from(bytes));
+        });
+
         it('hard-fails when the destination folder already exists', async () => {
             await store.create('A', 'Work');
             await store.create('B', 'Archive');

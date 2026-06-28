@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 
 import {ChevronDown, ChevronRight} from '@gravity-ui/icons';
 import {Icon, Text} from '@gravity-ui/uikit';
@@ -25,15 +25,15 @@ export function BacklinksPanel({backlinks, onOpen}: BacklinksPanelProps) {
     const [collapsed, setCollapsed] = useState(
         () => localStorage.getItem(COLLAPSED_KEY) === 'true',
     );
+    // Persist collapse state via an effect rather than inside the setCollapsed updater, which React
+    // is free to run twice (e.g. under <StrictMode>).
+    useEffect(() => {
+        localStorage.setItem(COLLAPSED_KEY, String(collapsed));
+    }, [collapsed]);
     if (backlinks.length === 0) return null;
 
     const count = backlinks.reduce((sum, source) => sum + source.contexts.length, 0);
-    const toggle = () =>
-        setCollapsed((prev) => {
-            const next = !prev;
-            localStorage.setItem(COLLAPSED_KEY, String(next));
-            return next;
-        });
+    const toggle = () => setCollapsed((prev) => !prev);
 
     return (
         <section className="backlinks" aria-label="Linked references">

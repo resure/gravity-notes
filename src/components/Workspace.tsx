@@ -64,6 +64,12 @@ function loadCollapsedFolders(): Set<string> {
     }
 }
 
+/**
+ * Monotonic counter for toast names, so two toasts fired in the same tick don't collide on the
+ * Toaster's name key (Date.now() alone can repeat within one millisecond).
+ */
+let toastSeq = 0;
+
 export function Workspace({
     store,
     storageLabel,
@@ -76,7 +82,7 @@ export function Workspace({
     const onError = useCallback(
         (message: string) => {
             add({
-                name: `notes-error-${Date.now()}`,
+                name: `notes-error-${toastSeq++}`,
                 title: 'Something went wrong',
                 content: message,
                 theme: 'danger',
@@ -307,7 +313,7 @@ export function Workspace({
     const notify = useCallback(
         (message: string) =>
             add({
-                name: `notes-info-${Date.now()}`,
+                name: `notes-info-${toastSeq++}`,
                 title: message,
                 theme: 'success',
                 autoHiding: 4000,

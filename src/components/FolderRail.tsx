@@ -355,6 +355,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 }
                 style={{paddingInlineStart: indentFor(0)}}
                 role="treeitem"
+                aria-level={1}
                 aria-selected={selected}
                 tabIndex={focusableKey === ALL_KEY ? 0 : -1}
                 onClick={() => select({key: ALL_KEY, folder: null})}
@@ -473,6 +474,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 }
                 style={{paddingInlineStart: indentFor(row.depth)}}
                 role="treeitem"
+                aria-level={row.depth + 1}
                 aria-selected={selected}
                 aria-expanded={row.hasChildren ? !row.collapsed : undefined}
                 tabIndex={focusableKey === row.path ? 0 : -1}

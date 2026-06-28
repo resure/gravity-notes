@@ -10,7 +10,7 @@
  */
 
 interface FakeFile {
-    content: string;
+    bytes: Uint8Array;
     lastModified: number;
 }
 
@@ -37,18 +37,22 @@ class FakeFileHandle {
             get lastModified() {
                 return file.lastModified;
             },
-            // Byte length stand-in (char count); attachments list() reads this for the size column.
+            // Byte length; attachments list() reads this for the size column.
             get size() {
-                return file.content.length;
+                return file.bytes.byteLength;
             },
             async text() {
-                return file.content;
+                return new TextDecoder().decode(file.bytes);
+            },
+            async arrayBuffer() {
+                // A standalone copy (own ArrayBuffer), like a real File read.
+                return file.bytes.slice().buffer;
             },
             // Minimal Blob.slice stand-in: only the prefix read in list() is exercised.
             slice(start?: number, end?: number) {
                 return {
                     async text() {
-                        return file.content.slice(start, end);
+                        return new TextDecoder().decode(file.bytes.subarray(start ?? 0, end));
                     },
                 };
             },
@@ -58,17 +62,27 @@ class FakeFileHandle {
     async createWritable() {
         const file = this.file;
         const tick = this.tick;
-        let buffer = '';
+        let buffer = new Uint8Array(0);
         let aborted = false;
+        const append = (add: Uint8Array) => {
+            const next = new Uint8Array(buffer.length + add.length);
+            next.set(buffer);
+            next.set(add, buffer.length);
+            buffer = next;
+        };
         return {
             async write(contents: string | Blob) {
-                // Attachments are written as Blobs; read their text so the fake can store them like
-                // any other file (tests only exercise text-bearing payloads).
-                buffer += typeof contents === 'string' ? contents : await contents.text();
+                // Store raw bytes either way: a string is UTF-8-encoded, a Blob is read as bytes — so
+                // binary content (an attachment, or a non-UTF-8 note) round-trips byte-for-byte.
+                append(
+                    typeof contents === 'string'
+                        ? new TextEncoder().encode(contents)
+                        : new Uint8Array(await contents.arrayBuffer()),
+                );
             },
             async close() {
                 if (aborted) return;
-                file.content = buffer;
+                file.bytes = buffer;
                 file.lastModified = tick();
             },
             // Mirror FileSystemWritableFileStream.abort(): discard the buffered write, leaving
@@ -116,7 +130,28 @@ export class FakeDirectoryHandle {
             );
             return;
         }
-        this.fileEntries.set(name, {content, lastModified: lastModified ?? this.clock.tick()});
+        this.fileEntries.set(name, {
+            bytes: new TextEncoder().encode(content),
+            lastModified: lastModified ?? this.clock.tick(),
+        });
+    }
+
+    /**
+     * Seed a file from raw bytes (UTF-8-encoding a string would lose invalid bytes). Used to test
+     * that binary / non-UTF-8 content survives a move/copy byte-for-byte — a real FSA file's bytes
+     * aren't constrained to valid UTF-8 the way a seeded string is.
+     */
+    seedBytes(name: string, bytes: Uint8Array, lastModified?: number) {
+        const slash = name.indexOf('/');
+        if (slash !== -1) {
+            this.ensureSubdir(name.slice(0, slash)).seedBytes(
+                name.slice(slash + 1),
+                bytes,
+                lastModified,
+            );
+            return;
+        }
+        this.fileEntries.set(name, {bytes, lastModified: lastModified ?? this.clock.tick()});
     }
 
     /** Seed an (initially empty) subdirectory. Idempotent — returns the existing one if present. */
@@ -149,7 +184,7 @@ export class FakeDirectoryHandle {
             if (!options?.create) {
                 throw new DOMException(`${name} not found`, 'NotFoundError');
             }
-            file = {content: '', lastModified: this.clock.tick()};
+            file = {bytes: new Uint8Array(0), lastModified: this.clock.tick()};
             this.fileEntries.set(name, file);
             return new FakeFileHandle(name, file, this.clock.tick);
         }
