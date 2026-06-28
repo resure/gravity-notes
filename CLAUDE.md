@@ -73,10 +73,11 @@ Key modules:
 - `src/search.ts` — pure full-text ranking (no I/O, no React): `tokenizeQuery`, `scoreNoteText`
   (multi-term AND; title ≫ body, word-boundary/prefix/phrase boosts), `buildSnippet`, `searchNotes`.
   The corpus (id → body) is loaded above it and passed in, so it stays trivially unit-testable.
-- `src/tree.ts` — pure tree shaping (no I/O, no React): `buildTree` / `buildFolderTree` /
-  `notesInFolder` / `visibleNoteIds` turn notes + folders + metadata into the `TreeRow[]` the folder
-  rail and list render, encoding the per-level order [pinned folders, folders, pinned notes, notes] and
-  synthesizing missing ancestor folders.
+- `src/tree.ts` — pure tree shaping (no I/O, no React): `buildFolderTree` / `notesInFolder` /
+  `buildMoveTargets` turn notes + folders + metadata into the `FolderRow[]` the folder rail renders
+  (and the move-to picker), encoding the per-level order [pinned folders, folders, pinned notes, notes]
+  and synthesizing missing ancestor folders. `notesInFolder` lists a folder's _direct_ children (the
+  visible note ids for the middle pane are derived in `Workspace`).
 - `src/storage/noteText.ts` — pure helpers shared by both backends: `titleFromFileName`,
   `sanitizeTitle`, `canonicalBody`, `previewFromContent`, `uniqueName`. Keeps id/body shape identical.
 - `src/storage/fileSystemStore.ts` — `FileSystemNoteStore` (File System Access API). Trickiest logic:

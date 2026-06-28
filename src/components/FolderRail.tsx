@@ -33,8 +33,11 @@ import './FolderRail.css';
 
 /** Row key for the special "All Notes" entry (folder paths are always non-empty). */
 const ALL_KEY = ' all';
-/** dataTransfer type carrying a dragged folder's path (notes use `text/plain`, so the two differ). */
+/** dataTransfer type carrying a dragged folder's path (notes use `NOTE_MIME`, so the two differ). */
 const FOLDER_MIME = 'application/x-gravity-folder';
+/** dataTransfer type carrying a dragged note's id — gates note drops so foreign `text/plain` drags
+ * (arbitrary external text) can't be passed into `onMoveTo`. Must match `NOTE_MIME` in NoteList. */
+const NOTE_MIME = 'application/x-gravity-note';
 
 export interface FolderRailHandle {
     /** Move keyboard focus to the selected rail row (or All Notes). */
@@ -60,8 +63,9 @@ export interface FolderRailProps {
     onCreateFolder: (parentPath: string, name: string) => void;
     /** Remove an empty folder (no notes anywhere under it, no subfolders). */
     onRemoveFolder: (path: string) => void;
-    /** Move / rename a folder (re-keying its whole subtree). */
-    onMoveFolder: (fromPath: string, toPath: string) => void;
+    /** Move / rename a folder (re-keying its whole subtree). May resolve `false` on a rejected move
+     * (name collision / no-op), which lets the rail clear its pending select-after-refresh. */
+    onMoveFolder: (fromPath: string, toPath: string) => void | Promise<boolean>;
     /** Toggle a folder's pin. */
     onTogglePin: (path: string) => void;
     /** Move a dropped note into a folder (`''` = root). */
@@ -120,6 +124,10 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const itemsRef = useRef<HTMLDivElement>(null);
     const scrollDirRef = useRef(0);
     const rafRef = useRef<number | null>(null);
+    // The window-level dragend/drop safety net (null = not registered). A note dragged in from the
+    // list and aborted with Escape never fires the rail's own onDragEnd, so without this the rAF
+    // loop would keep scrolling forever.
+    const endListenerRef = useRef<(() => void) | null>(null);
     const stepAutoScroll = useCallback(() => {
         const el = itemsRef.current;
         if (!el || scrollDirRef.current === 0) {
@@ -128,6 +136,18 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         }
         el.scrollTop += scrollDirRef.current * 8;
         rafRef.current = requestAnimationFrame(stepAutoScroll);
+    }, []);
+    const stopAutoScroll = useCallback(() => {
+        scrollDirRef.current = 0;
+        if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+        if (endListenerRef.current) {
+            window.removeEventListener('dragend', endListenerRef.current);
+            window.removeEventListener('drop', endListenerRef.current);
+            endListenerRef.current = null;
+        }
     }, []);
     const updateAutoScroll = useCallback(
         (clientY: number) => {
@@ -142,16 +162,17 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             if (dir !== 0 && rafRef.current === null) {
                 rafRef.current = requestAnimationFrame(stepAutoScroll);
             }
+            // Catch a drag that ends anywhere (incl. an Escape-aborted note drag from the list, which
+            // never reaches a rail handler) so the loop is always torn down.
+            if (dir !== 0 && endListenerRef.current === null) {
+                const onEnd = () => stopAutoScroll();
+                endListenerRef.current = onEnd;
+                window.addEventListener('dragend', onEnd);
+                window.addEventListener('drop', onEnd);
+            }
         },
-        [stepAutoScroll],
+        [stepAutoScroll, stopAutoScroll],
     );
-    const stopAutoScroll = useCallback(() => {
-        scrollDirRef.current = 0;
-        if (rafRef.current !== null) {
-            cancelAnimationFrame(rafRef.current);
-            rafRef.current = null;
-        }
-    }, []);
     useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
     // The flat keyboard order: All Notes, then each visible folder row.
@@ -227,6 +248,13 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         if (parent !== null && name) onCreateFolder(parent, name);
     };
 
+    // Blur on the new-folder editor cancels (unlike rename-on-blur): clicking away shouldn't create
+    // a half-typed folder. Creation commits only on Enter.
+    const cancelNewFolder = () => {
+        setNewFolderParent(null);
+        setNewFolderName('');
+    };
+
     // Begin a new subfolder under `row`: expand it first (if collapsed) so the editor — and the
     // folder once created — are visible beneath their parent rather than hidden.
     const startNewSubfolder = (row: FolderRow) => {
@@ -241,8 +269,18 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         const leaf = sanitizeSegment(current.value.trim());
         const next = joinPath(dirname(current.path), leaf);
         if (current.value.trim() && next !== current.path) {
-            pendingRenameToRef.current = next; // select + focus it once the refreshed tree shows it
-            onMoveFolder(current.path, next);
+            // Only remember the destination to select + focus once the move *succeeds*. Setting it
+            // up-front would dangle on a rejected move (name collision) and later hijack focus for an
+            // unrelated folder created at that path. Promise-returning backends clear it on `false`.
+            const result = onMoveFolder(current.path, next);
+            if (result && typeof result.then === 'function') {
+                void result.then((moved) => {
+                    if (moved) pendingRenameToRef.current = next;
+                });
+            } else {
+                // Synchronous (void) handler: optimistically follow it, as before.
+                pendingRenameToRef.current = next;
+            }
         }
     };
 
@@ -317,8 +355,12 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
 
     /** Drag a note or folder over a target row (`target` = folder path, `''` = root). */
     const onRowDragOver = (event: ReactDragEvent, key: string, target: string) => {
-        // A folder drag onto itself / a descendant is forbidden; note drags are always allowed.
-        if (draggingFolder && isInvalidFolderDrop(target, draggingFolder)) return;
+        if (draggingFolder) {
+            // A folder drag onto itself / a descendant is forbidden; so is its own current parent —
+            // the reparent there is a guaranteed no-op, so don't light the row up for it.
+            if (isInvalidFolderDrop(target, draggingFolder)) return;
+            if (joinPath(target, basename(draggingFolder)) === draggingFolder) return;
+        }
         event.preventDefault();
         if (dropTarget !== key) setDropTarget(key);
     };
@@ -335,7 +377,9 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             if (next !== folderPath) onMoveFolder(folderPath, next);
             return;
         }
-        const id = event.dataTransfer.getData('text/plain');
+        // Require our own MIME, so a foreign drag (arbitrary text/plain from outside the app) can't
+        // be passed into onMoveTo as if it were a note id.
+        const id = event.dataTransfer.getData(NOTE_MIME);
         if (id) onMoveTo(id, target);
     };
 
@@ -572,15 +616,14 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 placeholder="Folder name"
                 value={newFolderName}
                 onUpdate={setNewFolderName}
-                onBlur={submitNewFolder}
+                onBlur={cancelNewFolder}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
                         submitNewFolder();
                     } else if (e.key === 'Escape') {
                         e.preventDefault();
-                        setNewFolderParent(null);
-                        setNewFolderName('');
+                        cancelNewFolder();
                     }
                 }}
             />

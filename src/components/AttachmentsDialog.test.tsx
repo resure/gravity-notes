@@ -11,15 +11,25 @@ import {AttachmentsDialog} from './AttachmentsDialog';
 interface FakeData {
     attachments: AttachmentMeta[];
     notes: Note[];
+    /** Trashed notes, scanned for attachment refs alongside live notes (so a trashed-only ref counts). */
+    trash?: Note[];
 }
 
 function makeStore(data: FakeData) {
     const removeAttachment = vi.fn(async (ref: string) => {
         data.attachments = data.attachments.filter((a) => a.ref !== ref);
     });
+    const trash = data.trash ?? [];
     const store = {
         listAttachments: async () => data.attachments,
         getAll: async () => data.notes,
+        listTrash: async () =>
+            trash.map(({id, title, updatedAt, preview}) => ({id, title, updatedAt, preview})),
+        get: async (id: string) => {
+            const found = trash.find((t) => t.id === id);
+            if (!found) throw new Error(`no note ${id}`);
+            return found;
+        },
         removeAttachment,
         readAttachment: async () => new Blob(['bytes']),
     } as unknown as NoteStore;
@@ -67,6 +77,30 @@ describe('AttachmentsDialog', () => {
         expect(screen.getByRole('button', {name: /Delete unused \(1\)/})).toBeInTheDocument();
         // "Reveal in Finder" is gated on a backend that supports it — this fake store doesn't.
         expect(screen.queryByRole('button', {name: /Reveal/})).not.toBeInTheDocument();
+    });
+
+    it('counts an attachment referenced only by a trashed note as used (not orphaned)', async () => {
+        const {store} = makeStore({
+            attachments: [att('intrash.png')],
+            notes: [],
+            trash: [note('.trash/Old.md', '![x](Attachments/intrash.png)')],
+        });
+        renderWithProviders(
+            <AttachmentsDialog
+                open
+                store={store}
+                cache={new AttachmentUrlCache(store)}
+                onClose={() => {}}
+                onError={() => {}}
+            />,
+        );
+
+        expect(await screen.findByText('intrash.png')).toBeInTheDocument();
+        // A trashed note still references it → "Used by 1 note", not "Unused" (so it stays out of the
+        // bulk-delete and a restore won't find its image already purged).
+        expect(screen.getByText(/Used by 1 note/)).toBeInTheDocument();
+        expect(screen.queryByText('Unused')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Delete unused/})).not.toBeInTheDocument();
     });
 
     it('orders attachments by size when "Largest" is picked', async () => {

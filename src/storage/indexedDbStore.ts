@@ -7,6 +7,7 @@ import {
     basename,
     canonicalBody,
     dirname,
+    isReservedSegment,
     joinPath,
     previewFromContent,
     sanitizeDir,
@@ -164,19 +165,18 @@ export class IndexedDbNoteStore implements NoteStore {
         if (nextId === id) {
             return {id, title: titleFromFileName(id)};
         }
-        // IndexedDB keys are case-sensitive and exact, so a case-only rename is just a key change —
-        // no temp-file dance is needed (unlike the case-insensitive filesystem store).
-        if (await this.exists(nextId)) {
-            throw new NameCollisionError(id, base);
-        }
         const record = await this.getRecord(id);
         if (!record) throw notFound(id);
         const updatedAt = nextTimestamp(record.updatedAt);
-        // Write the new key and delete the old one in a single transaction (atomic rename).
-        await this.run(NOTES_STORE, 'readwrite', (store) => {
-            store.put({id: nextId, content: record.content, updatedAt} satisfies NoteRecord);
-            return store.delete(id);
-        });
+        // IndexedDB keys are case-sensitive and exact, so a case-only rename is just a key change —
+        // no temp-file dance is needed (unlike the case-insensitive filesystem store). Write the new
+        // key with `add()` and delete the old one in the SAME transaction: `add()` rejects a taken
+        // key (ConstraintError) atomically, so the collision check can't race a concurrent write.
+        await this.addThenDelete(
+            {id: nextId, content: record.content, updatedAt},
+            id,
+            () => new NameCollisionError(id, base),
+        );
         return {id: nextId, title: titleFromFileName(nextId), updatedAt};
     }
 
@@ -188,16 +188,15 @@ export class IndexedDbNoteStore implements NoteStore {
         if (newId === id) {
             return {id, title: titleFromFileName(id), updatedAt: record.updatedAt};
         }
-        if (await this.exists(newId)) {
-            throw new NameCollisionError(id, titleFromFileName(id));
-        }
         // Pure relocation: content and mtime are unchanged, so the re-seeded conflict baseline still
-        // matches the moved record. Write the new key and delete the old one in one transaction.
+        // matches the moved record. Write the new key with `add()` and delete the old one in one
+        // transaction, so the collision check can't be raced by a concurrent write to `newId`.
         const updatedAt = record.updatedAt;
-        await this.run(NOTES_STORE, 'readwrite', (store) => {
-            store.put({id: newId, content: record.content, updatedAt} satisfies NoteRecord);
-            return store.delete(id);
-        });
+        await this.addThenDelete(
+            {id: newId, content: record.content, updatedAt},
+            id,
+            () => new NameCollisionError(id, titleFromFileName(id)),
+        );
         return {id: newId, title: titleFromFileName(newId), updatedAt};
     }
 
@@ -255,14 +254,15 @@ export class IndexedDbNoteStore implements NoteStore {
         );
         const newId = joinPath(dir, leaf);
         const updatedAt = record.updatedAt;
-        await this.runAcross([NOTES_STORE, TRASH_STORE], 'readwrite', (tx) => {
-            tx.objectStore(NOTES_STORE).put({
-                id: newId,
-                content: record.content,
-                updatedAt,
-            } satisfies NoteRecord);
-            return tx.objectStore(TRASH_STORE).delete(trashId);
-        });
+        // `add()` (not `put()`) so a note that appeared at `newId` since the uniqueness probe can't be
+        // silently overwritten; a collision aborts the transaction, leaving the trashed row in place.
+        await this.addThenDeleteAcross(
+            NOTES_STORE,
+            {id: newId, content: record.content, updatedAt},
+            TRASH_STORE,
+            trashId,
+            () => new NameCollisionError(trashId, leaf),
+        );
         return {id: newId, title: titleFromFileName(newId), updatedAt};
     }
 
@@ -321,7 +321,13 @@ export class IndexedDbNoteStore implements NoteStore {
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {
-        const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
+        const segment = sanitizeSegment(name);
+        // Reject names the backends own and hide (dot-prefixed, or `Attachments`), for parity with
+        // the folder stores — such a folder would exist but be invisible in the tree.
+        if (isReservedSegment(segment)) {
+            throw new NameCollisionError(parentPath, segment);
+        }
+        const path = joinPath(sanitizeDir(parentPath), segment);
         const folders = await this.readFolders();
         if (!folders.includes(path)) {
             await this.run(KV_STORE, 'readwrite', (store) =>
@@ -349,6 +355,11 @@ export class IndexedDbNoteStore implements NoteStore {
         if (!from || from === to) return;
         if (to === from || to.startsWith(`${from}/`)) {
             throw new Error('Cannot move a folder into itself');
+        }
+        // Reject a rename/reparent that lands on a reserved leaf (dot-prefixed or `Attachments`), for
+        // parity with createFolder and the folder backends.
+        if (to && isReservedSegment(basename(to))) {
+            throw new NameCollisionError(from, basename(to));
         }
         const prefix = `${from}/`;
         const toPrefix = `${to}/`;
@@ -442,8 +453,38 @@ export class IndexedDbNoteStore implements NoteStore {
                         db.createObjectStore(TRASH_STORE, {keyPath: 'id'});
                     }
                 };
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
+                req.onsuccess = () => {
+                    const db = req.result;
+                    // Another tab upgrading the schema would otherwise deadlock both connections —
+                    // step aside (close + drop the cache) so its `versionchange` txn can proceed and
+                    // our next call reopens at the new version.
+                    db.onversionchange = () => {
+                        db.close();
+                        this.dbPromise = null;
+                    };
+                    // Abnormal close (force-closed / DB deleted) leaves a dead cached handle; drop it
+                    // so the next call reopens a fresh connection instead of reusing the closed one.
+                    db.onclose = () => {
+                        this.dbPromise = null;
+                    };
+                    resolve(db);
+                };
+                req.onerror = () => {
+                    // Drop the cached promise so a transient open failure doesn't brick the store —
+                    // the next call retries `indexedDB.open()` instead of re-awaiting the rejection.
+                    this.dbPromise = null;
+                    reject(req.error);
+                };
+                // An upgrade blocked by another tab's open connection would hang forever otherwise.
+                req.onblocked = () => {
+                    this.dbPromise = null;
+                    reject(
+                        new DOMException(
+                            'IndexedDB open blocked by another connection',
+                            'BlockedError',
+                        ),
+                    );
+                };
             });
         }
         return this.dbPromise;
@@ -486,14 +527,68 @@ export class IndexedDbNoteStore implements NoteStore {
         });
     }
 
+    /**
+     * Atomically write `record` to `addStore` with `add()` (which rejects a key that's already taken)
+     * and `delete(delKey)` from `delStore`, both in one transaction. This is the TOCTOU-safe primitive
+     * behind rename/move/restore: the uniqueness check and the write happen inside the same transaction,
+     * so a key that appears between a separate probe and the write can't be silently overwritten. A
+     * duplicate-key `ConstraintError` aborts the transaction (rolling back the delete) and is translated
+     * to a {@link NameCollisionError} via `onCollision`, so the source row is left intact.
+     */
+    private async addThenDeleteAcross(
+        addStore: string,
+        record: NoteRecord,
+        delStore: string,
+        delKey: string,
+        onCollision: () => NameCollisionError,
+    ): Promise<void> {
+        const stores = addStore === delStore ? [addStore] : [addStore, delStore];
+        try {
+            await this.runAcross<IDBValidKey>(stores, 'readwrite', (tx) => {
+                // Issue both in one transaction: if `add()` hits a taken key it raises ConstraintError,
+                // which auto-aborts the whole transaction — rolling back the queued delete too, so the
+                // source row is never lost. Return the add as the request whose error we translate.
+                const add = tx.objectStore(addStore).add(record);
+                tx.objectStore(delStore).delete(delKey);
+                return add;
+            });
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'ConstraintError') {
+                throw onCollision();
+            }
+            throw error;
+        }
+    }
+
+    /** Same-store {@link addThenDeleteAcross}: atomic re-key within the notes store (rename/move). */
+    private addThenDelete(
+        record: NoteRecord,
+        delKey: string,
+        onCollision: () => NameCollisionError,
+    ): Promise<void> {
+        return this.addThenDeleteAcross(NOTES_STORE, record, NOTES_STORE, delKey, onCollision);
+    }
+
     private getRecord(id: string): Promise<NoteRecord | undefined> {
+        // A trashed note's row lives in the separate TRASH_STORE. The folder backends read a trash id
+        // through the same path-based get() as any note, so mirror that here (so get()/stat() resolve
+        // a `.trash/<leaf>.md` id, matching FS/Tauri — e.g. the attachments manager's trashed-note
+        // usage scan). A normal note id can never start with the dot-prefixed trash dir.
+        const storeName = id.startsWith(`${TRASH_DIR}/`) ? TRASH_STORE : NOTES_STORE;
         return this.run<NoteRecord | undefined>(
-            NOTES_STORE,
+            storeName,
             'readonly',
             (store) => store.get(id) as IDBRequest<NoteRecord | undefined>,
         );
     }
 
+    /**
+     * Whether a note already lives at `id`. The note store alone is authoritative here: every caller
+     * probes a note *leaf* (`<dir>/<title>.md`), which always ends in `.md`, whereas folder marker
+     * paths are bare directory names with no extension — so a `.md` candidate can never collide with a
+     * folder path, and consulting the folders set would never change the result. (Folder-vs-folder and
+     * folder-vs-note placement are guarded separately in moveFolder.)
+     */
     private async exists(id: string): Promise<boolean> {
         const key = await this.run<IDBValidKey | undefined>(
             NOTES_STORE,

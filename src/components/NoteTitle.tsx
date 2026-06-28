@@ -83,7 +83,10 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
         [],
     );
 
-    // Commit a dirty draft on unmount (a programmatic switch may never blur the field).
+    // Commit a dirty draft on unmount (a programmatic switch may never blur the field). This is an
+    // intentional fire-and-forget safety net: we can't await the rename during teardown, so the
+    // returned promise (and any rejection) is deliberately dropped — the field is gone anyway, and a
+    // failed rename surfaces via the caller's toaster. The empty deps make this run once, at unmount.
     useEffect(() => {
         return () => {
             if (draftRef.current !== titleRef.current) onCommitRef.current(draftRef.current);

@@ -122,6 +122,9 @@ export function useNoteSearch(notes: NoteMeta[], store: CorpusSource): UseNoteSe
                 setLoadedSignature(signature);
             } catch {
                 // A corpus read failure degrades search to title-only; nothing user-facing to show.
+                // Mark the attempt resolved (accept the possibly-partial/empty corpus) so `loading`
+                // clears — otherwise it sticks true forever and swallows the nvALT Enter-to-create.
+                if (!cancelled) setLoadedSignature(signature);
             } finally {
                 if (!cancelled) loadingRef.current = false;
             }

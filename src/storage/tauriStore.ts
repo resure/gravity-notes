@@ -8,6 +8,7 @@ import {
     basename,
     canonicalBody,
     dirname,
+    isReservedSegment,
     joinPath,
     mimeFromName,
     previewFromContent,
@@ -151,6 +152,9 @@ export class TauriNoteStore implements NoteStore {
         if (caseOnlyRename) {
             // Go through a distinct temp name so the case actually changes on a case-insensitive FS.
             // The temp doesn't end in `.md`, so list() ignores it even transiently.
+            // On a case-SENSITIVE volume `nextName` could be a distinct existing file (the collision
+            // probe above is skipped for case-only renames); the Rust `notes_rename` no-clobber guard
+            // refuses to overwrite a different file, so this can't silently destroy data.
             const tempName = `${nextName}.rename-tmp`;
             await invoke('notes_rename', {dir: this.dir, from: id, to: tempName});
             const updatedAt = await invoke<number>('notes_rename', {
@@ -177,6 +181,8 @@ export class TauriNoteStore implements NoteStore {
             if (updatedAt === null) throw notFound(id);
             return {id, title: titleFromFileName(id), updatedAt};
         }
+        // A vanished source maps to a "deleted" conflict, matching the FS/IDB backends.
+        if ((await this.stat(id)) === null) throw notFound(id);
         if (await this.exists(newId)) {
             throw new NameCollisionError(id, titleFromFileName(id));
         }
@@ -220,6 +226,8 @@ export class TauriNoteStore implements NoteStore {
 
     async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
         const dir = sanitizeDir(destFolder);
+        // A vanished trash entry maps to a "deleted" conflict, matching the FS/IDB backends.
+        if ((await this.stat(trashId)) === null) throw notFound(trashId);
         // The original leaf may be taken now — uniquify against the destination folder.
         const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
             this.exists(joinPath(dir, name)),
@@ -245,6 +253,11 @@ export class TauriNoteStore implements NoteStore {
         await invoke('notes_remove_dir_all', {dir: this.dir, path: TRASH_DIR});
     }
 
+    // Perf/memory ceiling: attachment bytes cross the IPC boundary as a JSON `number[]` (one JS
+    // number per byte in `attachment_write`/`attachment_read`), so a large image is briefly held
+    // several times over (typed array → number[] → serialized JSON) on each side. Acceptable for
+    // typical note images; a raw-bytes transport (`tauri::ipc::Response` on the Rust side) would be
+    // needed to lift the ceiling, but that's a cross-cutting Rust change out of scope for this store.
     async writeAttachment(file: File): Promise<string> {
         const leaf = await uniqueAttachmentName(file.name, (name) =>
             this.exists(joinPath(ATTACHMENTS_DIR, name)),
@@ -284,7 +297,11 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {
-        const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
+        const segment = sanitizeSegment(name);
+        // Reject names the backend hides from the tree (`Attachments`, dot-prefixed): a folder there
+        // would exist on disk but be invisible in the app.
+        if (isReservedSegment(segment)) throw new NameCollisionError(parentPath, segment);
+        const path = joinPath(sanitizeDir(parentPath), segment);
         await invoke('notes_create_folder', {dir: this.dir, path});
         return path;
     }
@@ -300,6 +317,9 @@ export class TauriNoteStore implements NoteStore {
         if (to === from || to.startsWith(`${from}/`)) {
             throw new Error('Cannot move a folder into itself');
         }
+        // Reject a destination leaf the backend hides from the tree (`Attachments`, dot-prefixed):
+        // the moved folder would exist on disk but be invisible in the app.
+        if (isReservedSegment(basename(to))) throw new NameCollisionError(from, basename(to));
         // Collision: a folder/file already at `to` (the Rust side re-checks before renaming).
         if (await this.exists(to)) throw new NameCollisionError(from, basename(to));
         // notes_move_dir creates `to`'s parent, atomically renames the directory, and prunes `from`'s
@@ -317,15 +337,18 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async readMetadata(): Promise<NotesMetadata> {
-        const entry = await invoke<NoteFull | null>('notes_read_opt', {
-            dir: this.dir,
-            name: METADATA_FILENAME,
-        });
-        if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
         try {
+            const entry = await invoke<NoteFull | null>('notes_read_opt', {
+                dir: this.dir,
+                name: METADATA_FILENAME,
+            });
+            if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
             return parseMetadata(JSON.parse(entry.content));
         } catch {
-            return parseMetadata({}); // corrupt JSON → fresh defaults rather than crashing
+            // Corrupt JSON, or — now that notes_read_opt decodes strict UTF-8 — a sidecar with invalid
+            // bytes: degrade to fresh defaults rather than failing store init, matching the FS/IDB
+            // backends (the invoke read is inside the try so a strict-decode rejection is caught too).
+            return parseMetadata({});
         }
     }
 

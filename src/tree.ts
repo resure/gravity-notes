@@ -99,6 +99,11 @@ export function buildFolderTree(
  * The notes shown in the middle pane for a rail selection: `null` (All Notes) → every note;
  * a folder path → only the notes *directly* in it (subfolders are reached via the rail). Order is
  * preserved from the input, so callers pass an already-ordered list.
+ *
+ * Deliberately direct-only, *not* recursive — even though a collapsed folder's rail badge shows the
+ * recursive rollup count (see `buildFolderTree`'s `noteCount`). The two are different by design: the
+ * badge summarizes the hidden subtree, while the pane only ever lists a single folder's own notes
+ * (you descend into subfolders via the rail). Don't "reconcile" these into one recursive count.
  */
 export function notesInFolder(notes: NoteMeta[], folder: string | null): NoteMeta[] {
     if (folder === null) return notes;

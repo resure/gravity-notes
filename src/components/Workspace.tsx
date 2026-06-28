@@ -325,7 +325,20 @@ export function Workspace({
     // autosave window isn't lost when the workspace unmounts.
     const handleChangeStorage = useCallback(() => {
         void (async () => {
-            await notes.flushPending();
+            // If the flush couldn't land (an unresolved conflict still holds the edit), switching
+            // stores would silently discard that content — mirror the rename/move/trash conflict
+            // guards and make the user confirm the loss first. Use flush()'s return value, not the
+            // `notes.conflict` state, which is stale in this closure right after the await (it would
+            // miss a conflict first surfaced BY this very flush).
+            const unresolvedConflict = await notes.flushPending();
+            if (
+                unresolvedConflict &&
+                !window.confirm(
+                    'This note has an unresolved conflict with unsaved changes that will be lost if you switch storage. Continue?',
+                )
+            ) {
+                return;
+            }
             onChangeStorage();
         })();
     }, [notes, onChangeStorage]);
@@ -342,6 +355,15 @@ export function Workspace({
         })();
     }, [notes, store, notify, onError]);
 
+    // Flush any pending edit before opening the attachments manager, so a just-pasted image's
+    // reference is already on disk — otherwise it reads as "Unused" and is bulk-deletable.
+    const handleManageAttachments = useCallback(() => {
+        void (async () => {
+            await notes.flushPending();
+            setAttachmentsOpen(true);
+        })();
+    }, [notes]);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const handleImportClick = useCallback(() => fileInputRef.current?.click(), []);
     const handleImportFiles = useCallback(
@@ -353,7 +375,14 @@ export function Workspace({
                     await notes.refresh();
                     notify(count === 1 ? 'Imported 1 note' : `Imported ${count} notes`);
                 } catch (err) {
-                    onError(err instanceof Error ? err.message : 'Failed to import notes');
+                    // The import may have written some notes before throwing — refresh so those
+                    // become visible, and word the error as a possible partial import.
+                    await notes.refresh();
+                    onError(
+                        err instanceof Error
+                            ? `Import failed (some notes may have been imported): ${err.message}`
+                            : 'Import failed; some notes may have been imported',
+                    );
                 }
             })();
         },
@@ -507,7 +536,10 @@ export function Workspace({
             // racing the refresh and snapping back to All Notes.
             setSelectedFolder((cur) => (cur ? reprefixPath(cur, from, to) : cur));
             setCollapsedFolders((prev) => new Set([...prev].map((p) => reprefixPath(p, from, to))));
-            void notes.moveFolder(from, to).then((moved) => {
+            // Return the promise (resolving to `moved`) so the rail only commits its select-after-rename
+            // once the move actually succeeds — a rejected move (collision) resolves false, so the rail
+            // doesn't dangle pendingRenameToRef on a path that was never created.
+            return notes.moveFolder(from, to).then((moved) => {
                 // The move was rejected (collision) or a no-op: the folders never changed, so undo
                 // the optimistic re-prefix (inverse: to → from) instead of leaving selection on a
                 // path that doesn't exist.
@@ -517,6 +549,7 @@ export function Workspace({
                         (prev) => new Set([...prev].map((p) => reprefixPath(p, to, from))),
                     );
                 }
+                return moved;
             });
         },
         [notes],
@@ -663,7 +696,7 @@ export function Workspace({
                     onChangeStorage={handleChangeStorage}
                     onExport={handleExport}
                     onImport={handleImportClick}
-                    onManageAttachments={() => setAttachmentsOpen(true)}
+                    onManageAttachments={handleManageAttachments}
                     onOpenTrash={() => setTrashOpen(true)}
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}

@@ -97,6 +97,22 @@ describe('buildBacklinks', () => {
     it('returns an empty list when nothing links to the target', () => {
         expect(buildBacklinks('Standalone.md', notes, corpus)).toEqual([]);
     });
+
+    it('resolves ambiguous titles per the same-folder rule (map-based path matches resolveWikiLink)', () => {
+        // Two notes share the title "Notes"; the linker sits in Work/, so its [[Notes]] must resolve
+        // to Work/Notes.md (same folder), not the root one — exercising the precomputed title map.
+        const dupes = notesFrom(['Notes.md', 'Work/Notes.md', 'Work/Plan.md']);
+        const dupeCorpus = new Map<string, string>([
+            ['Notes.md', ''],
+            ['Work/Notes.md', ''],
+            ['Work/Plan.md', 'Plan points at [[Notes]].'],
+        ]);
+        expect(buildBacklinks('Work/Notes.md', dupes, dupeCorpus).map((b) => b.note.id)).toEqual([
+            'Work/Plan.md',
+        ]);
+        // The root Notes.md gets no backlink from Work/Plan.md (it lost the same-folder tiebreak).
+        expect(buildBacklinks('Notes.md', dupes, dupeCorpus)).toEqual([]);
+    });
 });
 
 describe('suggestWikiTargets', () => {

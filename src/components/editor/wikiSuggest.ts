@@ -147,17 +147,45 @@ export function wikiSuggestPlugin(builder: ExtensionBuilder, opts: WikiSuggestOp
                     },
                 },
                 view(editorView) {
+                    // Cache the last pushed snapshot so we skip the (React setState) `onSuggest` on
+                    // transactions that don't change the popup — `update` fires on every keystroke,
+                    // but the visible state only depends on the anchor, the items, and the highlight.
+                    // `from`/`to` ride along too: the `choose`/`close` closures capture them, so a
+                    // shifted span must re-push even if the same notes rank the same.
+                    let last: {
+                        anchor: HTMLElement;
+                        items: NoteMeta[];
+                        activeIndex: number;
+                        from: number;
+                        to: number;
+                    } | null = null;
                     const push = () => {
                         const st = KEY.getState(editorView.state);
                         const list = st ? items(st) : [];
                         const anchor = editorView.dom.querySelector('.wiki-suggest');
                         if (!st?.active || list.length === 0 || !(anchor instanceof HTMLElement)) {
-                            onSuggest(null);
+                            if (last !== null) {
+                                last = null;
+                                onSuggest(null);
+                            }
                             return;
                         }
+                        const activeIndex = Math.min(st.index, list.length - 1);
+                        if (
+                            last &&
+                            last.anchor === anchor &&
+                            last.activeIndex === activeIndex &&
+                            last.from === st.from &&
+                            last.to === st.to &&
+                            last.items.length === list.length &&
+                            last.items.every((item, i) => item.id === list[i]?.id)
+                        ) {
+                            return; // nothing the popup cares about changed
+                        }
+                        last = {anchor, items: list, activeIndex, from: st.from, to: st.to};
                         onSuggest({
                             items: list,
-                            activeIndex: Math.min(st.index, list.length - 1),
+                            activeIndex,
                             anchor,
                             choose: (i) => {
                                 const note = list[i];

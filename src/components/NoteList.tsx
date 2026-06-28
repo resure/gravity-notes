@@ -22,6 +22,10 @@ import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
 
+/** dataTransfer type carrying a dragged note's id; the folder rail gates note drops on it so foreign
+ * `text/plain` drags can't be moved into a folder. Must match `NOTE_MIME` in FolderRail. */
+const NOTE_MIME = 'application/x-gravity-note';
+
 export interface NoteListHandle {
     /** Move keyboard focus to the selected row, or the search box if the list is empty. */
     focusSelected(): void;
@@ -333,7 +337,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 aria-selected={selected}
                 tabIndex={tabbable ? 0 : -1}
                 draggable={!editing}
-                onDragStart={(e) => e.dataTransfer.setData('text/plain', note.id)}
+                onDragStart={(e) => {
+                    // Custom MIME gates the rail's note-drop (foreign text/plain can't sneak in);
+                    // text/plain is kept too for native targets that only read plain text.
+                    e.dataTransfer.setData(NOTE_MIME, note.id);
+                    e.dataTransfer.setData('text/plain', note.id);
+                }}
                 onClick={() => !editing && browseRow(note.id)}
                 onContextMenu={(e) => {
                     if (editing) return;

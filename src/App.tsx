@@ -19,8 +19,14 @@ const toaster = new Toaster();
 const THEME_KEY = 'gravity-notes:theme';
 
 function initialTheme(): ThemePref {
-    const saved = localStorage.getItem(THEME_KEY);
-    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+    // Reads in App's body, before the ErrorBoundary mounts — a throw here (e.g. private mode where
+    // localStorage access is denied) would blank the page, so swallow it and fall back to 'system'.
+    try {
+        const saved = localStorage.getItem(THEME_KEY);
+        return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+    } catch {
+        return 'system';
+    }
 }
 
 export function App() {
@@ -28,7 +34,12 @@ export function App() {
     const storage = useNotesStorage();
 
     useEffect(() => {
-        localStorage.setItem(THEME_KEY, themePref);
+        // Persisting the theme is best-effort; a denied localStorage (private mode) must not crash.
+        try {
+            localStorage.setItem(THEME_KEY, themePref);
+        } catch {
+            // ignore — the theme just won't survive a reload
+        }
     }, [themePref]);
 
     return (

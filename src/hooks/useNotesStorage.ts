@@ -98,20 +98,40 @@ export function useNotesStorage(): NotesStorage {
                     // grant, so the remembered path opens straight to ready (no needs-permission).
                     const path = await loadFolderPath();
                     if (cancelled || interactedRef.current) return;
-                    if (path) {
-                        setStore(new TauriNoteStore(path));
-                        setBackend('tauri-fs');
-                        setStorageLabel(folderName(path));
-                        setState('ready');
-                    } else {
+                    if (!path) {
                         setState('choosing');
+                        return;
                     }
+                    const tauriStore = new TauriNoteStore(path);
+                    // Probe that the remembered folder still exists/reads before landing in the
+                    // workspace: if it was moved/deleted/unmounted, every fs call there would fail.
+                    // A failed probe surfaces the error and routes back to the choice screen so the
+                    // user can re-pick, rather than stranding them on a broken workspace.
+                    try {
+                        await tauriStore.list();
+                    } catch (err) {
+                        if (cancelled || interactedRef.current) return;
+                        setError(
+                            err instanceof Error
+                                ? err.message
+                                : 'Your notes folder is no longer available.',
+                        );
+                        setState('choosing');
+                        return;
+                    }
+                    if (cancelled || interactedRef.current) return;
+                    setStore(tauriStore);
+                    setBackend('tauri-fs');
+                    setStorageLabel(folderName(path));
+                    setState('ready');
                     return;
                 }
                 if (kind === 'filesystem' && savedHandle) {
-                    setStorageLabel(savedHandle.name);
                     const permission = await queryPermission(savedHandle);
                     if (cancelled || interactedRef.current) return;
+                    // Set the label only after the post-await guard, so a cancelled/interacted
+                    // bootstrap never writes state the user just superseded.
+                    setStorageLabel(savedHandle.name);
                     if (permission === 'granted') {
                         setStore(new FileSystemNoteStore(savedHandle));
                         setBackend('filesystem');
@@ -197,19 +217,27 @@ export function useNotesStorage(): NotesStorage {
     const grantPermission = useCallback(async () => {
         interactedRef.current = true;
         setError(null);
-        const savedHandle = await loadDirHandle();
-        if (!savedHandle) {
-            setState('choosing');
-            return;
-        }
-        if (await requestPermission(savedHandle)) {
-            await saveBackend('filesystem');
-            setStore(new FileSystemNoteStore(savedHandle));
-            setBackend('filesystem');
-            setStorageLabel(savedHandle.name);
-            setState('ready');
-        } else {
-            setError('Permission to access the folder was denied.');
+        try {
+            const savedHandle = await loadDirHandle();
+            if (!savedHandle) {
+                setState('choosing');
+                return;
+            }
+            if (await requestPermission(savedHandle)) {
+                await saveBackend('filesystem');
+                setStore(new FileSystemNoteStore(savedHandle));
+                setBackend('filesystem');
+                setStorageLabel(savedHandle.name);
+                setState('ready');
+            } else {
+                setError('Permission to access the folder was denied.');
+            }
+        } catch (err) {
+            // Without this, a thrown requestPermission/loadDirHandle became a swallowed unhandled
+            // rejection, stranding the user on the permission gate. The user dismissing the prompt
+            // throws AbortError — not an error to show (mirrors pickFolder).
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+            setError(err instanceof Error ? err.message : 'Could not grant access.');
         }
     }, []);
 

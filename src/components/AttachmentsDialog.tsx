@@ -90,13 +90,28 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const [attachments, notes] = await Promise.all([
+            const [attachments, notes, trash] = await Promise.all([
                 store.listAttachments(),
                 store.getAll(),
+                store.listTrash(),
             ]);
+            // Trashed notes still reference their attachments — counting them keeps a still-needed
+            // file out of "Unused" (and off the bulk-delete list), so restoring a trashed note never
+            // finds its image already purged. `getAll()` excludes `.trash/`, so read those bodies
+            // here (trash is small). Each read is fail-soft: a single unreadable trashed note must not
+            // blank the whole manager, so we skip it (its refs just aren't counted).
+            const trashBodies = await Promise.all(
+                trash.map((t) =>
+                    store
+                        .get(t.id)
+                        .then((n) => n.content)
+                        .catch(() => ''),
+                ),
+            );
             const usage = new Map<string, number>();
-            for (const note of notes) {
-                for (const ref of attachmentRefsIn(note.content)) {
+            const bodies = [...notes.map((n) => n.content), ...trashBodies];
+            for (const body of bodies) {
+                for (const ref of attachmentRefsIn(body)) {
                     usage.set(ref, (usage.get(ref) ?? 0) + 1);
                 }
             }
@@ -134,6 +149,12 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
             void (async () => {
                 try {
                     const url = cache.peek(item.ref) ?? (await cache.resolve(item.ref));
+                    // resolve() yields '' if the ref was forgotten/disposed mid-flight — never open
+                    // the Lightbox on an empty src.
+                    if (!url) {
+                        onError('Failed to open attachment');
+                        return;
+                    }
                     setViewing({url, name: item.name});
                 } catch {
                     onError('Failed to open attachment');
@@ -180,13 +201,13 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
         if (!pending) return '';
         if (pending.bulk) {
             const n = pending.refs.length;
-            return `Delete ${n} unused file${n === 1 ? '' : 's'}? They aren't referenced by any note.`;
+            return `Delete ${n} unused file${n === 1 ? '' : 's'}? No note (including trashed ones) references them.`;
         }
         if (pending.usedBy > 0) {
             const n = pending.usedBy;
             return `“${pending.label}” is used by ${n} note${n === 1 ? '' : 's'}. Deleting it will leave broken image links there.`;
         }
-        return `Delete “${pending.label}”? It isn't referenced by any note.`;
+        return `Delete “${pending.label}”? No note (including trashed ones) references it.`;
     };
 
     return (

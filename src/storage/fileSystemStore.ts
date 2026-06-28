@@ -8,6 +8,7 @@ import {
     basename,
     canonicalBody,
     dirname,
+    isReservedSegment,
     joinPath,
     previewFromContent,
     sanitizeDir,
@@ -70,15 +71,21 @@ export class FileSystemNoteStore implements NoteStore {
     async list(): Promise<NoteMeta[]> {
         const metas: NoteMeta[] = [];
         for await (const {id, handle} of this.walkNotes()) {
-            const file = await handle.getFile();
-            // Read only the head of each file — enough for a one-line list preview.
-            const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
-            metas.push({
-                id,
-                title: titleFromFileName(id),
-                updatedAt: file.lastModified,
-                preview: previewFromContent(head),
-            });
+            try {
+                const file = await handle.getFile();
+                // Read only the head of each file — enough for a one-line list preview.
+                const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+                metas.push({
+                    id,
+                    title: titleFromFileName(id),
+                    updatedAt: file.lastModified,
+                    preview: previewFromContent(head),
+                });
+            } catch (err) {
+                // One unreadable file (deleted mid-scan, permission glitch) must not blank the whole
+                // list — skip it so every other note still loads.
+                console.warn(`Skipping unreadable note "${id}":`, err);
+            }
         }
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return metas;
@@ -87,14 +94,19 @@ export class FileSystemNoteStore implements NoteStore {
     async getAll(): Promise<Note[]> {
         const notes: Note[] = [];
         for await (const {id, handle} of this.walkNotes()) {
-            const file = await handle.getFile();
-            notes.push({
-                id,
-                title: titleFromFileName(id),
-                updatedAt: file.lastModified,
-                // Stripped to match get()/the editor's serialized shape (parity for the search corpus).
-                content: stripTrailingNewlines(await file.text()),
-            });
+            try {
+                const file = await handle.getFile();
+                notes.push({
+                    id,
+                    title: titleFromFileName(id),
+                    updatedAt: file.lastModified,
+                    // Stripped to match get()/the editor's serialized shape (search-corpus parity).
+                    content: stripTrailingNewlines(await file.text()),
+                });
+            } catch (err) {
+                // Skip an unreadable file so the search corpus still gets every readable note.
+                console.warn(`Skipping unreadable note "${id}":`, err);
+            }
         }
         return notes;
     }
@@ -119,6 +131,8 @@ export class FileSystemNoteStore implements NoteStore {
         const dir = await this.resolveDir(folder, true);
         if (!dir) throw new Error(`Could not open folder "${folder}"`);
         // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
+        // The probe-then-create is not atomic, but the FSA gives no atomic create-if-absent; this is
+        // a single-user, single-tab store, so the window for a racing create is effectively nil.
         const leaf = await uniqueName(sanitizeTitle(title), (name) => this.existsIn(dir, name));
         const handle = await dir.getFileHandle(leaf, {create: true});
         // Write the canonical "blank line at EOF" shape save() produces, so a brand-new note has a
@@ -180,39 +194,51 @@ export class FileSystemNoteStore implements NoteStore {
         if (nextName === id) {
             return {id, title: titleFromFileName(id)};
         }
-        // A case-only rename (note.md → Note.md) is the SAME file on a case-insensitive
-        // filesystem (macOS/Windows default): the collision check below would see the source as a
-        // collision, and a naive copy-then-delete would delete the file we just wrote.
+        // A case-only rename (note.md → Note.md) is the SAME file on a case-insensitive filesystem
+        // (macOS/Windows default) but two DISTINCT files on a case-sensitive one — handled separately
+        // below, keyed off the actually-stored leaf so the right path is taken on either FS.
         const caseOnlyRename = nextName.toLowerCase() === id.toLowerCase();
         const dir = await this.resolveDir(folder);
         if (!dir) throw notFound(id);
         const oldLeaf = basename(id);
         const nextLeaf = base + MD_EXT;
-        // Renaming onto another note's name is rejected (no auto-numbered copy); the caller
-        // surfaces it to the user. Skipped for a case-only rename (the only "match" is itself).
-        if (!caseOnlyRename && (await this.existsIn(dir, nextLeaf))) {
+        const srcHandle = await this.existingFileHandle(dir, oldLeaf);
+        if (!srcHandle) throw notFound(id);
+        // The leaf `nextLeaf` resolves to on disk: `null` when the name is free, the source's own
+        // `oldLeaf` when it resolves back to the source (a case-only rename on a case-INSENSITIVE
+        // FS), or a different name when a DISTINCT note already owns it.
+        const existingLeaf = await this.storedLeafName(dir, nextLeaf);
+        // Renaming onto another note's name is rejected (no auto-numbered copy); the caller surfaces
+        // it to the user. This now also catches a case-only rename onto a DISTINCT existing file on a
+        // case-SENSITIVE FS (`note.md`→`Note.md` where a separate `Note.md` exists) — the original
+        // guard skipped that path entirely, risking an overwrite.
+        if (existingLeaf !== null && existingLeaf !== oldLeaf) {
             throw new NameCollisionError(id, base);
         }
-        // The File System Access API has no atomic rename. Write the same canonical shape save()
-        // produces (a blank line at EOF) so a rename doesn't change the file's trailing whitespace
-        // (renames are frequent now that editing the title renames the file).
-        const content = (await this.get(id)).content;
-        if (caseOnlyRename) {
-            // Go through a distinct temp name so the case actually changes on a case-insensitive
-            // FS and the original is never the copy target. The temp doesn't end in `.md`, so
-            // list() ignores it even transiently.
+        // The File System Access API has no atomic rename: this is a raw-byte copy-then-delete
+        // (mirroring move()/trash()), so a note carrying non-UTF-8 content survives byte-for-byte
+        // and the body isn't needlessly re-canonicalized through a UTF-8 round-trip.
+        if (caseOnlyRename && existingLeaf === oldLeaf) {
+            // Case-only rename on a case-INSENSITIVE FS: `nextLeaf` and `oldLeaf` are the SAME entry,
+            // so getFileHandle(nextLeaf) would just hand back the source — the case would never
+            // change. Stage through a distinct temp (which doesn't end in `.md`, so list() ignores it
+            // even transiently), remove the source so the new-cased name is free, then write it. The
+            // bytes live safely in the temp across the (necessary, unavoidable on this FS) window
+            // between dropping `oldLeaf` and committing `nextLeaf`.
             const tempLeaf = `${nextLeaf}.rename-tmp`;
-            const tempHandle = await dir.getFileHandle(tempLeaf, {create: true});
-            await writeFile(tempHandle, canonicalBody(content));
+            await this.copyFileBytes(srcHandle, dir, tempLeaf);
+            const tempHandle = await this.existingFileHandle(dir, tempLeaf);
+            if (!tempHandle) throw notFound(id);
             await dir.removeEntry(oldLeaf);
-            const renamed = await dir.getFileHandle(nextLeaf, {create: true});
-            await writeFile(renamed, canonicalBody(content));
+            const renamed = await this.copyFileBytes(tempHandle, dir, nextLeaf);
             await dir.removeEntry(tempLeaf);
             const updatedAt = (await renamed.getFile()).lastModified;
             return {id: nextName, title: titleFromFileName(nextName), updatedAt};
         }
-        const handle = await dir.getFileHandle(nextLeaf, {create: true});
-        await writeFile(handle, canonicalBody(content));
+        // `nextLeaf` is a distinct entry (a normal rename, or a case-only rename on a case-SENSITIVE
+        // FS): commit it BEFORE deleting the source, so a crash mid-rename leaves the readable note
+        // under one name or both — never lost. No temp, no window.
+        const handle = await this.copyFileBytes(srcHandle, dir, nextLeaf);
         await dir.removeEntry(oldLeaf);
         // Read the real on-disk mtime so the caller can seed an accurate conflict baseline.
         const updatedAt = (await handle.getFile()).lastModified;
@@ -306,6 +332,8 @@ export class FileSystemNoteStore implements NoteStore {
         // The FSA has no atomic rename, so this is a copy: the write bumps mtime to "now" (the Tauri /
         // IndexedDB backends preserve it). A restored note therefore surfaces at the top of the
         // "updated" sort on the web backend — the same mtime caveat the copy-then-delete move() carries.
+        // Inherent to the FSA: there is no API to set a file's lastModified, so the original mtime
+        // can't be reinstated here. Left as-is by design.
         await this.removeFromTrash(trashId);
         const newId = joinPath(folder, leaf);
         const updatedAt = (await handle.getFile()).lastModified;
@@ -328,6 +356,8 @@ export class FileSystemNoteStore implements NoteStore {
     async writeAttachment(file: File): Promise<string> {
         const dir = await this.resolveDir(ATTACHMENTS_DIR, true);
         if (!dir) throw new Error('Could not open the Attachments folder');
+        // Probe-then-create is not atomic (the FSA has no atomic create-if-absent), but this is a
+        // single-user, single-tab store so the race window is effectively nil.
         const leaf = await uniqueAttachmentName(file.name, (name) => this.existsIn(dir, name));
         const handle = await dir.getFileHandle(leaf, {create: true});
         await writeFile(handle, file);
@@ -366,7 +396,10 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async removeAttachment(ref: string): Promise<void> {
-        const dir = await this.resolveDir(ATTACHMENTS_DIR);
+        // Resolve the ref's own folder + leaf (like readAttachment/writeAttachmentAt) rather than
+        // hard-coding ATTACHMENTS_DIR, so all three treat a `ref` consistently (a nested ref removes
+        // the right file instead of a same-named one at the Attachments root).
+        const dir = await this.resolveDir(dirname(ref));
         if (!dir) return;
         try {
             await dir.removeEntry(basename(ref));
@@ -377,7 +410,13 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async createFolder(parentPath: string, name: string): Promise<string> {
-        const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
+        const leaf = sanitizeSegment(name);
+        const path = joinPath(sanitizeDir(parentPath), leaf);
+        // Refuse a name the note/folder walk hides (`Attachments`, any dot-name): such a folder would
+        // exist on disk yet vanish from the tree, silently swallowing any notes a user put inside it.
+        if (isReservedSegment(leaf)) {
+            throw new NameCollisionError(path, leaf);
+        }
         const dir = await this.resolveDir(path, true);
         if (!dir) throw new Error(`Could not create folder "${path}"`);
         // A `.gnkeep` marker keeps the (otherwise empty) folder alive past the auto-prune.
@@ -405,6 +444,12 @@ export class FileSystemNoteStore implements NoteStore {
         if (!from || from === to) return;
         if (to === from || to.startsWith(`${from}/`)) {
             throw new Error('Cannot move a folder into itself');
+        }
+        // Refuse a destination leaf the walk hides (`Attachments`, any dot-name) — the moved subtree
+        // and its notes would vanish from the tree (same reason createFolder rejects these).
+        const destLeaf = basename(to);
+        if (isReservedSegment(destLeaf)) {
+            throw new NameCollisionError(from, destLeaf);
         }
         const src = await this.resolveDir(from);
         if (!src) return; // nothing to move
@@ -578,6 +623,50 @@ export class FileSystemNoteStore implements NoteStore {
         }
     }
 
+    /** The handle for `leaf` directly inside `dir`, or `null` when no such file exists. */
+    private async existingFileHandle(
+        dir: FileSystemDirectoryHandle,
+        leaf: string,
+    ): Promise<FileSystemFileHandle | null> {
+        try {
+            return await dir.getFileHandle(leaf);
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') {
+                return null;
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * The actually-stored leaf name of the file `getFileHandle(leaf)` resolves to inside `dir`, or
+     * `null` when none exists. Defers to the filesystem's OWN case rules (a real FSA / the fake both
+     * hand back the existing entry's stored name): on a case-INSENSITIVE FS, `Note.md` resolves to a
+     * stored `note.md`; on a case-SENSITIVE one it doesn't resolve at all. That lets rename() tell a
+     * case-only rename's own source (stored name === source leaf) apart from a distinct collision
+     * (stored name differs, or, on a case-sensitive FS, a separate file under the exact target name).
+     * A directory occupying the name reports back as a taken (distinct) leaf, so rename() collides.
+     */
+    private async storedLeafName(
+        dir: FileSystemDirectoryHandle,
+        leaf: string,
+    ): Promise<string | null> {
+        try {
+            const handle = await dir.getFileHandle(leaf);
+            return handle.name;
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') {
+                return null;
+            }
+            // A directory occupies the name (TypeMismatchError): report it as a distinct "taken" leaf
+            // so rename() rejects with a collision rather than surfacing a raw FSA error.
+            if (err instanceof DOMException && err.name === 'TypeMismatchError') {
+                return leaf;
+            }
+            throw err;
+        }
+    }
+
     private async existsIn(dir: FileSystemDirectoryHandle, leaf: string): Promise<boolean> {
         try {
             await dir.getFileHandle(leaf);
@@ -585,6 +674,11 @@ export class FileSystemNoteStore implements NoteStore {
         } catch (err) {
             if (err instanceof DOMException && err.name === 'NotFoundError') {
                 return false;
+            }
+            // A directory (or other non-file entry) occupying the name throws TypeMismatchError;
+            // treat it as "taken" so callers never try to create a file over it.
+            if (err instanceof DOMException && err.name === 'TypeMismatchError') {
+                return true;
             }
             throw err;
         }

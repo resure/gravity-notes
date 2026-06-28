@@ -279,6 +279,31 @@ describe('TauriNoteStore', () => {
             expect(meta.id).toBe('Work/New.md');
             expect(await store.stat('Work/Old.md')).toBeNull();
         });
+
+        it('maps a move of a vanished note to a NotFoundError (deleted) conflict', async () => {
+            // No file ever created at this id → the source is "gone" the moment we move it.
+            await expect(store.move('Inbox/Ghost.md', 'Archive')).rejects.toMatchObject({
+                name: 'NotFoundError',
+            });
+        });
+
+        it('rejects creating a reserved folder name (Attachments, dot-prefixed)', async () => {
+            await expect(store.createFolder('Work', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.createFolder('', '.trash')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+        });
+
+        it('rejects moving a folder onto a reserved destination name', async () => {
+            await store.create('A', 'Work');
+            await expect(store.moveFolder('Work', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // The source is untouched after a rejected move.
+            expect(await store.stat('Work/A.md')).not.toBeNull();
+        });
     });
 
     it('sanitizes unsafe titles into a file-name base', async () => {
@@ -449,6 +474,12 @@ describe('TauriNoteStore', () => {
             await store.create('Note'); // root Note.md reclaims the original name
             const restored = await store.restore('.trash/Note.md', '');
             expect(restored.id).toBe('Note 2.md');
+        });
+
+        it('maps a restore of a vanished trash entry to a NotFoundError (deleted) conflict', async () => {
+            await expect(store.restore('.trash/Ghost.md', '')).rejects.toMatchObject({
+                name: 'NotFoundError',
+            });
         });
 
         it('purge removes one; emptyTrash clears the rest', async () => {

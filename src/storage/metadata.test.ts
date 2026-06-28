@@ -35,10 +35,30 @@ describe('parseMetadata', () => {
         expect(parseMetadata(42)).toEqual(DEFAULT_METADATA);
     });
 
-    it('returns defaults for an unrecognized version', () => {
-        expect(parseMetadata({version: 2, sort: 'title', pinned: [], created: {}})).toEqual(
+    it('returns defaults for a missing or below-1 version', () => {
+        expect(parseMetadata({sort: 'title', pinned: [], created: {}})).toEqual(DEFAULT_METADATA);
+        expect(parseMetadata({version: 0, sort: 'title', pinned: ['A.md'], created: {}})).toEqual(
             DEFAULT_METADATA,
         );
+    });
+
+    it('parses a future version leniently, keeping its known fields', () => {
+        // A newer build may bump `version`; don't nuke its pins/created/active/trash and re-write
+        // them away — read every field we recognize. (We normalize the in-memory version to 1.)
+        const parsed = parseMetadata({
+            version: 2,
+            sort: 'title',
+            pinned: ['A.md', 'B.md'],
+            created: {'A.md': 100},
+            active: 'A.md',
+            trashed: [{id: '.trash/X.md', title: 'X', originalPath: 'Work', trashedAt: 5}],
+        });
+        expect(parsed.pinned).toEqual(['A.md', 'B.md']);
+        expect(parsed.created).toEqual({'A.md': 100});
+        expect(parsed.active).toBe('A.md');
+        expect(parsed.trashed).toEqual([
+            {id: '.trash/X.md', title: 'X', originalPath: 'Work', trashedAt: 5},
+        ]);
     });
 
     it('keeps valid fields and coerces invalid ones', () => {
