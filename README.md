@@ -134,6 +134,9 @@ Key modules:
   the browser's site data erases it — use **Export** to keep a `.md` backup.
 - **External changes** to the open note are detected when you return focus to the tab, not live while
   it stays focused.
+- **A selected image shows a faint caret line** beside it in the editor — the browser's native
+  object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected. See
+  `TODO.md`.
 
 ### Backlog
 
@@ -145,8 +148,10 @@ Key modules:
 - Trash bin for deleted notes
 - Media attachments — core + management view + export/import done (drag-drop / paste / image-command
   into a root `Attachments/` folder, rendered in editor + preview across all backends; a "Manage
-  attachments" dialog lists/usage-flags/deletes them; export/import bundles the bytes). Automatic
-  orphan cleanup on note delete is still open — see `TODO.md`.
+  attachments" dialog lists/usage-flags/deletes them, sorts by recent / size / name, and opens any
+  image full-size with pinch / scroll zoom + pan; export/import bundles the bytes). On the desktop
+  app, **Reveal in Finder** is offered for notes, folders, and attachments. Automatic orphan cleanup
+  on note delete is still open — see `TODO.md`.
 
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
