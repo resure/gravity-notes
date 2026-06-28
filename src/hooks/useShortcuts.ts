@@ -24,12 +24,15 @@ export function useShortcuts(actions: ShortcutActions): void {
     actionsRef.current = actions;
 
     useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
+        // Each phase owns the bindings whose `capture` flag matches it: capture-phase bindings (e.g.
+        // ⌘[/⌘]) preempt the editor and stopPropagation; everything else runs on bubble as before.
+        const tryHandle = (event: KeyboardEvent, capturePhase: boolean): void => {
             if (event.repeat) return; // a held key shouldn't fire the action repeatedly
             const mod = event.metaKey || event.ctrlKey;
             const typing = isTypingTarget(document.activeElement);
             for (const {global: binding} of SHORTCUTS) {
                 if (!binding) continue;
+                if (Boolean(binding.capture) !== capturePhase) continue;
                 const allowInTyping = binding.inTyping ?? binding.trigger === 'mod';
                 if (typing && !allowInTyping) continue;
                 if (binding.trigger === 'mod') {
@@ -45,18 +48,26 @@ export function useShortcuts(actions: ShortcutActions): void {
                         keyMatches
                     ) {
                         event.preventDefault();
+                        if (capturePhase) event.stopPropagation(); // keep it from reaching the editor
                         actionsRef.current[binding.action]();
                         return;
                     }
                 } else if (event.key === binding.key) {
                     event.preventDefault();
+                    if (capturePhase) event.stopPropagation();
                     actionsRef.current[binding.action]();
                     return;
                 }
             }
         };
-        document.addEventListener('keydown', onKeyDown);
-        return () => document.removeEventListener('keydown', onKeyDown);
-        // Intentional empty deps: listener binds once; latest actions always read via actionsRef.
+        const onCapture = (event: KeyboardEvent) => tryHandle(event, true);
+        const onBubble = (event: KeyboardEvent) => tryHandle(event, false);
+        document.addEventListener('keydown', onCapture, true);
+        document.addEventListener('keydown', onBubble);
+        return () => {
+            document.removeEventListener('keydown', onCapture, true);
+            document.removeEventListener('keydown', onBubble);
+        };
+        // Intentional empty deps: listeners bind once; latest actions always read via actionsRef.
     }, []);
 }

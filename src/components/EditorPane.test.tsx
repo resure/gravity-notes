@@ -88,6 +88,8 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
             onRename={() => {}}
             onEscape={() => {}}
             onUploadFile={async () => 'Attachments/x.png'}
+            wikiNotes={[]}
+            onOpenWikiLink={() => {}}
             {...props}
         />,
     );

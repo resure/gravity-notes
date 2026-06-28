@@ -95,6 +95,7 @@ export function previewFromContent(text: string): string {
     return text
         .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images → drop (no alt text in the flowing preview)
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → keep just the link text
+        .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
         .replace(/^\s{0,3}#{1,6}\s+/gm, '') // ATX heading markers
         .replace(/^\s*>\s?/gm, '') // blockquotes
         .replace(/^\s*[-*+]\s+/gm, '') // bullets

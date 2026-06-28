@@ -206,6 +206,12 @@ describe('previewFromContent', () => {
         // A real ordered-list marker is still stripped — only the escaped, literal one survives.
         expect(previewFromContent('1. First\n2. Second')).toBe('First Second');
     });
+
+    it('shows a [[wiki link]] as its bare title', () => {
+        expect(previewFromContent('Back to [[Roadmap]] for the plan')).toBe(
+            'Back to Roadmap for the plan',
+        );
+    });
 });
 
 describe('isAttachmentRef', () => {

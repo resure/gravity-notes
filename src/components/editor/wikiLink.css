@@ -1,0 +1,54 @@
+/* [[wiki links]] render like the editor's URL links: a coloured, clickable title with no brackets.
+   ⌘/Ctrl-click follows it (the shared `.g-prosemirror_mod-pressed a` rule in EditorPane.css flips the
+   cursor to a pointer while the modifier is held); a plain click just edits the title text inline. */
+.editor-pane .g-md-editor .wiki-link {
+    color: var(--g-color-text-link);
+    text-decoration: none;
+    cursor: text;
+}
+.editor-pane .g-md-editor .wiki-link:hover {
+    color: var(--g-color-text-link-hover);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+}
+
+/* A link whose target doesn't exist yet — dimmed, with a dashed underline, so a typo or a
+   yet-to-be-created note stands out. ⌘-clicking it still works (it creates the note). */
+.editor-pane .g-md-editor .wiki-link_broken {
+    color: var(--g-color-text-secondary);
+    text-decoration: underline;
+    text-decoration-style: dashed;
+    text-decoration-color: var(--g-color-text-danger);
+}
+
+/* The `[[query` span the picker anchors to while a link is being typed — a faint highlight. */
+.editor-pane .g-md-editor .wiki-suggest {
+    border-radius: 2px;
+    background: var(--g-color-base-selection);
+}
+
+/* The `[[` note picker. */
+.wiki-suggest-popup {
+    min-width: 220px;
+    max-width: 380px;
+    padding: 4px;
+}
+.wiki-suggest-popup__item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 0 8px;
+    overflow: hidden;
+}
+.wiki-suggest-popup__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wiki-suggest-popup__path {
+    margin-left: auto;
+    color: var(--g-color-text-secondary);
+    font-size: 0.85em;
+    white-space: nowrap;
+}

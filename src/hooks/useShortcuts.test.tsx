@@ -9,6 +9,8 @@ function makeActions(): ShortcutActions {
         focusSearch: vi.fn(),
         selectNextNote: vi.fn(),
         selectPrevNote: vi.fn(),
+        historyBack: vi.fn(),
+        historyForward: vi.fn(),
         toggleSidebar: vi.fn(),
         toggleFolderRail: vi.fn(),
         peekSidebar: vi.fn(),
@@ -46,6 +48,27 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: 'k', ctrlKey: true});
         expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('goes back / forward in history on mod+[ and mod+] (matched by physical key)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        // A real ⌘[ keydown carries code 'BracketLeft'; the binding matches the physical key so it
+        // works across layouts. It's handled in the capture phase to beat the editor's list-outdent.
+        press({key: '[', code: 'BracketLeft', metaKey: true});
+        press({key: ']', code: 'BracketRight', metaKey: true});
+        expect(actions.historyBack).toHaveBeenCalledTimes(1);
+        expect(actions.historyForward).toHaveBeenCalledTimes(1);
+    });
+
+    it('still goes back on mod+[ while typing in an input', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: '[', code: 'BracketLeft', metaKey: true});
+        expect(actions.historyBack).toHaveBeenCalledTimes(1);
     });
 
     it('creates a note on ctrl+shift+enter', () => {

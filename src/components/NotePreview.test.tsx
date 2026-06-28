@@ -4,7 +4,7 @@ import {describe, expect, it, vi} from 'vitest';
 
 import {renderWithProviders} from '../test/render';
 
-import {NotePreview} from './NotePreview';
+import {NotePreview, withWikiLinks} from './NotePreview';
 
 // Default export is a vi.fn() so individual tests can delegate to the real
 // transform or force a throw; the module is otherwise driven by the real impl.
@@ -62,6 +62,16 @@ describe('NotePreview', () => {
         expect(body.querySelector('[onerror]')).toBeNull();
     });
 
+    it('renders [[wiki links]] in the preview body as bracket-less link spans', async () => {
+        transformMock.mockImplementation(await realTransform());
+
+        const {container} = renderWithProviders(<NotePreview markup="See [[Roadmap]] here" />);
+
+        const body = requireBody(container);
+        expect(body.querySelector('.wiki-link')?.textContent).toBe('Roadmap');
+        expect(body.textContent).not.toContain('[[');
+    });
+
     it('shows an error message instead of a blank body when transform throws', () => {
         transformMock.mockImplementationOnce(() => {
             throw new Error('boom');
@@ -71,5 +81,31 @@ describe('NotePreview', () => {
 
         expect(container.querySelector('.note-preview__body')).toBeNull();
         expect(screen.getByText(/Couldn.t render/)).toBeInTheDocument();
+    });
+});
+
+describe('withWikiLinks', () => {
+    it('renders [[wiki links]] as bracket-less link spans, preserving surrounding text', () => {
+        const out = withWikiLinks('<p>See [[Roadmap]] here</p>');
+        expect(out).toContain('<span class="wiki-link">Roadmap</span>');
+        expect(out).not.toContain('[[');
+        expect(out).toContain('See ');
+        expect(out).toContain(' here');
+    });
+
+    it('handles several links in one block', () => {
+        const out = withWikiLinks('<p>[[A]] and [[B]]</p>');
+        expect(out.match(/class="wiki-link"/g) ?? []).toHaveLength(2);
+    });
+
+    it('leaves links inside code / pre / existing anchors untouched', () => {
+        expect(withWikiLinks('<p><code>[[A]]</code></p>')).toContain('<code>[[A]]</code>');
+        expect(withWikiLinks('<pre>[[A]]</pre>')).toContain('<pre>[[A]]</pre>');
+        expect(withWikiLinks('<a href="x">[[A]]</a>')).toContain('>[[A]]</a>');
+    });
+
+    it('returns the HTML unchanged when there are no wiki links', () => {
+        const html = '<p>nothing to see</p>';
+        expect(withWikiLinks(html)).toBe(html);
     });
 });
