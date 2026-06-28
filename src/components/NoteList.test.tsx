@@ -274,7 +274,7 @@ describe('NoteList — delete', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button'));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        await user.click(screen.getByRole('button', {name: 'Delete'}));
+        await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
     });
 

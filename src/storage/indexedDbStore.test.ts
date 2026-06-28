@@ -388,6 +388,7 @@ describe('IndexedDbNoteStore', () => {
                 pinned: [],
                 created: {},
                 active: null,
+                trashed: [],
             });
         });
 
@@ -398,6 +399,7 @@ describe('IndexedDbNoteStore', () => {
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
                 active: 'Ideas.md',
+                trashed: [],
             });
             const meta = await store.readMetadata();
             expect(meta.sort).toBe('title');
@@ -411,6 +413,81 @@ describe('IndexedDbNoteStore', () => {
 
             const reopened = new IndexedDbNoteStore();
             expect((await reopened.get('Persisted.md')).content).toBe('survives');
+        });
+    });
+
+    describe('trash', () => {
+        it('moves a note to the trash (out of every listing) and restores it', async () => {
+            await store.create('Plan', 'Work');
+            await store.save('Work/Plan.md', 'body', (await store.stat('Work/Plan.md'))!);
+
+            const trashId = await store.trash('Work/Plan.md');
+            expect(trashId).toBe('.trash/Plan.md');
+            // Isolated in its own object store: invisible to notes, corpus, and folder listings.
+            expect((await store.list()).map((m) => m.id)).toEqual([]);
+            expect((await store.getAll()).map((n) => n.id)).toEqual([]);
+            expect(await store.listFolders()).toEqual([]);
+            expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/Plan.md']);
+
+            const restored = await store.restore('.trash/Plan.md', 'Work');
+            expect(restored.id).toBe('Work/Plan.md');
+            expect((await store.get('Work/Plan.md')).content).toBe('body');
+            expect(await store.listTrash()).toEqual([]);
+        });
+
+        it('uniquifies trashed names and resolves a restore collision', async () => {
+            await store.create('Note', 'A');
+            await store.create('Note', 'B');
+            expect(await store.trash('A/Note.md')).toBe('.trash/Note.md');
+            expect(await store.trash('B/Note.md')).toBe('.trash/Note 2.md');
+
+            await store.create('Note'); // root Note.md now occupies the original name
+            const restored = await store.restore('.trash/Note.md', '');
+            expect(restored.id).toBe('Note 2.md');
+        });
+
+        it('purge removes one; emptyTrash clears the rest', async () => {
+            await store.create('A');
+            await store.create('B');
+            const a = await store.trash('A.md');
+            await store.trash('B.md');
+
+            await store.purge(a);
+            expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/B.md']);
+            await store.emptyTrash();
+            expect(await store.listTrash()).toEqual([]);
+        });
+
+        it('upgrades a v2 database to v3, keeping notes and adding the trash store', async () => {
+            // Build a pre-existing v2-shaped database by hand (no trash store), with one note.
+            await new Promise<void>((resolve, reject) => {
+                const req = indexedDB.open('gravity-notes-data', 2);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    db.createObjectStore('notes', {keyPath: 'id'});
+                    db.createObjectStore('kv');
+                    db.createObjectStore('attachments', {keyPath: 'id'});
+                };
+                req.onsuccess = () => {
+                    const db = req.result;
+                    const tx = db.transaction('notes', 'readwrite');
+                    tx.objectStore('notes').put({id: 'Old.md', content: 'kept\n\n', updatedAt: 5});
+                    tx.oncomplete = () => {
+                        db.close();
+                        resolve();
+                    };
+                    tx.onerror = () => reject(tx.error);
+                };
+                req.onerror = () => reject(req.error);
+            });
+
+            // Opening the store runs the v2 → v3 upgrade: the old note survives and trashing works
+            // (the new trash store was created without disturbing the existing object stores).
+            const upgraded = new IndexedDbNoteStore();
+            expect((await upgraded.get('Old.md')).content).toBe('kept');
+            const trashId = await upgraded.trash('Old.md');
+            expect((await upgraded.listTrash()).map((t) => t.id)).toEqual([trashId]);
+            expect(await upgraded.list()).toEqual([]);
         });
     });
 });

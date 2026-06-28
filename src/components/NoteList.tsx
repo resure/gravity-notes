@@ -17,7 +17,7 @@ import {
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 
 import {escapeRegExp, tokenizeQuery} from '../search';
-import {dirname} from '../storage/noteText';
+import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 
 import './NoteList.css';
@@ -109,11 +109,6 @@ export function formatNoteDate(ts: number | undefined): string {
     const mo = String(d.getMonth() + 1).padStart(2, '0');
     const yy = String(d.getFullYear() % 100).padStart(2, '0');
     return `${dd}.${mo}.${yy}`;
-}
-
-/** Folder path as a readable crumb: "Work/Sub" → "Work / Sub". */
-function folderCrumb(id: string): string {
-    return dirname(id).split('/').join(' / ');
 }
 
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
@@ -325,7 +320,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         const pinned = pinnedIds.includes(note.id);
         // A full-text body match shows its surrounding snippet in place of the head-of-note preview.
         const previewText = snippetById?.get(note.id) ?? note.preview;
-        const crumb = showCrumbs ? folderCrumb(note.id) : '';
+        const crumb = showCrumbs ? formatCrumb(dirname(note.id)) : '';
         return (
             <div
                 key={note.id}
@@ -513,18 +508,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 size="s"
                 disableBodyScrollLock
             >
-                <Dialog.Header caption="Delete note" />
+                <Dialog.Header caption="Move to Trash" />
                 <Dialog.Body>
                     <Text>
                         {deleting
-                            ? `Delete "${deleting.title}"? This permanently removes the file from your folder.`
+                            ? `Move "${deleting.title}" to the Trash? You can restore it later from the Trash.`
                             : ''}
                     </Text>
                 </Dialog.Body>
                 <Dialog.Footer
-                    textButtonApply="Delete"
+                    textButtonApply="Move to Trash"
                     textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'outlined-danger'}}
+                    propsButtonApply={{view: 'action'}}
                     onClickButtonApply={confirmDelete}
                     onClickButtonCancel={() => setDeleting(null)}
                 />

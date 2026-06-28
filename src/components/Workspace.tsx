@@ -25,6 +25,7 @@ import {MoveToDialog} from './MoveToDialog';
 import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
+import {TrashDialog} from './TrashDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
@@ -195,6 +196,7 @@ export function Workspace({
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+    const [trashOpen, setTrashOpen] = useState(false);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Set after following a wiki link to a freshly-created note, to land the caret in its body once
     // the new editor has mounted (a brand-new note has no body yet, so there's nothing else to focus).
@@ -467,22 +469,29 @@ export function Workspace({
         [railOpen, browseRelative],
     );
 
+    // Delete = move to Trash (recoverable). Keep selection on a neighbor when the open note goes, and
+    // confirm the move with a toast so the user knows where it went (the confirm dialog lives in the list).
     const handleDelete = useCallback(
         (id: string) => {
             const ids = visibleIds;
             const idx = ids.indexOf(id);
             const neighbor = ids[idx + 1] ?? ids[idx - 1] ?? null;
             const wasActive = notes.activeId === id;
+            const title = notes.notes.find((n) => n.id === id)?.title ?? titleFromFileName(id);
             void (async () => {
-                await notes.remove(id);
+                // Only confirm + move the cursor when the trash actually succeeded — trash() returns
+                // false (and has already surfaced an error toast) on a conflict/failure.
+                const ok = await notes.trash(id);
+                if (!ok) return;
                 if (wasActive) {
                     if (neighbor) nav.browse(neighbor);
                     else nav.setSelected(null);
                 }
+                notify(`Moved “${title}” to Trash`);
             })();
         },
         // eslint wants the whole `notes`/`nav` objects here, not their members.
-        [visibleIds, notes, nav],
+        [visibleIds, notes, nav, notify],
     );
 
     const handleMoveFolder = useCallback(
@@ -649,6 +658,8 @@ export function Workspace({
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={() => setAttachmentsOpen(true)}
+                    onOpenTrash={() => setTrashOpen(true)}
+                    trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
@@ -792,6 +803,21 @@ export function Workspace({
                     cache={attachmentCache}
                     onClose={() => setAttachmentsOpen(false)}
                     onError={onError}
+                />
+
+                <TrashDialog
+                    open={trashOpen}
+                    notes={notes.trashedNotes}
+                    onRefresh={notes.refreshTrash}
+                    onRestore={(id) =>
+                        void notes.restoreFromTrash(id).then((newId) => {
+                            // Select the restored note so it's focused once the dialog closes.
+                            if (newId) nav.setSelected(newId);
+                        })
+                    }
+                    onPurge={(id) => void notes.purgeFromTrash(id)}
+                    onEmpty={() => void notes.emptyTrash()}
+                    onClose={() => setTrashOpen(false)}
                 />
 
                 <MoveToDialog

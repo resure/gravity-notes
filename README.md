@@ -22,6 +22,9 @@ Markdown files, and they are yours.
   preserved both ways, including deliberately-empty folders (kept alive by a `.gnkeep` marker)
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
   (updated, created, title A→Z / Z→A)
+- **Trash**: deleting a note moves it to a Trash (a hidden `.trash/` folder, so it leaves your notes
+  but isn't erased) you can **restore** from — back to its original folder — or **empty**. Open it from
+  the storage menu (the `⋯` orb)
 - **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
   passage shown as a snippet in the list (multi-word queries match all terms)
 - Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode
@@ -60,6 +63,7 @@ Markdown files, and they are yours.
 | `⌘-click` a link          | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed)                                             |
 | `F2`                      | Rename the selected note, or the focused folder in the rail                                                                             |
 | `⌘⇧M`                     | Move the selected note to a folder                                                                                                      |
+| `⌘⇧⌫`                     | Move the selected note to the Trash (recoverable)                                                                                       |
 | `⌘/`                      | Show the shortcut help                                                                                                                  |
 
 **Right-click** a note or folder for its actions (pin, rename, move, duplicate, delete, …) — the same
@@ -153,8 +157,6 @@ Key modules:
 
 ### Backlog
 
-- Trash bin for deleted notes
-
 - Notion-like font, width and density setting for each note? And ability to set default for all notes
 
 - Versioning / snapshots (with manual snapshopts?)
@@ -165,5 +167,5 @@ Key modules:
 - Mobile app
 
 - Preview style (typography) should look more similar to editor style
-- Automatic deleted notes and unused attachments cleanup (after 30 days?)
+- Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Cmd+z for undoing deleting of notes and moves between folders?

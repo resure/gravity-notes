@@ -4,6 +4,7 @@ import {
     FOLDER_MARKER,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
+    TRASH_DIR,
     basename,
     canonicalBody,
     dirname,
@@ -256,6 +257,72 @@ export class FileSystemNoteStore implements NoteStore {
         await this.pruneEmptyAncestors(dirname(id));
     }
 
+    async trash(id: string): Promise<string> {
+        // Read the source first so a missing note maps to a deleted-conflict before any writes.
+        const content = (await this.get(id)).content;
+        const dest = await this.resolveDir(TRASH_DIR, true);
+        if (!dest) throw new Error('Could not open the trash folder');
+        // Uniquify within `.trash/` so two same-named notes from different folders can coexist there.
+        const leaf = await uniqueName(titleFromFileName(id), (name) => this.existsIn(dest, name));
+        const handle = await dest.getFileHandle(leaf, {create: true});
+        await writeFile(handle, canonicalBody(content));
+        const srcDir = await this.resolveDir(dirname(id));
+        if (srcDir) await srcDir.removeEntry(basename(id));
+        await this.pruneEmptyAncestors(dirname(id));
+        return joinPath(TRASH_DIR, leaf);
+    }
+
+    async listTrash(): Promise<NoteMeta[]> {
+        const dir = await this.resolveDir(TRASH_DIR);
+        if (!dir) return [];
+        const out: NoteMeta[] = [];
+        for await (const handle of dir.values()) {
+            if (handle.kind !== 'file' || !handle.name.toLowerCase().endsWith(MD_EXT)) continue;
+            // The trash view shows only title + folder + age, so don't read each file's body.
+            const file = await (handle as FileSystemFileHandle).getFile();
+            out.push({
+                id: joinPath(TRASH_DIR, handle.name),
+                title: titleFromFileName(handle.name),
+                updatedAt: file.lastModified,
+            });
+        }
+        out.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return out;
+    }
+
+    async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
+        const content = (await this.get(trashId)).content;
+        const folder = sanitizeDir(destFolder);
+        const dest = await this.resolveDir(folder, true); // re-create the folder if it was removed
+        if (!dest) throw new Error(`Could not open folder "${folder}"`);
+        // The original name may be taken now (another note, or a second restore) — uniquify it.
+        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
+            this.existsIn(dest, name),
+        );
+        const handle = await dest.getFileHandle(leaf, {create: true});
+        // The FSA has no atomic rename, so this is a copy: the write bumps mtime to "now" (the Tauri /
+        // IndexedDB backends preserve it). A restored note therefore surfaces at the top of the
+        // "updated" sort on the web backend — the same mtime caveat the copy-then-delete move() carries.
+        await writeFile(handle, canonicalBody(content));
+        await this.removeFromTrash(trashId);
+        const newId = joinPath(folder, leaf);
+        const updatedAt = (await handle.getFile()).lastModified;
+        return {id: newId, title: titleFromFileName(newId), updatedAt};
+    }
+
+    async purge(trashId: string): Promise<void> {
+        await this.removeFromTrash(trashId);
+    }
+
+    async emptyTrash(): Promise<void> {
+        try {
+            await this.dir.removeEntry(TRASH_DIR, {recursive: true});
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') return;
+            throw err;
+        }
+    }
+
     async writeAttachment(file: File): Promise<string> {
         const dir = await this.resolveDir(ATTACHMENTS_DIR, true);
         if (!dir) throw new Error('Could not open the Attachments folder');
@@ -502,6 +569,18 @@ export class FileSystemNoteStore implements NoteStore {
             }
             throw err;
         }
+    }
+
+    /** Delete a single file out of `.trash/` (a missing one is a no-op), then prune the empty folder. */
+    private async removeFromTrash(trashId: string): Promise<void> {
+        const dir = await this.resolveDir(TRASH_DIR);
+        if (!dir) return;
+        try {
+            await dir.removeEntry(basename(trashId));
+        } catch (err) {
+            if (!(err instanceof DOMException && err.name === 'NotFoundError')) throw err;
+        }
+        await this.pruneEmptyAncestors(TRASH_DIR);
     }
 
     /** Remove now-empty folders from `start` up toward (never including) the root. */

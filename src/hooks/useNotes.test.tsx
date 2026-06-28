@@ -376,6 +376,7 @@ class DeferredSaveStore implements NoteStore {
         pinned: [],
         created: {},
         active: null,
+        trashed: [],
     };
 
     seed(id: string, body: string) {
@@ -449,6 +450,22 @@ class DeferredSaveStore implements NoteStore {
     async remove(id: string): Promise<void> {
         this.content.delete(id);
     }
+
+    async trash(): Promise<string> {
+        throw new Error('not used in these tests');
+    }
+
+    async listTrash(): Promise<never[]> {
+        return [];
+    }
+
+    async restore(): Promise<NoteMeta> {
+        throw new Error('not used in these tests');
+    }
+
+    async purge(): Promise<void> {}
+
+    async emptyTrash(): Promise<void> {}
 
     async writeAttachment(): Promise<string> {
         throw new Error('not used in these tests');
@@ -647,6 +664,7 @@ class ControllableStore implements NoteStore {
         pinned: [],
         created: {},
         active: null,
+        trashed: [],
     };
     private clock = 100;
     private folderMarkers = new Set<string>();
@@ -672,11 +690,13 @@ class ControllableStore implements NoteStore {
     }
 
     async list(): Promise<NoteMeta[]> {
-        return [...this.files.keys()].map((id) => this.meta(id));
+        return [...this.files.keys()].filter((id) => !this.inTrash(id)).map((id) => this.meta(id));
     }
 
     async getAll(): Promise<Note[]> {
-        return [...this.files].map(([id, f]) => ({...this.meta(id), content: f.content}));
+        return [...this.files]
+            .filter(([id]) => !this.inTrash(id))
+            .map(([id, f]) => ({...this.meta(id), content: f.content}));
     }
 
     async get(id: string): Promise<Note> {
@@ -728,6 +748,36 @@ class ControllableStore implements NoteStore {
 
     async remove(id: string): Promise<void> {
         this.files.delete(id);
+    }
+
+    async trash(id: string): Promise<string> {
+        const f = this.files.get(id);
+        if (!f) throw new DOMException(`"${id}" not found`, 'NotFoundError');
+        const trashId = this.uniqueId('.trash', this.leafOf(id));
+        this.files.set(trashId, {...f});
+        this.files.delete(id);
+        return trashId;
+    }
+
+    async listTrash(): Promise<NoteMeta[]> {
+        return [...this.files.keys()].filter((id) => this.inTrash(id)).map((id) => this.meta(id));
+    }
+
+    async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
+        const f = this.files.get(trashId);
+        if (!f) throw new DOMException(`"${trashId}" not found`, 'NotFoundError');
+        const newId = this.uniqueId(destFolder, this.leafOf(trashId));
+        this.files.set(newId, {...f, updatedAt: ++this.clock});
+        this.files.delete(trashId);
+        return this.meta(newId);
+    }
+
+    async purge(trashId: string): Promise<void> {
+        this.files.delete(trashId);
+    }
+
+    async emptyTrash(): Promise<void> {
+        for (const id of [...this.files.keys()]) if (this.inTrash(id)) this.files.delete(id);
     }
 
     async writeAttachment(): Promise<string> {
@@ -787,6 +837,7 @@ class ControllableStore implements NoteStore {
     async listFolders(): Promise<string[]> {
         const set = new Set(this.folderMarkers);
         for (const id of this.files.keys()) {
+            if (this.inTrash(id)) continue; // `.trash/` is not a user folder
             const parts = id.split('/');
             parts.pop(); // drop the leaf
             for (let i = 1; i <= parts.length; i++) set.add(parts.slice(0, i).join('/'));
@@ -807,8 +858,25 @@ class ControllableStore implements NoteStore {
     }
 
     private meta(id: string): NoteMeta {
-        const leaf = id.slice(id.lastIndexOf('/') + 1).replace(/\.md$/, '');
-        return {id, title: leaf, updatedAt: this.files.get(id)?.updatedAt};
+        return {id, title: this.leafOf(id), updatedAt: this.files.get(id)?.updatedAt};
+    }
+
+    private leafOf(id: string): string {
+        return id.slice(id.lastIndexOf('/') + 1).replace(/\.md$/, '');
+    }
+
+    private inTrash(id: string): boolean {
+        return id.startsWith('.trash/');
+    }
+
+    /** A free `<dir>/<leaf>.md` id, numbering on collision (mirrors the real backends' uniqueName). */
+    private uniqueId(dir: string, leaf: string): string {
+        const at = (n: string) => (dir ? `${dir}/${n}` : n);
+        for (let i = 1; i <= 100000; i++) {
+            const id = at(`${i === 1 ? leaf : `${leaf} ${i}`}.md`);
+            if (!this.files.has(id)) return id;
+        }
+        throw new Error('no free id');
     }
 }
 
@@ -1090,5 +1158,176 @@ describe('useNotes — folders', () => {
 
         expect(onError).toHaveBeenCalledWith('Only empty folders can be deleted.');
         expect(hook.result.current.folders).toContain('Parent');
+    });
+});
+
+describe('useNotes — trash', () => {
+    it('trashing the active note clears it and records a registry entry', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.open('Work/A.md');
+        });
+
+        let ok = false;
+        await act(async () => {
+            ok = await hook.result.current.trash('Work/A.md');
+        });
+        expect(ok).toBe(true); // resolves true on success
+
+        // Left the listing and cleared as the open note.
+        expect(hook.result.current.notes).toHaveLength(0);
+        expect(hook.result.current.activeId).toBeNull();
+        expect(hook.result.current.note).toBeNull();
+        // The badge count is correct straight away (registry), without loading the view.
+        expect(hook.result.current.trashCount).toBe(1);
+
+        // Opening the trash view (refreshTrash) publishes the display list with its original folder.
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        expect(hook.result.current.trashedNotes).toHaveLength(1);
+        expect(hook.result.current.trashedNotes[0]).toMatchObject({
+            title: 'A',
+            originalPath: 'Work',
+        });
+        expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('restores a trashed note to its original folder', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.trash('Work/A.md');
+        });
+        // Open the trash view to load the display list.
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        const trashId = hook.result.current.trashedNotes[0].id;
+
+        let restoredId: string | null = null;
+        await act(async () => {
+            restoredId = await hook.result.current.restoreFromTrash(trashId);
+        });
+
+        expect(restoredId).toBe('Work/A.md');
+        expect(hook.result.current.notes.map((n) => n.id)).toEqual(['Work/A.md']);
+        expect(hook.result.current.trashCount).toBe(0);
+        expect(hook.result.current.trashedNotes).toEqual([]); // dropped from the view in-memory
+    });
+
+    it('purges one trashed note and empties the rest', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'a');
+        store.seed('B.md', 'b');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+        await act(async () => {
+            await hook.result.current.trash('A.md');
+        });
+        await act(async () => {
+            await hook.result.current.trash('B.md');
+        });
+        expect(hook.result.current.trashCount).toBe(2);
+
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        expect(hook.result.current.trashedNotes).toHaveLength(2);
+
+        await act(async () => {
+            await hook.result.current.purgeFromTrash(hook.result.current.trashedNotes[0].id);
+        });
+        expect(hook.result.current.trashCount).toBe(1);
+        expect(hook.result.current.trashedNotes).toHaveLength(1); // dropped from the view in-memory
+
+        await act(async () => {
+            await hook.result.current.emptyTrash();
+        });
+        expect(hook.result.current.trashCount).toBe(0);
+        expect(hook.result.current.trashedNotes).toEqual([]);
+    });
+
+    it('drops a trashed note from the pins (it is no longer a live note)', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'a');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        act(() => {
+            hook.result.current.togglePin('A.md');
+        });
+        expect(hook.result.current.metadata.pinned).toEqual(['A.md']);
+
+        await act(async () => {
+            await hook.result.current.trash('A.md');
+        });
+        expect(hook.result.current.metadata.pinned).toEqual([]);
+    });
+
+    it('refuses to trash a note with an unresolved conflict (returns false, no move)', async () => {
+        const {hook, onError} = await setupConflict(); // opens a conflicted 'Note.md'
+
+        let result: boolean | undefined;
+        await act(async () => {
+            result = await hook.result.current.trash('Note.md');
+        });
+
+        expect(result).toBe(false);
+        expect(onError).toHaveBeenCalledWith(expect.stringMatching(/resolve the conflict/i));
+        expect(hook.result.current.notes.map((n) => n.id)).toContain('Note.md'); // not trashed
+        expect(hook.result.current.trashCount).toBe(0);
+    });
+
+    it('preserves the original created stamp across a trash → restore round-trip', async () => {
+        const store = new ControllableStore();
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toBeDefined());
+        await act(async () => {
+            await hook.result.current.create('A'); // create() stamps a `created` time
+        });
+        const createdAt = hook.result.current.metadata.created['A.md'];
+        expect(createdAt).toBeDefined();
+
+        await act(async () => {
+            await hook.result.current.trash('A.md');
+        });
+        // While trashed it leaves the live created map…
+        expect(hook.result.current.metadata.created['A.md']).toBeUndefined();
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        const trashId = hook.result.current.trashedNotes[0].id;
+
+        let restoredId: string | null = null;
+        await act(async () => {
+            restoredId = await hook.result.current.restoreFromTrash(trashId);
+        });
+        // …and the original stamp is reinstated on restore (not reset to "now").
+        expect(restoredId).toBe('A.md');
+        expect(hook.result.current.metadata.created['A.md']).toBe(createdAt);
+    });
+
+    it('adopts an orphan trash file (no registry entry) into the count and view on load', async () => {
+        const store = new ControllableStore();
+        store.seed('.trash/Orphan.md', 'lost'); // a file in .trash/ with no registry entry
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+
+        // The load effect reconciles the registry against the backend, adopting the orphan, so the
+        // badge count is right immediately and the view lists it (restoring to root).
+        await waitFor(() => expect(hook.result.current.trashCount).toBe(1));
+        expect(hook.result.current.trashedNotes.map((n) => n.id)).toEqual(['.trash/Orphan.md']);
+        expect(hook.result.current.trashedNotes[0].originalPath).toBe('');
+        expect(onError).not.toHaveBeenCalled();
     });
 });

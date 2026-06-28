@@ -8,6 +8,7 @@ import {
     Folder,
     LayoutSideContent,
     Picture,
+    TrashBin,
 } from '@gravity-ui/icons';
 import {DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 
@@ -29,6 +30,10 @@ export interface TopBarProps {
     onImport: () => void;
     /** Open the media-attachments manager. */
     onManageAttachments: () => void;
+    /** Open the Trash (soft-deleted notes). */
+    onOpenTrash: () => void;
+    /** Number of notes currently in the Trash, for the menu-item badge. */
+    trashCount: number;
     onOpenHelp: () => void;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
@@ -79,6 +84,8 @@ export function TopBar({
     onExport,
     onImport,
     onManageAttachments,
+    onOpenTrash,
+    trashCount,
     onOpenHelp,
     themePref,
     onChangeThemePref,
@@ -215,6 +222,11 @@ export function TopBar({
                 text: 'Manage attachments…',
                 iconStart: <Icon data={Picture} />,
                 action: onManageAttachments,
+            },
+            {
+                text: trashCount > 0 ? `Trash (${trashCount})` : 'Trash',
+                iconStart: <Icon data={TrashBin} />,
+                action: onOpenTrash,
             },
             {
                 text: 'Change storage…',

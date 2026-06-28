@@ -4,6 +4,7 @@ import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     ATTACHMENTS_DIR,
     MD_EXT,
+    TRASH_DIR,
     basename,
     canonicalBody,
     dirname,
@@ -191,6 +192,57 @@ export class TauriNoteStore implements NoteStore {
 
     async remove(id: string): Promise<void> {
         await invoke('notes_remove', {dir: this.dir, name: id});
+    }
+
+    async trash(id: string): Promise<string> {
+        // Uniquify within `.trash/`, then move the file there (notes_rename creates `.trash/` and
+        // prunes the source's now-empty ancestors — a pure relocation, mtime preserved).
+        const leaf = await uniqueName(titleFromFileName(id), (name) =>
+            this.exists(joinPath(TRASH_DIR, name)),
+        );
+        const trashId = joinPath(TRASH_DIR, leaf);
+        await invoke('notes_rename', {dir: this.dir, from: id, to: trashId});
+        return trashId;
+    }
+
+    async listTrash(): Promise<NoteMeta[]> {
+        // The recursive note walk skips dot-directories, so `.trash/` needs its own lister. The trash
+        // view shows only title + folder + age, so notes_list_dir returns names + mtimes, no bodies.
+        const entries = await invoke<NoteHead[]>('notes_list_dir', {dir: this.dir, sub: TRASH_DIR});
+        const metas: NoteMeta[] = entries.map((entry) => ({
+            id: entry.name,
+            title: titleFromFileName(entry.name),
+            updatedAt: entry.modifiedMs,
+        }));
+        metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return metas;
+    }
+
+    async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
+        const dir = sanitizeDir(destFolder);
+        // The original leaf may be taken now — uniquify against the destination folder.
+        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
+            this.exists(joinPath(dir, name)),
+        );
+        const newId = joinPath(dir, leaf);
+        // notes_rename create_dir_all's the destination (re-creating a removed folder) and prunes the
+        // now-empty `.trash/`, returning the post-move mtime so the baseline re-seeds.
+        const updatedAt = await invoke<number>('notes_rename', {
+            dir: this.dir,
+            from: trashId,
+            to: newId,
+        });
+        return {id: newId, title: titleFromFileName(newId), updatedAt};
+    }
+
+    async purge(trashId: string): Promise<void> {
+        await invoke('notes_remove', {dir: this.dir, name: trashId});
+    }
+
+    async emptyTrash(): Promise<void> {
+        // One recursive remove of `.trash/` — atomic and one IPC, matching the FS backend's recursive
+        // removeEntry (no half-emptied partial state, and it clears any non-`.md`/temp cruft too).
+        await invoke('notes_remove_dir_all', {dir: this.dir, path: TRASH_DIR});
     }
 
     async writeAttachment(file: File): Promise<string> {

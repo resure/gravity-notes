@@ -27,6 +27,8 @@ class FakeFs {
         switch (cmd) {
             case 'notes_list':
                 return this.list();
+            case 'notes_list_dir':
+                return this.listDir(args.sub as string);
             case 'notes_read_all':
                 return this.readAll();
             case 'notes_read_opt':
@@ -37,6 +39,8 @@ class FakeFs {
                 return this.rename(args.from as string, args.to as string);
             case 'notes_remove':
                 return this.remove(name);
+            case 'notes_remove_dir_all':
+                return this.removeDirAll(args.path as string);
             case 'notes_exists':
                 return this.exists(name);
             case 'notes_stat':
@@ -97,6 +101,16 @@ class FakeFs {
         return null;
     }
 
+    /** Recursively delete a folder and everything under it (mirrors the Rust notes_remove_dir_all). */
+    private removeDirAll(path: string): null {
+        const key = this.key(path);
+        const prefix = `${key}/`;
+        for (const k of [...this.files.keys()]) {
+            if (k === key || k.startsWith(prefix)) this.files.delete(k);
+        }
+        return null;
+    }
+
     private rename(from: string, to: string): number {
         const file = this.files.get(this.key(from));
         if (!file) throw new Error(`rename: "${from}" not found`);
@@ -112,8 +126,16 @@ class FakeFs {
         return mtime;
     }
 
+    /** `.md` files NOT inside any dot-directory — the Rust walk skips `.git`/`.trash`/… subtrees. */
     private mdFiles() {
-        return [...this.files.values()].filter((f) => f.name.toLowerCase().endsWith('.md'));
+        return [...this.files.values()].filter(
+            (f) =>
+                f.name.toLowerCase().endsWith('.md') &&
+                !f.name
+                    .split('/')
+                    .slice(0, -1)
+                    .some((seg) => seg.startsWith('.')),
+        );
     }
 
     private list() {
@@ -122,6 +144,19 @@ class FakeFs {
             modifiedMs: f.mtime,
             head: f.content.slice(0, 500),
         }));
+    }
+
+    /** The `.md` files directly inside `sub/` (non-recursive) — backs `notes_list_dir` / the trash. */
+    private listDir(sub: string) {
+        const prefix = `${this.key(sub)}/`;
+        return [...this.files.values()]
+            .filter(
+                (f) =>
+                    f.name.toLowerCase().endsWith('.md') &&
+                    this.key(f.name).startsWith(prefix) &&
+                    !this.key(f.name).slice(prefix.length).includes('/'),
+            )
+            .map((f) => ({name: f.name, modifiedMs: f.mtime, head: f.content.slice(0, 500)}));
     }
 
     private readAll() {
@@ -333,6 +368,7 @@ describe('TauriNoteStore', () => {
             pinned: [],
             created: {},
             active: null,
+            trashed: [],
         });
 
         const list = await store.list();
@@ -355,7 +391,14 @@ describe('TauriNoteStore', () => {
 
     it('reads default metadata when absent and round-trips a written value', async () => {
         const fresh = await store.readMetadata();
-        expect(fresh).toEqual({version: 1, sort: 'updated', pinned: [], created: {}, active: null});
+        expect(fresh).toEqual({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            active: null,
+            trashed: [],
+        });
 
         await store.writeMetadata({
             version: 1,
@@ -363,6 +406,7 @@ describe('TauriNoteStore', () => {
             pinned: ['A.md'],
             created: {'A.md': 5},
             active: 'A.md',
+            trashed: [],
         });
         expect(await store.readMetadata()).toMatchObject({sort: 'title', active: 'A.md'});
     });
@@ -375,6 +419,48 @@ describe('TauriNoteStore', () => {
             pinned: [],
             created: {},
             active: null,
+            trashed: [],
+        });
+    });
+
+    describe('trash', () => {
+        it('moves a note to the trash (out of the listing) and restores it', async () => {
+            await store.create('Plan', 'Work');
+            await store.save('Work/Plan.md', 'body', (await store.stat('Work/Plan.md'))!);
+
+            const trashId = await store.trash('Work/Plan.md');
+            expect(trashId).toBe('.trash/Plan.md');
+            // `.trash/` is a dot-directory the recursive walk skips, so it's gone from list().
+            expect((await store.list()).map((m) => m.id)).toEqual([]);
+            expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/Plan.md']);
+
+            const restored = await store.restore('.trash/Plan.md', 'Work');
+            expect(restored.id).toBe('Work/Plan.md');
+            expect((await store.get('Work/Plan.md')).content).toBe('body');
+            expect(await store.listTrash()).toEqual([]);
+        });
+
+        it('uniquifies trashed names and resolves a restore collision', async () => {
+            await store.create('Note', 'A');
+            await store.create('Note', 'B');
+            expect(await store.trash('A/Note.md')).toBe('.trash/Note.md');
+            expect(await store.trash('B/Note.md')).toBe('.trash/Note 2.md');
+
+            await store.create('Note'); // root Note.md reclaims the original name
+            const restored = await store.restore('.trash/Note.md', '');
+            expect(restored.id).toBe('Note 2.md');
+        });
+
+        it('purge removes one; emptyTrash clears the rest', async () => {
+            await store.create('A');
+            await store.create('B');
+            const a = await store.trash('A.md');
+            await store.trash('B.md');
+
+            await store.purge(a);
+            expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/B.md']);
+            await store.emptyTrash();
+            expect(await store.listTrash()).toEqual([]);
         });
     });
 });

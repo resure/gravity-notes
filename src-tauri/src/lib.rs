@@ -235,6 +235,60 @@ fn notes_read_all(dir: String) -> Result<Vec<NoteFull>, String> {
         .collect())
 }
 
+/// List the `.md` files directly inside `dir/sub` (non-recursive), each with its name and mtime.
+/// Backs the trash view: the `.trash/` area is a dot-directory the recursive note walk deliberately
+/// skips, so it needs its own lister. Ids are returned relative to the root (`sub/<leaf>`, or just
+/// `<leaf>` when `sub` is empty), matching `notes_list`. Bodies are NOT read (the trash view shows
+/// only title/folder/age). An absent folder yields an empty list, not an error.
+#[tauri::command]
+fn notes_list_dir(dir: String, sub: String) -> Result<Vec<NoteHead>, String> {
+    let base = resolve_within(&dir, &sub)?;
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&base) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+        Err(err) => return Err(err.to_string()),
+    };
+    let prefix = sub.trim_end_matches('/');
+    for entry in entries {
+        let entry = entry.map_err(stringify)?;
+        let file_type = entry.file_type().map_err(stringify)?;
+        if file_type.is_symlink() || !file_type.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !is_md(&name) {
+            continue;
+        }
+        let meta = entry.metadata().map_err(stringify)?;
+        // Join under `prefix`, but avoid a leading '/' when `sub` is empty (a general-primitive guard).
+        let rel = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        out.push(NoteHead {
+            name: rel,
+            modified_ms: modified_ms(&meta),
+            head: String::new(),
+        });
+    }
+    Ok(out)
+}
+
+/// Recursively delete `dir/path` and everything under it; a missing path is a no-op. Backs
+/// `emptyTrash` (one atomic remove of `.trash/`), so a partial-failure can't leave a half-emptied
+/// trash. Containment-guarded like every other path argument.
+#[tauri::command]
+fn notes_remove_dir_all(dir: String, path: String) -> Result<(), String> {
+    let target = resolve_within(&dir, &path)?;
+    match fs::remove_dir_all(&target) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Read a single file, or `None` if it doesn't exist (used for `get` and the metadata sidecar).
 #[tauri::command]
 fn notes_read_opt(dir: String, name: String) -> Result<Option<NoteFull>, String> {
@@ -582,6 +636,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             notes_list,
+            notes_list_dir,
             notes_read_all,
             notes_read_opt,
             notes_write,
@@ -597,6 +652,7 @@ pub fn run() {
             open_external,
             notes_create_folder,
             notes_remove_dir,
+            notes_remove_dir_all,
             notes_move_dir,
             notes_list_folders,
         ])
@@ -665,6 +721,66 @@ mod tests {
         let mut all: Vec<String> = notes_read_all(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
         all.sort();
         assert_eq!(all, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lists_md_files_in_a_named_subdir_and_excludes_it_from_the_main_walk() {
+        let dir = temp_dir();
+        // The trash op is just a rename into `.trash/` (a dot-directory).
+        notes_write(s(&dir), ".trash/A.md".into(), "aaa".into()).unwrap();
+        notes_write(s(&dir), ".trash/B.md".into(), "bbb".into()).unwrap();
+        // A non-.md file in the same folder is ignored by the lister.
+        fs::write(dir.join(".trash").join("note.txt"), "x").unwrap();
+        // A root note, to exercise the empty-`sub` (no leading slash) path.
+        notes_write(s(&dir), "Root.md".into(), "r".into()).unwrap();
+
+        let mut ids: Vec<String> = notes_list_dir(s(&dir), ".trash".into())
+            .unwrap()
+            .into_iter()
+            .map(|n| n.name)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec![".trash/A.md", ".trash/B.md"]);
+
+        // Empty `sub` lists the root directly, with NO leading slash on the ids.
+        assert_eq!(
+            notes_list_dir(s(&dir), "".into())
+                .unwrap()
+                .into_iter()
+                .map(|n| n.name)
+                .collect::<Vec<_>>(),
+            vec!["Root.md"]
+        );
+
+        // The dot-directory is invisible to the recursive note + folder walks (Root.md aside).
+        assert_eq!(
+            notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect::<Vec<_>>(),
+            vec!["Root.md"]
+        );
+        assert!(notes_list_folders(s(&dir)).unwrap().is_empty());
+        // A missing subdir lists as empty rather than erroring; traversal is still rejected.
+        assert!(notes_list_dir(s(&dir), "Nope".into()).unwrap().is_empty());
+        assert!(notes_list_dir(s(&dir), "../..".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_dir_all_recursively_clears_a_folder_and_noops_when_absent() {
+        let dir = temp_dir();
+        notes_write(s(&dir), ".trash/A.md".into(), "a".into()).unwrap();
+        notes_write(s(&dir), ".trash/Sub/B.md".into(), "b".into()).unwrap();
+        // A non-.md straggler that a per-file purge loop would miss but remove_dir_all clears.
+        fs::write(dir.join(".trash").join("note.txt"), "x").unwrap();
+        assert!(dir.join(".trash").exists());
+
+        notes_remove_dir_all(s(&dir), ".trash".into()).unwrap();
+        assert!(!dir.join(".trash").exists());
+        // Idempotent: removing an absent dir is a no-op; traversal is rejected.
+        assert!(notes_remove_dir_all(s(&dir), ".trash".into()).is_ok());
+        assert!(notes_remove_dir_all(s(&dir), "../escape".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -10,6 +10,9 @@ import {
     withRenamed,
     withReprefixed,
     withSortMode,
+    withTrashEmptied,
+    withTrashed,
+    withoutTrashEntry,
 } from '../storage/metadata';
 import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
 import {
@@ -20,7 +23,40 @@ import {
     type NoteStore,
     type NotesMetadata,
     type SortMode,
+    type TrashEntry,
+    type TrashedNote,
 } from '../storage/types';
+
+/**
+ * Reconcile the persisted trash registry against the backend's actual trash list (from `listTrash`):
+ * drop entries whose file is gone, synthesize entries for orphan files (present on disk but missing
+ * from the registry — they restore to the root, dated by their mtime), and build the
+ * newest-deleted-first display list. Keeps `metadata.trashed` mirroring the backend, so `trashCount`
+ * (its length) always matches what the trash view lists.
+ */
+function buildTrashView(
+    stored: readonly TrashEntry[],
+    list: NoteMeta[],
+): {trashed: TrashEntry[]; display: TrashedNote[]; changed: boolean} {
+    const liveIds = new Set(list.map((m) => m.id));
+    const kept = stored.filter((t) => liveIds.has(t.id)); // drop ghosts, preserving order
+    const knownIds = new Set(kept.map((t) => t.id));
+    const orphans: TrashEntry[] = list
+        .filter((m) => !knownIds.has(m.id))
+        .map((m) => ({id: m.id, title: m.title, originalPath: '', trashedAt: m.updatedAt ?? 0}));
+    const trashed = [...kept, ...orphans];
+    const mtimeById = new Map(list.map((m) => [m.id, m.updatedAt]));
+    const display: TrashedNote[] = trashed
+        .map((t) => ({
+            id: t.id,
+            title: t.title || titleFromFileName(t.id),
+            updatedAt: mtimeById.get(t.id),
+            originalPath: t.originalPath,
+            trashedAt: t.trashedAt,
+        }))
+        .sort((a, b) => b.trashedAt - a.trashedAt);
+    return {trashed, display, changed: orphans.length > 0 || kept.length !== stored.length};
+}
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
@@ -74,7 +110,25 @@ export interface UseNotes {
     rename(id: string, nextTitle: string): Promise<string | null>;
     /** Move a note into another folder (`destFolder`, `''` = root); returns the resulting id (null on error). */
     move(id: string, destFolder: string): Promise<string | null>;
+    /** Permanently delete a note (no trash). The UI deletes via `trash` instead. */
     remove(id: string): Promise<void>;
+    /**
+     * Soft-delete: move a note to the Trash, recoverable from the trash view. Returns false on failure
+     * (incl. an unresolved conflict on the note), so the caller can skip its success toast.
+     */
+    trash(id: string): Promise<boolean>;
+    /** The trash view's display list (title, original folder, deletion time); loaded by `refreshTrash`. */
+    trashedNotes: TrashedNote[];
+    /** Count of trashed notes, from the persisted registry — cheap (no I/O), for a menu badge. */
+    trashCount: number;
+    /** Reload the trash display list from the store and reconcile the registry (drops vanished files). */
+    refreshTrash(): Promise<void>;
+    /** Restore a trashed note to its original folder (`''` if gone); returns its new id (null on error). */
+    restoreFromTrash(trashId: string): Promise<string | null>;
+    /** Permanently delete one trashed note. */
+    purgeFromTrash(trashId: string): Promise<void>;
+    /** Permanently delete every trashed note. */
+    emptyTrash(): Promise<void>;
     /** Create an (initially empty) folder and refresh the tree. */
     createFolder(parentPath: string, name: string): Promise<void>;
     /** Remove an empty folder (its marker) and refresh; unpins it if it was pinned. */
@@ -107,6 +161,7 @@ export interface UseNotes {
 export function useNotes(store: NoteStore, onError: (message: string) => void): UseNotes {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
     const [folders, setFolders] = useState<string[]>([]);
+    const [trashedNotes, setTrashedNotes] = useState<TrashedNote[]>([]);
     const [note, setNote] = useState<Note | null>(null);
     const [saveState, setSaveState] = useState<SaveState>('idle');
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
@@ -525,6 +580,115 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         [flush, store, persistMetadata, refresh, clearTimer, onError],
     );
 
+    // Reload the trash from the store and reconcile the registry to mirror it (drop vanished entries,
+    // adopt orphan files), then publish the display list. Called when the trash view opens (and on
+    // initial load); the mutations below keep the registry + display in sync in-memory without re-I/O.
+    const refreshTrash = useCallback(async () => {
+        let list: NoteMeta[];
+        try {
+            list = await store.listTrash();
+        } catch (err) {
+            onError(err instanceof Error ? err.message : 'Failed to read the Trash');
+            return;
+        }
+        const {trashed, display, changed} = buildTrashView(metadataRef.current.trashed, list);
+        setTrashedNotes(display);
+        if (changed) await persistMetadata({...metadataRef.current, trashed});
+    }, [store, onError, persistMetadata]);
+
+    const trash = useCallback(
+        async (id: string): Promise<boolean> => {
+            // Refuse while the note has an unresolved conflict (matches move/rename) — trashing it
+            // would silently discard the conflicting disk edits with no way to recover them.
+            if (conflict?.id === id) {
+                onError('Resolve the conflict before deleting this note.');
+                return false;
+            }
+            // Flush first (a pending edit to a *different* note mustn't be stranded), matching remove().
+            await flush();
+            try {
+                const originalPath = dirname(id);
+                const title = titleFromFileName(id);
+                // Preserve the original creation stamp on the entry so restore can reinstate it.
+                const created = metadataRef.current.created[id];
+                const trashId = await store.trash(id);
+                if (pendingRef.current?.id === id) pendingRef.current = null;
+                const wasActive = metadataRef.current.active === id;
+                await persistMetadata(
+                    withTrashed(metadataRef.current, id, {
+                        id: trashId,
+                        title,
+                        originalPath,
+                        trashedAt: Date.now(),
+                        created,
+                    }),
+                );
+                if (wasActive) {
+                    clearTimer();
+                    setNote(null);
+                    setConflict(null);
+                    setSaveState('idle');
+                }
+                // No refreshTrash(): the trash view is closed during a delete (it's modal), and the
+                // badge reads metadata.trashed.length which withTrashed just updated. The view reloads
+                // from the store when it next opens.
+                await refresh();
+                return true;
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to move note to Trash');
+                return false;
+            }
+        },
+        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
+    );
+
+    const restoreFromTrash = useCallback(
+        async (trashId: string): Promise<string | null> => {
+            const entry = metadataRef.current.trashed.find((t) => t.id === trashId);
+            try {
+                const meta = await store.restore(trashId, entry?.originalPath ?? '');
+                // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime).
+                await persistMetadata(
+                    withCreatedStamp(
+                        withoutTrashEntry(metadataRef.current, trashId),
+                        meta.id,
+                        entry?.created || meta.updatedAt || Date.now(),
+                    ),
+                );
+                setTrashedNotes((prev) => prev.filter((n) => n.id !== trashId));
+                await refresh();
+                return meta.id;
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to restore note');
+                return null;
+            }
+        },
+        [store, persistMetadata, refresh, onError],
+    );
+
+    const purgeFromTrash = useCallback(
+        async (trashId: string) => {
+            try {
+                await store.purge(trashId);
+                await persistMetadata(withoutTrashEntry(metadataRef.current, trashId));
+                setTrashedNotes((prev) => prev.filter((n) => n.id !== trashId));
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to delete note');
+            }
+        },
+        [store, persistMetadata, onError],
+    );
+
+    const emptyTrash = useCallback(async () => {
+        try {
+            await store.emptyTrash();
+            await persistMetadata(withTrashEmptied(metadataRef.current));
+            setTrashedNotes([]);
+        } catch (err) {
+            onError(err instanceof Error ? err.message : 'Failed to empty the Trash');
+        }
+    }, [store, persistMetadata, onError]);
+
     const edit = useCallback(
         (content: string) => {
             const id = metadataRef.current.active;
@@ -639,10 +803,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         let cancelled = false;
         void (async () => {
             try {
-                const [list, folderList, raw] = await Promise.all([
+                const [list, folderList, raw, trashList] = await Promise.all([
                     store.list(),
                     store.listFolders(),
                     store.readMetadata(),
+                    store.listTrash(),
                 ]);
                 if (cancelled) return;
                 const meta = reconcile(raw, [...list.map((n) => n.id), ...folderList], {
@@ -657,9 +822,17 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     }
                 }
                 if (cancelled) return;
-                const reconciled: NotesMetadata = loaded ? meta : {...meta, active: null};
+                // Reconcile the trash registry against the actual `.trash/` so the badge count is right
+                // from the first render (drop vanished entries, adopt orphan files) + publish the list.
+                const {trashed, display} = buildTrashView(meta.trashed, trashList);
+                const reconciled: NotesMetadata = {
+                    ...meta,
+                    active: loaded ? meta.active : null,
+                    trashed,
+                };
                 setNotes(list);
                 setFolders(folderList);
+                setTrashedNotes(display);
                 applyMetadata(reconciled);
                 if (loaded) {
                     baselineRef.current = loaded.updatedAt ?? null;
@@ -760,6 +933,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         rename,
         move,
         remove,
+        trash,
+        trashedNotes,
+        trashCount: metadata.trashed.length,
+        refreshTrash,
+        restoreFromTrash,
+        purgeFromTrash,
+        emptyTrash,
         createFolder,
         removeFolder,
         moveFolder,
