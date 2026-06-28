@@ -628,13 +628,16 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 </Button>
             </div>
 
-            {/* Right-click context menu — one instance, anchored to the cursor via a virtual element. */}
+            {/* Right-click context menu — one instance, controlled and anchored to the cursor via a
+                virtual element, so it needs no trigger of its own. Gravity substitutes its default ⋯
+                switcher button when renderSwitcher returns null/undefined, so return a hidden element
+                instead — otherwise that kebab leaks into the rail as a stray bottom-left button. */}
             <DropdownMenu
                 open={contextMenu !== null}
                 onOpenToggle={(open: boolean) => {
                     if (!open) setContextMenu(null);
                 }}
-                renderSwitcher={() => null}
+                renderSwitcher={() => <span hidden />}
                 popupProps={{anchorElement: contextAnchor}}
                 items={contextMenu ? folderMenuItems(contextMenu.row) : []}
             />
