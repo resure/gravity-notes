@@ -228,19 +228,20 @@ export class FileSystemNoteStore implements NoteStore {
             if (updatedAt === null) throw notFound(id);
             return {id, title: titleFromFileName(id), updatedAt};
         }
-        // Read the source first, so a missing note maps to a deleted-conflict before any writes
-        // (matches IndexedDb/Tauri and leaves a colliding move with no side effects).
-        const content = (await this.get(id)).content;
+        // Read the source's raw bytes first, so a missing note maps to a deleted-conflict before any
+        // writes (matches IndexedDb/Tauri and leaves a colliding move with no side effects), and a
+        // note carrying non-UTF-8 content is copied byte-for-byte (a text round-trip would mangle it).
+        const srcHandle = await this.fileHandle(id);
+        if (!srcHandle) throw notFound(id);
         const dest = await this.resolveDir(folder, true);
         if (!dest) throw new Error(`Could not open folder "${folder}"`);
         const leaf = basename(id);
         if (await this.existsIn(dest, leaf)) {
             throw new NameCollisionError(id, titleFromFileName(id));
         }
-        // No atomic cross-folder rename in the FSA: copy into the destination, then delete the
-        // source (the write bumps mtime — we return the real new one so the baseline re-seeds).
-        const destHandle = await dest.getFileHandle(leaf, {create: true});
-        await writeFile(destHandle, canonicalBody(content));
+        // No atomic cross-folder rename in the FSA: copy the bytes into the destination, then delete
+        // the source (the write bumps mtime — we return the real new one so the baseline re-seeds).
+        const destHandle = await this.copyFileBytes(srcHandle, dest, leaf);
         const srcDir = await this.resolveDir(dirname(id));
         if (srcDir) await srcDir.removeEntry(leaf);
         // Moving the last note out of a folder leaves it empty: prune the source's now-empty
@@ -258,14 +259,15 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async trash(id: string): Promise<string> {
-        // Read the source first so a missing note maps to a deleted-conflict before any writes.
-        const content = (await this.get(id)).content;
+        // Read the source's raw bytes so a missing note maps to a deleted-conflict before any writes,
+        // and the note's content survives byte-for-byte (no UTF-8 round-trip).
+        const srcHandle = await this.fileHandle(id);
+        if (!srcHandle) throw notFound(id);
         const dest = await this.resolveDir(TRASH_DIR, true);
         if (!dest) throw new Error('Could not open the trash folder');
         // Uniquify within `.trash/` so two same-named notes from different folders can coexist there.
         const leaf = await uniqueName(titleFromFileName(id), (name) => this.existsIn(dest, name));
-        const handle = await dest.getFileHandle(leaf, {create: true});
-        await writeFile(handle, canonicalBody(content));
+        await this.copyFileBytes(srcHandle, dest, leaf);
         const srcDir = await this.resolveDir(dirname(id));
         if (srcDir) await srcDir.removeEntry(basename(id));
         await this.pruneEmptyAncestors(dirname(id));
@@ -291,7 +293,8 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async restore(trashId: string, destFolder: string): Promise<NoteMeta> {
-        const content = (await this.get(trashId)).content;
+        const srcHandle = await this.fileHandle(trashId);
+        if (!srcHandle) throw notFound(trashId);
         const folder = sanitizeDir(destFolder);
         const dest = await this.resolveDir(folder, true); // re-create the folder if it was removed
         if (!dest) throw new Error(`Could not open folder "${folder}"`);
@@ -299,11 +302,10 @@ export class FileSystemNoteStore implements NoteStore {
         const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
             this.existsIn(dest, name),
         );
-        const handle = await dest.getFileHandle(leaf, {create: true});
+        const handle = await this.copyFileBytes(srcHandle, dest, leaf);
         // The FSA has no atomic rename, so this is a copy: the write bumps mtime to "now" (the Tauri /
         // IndexedDB backends preserve it). A restored note therefore surfaces at the top of the
         // "updated" sort on the web backend — the same mtime caveat the copy-then-delete move() carries.
-        await writeFile(handle, canonicalBody(content));
         await this.removeFromTrash(trashId);
         const newId = joinPath(folder, leaf);
         const updatedAt = (await handle.getFile()).lastModified;
@@ -506,6 +508,22 @@ export class FileSystemNoteStore implements NoteStore {
         return b >= a;
     }
 
+    /**
+     * Copy `src`'s raw bytes into `dest/leaf` (creating the file), returning the new handle. Bytes —
+     * not text — so a move/trash/restore of a note carrying non-UTF-8 content (or a binary file moved
+     * with its folder via `copyTree`) survives intact instead of being mangled by a UTF-8
+     * decode/encode round-trip.
+     */
+    private async copyFileBytes(
+        src: FileSystemFileHandle,
+        dest: FileSystemDirectoryHandle,
+        leaf: string,
+    ): Promise<FileSystemFileHandle> {
+        const out = await dest.getFileHandle(leaf, {create: true});
+        await writeFile(out, await src.getFile());
+        return out;
+    }
+
     /** Recursively copy every file under `from` into `to` (creating dirs), `.gnkeep` markers included. */
     private async copyTree(from: string, to: string): Promise<void> {
         const src = await this.resolveDir(from);
@@ -515,9 +533,10 @@ export class FileSystemNoteStore implements NoteStore {
             if (handle.kind === 'directory') {
                 await this.copyTree(`${from}/${handle.name}`, `${to}/${handle.name}`);
             } else {
-                const text = await (await (handle as FileSystemFileHandle).getFile()).text();
+                // Copy raw bytes: a UTF-8 text round-trip would corrupt any binary file (a PDF/image a
+                // user keeps beside their notes) or any non-UTF-8 note moved along with its folder.
                 const out = await dest.getFileHandle(handle.name, {create: true});
-                await writeFile(out, text);
+                await writeFile(out, await (handle as FileSystemFileHandle).getFile());
             }
         }
     }
