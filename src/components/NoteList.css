@@ -96,10 +96,13 @@
     opacity: 1;
 }
 
-/* Mark the keyboard-focused row with a stronger fill instead of an outline border —
-   a step stronger than the selected-row wash so the focused note clearly stands out.
-   The orange tint is theme-aware (see --note-list-focus-bg in index.css). */
-.note-list__item:focus-visible {
+/* Mark the focused (cursor) row with a stronger fill instead of an outline border — a step stronger
+   than the selected-row wash so the active note clearly stands out from a merely-selected one (e.g.
+   the open note while you're typing in the editor: it stays the fainter selected wash, the list's
+   own cursor row goes stronger). Plain :focus, not :focus-visible — the cursor moves here via a
+   programmatic .focus(), which WebKit doesn't treat as focus-visible, so the distinction would
+   otherwise collapse onto the selected wash. The orange tint is theme-aware (see index.css). */
+.note-list__item:focus {
     outline: none;
     background-color: var(--note-list-focus-bg);
 }
