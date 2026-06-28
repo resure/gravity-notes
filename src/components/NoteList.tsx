@@ -86,7 +86,7 @@ function highlightTerms(text: string, terms: string[]): ReactNode {
     const pattern = new RegExp(`(${ordered.map(escapeRegExp).join('|')})`, 'gi');
     return text.split(pattern).map((part, i) =>
         i % 2 === 1 ? (
-            <mark key={i} className="note-list__match">
+            <mark key={`${i}:${part}`} className="note-list__match">
                 {part}
             </mark>
         ) : (

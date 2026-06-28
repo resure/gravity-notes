@@ -17,6 +17,8 @@ import type {NoteStore} from './storage/types';
 export class AttachmentUrlCache {
     private readonly urls = new Map<string, string>();
     private readonly pending = new Map<string, Promise<string>>();
+    /** Set once the cache is retired, so a read resolving after dispose() can't mint a leaking URL. */
+    private disposed = false;
 
     constructor(private readonly store: NoteStore) {}
 
@@ -34,6 +36,10 @@ export class AttachmentUrlCache {
         const promise = this.store
             .readAttachment(ref)
             .then((blob) => {
+                // The read can outlive dispose() (a store change mid-load): don't mint an object URL
+                // onto a retired cache — it would never be revoked. Resolve '' so a still-mounted
+                // caller renders nothing instead of a leaking URL.
+                if (this.disposed) return '';
                 const url = URL.createObjectURL(blob);
                 this.urls.set(ref, url);
                 this.pending.delete(ref);
@@ -49,10 +55,10 @@ export class AttachmentUrlCache {
 
     /**
      * Pre-populate the cache with an object URL straight from an in-memory upload, so a just-dropped
-     * image renders instantly with no read round-trip. A no-op if `ref` is already cached.
+     * image renders instantly with no read round-trip. A no-op if `ref` is already cached (or retired).
      */
     seed(ref: string, blob: Blob): void {
-        if (this.urls.has(ref)) return;
+        if (this.disposed || this.urls.has(ref)) return;
         this.urls.set(ref, URL.createObjectURL(blob));
     }
 
@@ -68,6 +74,8 @@ export class AttachmentUrlCache {
 
     /** Revoke every object URL this cache created (call when the cache is retired). */
     dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
         for (const url of this.urls.values()) URL.revokeObjectURL(url);
         this.urls.clear();
         this.pending.clear();

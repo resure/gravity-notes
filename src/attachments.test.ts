@@ -99,4 +99,24 @@ describe('AttachmentUrlCache', () => {
         expect(revoked.sort()).toEqual([a, b].sort());
         expect(cache.peek('Attachments/a.png')).toBeUndefined();
     });
+
+    it('does not mint a leaking URL when a read resolves after dispose()', async () => {
+        // A read that completes only when we release it, so we can dispose the cache mid-flight —
+        // the race that happens on a store change while an image is still loading.
+        let release!: (blob: Blob) => void;
+        const store = {
+            readAttachment: () =>
+                new Promise<Blob>((resolve) => {
+                    release = resolve;
+                }),
+        } as unknown as NoteStore;
+        const cache = new AttachmentUrlCache(store);
+
+        const pending = cache.resolve('Attachments/late.png'); // in-flight, no URL yet
+        cache.dispose(); // retire the cache while the read is still pending
+        release(new Blob(['late'])); // the read settles after dispose
+
+        await expect(pending).resolves.toBe(''); // no URL minted onto a retired cache
+        expect(urls).toEqual([]); // createObjectURL was never called for the late read
+    });
 });
