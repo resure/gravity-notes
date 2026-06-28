@@ -1,3 +1,5 @@
+import {StrictMode} from 'react';
+
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -820,5 +822,54 @@ describe('Workspace — folder move', () => {
             'aria-selected',
             'false',
         );
+    });
+});
+
+describe('Workspace — attachments survive StrictMode', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    // React StrictMode (active in `tauri:dev`) mount→unmount→mount's every effect. An earlier cache
+    // wiring retired the live AttachmentUrlCache in that spurious unmount cleanup, after which every
+    // resolve() short-circuited to '' — every attachment rendered as "image not found" in the editor
+    // and as an empty thumbnail in the manager. The cache must stay live across the double-invoke.
+    it('resolves an attachment thumbnail under StrictMode (cache not retired on its spurious unmount)', async () => {
+        let n = 0;
+        vi.stubGlobal('URL', {
+            createObjectURL: () => `blob:obj-${++n}`,
+            revokeObjectURL: () => {},
+        });
+
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Note.md', '![pic](Attachments/pic.png)\n');
+        dir.seedBytes('Attachments/pic.png', new Uint8Array([1, 2, 3, 4]));
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+
+        const user = userEvent.setup();
+        renderWithProviders(
+            <StrictMode>
+                <Workspace
+                    store={store}
+                    storageLabel="notes"
+                    themePref="light"
+                    onChangeThemePref={vi.fn()}
+                    onChangeStorage={vi.fn()}
+                />
+            </StrictMode>,
+        );
+
+        // Open the Attachments manager via the orb menu.
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Manage attachments/}));
+
+        // Under the bug, the retired cache makes resolve() yield '' and the Thumb stays a placeholder
+        // span (no <img>). With the fix the thumbnail resolves through the still-live cache → an <img>
+        // with a blob src. Query for the IMG specifically (the placeholder is a span with the same class).
+        await waitFor(() => {
+            const img = document.querySelector('img.attachments__thumb') as HTMLImageElement | null;
+            expect(img).not.toBeNull();
+            expect(img?.getAttribute('src')).toMatch(/^blob:/);
+        });
+        // The note references it, so it must read as used — not flagged "Unused".
+        expect(screen.getByText(/Used by 1 note/)).toBeInTheDocument();
     });
 });

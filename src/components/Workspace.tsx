@@ -95,9 +95,19 @@ export function Workspace({
     const notes = useNotes(store, onError);
 
     // One attachment URL cache per store: resolves `Attachments/…` refs to object URLs for the
-    // editor NodeView and preview, then revokes them all when the store changes / on unmount.
+    // editor NodeView and preview. `useMemo` keeps a stable cache per store; the previous cache's
+    // object URLs are revoked when a new store mints a new one. That retirement happens in render
+    // (NOT an unmount effect): React StrictMode (active in dev) mount→unmount→mount's every effect,
+    // so an unmount cleanup would retire the still-live cache, after which every resolve()
+    // short-circuits to '' and every attachment renders as "not found". Render-side retirement only
+    // fires when `useMemo` actually produced a new instance, which a spurious StrictMode unmount never
+    // does. Blob URLs die with the page on exit, so no unmount revoke is needed beyond this.
     const attachmentCache = useMemo(() => new AttachmentUrlCache(store), [store]);
-    useEffect(() => () => attachmentCache.dispose(), [attachmentCache]);
+    const prevAttachmentCacheRef = useRef(attachmentCache);
+    if (prevAttachmentCacheRef.current !== attachmentCache) {
+        prevAttachmentCacheRef.current.dispose();
+        prevAttachmentCacheRef.current = attachmentCache;
+    }
     // Persist a dropped/pasted/inserted image, then seed its object URL so it renders instantly.
     const handleUploadFile = useCallback(
         async (file: File): Promise<string> => {
