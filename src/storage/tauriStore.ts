@@ -259,6 +259,11 @@ export class TauriNoteStore implements NoteStore {
         return invoke<string[]>('notes_list_folders', {dir: this.dir});
     }
 
+    /** Reveal a note / folder / attachment in Finder (native desktop only). */
+    async reveal(relPath: string): Promise<void> {
+        await invoke('reveal_path', {dir: this.dir, name: relPath});
+    }
+
     async readMetadata(): Promise<NotesMetadata> {
         const entry = await invoke<NoteFull | null>('notes_read_opt', {
             dir: this.dir,

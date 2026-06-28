@@ -96,6 +96,21 @@ export function Workspace({
         [store, attachmentCache],
     );
 
+    // "Reveal in Finder" — present only on the native desktop backend (the others have no real file
+    // to reveal). `undefined` here hides the affordance in the note/folder menus. Takes a store id,
+    // folder path, or `Attachments/<name>` ref.
+    const handleReveal = useMemo(() => {
+        if (!store.reveal) return undefined;
+        // Bind to the store: a bare `store.reveal` reference would lose `this` when invoked, and
+        // TauriNoteStore.reveal reads `this.dir`.
+        const reveal = store.reveal.bind(store);
+        return (relPath: string) => {
+            reveal(relPath).catch((err) =>
+                onError(err instanceof Error ? err.message : 'Failed to reveal in Finder'),
+            );
+        };
+    }, [store, onError]);
+
     const orderedNotes = useMemo(
         () => orderNotes(notes.notes, notes.metadata),
         [notes.notes, notes.metadata],
@@ -610,6 +625,7 @@ export function Workspace({
                                 onMoveFolder={handleMoveFolder}
                                 onTogglePin={notes.togglePin}
                                 onMoveTo={(id, dest) => void notes.move(id, dest)}
+                                onReveal={handleReveal}
                                 onFocusList={() => listRef.current?.focusSelected()}
                             />
                         ) : null}
@@ -636,6 +652,7 @@ export function Workspace({
                             onCreate={handleCreate}
                             onRequestMove={setMovingNoteId}
                             onDuplicate={handleDuplicate}
+                            onReveal={handleReveal}
                             onRename={handleRename}
                             onDelete={handleDelete}
                             sortMode={notes.metadata.sort}

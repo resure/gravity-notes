@@ -1,4 +1,5 @@
 import {fireEvent, screen, waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {AttachmentUrlCache} from '../attachments';
@@ -64,6 +65,92 @@ describe('AttachmentsDialog', () => {
         expect(screen.getByText(/Used by 1 note/)).toBeInTheDocument();
         // One orphan → a bulk "Delete unused (1)" action is offered.
         expect(screen.getByRole('button', {name: /Delete unused \(1\)/})).toBeInTheDocument();
+        // "Reveal in Finder" is gated on a backend that supports it — this fake store doesn't.
+        expect(screen.queryByRole('button', {name: /Reveal/})).not.toBeInTheDocument();
+    });
+
+    it('orders attachments by size when "Largest" is picked', async () => {
+        const user = userEvent.setup();
+        const sized = (name: string, size: number, updatedAt: number): AttachmentMeta => ({
+            ref: `Attachments/${name}`,
+            name,
+            size,
+            updatedAt,
+        });
+        const {store} = makeStore({
+            attachments: [
+                sized('small.png', 100, 3),
+                sized('big.png', 9000, 1),
+                sized('mid.png', 2000, 2),
+            ],
+            notes: [],
+        });
+        renderWithProviders(
+            <AttachmentsDialog
+                open
+                store={store}
+                cache={new AttachmentUrlCache(store)}
+                onClose={() => {}}
+                onError={() => {}}
+            />,
+        );
+        // The dialog portals to <body>, so query the document rather than the render container.
+        const names = () =>
+            [...document.querySelectorAll('.attachments__name')].map((el) => el.textContent);
+
+        await screen.findByText('small.png');
+        // Default order is Recent (updatedAt desc).
+        expect(names()).toEqual(['small.png', 'mid.png', 'big.png']);
+
+        await user.click(screen.getByLabelText('Sort attachments'));
+        await user.click(await screen.findByRole('option', {name: 'Largest'}));
+
+        expect(names()).toEqual(['big.png', 'mid.png', 'small.png']);
+    });
+
+    it('opens an attachment full-size when its thumbnail is clicked', async () => {
+        const user = userEvent.setup();
+        const {store} = makeStore({attachments: [att('photo.png')], notes: []});
+        renderWithProviders(
+            <AttachmentsDialog
+                open
+                store={store}
+                cache={new AttachmentUrlCache(store)}
+                onClose={() => {}}
+                onError={() => {}}
+            />,
+        );
+
+        await user.click(await screen.findByRole('button', {name: 'View photo.png'}));
+        // The lightbox overlay appears over the dialog, showing the full-size image.
+        await waitFor(() => expect(document.querySelector('.lightbox__img')).toBeInTheDocument());
+    });
+
+    it('reveals an attachment in Finder, preserving the store binding', async () => {
+        const user = userEvent.setup();
+        const {store} = makeStore({attachments: [att('photo.png')], notes: []});
+        // Mimic TauriNoteStore.reveal, which reads `this.dir` — a detached call (lost `this`) would
+        // leave `this` undefined and throw, so this guards against calling a bare `store.reveal` ref.
+        const calls: {dir: unknown; ref: string}[] = [];
+        Object.assign(store, {
+            dir: '/notes',
+            reveal(ref: string) {
+                calls.push({dir: (this as {dir?: string}).dir, ref});
+                return Promise.resolve();
+            },
+        });
+        renderWithProviders(
+            <AttachmentsDialog
+                open
+                store={store}
+                cache={new AttachmentUrlCache(store)}
+                onClose={() => {}}
+                onError={() => {}}
+            />,
+        );
+
+        await user.click(await screen.findByRole('button', {name: 'Reveal photo.png in Finder'}));
+        expect(calls).toEqual([{dir: '/notes', ref: 'Attachments/photo.png'}]);
     });
 
     it('confirms then deletes a single attachment', async () => {

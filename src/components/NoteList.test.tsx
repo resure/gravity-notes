@@ -440,3 +440,25 @@ describe('NoteList — duplicate', () => {
         expect(props.onDuplicate).toHaveBeenCalledWith('Beta.md');
     });
 });
+
+describe('NoteList — reveal in Finder', () => {
+    it('reveals a note via the row menu when the backend supports it', async () => {
+        const user = userEvent.setup();
+        const onReveal = vi.fn();
+        setup({onReveal});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        await user.click(await screen.findByRole('menuitem', {name: /Reveal in Finder/}));
+        expect(onReveal).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('omits the reveal item when the backend cannot (no onReveal)', async () => {
+        const user = userEvent.setup();
+        setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button'));
+        // The menu opened (Rename is present) but Reveal is not.
+        expect(await screen.findByRole('menuitem', {name: /Rename/})).toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', {name: /Reveal in Finder/})).not.toBeInTheDocument();
+    });
+});

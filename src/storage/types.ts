@@ -144,6 +144,13 @@ export interface NoteStore {
      * implied by a note's path are included alongside explicitly-created empty ones.
      */
     listFolders(): Promise<string[]>;
+    /**
+     * Reveal a note, folder, or attachment in the OS file manager (macOS Finder), by its store id,
+     * folder path, or `Attachments/<name>` ref. Present only on the native desktop backend, where
+     * notes are real files on disk — callers feature-detect it (`store.reveal`) and hide the
+     * affordance on the web / in-browser backends, which have no file to reveal.
+     */
+    reveal?(relPath: string): Promise<void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
     /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */

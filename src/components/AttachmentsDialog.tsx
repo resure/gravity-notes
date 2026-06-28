@@ -1,11 +1,13 @@
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 
-import {TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, Icon, Label, Spin, Text} from '@gravity-ui/uikit';
+import {FolderOpen, TrashBin} from '@gravity-ui/icons';
+import {Button, Dialog, Icon, Label, Select, Spin, Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache} from '../attachments';
 import {attachmentRefsIn} from '../storage/noteText';
 import type {AttachmentMeta, NoteStore} from '../storage/types';
+
+import {Lightbox} from './Lightbox';
 
 import './AttachmentsDialog.css';
 
@@ -33,6 +35,9 @@ interface PendingDelete {
     /** True for the bulk "delete unused" action. */
     bulk: boolean;
 }
+
+/** Display order for the attachment list. */
+type AttachmentSort = 'recent' | 'size' | 'name';
 
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -76,6 +81,11 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     const [items, setItems] = useState<AttachmentRow[]>([]);
     const [pending, setPending] = useState<PendingDelete | null>(null);
     const [busy, setBusy] = useState(false);
+    const [sort, setSort] = useState<AttachmentSort>('recent');
+    // The attachment being viewed full-size (null = none), resolved to an object URL.
+    const [viewing, setViewing] = useState<{url: string; name: string} | null>(null);
+    // "Reveal in Finder" is desktop-only — present only when the backend can do it (Tauri folder).
+    const reveal = store.reveal;
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -90,10 +100,7 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                     usage.set(ref, (usage.get(ref) ?? 0) + 1);
                 }
             }
-            const rows = attachments
-                .map((a) => ({...a, usedBy: usage.get(a.ref) ?? 0}))
-                .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-            setItems(rows);
+            setItems(attachments.map((a) => ({...a, usedBy: usage.get(a.ref) ?? 0})));
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to load attachments');
         } finally {
@@ -102,11 +109,52 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     }, [store, onError]);
 
     useEffect(() => {
-        if (open) void load();
-        else setPending(null);
+        if (open) {
+            void load();
+        } else {
+            setPending(null);
+            setViewing(null);
+        }
     }, [open, load]);
 
     const orphans = items.filter((i) => i.usedBy === 0);
+
+    // Display order (the underlying `items` stay load-order; usage/orphan checks are order-agnostic).
+    const sortedItems = useMemo(() => {
+        const arr = [...items];
+        if (sort === 'size') arr.sort((a, b) => b.size - a.size);
+        else if (sort === 'name') arr.sort((a, b) => a.name.localeCompare(b.name));
+        else arr.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return arr;
+    }, [items, sort]);
+
+    // Open an attachment full-size: reuse its already-resolved object URL when the thumbnail has one.
+    const openView = useCallback(
+        (item: AttachmentRow) => {
+            void (async () => {
+                try {
+                    const url = cache.peek(item.ref) ?? (await cache.resolve(item.ref));
+                    setViewing({url, name: item.name});
+                } catch {
+                    onError('Failed to open attachment');
+                }
+            })();
+        },
+        [cache, onError],
+    );
+
+    const onReveal = useCallback(
+        (ref: string) => {
+            // Call through `store` (not the captured `reveal`) so `this` stays bound — TauriNoteStore
+            // .reveal reads `this.dir`; the optional-call form `store.reveal?.(…)` keeps the receiver.
+            store
+                .reveal?.(ref)
+                .catch((err) =>
+                    onError(err instanceof Error ? err.message : 'Failed to reveal in Finder'),
+                );
+        },
+        [store, onError],
+    );
 
     const runDelete = useCallback(async () => {
         if (!pending) return;
@@ -157,52 +205,94 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                             </Text>
                         </div>
                     ) : (
-                        <div className="attachments__list">
-                            {items.map((item) => (
-                                <div className="attachments__row" key={item.ref}>
-                                    <Thumb cache={cache} refPath={item.ref} alt={item.name} />
-                                    <div className="attachments__meta">
-                                        <Text
-                                            className="attachments__name"
-                                            ellipsis
-                                            title={item.name}
+                        <>
+                            <div className="attachments__toolbar">
+                                <Text color="secondary" variant="caption-2">
+                                    {items.length} file{items.length === 1 ? '' : 's'}
+                                </Text>
+                                <Select
+                                    className="attachments__sort"
+                                    size="s"
+                                    aria-label="Sort attachments"
+                                    value={[sort]}
+                                    onUpdate={([next]) => {
+                                        if (next) setSort(next as AttachmentSort);
+                                    }}
+                                    options={[
+                                        {value: 'recent', content: 'Recent'},
+                                        {value: 'size', content: 'Largest'},
+                                        {value: 'name', content: 'Name'},
+                                    ]}
+                                />
+                            </div>
+                            <div className="attachments__list">
+                                {sortedItems.map((item) => (
+                                    <div className="attachments__row" key={item.ref}>
+                                        <button
+                                            type="button"
+                                            className="attachments__thumb-btn"
+                                            aria-label={`View ${item.name}`}
+                                            onClick={() => openView(item)}
                                         >
-                                            {item.name}
-                                        </Text>
-                                        <div className="attachments__sub">
-                                            <Text color="secondary" variant="caption-2">
-                                                {formatBytes(item.size)}
+                                            <Thumb
+                                                cache={cache}
+                                                refPath={item.ref}
+                                                alt={item.name}
+                                            />
+                                        </button>
+                                        <div className="attachments__meta">
+                                            <Text
+                                                className="attachments__name"
+                                                ellipsis
+                                                title={item.name}
+                                            >
+                                                {item.name}
                                             </Text>
-                                            {item.usedBy === 0 ? (
-                                                <Label theme="warning" size="xs">
-                                                    Unused
-                                                </Label>
-                                            ) : (
+                                            <div className="attachments__sub">
                                                 <Text color="secondary" variant="caption-2">
-                                                    · Used by {item.usedBy} note
-                                                    {item.usedBy === 1 ? '' : 's'}
+                                                    {formatBytes(item.size)}
                                                 </Text>
-                                            )}
+                                                {item.usedBy === 0 ? (
+                                                    <Label theme="warning" size="xs">
+                                                        Unused
+                                                    </Label>
+                                                ) : (
+                                                    <Text color="secondary" variant="caption-2">
+                                                        · Used by {item.usedBy} note
+                                                        {item.usedBy === 1 ? '' : 's'}
+                                                    </Text>
+                                                )}
+                                            </div>
                                         </div>
+                                        {reveal ? (
+                                            <Button
+                                                view="flat"
+                                                size="m"
+                                                aria-label={`Reveal ${item.name} in Finder`}
+                                                onClick={() => onReveal(item.ref)}
+                                            >
+                                                <Icon data={FolderOpen} />
+                                            </Button>
+                                        ) : null}
+                                        <Button
+                                            view="flat"
+                                            size="m"
+                                            aria-label={`Delete ${item.name}`}
+                                            onClick={() =>
+                                                setPending({
+                                                    refs: [item.ref],
+                                                    usedBy: item.usedBy,
+                                                    label: item.name,
+                                                    bulk: false,
+                                                })
+                                            }
+                                        >
+                                            <Icon data={TrashBin} />
+                                        </Button>
                                     </div>
-                                    <Button
-                                        view="flat"
-                                        size="m"
-                                        aria-label={`Delete ${item.name}`}
-                                        onClick={() =>
-                                            setPending({
-                                                refs: [item.ref],
-                                                usedBy: item.usedBy,
-                                                label: item.name,
-                                                bulk: false,
-                                            })
-                                        }
-                                    >
-                                        <Icon data={TrashBin} />
-                                    </Button>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        </>
                     )}
                 </Dialog.Body>
                 <Dialog.Footer
@@ -245,6 +335,10 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                     onClickButtonCancel={() => setPending(null)}
                 />
             </Dialog>
+
+            {viewing ? (
+                <Lightbox src={viewing.url} alt={viewing.name} onClose={() => setViewing(null)} />
+            ) : null}
         </>
     );
 }

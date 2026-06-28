@@ -487,6 +487,34 @@ fn notes_stat(dir: String, name: String) -> Result<Option<f64>, String> {
     }
 }
 
+/// Reveal a note, folder, or attachment in the OS file manager (macOS Finder), selecting it inside
+/// its parent. `name` is a store id / folder path / attachment ref, containment-checked like every
+/// other path argument. A missing path is reported rather than launching the file manager on nothing.
+#[tauri::command]
+fn reveal_path(dir: String, name: String) -> Result<(), String> {
+    let path = resolve_within(&dir, &name)?;
+    if !path.exists() {
+        return Err(format!("\"{name}\" no longer exists"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .status()
+            .map_err(stringify)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("Finder could not reveal \"{name}\""))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("reveal is only supported on macOS".to_string())
+    }
+}
+
 fn stringify(err: impl std::fmt::Display) -> String {
     err.to_string()
 }
@@ -527,6 +555,7 @@ pub fn run() {
             attachment_remove,
             notes_exists,
             notes_stat,
+            reveal_path,
             notes_create_folder,
             notes_remove_dir,
             notes_move_dir,
@@ -791,6 +820,20 @@ mod tests {
         assert!(!path.exists());
         notes_write(s(&dir), "A/B/C/Deep.md".into(), "ok".into()).unwrap();
         assert!(path.is_file());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reveal_rejects_traversal_and_missing_paths() {
+        // Both error cases return before the platform "open" call, so this never launches Finder.
+        let dir = temp_dir();
+        notes_write(s(&dir), "Note.md".into(), "x".into()).unwrap();
+
+        // A path escaping the picked folder is refused by the containment guard.
+        assert!(reveal_path(s(&dir), "../../Applications".into()).is_err());
+        // An in-bounds path that doesn't exist is reported, not launched on nothing.
+        assert!(reveal_path(s(&dir), "Nope.md".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }
