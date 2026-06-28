@@ -7,6 +7,20 @@
     flex-shrink: 0;
 }
 
+/* Desktop app (Tauri): the native title bar is hidden (titleBarStyle "Overlay") and this strip plays
+   its part. Center the orb + a constrained-width search as a "command center" (VS Code style). The
+   traffic lights sit far left, clear of the centered group even at the min window width, and the empty
+   bar on either side is the window drag handle (data-tauri-drag-region on the <header>); the orb and
+   search stay clickable. The web build has no .tauri-app class, so it keeps the full-width search. */
+.tauri-app .topbar {
+    justify-content: center;
+}
+
+.tauri-app .topbar__search {
+    flex: none;
+    width: clamp(320px, 40vw, 520px);
+}
+
 /* The search is the hero: it fills from the orb up to the right edge. */
 .topbar__search {
     flex: 1;

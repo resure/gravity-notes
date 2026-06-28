@@ -25,6 +25,13 @@ if (!rootEl) {
     throw new Error('Gravity Notes failed to start: no #root element in the document.');
 }
 
+// Desktop shell (Tauri): the OS title bar is hidden (titleBarStyle "Overlay") and our top bar plays
+// its part, so flag the document — the topbar then insets to clear the macOS traffic lights and the
+// whole strip becomes a window drag handle (see TopBar.tsx / TopBar.css). No-op in the web build.
+if ('__TAURI_INTERNALS__' in window) {
+    document.documentElement.classList.add('tauri-app');
+}
+
 createRoot(rootEl).render(
     <StrictMode>
         <App />

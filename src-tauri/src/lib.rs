@@ -550,6 +550,7 @@ fn open_external(url: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -557,6 +558,16 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+            // The custom title bar (titleBarStyle "Overlay") is taller than the standard macOS one,
+            // so the traffic lights sit too high/left by default. Nudge them down + right to center
+            // them in our bar; decorum re-applies the inset on resize/fullscreen. (x = right, y = down.)
+            #[cfg(target_os = "macos")]
+            {
+                use tauri_plugin_decorum::WebviewWindowExt;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_traffic_lights_inset(16.0, 20.0);
+                }
             }
             Ok(())
         })

@@ -249,7 +249,7 @@ export function TopBar({
     ];
 
     return (
-        <header className="topbar">
+        <header className="topbar" data-tauri-drag-region>
             <DropdownMenu
                 switcherWrapperClassName="topbar__menu-anchor"
                 renderSwitcher={(props) => (
