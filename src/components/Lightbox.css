@@ -1,0 +1,75 @@
+/* Full-size image overlay (shared by the editor's image NodeView and the attachments manager). */
+.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgba(0, 0, 0, 0.8);
+    cursor: zoom-out;
+}
+
+/* The zoom/pan stage: fills the overlay so the cursor-anchored pinch maths use its centre, and
+   clips the image once it's panned past the edges. */
+.lightbox__frame {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none; /* we drive pinch/pan ourselves; stop the browser hijacking the gesture */
+}
+
+/* Gesture surface, sized to the image and centred in the frame; carries pinch/pan/double-click. */
+.lightbox__hit {
+    display: flex;
+    max-width: 100%;
+    max-height: 100%;
+    line-height: 0;
+    cursor: default;
+}
+
+.lightbox__hit_zoomed {
+    cursor: grab;
+}
+
+.lightbox__hit_zoomed:active {
+    cursor: grabbing;
+}
+
+.lightbox__img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+    /* Transform is set inline (translate + scale); keep the zoom anchored at the image centre. */
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.lightbox__close {
+    position: absolute;
+    top: 16px;
+    inset-inline-end: 16px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+}
+
+.lightbox__close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}

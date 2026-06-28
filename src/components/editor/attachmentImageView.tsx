@@ -9,10 +9,10 @@ import {
 import {ChevronsExpandUpRight, Pencil, Xmark} from '@gravity-ui/icons';
 import type {ReactNodeViewProps} from '@gravity-ui/markdown-editor';
 import {Icon} from '@gravity-ui/uikit';
-import {createPortal} from 'react-dom';
 
 import {useAttachmentCache} from '../../attachments';
 import {basename, isAttachmentRef} from '../../storage/noteText';
+import {Lightbox} from '../Lightbox';
 
 import './attachmentImageView.css';
 
@@ -29,42 +29,6 @@ const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;
  */
 function isCaption(alt: string, src: string): boolean {
     return alt.length > 0 && alt !== basename(src) && !IMAGE_EXT_RE.test(alt);
-}
-
-/** Full-size overlay for an image, portaled to <body> so it isn't clipped by the editor. */
-function Lightbox({src, alt, onClose}: {src: string; alt: string; onClose: () => void}) {
-    const closeRef = useRef<HTMLButtonElement>(null);
-    useEffect(() => {
-        // Move focus out of the editor's contenteditable while the overlay is open. Otherwise, with
-        // the image node still selected, the Escape keypress is inserted INTO that node (a literal
-        // U+001B), corrupting the saved Markdown. preventDefault is a second guard.
-        closeRef.current?.focus();
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                onClose();
-            }
-        };
-        document.addEventListener('keydown', onKey, true);
-        return () => document.removeEventListener('keydown', onKey, true);
-    }, [onClose]);
-
-    return createPortal(
-        <div className="attachment-lightbox" onClick={onClose} role="presentation">
-            <button
-                ref={closeRef}
-                type="button"
-                className="attachment-lightbox__close"
-                aria-label="Close"
-                onClick={onClose}
-            >
-                <Icon data={Xmark} size={20} />
-            </button>
-            <img className="attachment-lightbox__img" src={src} alt={alt} />
-        </div>,
-        document.body,
-    );
 }
 
 /**
