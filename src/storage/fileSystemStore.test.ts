@@ -151,6 +151,19 @@ describe('FileSystemNoteStore', () => {
             expect((await store.listFolders()).filter((f) => f === 'Work/Plans')).toHaveLength(1);
         });
 
+        it('createFolder rejects a reserved name the walk would hide', async () => {
+            // A user folder named `Attachments` (or any dot-name) would exist on disk yet vanish from
+            // the tree, silently swallowing the notes inside it — so creating one is refused.
+            await expect(store.createFolder('', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.createFolder('Work', '.hidden')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Nothing was created on disk for either rejected name.
+            expect(await store.listFolders()).toEqual([]);
+        });
+
         it('removeFolder drops an empty folder entirely', async () => {
             await store.createFolder('', 'Temp');
             expect(await store.listFolders()).toContain('Temp');
@@ -237,6 +250,15 @@ describe('FileSystemNoteStore', () => {
             await expect(store.moveFolder('Work', 'Work/Sub/Deep')).rejects.toThrow(/itself/i);
         });
 
+        it('refuses a destination leaf the walk would hide, leaving the source intact', async () => {
+            await store.create('A', 'Work');
+            // Renaming a folder to a reserved name (`Attachments`, any dot-name) would hide its notes.
+            await expect(store.moveFolder('Work', 'Attachments')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            expect(await store.stat('Work/A.md')).not.toBeNull();
+        });
+
         it('rolls back the partial destination when the copy fails mid-way', async () => {
             await store.create('A', 'Work');
             await store.create('B', 'Work');
@@ -280,6 +302,33 @@ describe('FileSystemNoteStore', () => {
             const metas = await ciStore.list();
             expect(metas.map((m) => m.id)).toEqual(['Work/Note.md']);
             expect((await ciStore.get('Work/Note.md')).content).toBe('keep me');
+        });
+    });
+
+    describe('rename — case-only collision (case-sensitive filesystem)', () => {
+        // The default fake dir is case-SENSITIVE, so `note.md` and `Note.md` are two distinct files.
+        it('rejects a case-only rename onto a DISTINCT existing file, leaving both intact', async () => {
+            dir.seedFile('note.md', 'mine', 100);
+            dir.seedFile('Note.md', 'theirs', 200);
+
+            await expect(store.rename('note.md', 'Note')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Neither file is touched; no temp leaks into the listing.
+            expect((await store.get('note.md')).content).toBe('mine');
+            expect((await store.get('Note.md')).content).toBe('theirs');
+            expect((await store.list()).map((m) => m.id).sort()).toEqual(['Note.md', 'note.md']);
+        });
+
+        it('still performs a case-only rename when the new-cased name is free', async () => {
+            dir.seedFile('note.md', 'keep me', 5);
+
+            const meta = await store.rename('note.md', 'Note');
+
+            expect(meta.id).toBe('Note.md');
+            // On a case-sensitive FS the rename creates a distinct file and drops the source.
+            expect((await store.list()).map((m) => m.id)).toEqual(['Note.md']);
+            expect((await store.get('Note.md')).content).toBe('keep me');
         });
     });
 
@@ -459,16 +508,19 @@ describe('FileSystemNoteStore', () => {
             await expect(store.get('Old.md')).rejects.toThrow();
         });
 
-        it('writes the canonical trailing blank line to the renamed file', async () => {
+        it('preserves the file bytes verbatim on rename (no re-canonicalize), matching move()/Tauri', async () => {
+            // Seed a non-canonical body (no trailing blank line). A rename copies the bytes as-is —
+            // re-encoding/re-canonicalizing here would diverge from move()/trash() and the Tauri
+            // backend's atomic fs::rename, and could mangle intentionally-preserved or non-UTF-8
+            // content. In the app the body is already canonical before a rename (autosave flushes
+            // first), so this only matters for content written outside the normal save path.
             dir.seedFile('Old.md', 'body', 5);
 
             await store.rename('Old.md', 'New');
 
-            // store.get() strips trailing newlines (so read the raw file): a rename must leave it
-            // in the same canonical "blank line at EOF" shape save() produces.
             const handle = await dir.getFileHandle('New.md');
             const raw = await (await handle.getFile()).text();
-            expect(raw).toBe('body\n\n');
+            expect(raw).toBe('body');
         });
     });
 
@@ -597,6 +649,19 @@ describe('FileSystemNoteStore', () => {
             expect((await store.listAttachments()).map((a) => a.ref)).toEqual([
                 'Attachments/exact.png',
             ]);
+        });
+
+        it('removeAttachment honors a nested ref instead of the Attachments root', async () => {
+            // Two same-named files at different depths: removeAttachment must drop the one the ref
+            // names (resolving its own dirname, like read/writeAttachmentAt) — not the root one.
+            await store.writeAttachmentAt('Attachments/cat.png', new Blob(['root']));
+            await store.writeAttachmentAt('Attachments/Sub/cat.png', new Blob(['nested']));
+
+            await store.removeAttachment('Attachments/Sub/cat.png');
+
+            // The nested file is gone; the root one survives.
+            await expect(store.readAttachment('Attachments/Sub/cat.png')).rejects.toThrow();
+            expect(await (await store.readAttachment('Attachments/cat.png')).text()).toBe('root');
         });
     });
 

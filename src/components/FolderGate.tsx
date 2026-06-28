@@ -62,6 +62,7 @@ function Content({storage}: {storage: NotesStorage}) {
                         view="action"
                         size="l"
                         loading={storage.state === 'loading'}
+                        disabled={storage.state === 'loading'}
                         onClick={() => void storage.pickFolder()}
                     >
                         Open a folder…
@@ -71,6 +72,10 @@ function Content({storage}: {storage: NotesStorage}) {
                     view={storage.supportsFolders ? 'outlined' : 'action'}
                     size="l"
                     loading={storage.state === 'loading' && !storage.supportsFolders}
+                    // Disable while the remembered choice is still being restored, so a click can't
+                    // discard it mid-bootstrap (the folder button already showed a spinner; this one
+                    // didn't when `supportsFolders`, leaving it racily clickable).
+                    disabled={storage.state === 'loading'}
                     onClick={() => void storage.useBrowserStorage()}
                 >
                     {storage.isTauri ? 'Store inside the app' : 'Store in this browser'}

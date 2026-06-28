@@ -92,7 +92,9 @@ export function removeEmptyFirstLine(editor: BodyEditor): void {
     try {
         const {doc} = view.state;
         const first = doc.firstChild;
-        if (first && doc.childCount > 1) {
+        // Self-protecting: only remove the block when it's actually the empty paragraph this helper
+        // owns (and isn't the doc's last block), so a non-empty/changed first block is never deleted.
+        if (first && isEmptyParagraph(first) && doc.childCount > 1) {
             view.dispatch(view.state.tr.delete(0, first.nodeSize));
         }
     } catch {

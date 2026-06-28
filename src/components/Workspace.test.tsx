@@ -725,6 +725,60 @@ describe('Workspace — folder auto-preview', () => {
     });
 });
 
+describe('Workspace — storage menu', () => {
+    async function openOrbMenu(user: ReturnType<typeof userEvent.setup>) {
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+    }
+
+    it('opens the attachments manager from the menu (after flushing pending edits)', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await openOrbMenu(user);
+        await user.click(await screen.findByRole('menuitem', {name: /Manage attachments/}));
+        // The handler awaits flushPending() before opening — the dialog still appears.
+        expect(await screen.findByText('Attachments')).toBeInTheDocument();
+    });
+
+    it('confirms before changing storage while an unresolved conflict holds unsaved edits', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Note.md', 'disk v1', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const onChangeStorage = vi.fn();
+        renderWithProviders(
+            <Workspace
+                store={store}
+                storageLabel="notes"
+                themePref="light"
+                onChangeThemePref={vi.fn()}
+                onChangeStorage={onChangeStorage}
+            />,
+        );
+        // Open the note, then create an external conflict (bump its mtime past the baseline).
+        await user.click(await screen.findByRole('option', {name: /Note/}));
+        await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        dir.seedFile('Note.md', 'disk v2', 200);
+        fireEvent.focus(window);
+        // Wait for the conflict banner so we know an unresolved conflict is holding the note.
+        await screen.findByText('Changed on disk');
+
+        // Decline the confirm: storage must NOT change.
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
+        await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+        expect(onChangeStorage).not.toHaveBeenCalled();
+
+        // Accept the confirm: storage changes through.
+        confirmSpy.mockReturnValue(true);
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
+        await waitFor(() => expect(onChangeStorage).toHaveBeenCalled());
+        confirmSpy.mockRestore();
+    });
+});
+
 describe('Workspace — folder move', () => {
     it('reverts the rail selection when a folder rename collides', async () => {
         const user = userEvent.setup();

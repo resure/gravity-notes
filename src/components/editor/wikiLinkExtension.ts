@@ -147,15 +147,36 @@ function computeBroken(doc: ProseMirrorNode, opts: WikiLinkOptions): DecorationS
     const notes = opts.getNotes();
     const currentId = opts.getCurrentId();
     const decorations: Decoration[] = [];
+    // A single link can be split across adjacent text nodes (e.g. a stored selection boundary), so
+    // stitch each contiguous run of wiki-marked text and resolve the joined title once — resolving a
+    // partial title would otherwise flag a perfectly valid link as broken.
+    let run: {from: number; to: number; text: string} | null = null;
+    const flush = () => {
+        if (run && resolveWikiLink(run.text, currentId, notes) === null) {
+            decorations.push(Decoration.inline(run.from, run.to, {class: 'wiki-link_broken'}));
+        }
+        run = null;
+    };
     doc.descendants((node, pos) => {
-        if (!node.isText || !node.text) return;
-        if (!node.marks.some((mark) => mark.type.name === WIKI_LINK_MARK)) return;
-        if (resolveWikiLink(node.text, currentId, notes) === null) {
-            decorations.push(
-                Decoration.inline(pos, pos + node.nodeSize, {class: 'wiki-link_broken'}),
-            );
+        const isWiki =
+            node.isText &&
+            node.text !== null &&
+            node.marks.some((mark) => mark.type.name === WIKI_LINK_MARK);
+        if (isWiki && node.text) {
+            const from = pos;
+            const to = pos + node.nodeSize;
+            if (run && run.to === from) {
+                run.to = to;
+                run.text += node.text;
+            } else {
+                flush(); // close any prior run before starting a new one
+                run = {from, to, text: node.text};
+            }
+        } else {
+            flush();
         }
     });
+    flush();
     return DecorationSet.create(doc, decorations);
 }
 
@@ -204,6 +225,10 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
                     const open = state.push(`${WIKI_LINK_MARK}_open`, 'a', 1);
                     open.markup = '[[';
                     const text = state.push('text', '', 0);
+                    // Cosmetic drift: the *untrimmed* inner text is kept for display, while
+                    // `resolveWikiLink`/`extractWikiLinks` trim it — so a stored `[[ Title ]]` shows
+                    // with stray spaces yet still resolves. Left as-is to keep the markup round-trip
+                    // (`[[ Title ]]` → mark → `[[ Title ]]`) byte-for-byte stable.
                     text.content = content;
                     const close = state.push(`${WIKI_LINK_MARK}_close`, 'a', -1);
                     close.markup = ']]';
@@ -241,16 +266,24 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
         const markType = schema.marks[WIKI_LINK_MARK];
         return {
             rules: [
-                new InputRule(/\[\[([^[\]\n]+)\]\]$/, (state, match, start, end) => {
-                    const title = match[1];
-                    if (!title.trim()) return null;
-                    const tr = state.tr.replaceWith(
-                        start,
-                        end,
-                        schema.text(title, [markType.create()]),
-                    );
-                    return tr.removeStoredMark(markType);
-                }),
+                new InputRule(
+                    /\[\[([^[\]\n]+)\]\]$/,
+                    (state, match, start, end) => {
+                        // Kept untrimmed to mirror the markdown-it rule above (same cosmetic drift):
+                        // `[[ Title ]]` inserts the spaces too, but resolution trims, so it still links.
+                        const title = match[1];
+                        if (!title.trim()) return null;
+                        const tr = state.tr.replaceWith(
+                            start,
+                            end,
+                            schema.text(title, [markType.create()]),
+                        );
+                        return tr.removeStoredMark(markType);
+                    },
+                    // Don't fire inside inline `code` — matches the suggest plugin (which bails on a
+                    // `code` mark) and the markdown-it load path; the package default is `true`.
+                    {inCodeMark: false},
+                ),
             ],
         };
     });
@@ -323,22 +356,55 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
             () =>
                 new Plugin({
                     view(editorView) {
+                        // Cache the last pushed snapshot so we skip the (React setState) `onTooltip`
+                        // on transactions that don't change what the tooltip shows — `update` fires
+                        // on every keystroke, but the visible state only depends on these. `from`/`to`
+                        // ride along: the `setTarget`/`unlink` closures capture them, so a link that
+                        // shifts (an edit before it) must re-push even when its text is unchanged.
+                        let last: {
+                            anchor: HTMLElement;
+                            target: string;
+                            broken: boolean;
+                            from: number;
+                            to: number;
+                        } | null = null;
                         const push = () => {
                             const range = wikiLinkRange(editorView.state);
                             const anchor = range && wikiAnchorAt(editorView, range.from);
                             if (!range || !anchor) {
-                                onTooltip(null);
+                                if (last !== null) {
+                                    last = null;
+                                    onTooltip(null);
+                                }
                                 return;
                             }
+                            const broken =
+                                resolveWikiLink(
+                                    range.target,
+                                    opts.getCurrentId(),
+                                    opts.getNotes(),
+                                ) === null;
+                            if (
+                                last &&
+                                last.anchor === anchor &&
+                                last.target === range.target &&
+                                last.broken === broken &&
+                                last.from === range.from &&
+                                last.to === range.to
+                            ) {
+                                return; // nothing the tooltip cares about changed
+                            }
+                            last = {
+                                anchor,
+                                target: range.target,
+                                broken,
+                                from: range.from,
+                                to: range.to,
+                            };
                             onTooltip({
                                 anchor,
                                 target: range.target,
-                                broken:
-                                    resolveWikiLink(
-                                        range.target,
-                                        opts.getCurrentId(),
-                                        opts.getNotes(),
-                                    ) === null,
+                                broken,
                                 open: () => opts.onOpen(range.target),
                                 setTarget: (next) =>
                                     replaceWikiLink(editorView, range.from, range.to, next),

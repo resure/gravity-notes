@@ -30,10 +30,19 @@ function withResolvedImages(html: string, cache: AttachmentUrlCache): string {
         } catch {
             // Malformed escape — match against the raw value instead.
         }
-        if (!isAttachmentRef(ref)) return;
-        const url = cache.peek(ref);
-        if (url) {
-            img.setAttribute('src', url);
+        if (isAttachmentRef(ref)) {
+            const url = cache.peek(ref);
+            if (url) {
+                img.setAttribute('src', url);
+                changed = true;
+            }
+            return;
+        }
+        // A remote image src leaks the user's IP + a referrer to a third party the moment it renders.
+        // We don't block it (a note may legitimately embed one), but strip the referrer header. On the
+        // desktop the CSP (tauri.conf.json) is the stronger control.
+        if (/^https?:/i.test(ref) && img.getAttribute('referrerpolicy') !== 'no-referrer') {
+            img.setAttribute('referrerpolicy', 'no-referrer');
             changed = true;
         }
     });

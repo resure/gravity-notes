@@ -167,8 +167,12 @@ export interface UseNotes {
     moveFolder(fromPath: string, toPath: string): Promise<boolean>;
     /** Queue a debounced autosave for the open note. */
     edit(content: string): void;
-    /** Force-write any pending edit now (used before tearing the workspace down, e.g. folder change). */
-    flushPending(): Promise<void>;
+    /**
+     * Force-write any pending edit now (used before tearing the workspace down, e.g. folder change).
+     * Resolves to `true` when an unresolved conflict still holds the unsaved content (so a teardown
+     * caller can confirm the loss first), `false` when nothing remains in conflict.
+     */
+    flushPending(): Promise<boolean>;
     /** Re-read the note list from the store (e.g. after importing notes). */
     refresh(): Promise<void>;
     /** Conflict resolvers (act on the open note). */
@@ -241,7 +245,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     /** Backoff retry counter for a transient save failure; reset on success and on a fresh edit. */
     const retryRef = useRef(0);
     /** Latest `flush`, so it can re-arm its own retry timer without a circular `useCallback` dep. */
-    const flushRef = useRef<() => Promise<void>>(async () => {});
+    const flushRef = useRef<() => Promise<boolean>>(async () => false);
     /** Latest `conflict`, read inside the long-lived window listeners so they needn't re-subscribe. */
     const conflictRef = useRef<NoteConflict | null>(null);
 
@@ -255,6 +259,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 recursive: store.listsRecursively,
             }),
         );
+        // NOTE: refresh() deliberately does NOT re-stat `.trash/`. The trash registry (and thus the
+        // `trashCount` badge) is kept in sync in-memory by the trash mutations (withTrashed /
+        // withoutTrashEntry / …), and refresh() runs after every note/folder op — folding a
+        // listTrash() in here would add a full trash walk to each of those. An *external* `.trash/`
+        // change (e.g. files removed on disk) is reconciled lazily by refreshTrash() when the trash
+        // view next opens, not on every refresh.
     }, [store, applyMetadata]);
 
     const bumpInList = useCallback(
@@ -282,30 +292,56 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const flush = useCallback(async () => {
         clearTimer();
         const pending = pendingRef.current;
-        if (!pending) return;
+        // Resolves to whether an UNRESOLVED CONFLICT still holds unsaved content after the flush, so a
+        // teardown caller (e.g. change-storage) can confirm before discarding it. Returning the value
+        // from each branch avoids the stale-closure trap of reading `conflict` state right after await.
+        if (!pending) return conflictRef.current !== null;
         pendingRef.current = null;
+        // Hold the raw save promise so a timeout below can still reconcile our baseline if it later
+        // succeeds in the background (the underlying write can't be cancelled — it keeps running).
+        const savePromise = store.save(pending.id, pending.content, baselineRef.current ?? 0);
         try {
             // Ceil the write so a hung backend (a stuck FSA permission prompt, a wedged IPC call)
             // can't freeze every lifecycle transition that awaits flush().
-            const meta = await withTimeout(
-                store.save(pending.id, pending.content, baselineRef.current ?? 0),
-                SAVE_TIMEOUT_MS,
-                'Save',
-            );
+            const meta = await withTimeout(savePromise, SAVE_TIMEOUT_MS, 'Save');
             baselineRef.current = meta.updatedAt ?? null;
             retryRef.current = 0;
             setSaveState('saved');
             bumpInList(pending.id, meta.updatedAt, pending.content);
+            return false; // saved cleanly — no conflict
         } catch (err) {
+            // A timed-out save still settles in the background: if it eventually succeeds, the disk
+            // mtime advanced but baselineRef didn't, so the focus/visibility check (or the re-armed
+            // retry below, racing the same file) would raise a phantom conflict. Reconcile the
+            // baseline when the original promise resolves — guarded to the still-open note, only
+            // advancing it (never downgrading a fresher baseline a newer save already set).
+            if (err instanceof Error && err.message.startsWith('Save timed out')) {
+                void savePromise.then(
+                    (meta) => {
+                        const next = meta.updatedAt ?? null;
+                        if (
+                            metadataRef.current.active === pending.id &&
+                            conflictRef.current === null &&
+                            next !== null &&
+                            (baselineRef.current === null || next > baselineRef.current)
+                        ) {
+                            baselineRef.current = next;
+                        }
+                    },
+                    () => {}, // a true failure is left to the retry path below
+                );
+            }
             // Restore the snapshot only if no newer keystroke landed during the await — otherwise
             // the newer edit (already in pendingRef, with its own timer) must win, not be clobbered.
             if (pendingRef.current === null) pendingRef.current = pending;
             if (err instanceof ConflictError) {
                 setConflict({id: err.id, diskUpdatedAt: err.diskUpdatedAt, deleted: false});
                 setSaveState('conflict');
+                return true; // unresolved conflict still holds the unsaved edit
             } else if (err instanceof DOMException && err.name === 'NotFoundError') {
                 setConflict({id: pending.id, diskUpdatedAt: 0, deleted: true});
                 setSaveState('conflict');
+                return true; // note deleted out from under us; the edit is unsaved
             } else {
                 setSaveState('error');
                 // Surface the failure once per burst; then retry with capped backoff so a transient
@@ -319,6 +355,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     timerRef.current = setTimeout(() => void flushRef.current(), delay);
                 }
             }
+            // A non-conflict error re-queues + retries the edit; there's no conflict to confirm here.
+            return false;
         }
     }, [store, onError, bumpInList, clearTimer]);
 
@@ -963,6 +1001,29 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         return () => {
             document.removeEventListener('visibilitychange', onHide);
             window.removeEventListener('beforeunload', onBeforeUnload);
+        };
+    }, [flush]);
+
+    // Desktop (Tauri) only: hiding/closing the native window doesn't fire a reliable
+    // `beforeunload`, so flush the last debounced edit on the window's close request. Feature-detect
+    // the shell and load the API via dynamic import() so neither enters the web bundle.
+    useEffect(() => {
+        if (!('__TAURI_INTERNALS__' in window)) return undefined;
+        let unlisten: (() => void) | undefined;
+        let disposed = false;
+        void import('@tauri-apps/api/window').then(({getCurrentWindow}) => {
+            void getCurrentWindow()
+                .onCloseRequested(async () => {
+                    await flush();
+                })
+                .then((fn) => {
+                    if (disposed) fn();
+                    else unlisten = fn;
+                });
+        });
+        return () => {
+            disposed = true;
+            unlisten?.();
         };
     }, [flush]);
 

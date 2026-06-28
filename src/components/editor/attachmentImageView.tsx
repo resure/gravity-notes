@@ -19,16 +19,13 @@ import './attachmentImageView.css';
 /** Smallest width (px) a resize drag will allow. */
 const MIN_WIDTH = 48;
 
-/** Image file extensions, used to recognize a still-default (filename) alt that isn't a real caption. */
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;
-
 /**
  * Whether `alt` is meaningful enough to surface as a caption. On paste the editor seeds alt with the
- * file name (e.g. `diagram.png`); that's not a caption, so suppress it. Real, user-written alt text
- * (which doesn't look like an image file name) becomes the caption.
+ * exact file name (e.g. `diagram.png`); that's not a caption, so suppress it. Any other non-empty alt
+ * — including one the user deliberately wrote to end in `.png` — is a real caption.
  */
 function isCaption(alt: string, src: string): boolean {
-    return alt.length > 0 && alt !== basename(src) && !IMAGE_EXT_RE.test(alt);
+    return alt.length > 0 && alt !== basename(src);
 }
 
 /**
@@ -59,27 +56,48 @@ export function AttachmentImageView({node, view, updateAttributes}: ReactNodeVie
             setStatus('ok');
             return undefined;
         }
-        const seeded = cache?.peek(src);
-        if (seeded) {
-            setResolved(seeded);
-            setStatus('ok');
+        // No cache (e.g. rendered outside the provider): we can't resolve the ref, so show broken
+        // rather than spinning on 'loading' forever.
+        if (!cache) {
+            setStatus('error');
             return undefined;
         }
         let alive = true;
-        setStatus('loading');
-        cache
-            ?.resolve(src)
-            .then((url) => {
-                if (alive) {
-                    setResolved(url);
-                    setStatus('ok');
-                }
-            })
-            .catch(() => {
-                if (alive) setStatus('error');
-            });
+
+        // (Re)resolve the ref to an object URL; flip to broken on an empty result (the ref was
+        // forgotten/disposed) or a read failure (the bytes are gone).
+        const load = () => {
+            const seeded = cache.peek(src);
+            if (seeded) {
+                setResolved(seeded);
+                setStatus('ok');
+                return;
+            }
+            setStatus('loading');
+            cache
+                .resolve(src)
+                .then((url) => {
+                    if (!alive) return;
+                    if (url) {
+                        setResolved(url);
+                        setStatus('ok');
+                    } else {
+                        // resolve() yields '' once the ref is forgotten/disposed — never render <img src="">.
+                        setStatus('error');
+                    }
+                })
+                .catch(() => {
+                    if (alive) setStatus('error');
+                });
+        };
+        load();
+
+        // Re-resolve when this exact attachment is deleted from the manager — its object URL was just
+        // revoked, so peek/resolve now yield nothing and the image flips to its broken state at once.
+        const unsubscribe = cache.subscribe(src, load);
         return () => {
             alive = false;
+            unsubscribe();
         };
     }, [attachment, src, cache]);
 

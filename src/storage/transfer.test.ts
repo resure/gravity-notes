@@ -205,4 +205,31 @@ describe('transfer — attachments', () => {
         // The pre-existing file wins (skip-if-exists), so it isn't overwritten by the import.
         expect(await (await target.readAttachment('Attachments/cat.png')).text()).toBe('ORIGINAL');
     });
+
+    it('imports a case-variant attachment as a distinct file on the case-sensitive backend', async () => {
+        // On IndexedDB (case-sensitive keys), `Attachments/Cat.png` and `Attachments/cat.png` are
+        // genuinely different files. The skip-check is by EXACT ref, so the imported Cat.png is kept
+        // as its own entry (a case-insensitive skip would wrongly drop it and break the note's link),
+        // and the pre-existing cat.png is left untouched.
+        const zip = zipSync({'Attachments/Cat.png': new TextEncoder().encode('IMPORTED')});
+        const target = new IndexedDbNoteStore();
+        await target.writeAttachmentAt('Attachments/cat.png', new Blob(['ORIGINAL']));
+        await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
+
+        expect(await (await target.readAttachment('Attachments/cat.png')).text()).toBe('ORIGINAL');
+        expect(await (await target.readAttachment('Attachments/Cat.png')).text()).toBe('IMPORTED');
+    });
+
+    it('sanitizes a traversal attachment ref to a flat Attachments/<name>', async () => {
+        // A crafted `Attachments/../evil.png` must not escape the attachments folder: it's rebuilt as
+        // the flat, sanitized `Attachments/evil.png` before writing.
+        const zip = zipSync({'Attachments/../evil.png': new TextEncoder().encode('PWNED')});
+        const target = new IndexedDbNoteStore();
+        await importNotes(target, [new File([zip as BlobPart], 'gravity-notes.zip')]);
+
+        expect((await target.listAttachments()).map((a) => a.ref)).toEqual([
+            'Attachments/evil.png',
+        ]);
+        expect(await (await target.readAttachment('Attachments/evil.png')).text()).toBe('PWNED');
+    });
 });

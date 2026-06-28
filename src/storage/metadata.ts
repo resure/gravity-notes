@@ -19,7 +19,11 @@ const SORT_MODES: readonly SortMode[] = ['updated', 'title', 'title-desc', 'crea
 export function parseMetadata(raw: unknown): NotesMetadata {
     if (typeof raw !== 'object' || raw === null) return cloneDefault();
     const obj = raw as Record<string, unknown>;
-    if (obj.version !== 1) return cloneDefault();
+    // Parse leniently for any `version >= 1`: read every field we recognize so a *future*-version
+    // sidecar (e.g. written by a newer build) keeps its pins/created/active/trash on round-trip
+    // instead of being silently reset to defaults and re-written. Only a missing/invalid/below-1
+    // version falls back to defaults.
+    if (typeof obj.version !== 'number' || obj.version < 1) return cloneDefault();
 
     const sort = SORT_MODES.includes(obj.sort as SortMode) ? (obj.sort as SortMode) : 'updated';
     const pinned = Array.isArray(obj.pinned)

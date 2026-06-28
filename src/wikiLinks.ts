@@ -48,26 +48,53 @@ function normalizeTarget(target: string): string {
 }
 
 /**
- * Resolve a `[[target]]` to a note id, relative to the note it was written in (`fromId`). Returns
- * `null` when nothing matches. A target with a slash is first tried as an explicit relative path;
- * otherwise it's matched by title. When several notes share a title, prefer one in the same folder as
- * `fromId`, then the shallowest path, then the lexicographically-first id (so it's stable).
+ * Pre-indexed note list, so a batch of resolutions (e.g. {@link buildBacklinks}) is O(1) per link
+ * instead of re-scanning every note. `byId` maps a lowercased id → its note; `byTitle` maps a
+ * lowercased title → every note carrying it (the same-folder/shallowest tiebreak runs over this).
  */
-export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[]): string | null {
+interface ResolveIndex {
+    byId: Map<string, NoteMeta>;
+    byTitle: Map<string, NoteMeta[]>;
+}
+
+/** Build the {@link ResolveIndex} for `notes` once, to be shared across many `resolveWith` calls. */
+function buildResolveIndex(notes: NoteMeta[]): ResolveIndex {
+    const byId = new Map<string, NoteMeta>();
+    const byTitle = new Map<string, NoteMeta[]>();
+    for (const note of notes) {
+        // First-wins, matching the old `notes.find(...)`: if two ids lowercase to the same string
+        // (case-only-duplicate ids, possible on a case-sensitive filesystem), the earlier note in the
+        // list resolves an explicit-path link, not the later one.
+        const idKey = note.id.toLowerCase();
+        if (!byId.has(idKey)) byId.set(idKey, note);
+        const key = note.title.toLowerCase();
+        const bucket = byTitle.get(key);
+        if (bucket) bucket.push(note);
+        else byTitle.set(key, [note]);
+    }
+    return {byId, byTitle};
+}
+
+/**
+ * Map-based core of {@link resolveWikiLink}: resolve a `[[target]]` against a prebuilt index. Same
+ * rules — explicit relative path first, else by title with the same-folder/shallowest/lexicographic
+ * tiebreak — but lookups are O(1), so a whole backlink scan avoids the O(N²) re-filter.
+ */
+function resolveWith(target: string, fromId: string, index: ResolveIndex): string | null {
     const ref = normalizeTarget(target);
     if (!ref) return null;
 
     // Explicit relative-path form: "Folder/Note" (or "Folder/Note.md") → that exact id.
     if (ref.includes('/')) {
         const wantId = (ref.toLowerCase().endsWith(MD_EXT) ? ref : ref + MD_EXT).toLowerCase();
-        const exact = notes.find((note) => note.id.toLowerCase() === wantId);
+        const exact = index.byId.get(wantId);
         if (exact) return exact.id;
         // No exact path hit — fall through and try matching the leaf as a bare title.
     }
 
     const wantTitle = titleFromFileName(ref).toLowerCase();
-    const matches = notes.filter((note) => note.title.toLowerCase() === wantTitle);
-    if (matches.length === 0) return null;
+    const matches = index.byTitle.get(wantTitle);
+    if (!matches || matches.length === 0) return null;
     if (matches.length === 1) return matches[0].id;
 
     const fromDir = dirname(fromId);
@@ -80,6 +107,16 @@ export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[
         if (aDepth !== bDepth) return aDepth - bDepth; // then the shallowest
         return a.id.localeCompare(b.id); // then a stable tiebreak
     })[0].id;
+}
+
+/**
+ * Resolve a `[[target]]` to a note id, relative to the note it was written in (`fromId`). Returns
+ * `null` when nothing matches. A target with a slash is first tried as an explicit relative path;
+ * otherwise it's matched by title. When several notes share a title, prefer one in the same folder as
+ * `fromId`, then the shallowest path, then the lexicographically-first id (so it's stable).
+ */
+export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[]): string | null {
+    return resolveWith(target, fromId, buildResolveIndex(notes));
 }
 
 // Context window kept around a backlink occurrence, mirroring search.ts's snippet sizing.
@@ -103,6 +140,9 @@ function backlinkSnippet(body: string, link: WikiLinkRef): string {
         .slice(start, end)
         .replace(WIKI_LINK_RE, (_m, inner: string) => normalizeTarget(inner)) // [[x|y]] → x
         .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
+        // Strips emphasis/code/strike markers unconditionally — a known cosmetic tradeoff: a literal
+        // `*`/`_`/`` ` ``/`~` inside an identifier or path in the context also goes, but this is a
+        // throwaway one-line preview, so we accept the occasional garbled char over real parsing.
         .replace(/[*_`~]/g, '') // inline emphasis / code / strike markers
         .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
         .trim();
@@ -176,6 +216,8 @@ export function buildBacklinks(
     notes: NoteMeta[],
     corpus: Map<string, string>,
 ): BacklinkSource[] {
+    // Build the resolution index once, not per link — keeps the whole scan O(N·L) instead of O(N²·L).
+    const index = buildResolveIndex(notes);
     const out: BacklinkSource[] = [];
     for (const note of notes) {
         if (note.id === targetId) continue; // a note linking to itself isn't a backlink
@@ -183,7 +225,7 @@ export function buildBacklinks(
         if (!body) continue;
         const contexts: string[] = [];
         for (const link of extractWikiLinks(body)) {
-            if (resolveWikiLink(link.target, note.id, notes) === targetId) {
+            if (resolveWith(link.target, note.id, index) === targetId) {
                 contexts.push(backlinkSnippet(body, link));
             }
         }
