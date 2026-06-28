@@ -17,6 +17,12 @@ import type {NoteStore} from './storage/types';
 export class AttachmentUrlCache {
     private readonly urls = new Map<string, string>();
     private readonly pending = new Map<string, Promise<string>>();
+    /**
+     * Per-ref generation counter, bumped by forget(). The .then() callback captures the generation
+     * at call time and bails if it no longer matches — so a read that resolves after forget() cannot
+     * write a stale URL back into the cache.
+     */
+    private readonly generations = new Map<string, number>();
     /** Set once the cache is retired, so a read resolving after dispose() can't mint a leaking URL. */
     private disposed = false;
 
@@ -33,13 +39,14 @@ export class AttachmentUrlCache {
         if (existing) return Promise.resolve(existing);
         const inflight = this.pending.get(ref);
         if (inflight) return inflight;
+        // Capture the current generation so the .then() can detect a forget() that fires while the
+        // read is in-flight: if the generation has advanced, the URL must not be stored.
+        const gen = this.generations.get(ref) ?? 0;
         const promise = this.store
             .readAttachment(ref)
             .then((blob) => {
-                // The read can outlive dispose() (a store change mid-load): don't mint an object URL
-                // onto a retired cache — it would never be revoked. Resolve '' so a still-mounted
-                // caller renders nothing instead of a leaking URL.
-                if (this.disposed) return '';
+                // Bail if the cache was retired (store change) or this ref was forgotten mid-flight.
+                if (this.disposed || (this.generations.get(ref) ?? 0) !== gen) return '';
                 const url = URL.createObjectURL(blob);
                 this.urls.set(ref, url);
                 this.pending.delete(ref);
@@ -55,10 +62,12 @@ export class AttachmentUrlCache {
 
     /**
      * Pre-populate the cache with an object URL straight from an in-memory upload, so a just-dropped
-     * image renders instantly with no read round-trip. A no-op if `ref` is already cached (or retired).
+     * image renders instantly with no read round-trip. A no-op if `ref` is already cached (or retired),
+     * or if a resolve() for the same ref is already in-flight (the inflight read would overwrite
+     * the seeded URL in urls and leave the seeded one unrevoked).
      */
     seed(ref: string, blob: Blob): void {
-        if (this.disposed || this.urls.has(ref)) return;
+        if (this.disposed || this.urls.has(ref) || this.pending.has(ref)) return;
         this.urls.set(ref, URL.createObjectURL(blob));
     }
 
@@ -70,6 +79,9 @@ export class AttachmentUrlCache {
             this.urls.delete(ref);
         }
         this.pending.delete(ref);
+        // Advance the generation so any in-flight resolve() for this ref bails in its .then()
+        // instead of writing a stale URL back into the cache.
+        this.generations.set(ref, (this.generations.get(ref) ?? 0) + 1);
     }
 
     /** Revoke every object URL this cache created (call when the cache is retired). */
@@ -79,6 +91,7 @@ export class AttachmentUrlCache {
         for (const url of this.urls.values()) URL.revokeObjectURL(url);
         this.urls.clear();
         this.pending.clear();
+        this.generations.clear();
     }
 }
 

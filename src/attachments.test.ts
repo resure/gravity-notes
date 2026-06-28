@@ -100,6 +100,39 @@ describe('AttachmentUrlCache', () => {
         expect(cache.peek('Attachments/a.png')).toBeUndefined();
     });
 
+    it('seed() is a no-op when resolve() is already in-flight for the same ref', async () => {
+        let release!: (blob: Blob) => void;
+        const store = {
+            readAttachment: () => new Promise<Blob>((res) => (release = res)),
+        } as unknown as NoteStore;
+        const cache = new AttachmentUrlCache(store);
+
+        const pending = cache.resolve('Attachments/cat.png'); // in-flight
+        cache.seed('Attachments/cat.png', new Blob(['seeded'])); // must be a no-op
+        release(new Blob(['resolved']));
+        const url = await pending;
+
+        expect(url).toBeTruthy();
+        expect(urls).toHaveLength(1); // only the resolve()'s URL, not a second one from seed()
+        expect(revoked).toHaveLength(0); // nothing leaked and revoked
+    });
+
+    it('forget() called on an in-flight read suppresses the URL that would have been created', async () => {
+        let release!: (blob: Blob) => void;
+        const store = {
+            readAttachment: () => new Promise<Blob>((res) => (release = res)),
+        } as unknown as NoteStore;
+        const cache = new AttachmentUrlCache(store);
+
+        const pending = cache.resolve('Attachments/cat.png'); // in-flight
+        cache.forget('Attachments/cat.png'); // forget before the read resolves
+        release(new Blob(['cat']));
+
+        await expect(pending).resolves.toBe(''); // no URL minted for a forgotten ref
+        expect(urls).toHaveLength(0);
+        expect(cache.peek('Attachments/cat.png')).toBeUndefined();
+    });
+
     it('does not mint a leaking URL when a read resolves after dispose()', async () => {
         // A read that completes only when we release it, so we can dispose the cache mid-flight —
         // the race that happens on a store change while an image is still loading.

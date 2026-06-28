@@ -805,7 +805,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 // The file was deleted on disk — recreate it with our content rather than abandoning
                 // the user to "Save as copy". create() reuses the same name when it's free, so the
                 // id usually survives; adopt the resulting id in place if it differs.
-                const recreated = await store.create(note?.title ?? 'Note');
+                const recreated = await store.create(note?.title ?? 'Note', dirname(conflict.id));
                 const meta = await store.save(recreated.id, content, recreated.updatedAt ?? 0);
                 baselineRef.current = meta.updatedAt ?? null;
                 if (recreated.id !== conflict.id) {
@@ -848,7 +848,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         const title = note?.title ?? 'Note';
         pendingRef.current = null;
         try {
-            const copy = await store.create(`${title} (conflicted copy)`);
+            const copy = await store.create(`${title} (conflicted copy)`, dirname(conflict.id));
             await store.save(copy.id, content, copy.updatedAt ?? 0);
             await persistMetadata(
                 withCreatedStamp(metadataRef.current, copy.id, copy.updatedAt ?? 0),
