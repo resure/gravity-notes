@@ -15,6 +15,7 @@ import {
     ChevronRight,
     Ellipsis,
     Folder,
+    FolderOpen,
     FolderPlus,
     Layers,
     Pencil,
@@ -65,6 +66,8 @@ export interface FolderRailProps {
     onTogglePin: (path: string) => void;
     /** Move a dropped note into a folder (`''` = root). */
     onMoveTo: (noteId: string, destFolder: string) => void;
+    /** Reveal a folder in Finder — present only on the native desktop backend (else hidden). */
+    onReveal?: (path: string) => void;
     /** Move focus into the notes list (Enter / → off a leaf folder). */
     onFocusList: () => void;
 }
@@ -91,6 +94,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         onMoveFolder,
         onTogglePin,
         onMoveTo,
+        onReveal,
         onFocusList,
     },
     ref,
@@ -498,6 +502,16 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                                 iconStart: <Icon data={FolderPlus} />,
                                 action: () => startNewSubfolder(row),
                             },
+                            // Desktop only: revealed in Finder when the backend supports it.
+                            ...(onReveal
+                                ? [
+                                      {
+                                          text: 'Reveal in Finder',
+                                          iconStart: <Icon data={FolderOpen} />,
+                                          action: () => onReveal(row.path),
+                                      },
+                                  ]
+                                : []),
                             {
                                 text: 'Delete folder',
                                 theme: 'danger',

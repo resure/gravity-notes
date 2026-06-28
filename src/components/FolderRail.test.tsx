@@ -188,6 +188,23 @@ describe('FolderRail — folder actions', () => {
         expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
     });
 
+    it('reveals a folder in Finder when the backend supports it', async () => {
+        const user = userEvent.setup();
+        const onReveal = vi.fn();
+        setup({onReveal});
+        await user.click(screen.getByRole('button', {name: 'Work actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Reveal in Finder/}));
+        expect(onReveal).toHaveBeenCalledWith('Work');
+    });
+
+    it('omits the reveal item without backend support', async () => {
+        const user = userEvent.setup();
+        setup();
+        await user.click(screen.getByRole('button', {name: 'Work actions'}));
+        expect(await screen.findByRole('menuitem', {name: /Rename/})).toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', {name: /Reveal in Finder/})).not.toBeInTheDocument();
+    });
+
     it('disables delete for a folder that still holds notes', async () => {
         const user = userEvent.setup();
         const {props} = setup({rows: [folder('Work', {noteCount: 3})]});

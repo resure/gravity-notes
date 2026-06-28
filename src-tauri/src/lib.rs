@@ -29,6 +29,9 @@ const MD_EXT: &str = ".md";
 const FOLDER_MARKER: &str = ".gnkeep";
 /// The metadata sidecar — ignored by the empty-folder prune (it only ever lives at the root).
 const METADATA_FILENAME: &str = ".gravity-notes.json";
+/// Root-level media-attachments folder (mirrors `ATTACHMENTS_DIR` in noteText.ts). Excluded from the
+/// note walk and folder tree — it's storage, not a user folder.
+const ATTACHMENTS_DIR: &str = "Attachments";
 /// Bytes of each file scanned for the list-preview snippet. Mirrors `PREVIEW_SCAN_BYTES`
 /// in `src/storage/noteText.ts`; the preview text itself is derived TS-side.
 const PREVIEW_SCAN_BYTES: u64 = 500;
@@ -49,6 +52,15 @@ struct NoteHead {
     name: String,
     modified_ms: f64,
     head: String,
+}
+
+/// One stored attachment, for the management view.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentEntry {
+    name: String,
+    size: f64,
+    modified_ms: f64,
 }
 
 fn is_md(name: &str) -> bool {
@@ -159,6 +171,10 @@ fn collect_md(root: &Path, current: &Path, full: bool, out: &mut Vec<Found>) -> 
         let name = entry.file_name().to_string_lossy().into_owned();
         if file_type.is_dir() {
             if name.starts_with('.') {
+                continue;
+            }
+            // The root Attachments/ folder holds media, not notes — don't descend it.
+            if current == root && name == ATTACHMENTS_DIR {
                 continue;
             }
             collect_md(root, &entry.path(), full, out)?;
@@ -278,6 +294,71 @@ fn notes_remove(dir: String, name: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Write a binary media attachment atomically, creating any missing parent folders (e.g. the
+/// `Attachments/` folder on first use). The collision-free name is resolved TS-side via `notes_exists`.
+#[tauri::command]
+fn attachment_write(dir: String, path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let target = resolve_within(&dir, &path)?;
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(stringify)?;
+    }
+    write_atomic(&target, &bytes).map_err(stringify)
+}
+
+/// Read a binary media attachment's bytes, or `None` if it no longer exists (mapped to a not-found
+/// on the TS side, like `notes_read_opt`).
+#[tauri::command]
+fn attachment_read(dir: String, name: String) -> Result<Option<Vec<u8>>, String> {
+    let path = resolve_within(&dir, &name)?;
+    match fs::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+/// List every file in the root `Attachments/` folder (non-recursive; dotfiles skipped), with size
+/// and mtime — for the management view. An absent folder yields an empty list.
+#[tauri::command]
+fn attachment_list(dir: String) -> Result<Vec<AttachmentEntry>, String> {
+    let folder = Path::new(&dir).join(ATTACHMENTS_DIR);
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+        Err(err) => return Err(err.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(stringify)?;
+        let meta = entry.metadata().map_err(stringify)?;
+        if !meta.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        out.push(AttachmentEntry {
+            name,
+            size: meta.len() as f64,
+            modified_ms: modified_ms(&meta),
+        });
+    }
+    Ok(out)
+}
+
+/// Delete a media attachment by its path; a missing file is a no-op (the management view may race a
+/// concurrent delete). Containment-guarded like every other path argument.
+#[tauri::command]
+fn attachment_remove(dir: String, name: String) -> Result<(), String> {
+    let path = resolve_within(&dir, &name)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Whether `dir` holds nothing worth keeping: no `.md`, no `.gnkeep`, no subdirectory. The sidecar
 /// is ignored; an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
 /// can't race a concurrent write. Anything else (a note, a marker, a subdir) keeps the folder.
@@ -373,6 +454,10 @@ fn collect_folders(root: &Path, current: &Path, out: &mut Vec<String>) -> std::i
         if name.starts_with('.') {
             continue;
         }
+        // The root Attachments/ folder is media storage, not a user folder — hide it from the tree.
+        if current == root && name == ATTACHMENTS_DIR {
+            continue;
+        }
         let path = entry.path();
         out.push(
             path.strip_prefix(root)
@@ -399,6 +484,34 @@ fn notes_stat(dir: String, name: String) -> Result<Option<f64>, String> {
         Ok(meta) => Ok(Some(modified_ms(&meta))),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
+    }
+}
+
+/// Reveal a note, folder, or attachment in the OS file manager (macOS Finder), selecting it inside
+/// its parent. `name` is a store id / folder path / attachment ref, containment-checked like every
+/// other path argument. A missing path is reported rather than launching the file manager on nothing.
+#[tauri::command]
+fn reveal_path(dir: String, name: String) -> Result<(), String> {
+    let path = resolve_within(&dir, &name)?;
+    if !path.exists() {
+        return Err(format!("\"{name}\" no longer exists"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .status()
+            .map_err(stringify)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("Finder could not reveal \"{name}\""))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("reveal is only supported on macOS".to_string())
     }
 }
 
@@ -436,8 +549,13 @@ pub fn run() {
             notes_write,
             notes_rename,
             notes_remove,
+            attachment_write,
+            attachment_read,
+            attachment_list,
+            attachment_remove,
             notes_exists,
             notes_stat,
+            reveal_path,
             notes_create_folder,
             notes_remove_dir,
             notes_move_dir,
@@ -628,6 +746,71 @@ mod tests {
     }
 
     #[test]
+    fn attachment_round_trips_and_rejects_traversal() {
+        let dir = temp_dir();
+        let bytes = vec![0u8, 1, 2, 254, 255];
+
+        // Writing the first attachment creates the Attachments/ folder; read returns the same bytes.
+        attachment_write(s(&dir), "Attachments/pic.png".into(), bytes.clone()).unwrap();
+        assert!(dir.join("Attachments").join("pic.png").is_file());
+        let read = attachment_read(s(&dir), "Attachments/pic.png".into()).unwrap();
+        assert_eq!(read, Some(bytes));
+
+        // A missing attachment reads as None (mapped to not-found TS-side), not an error.
+        assert_eq!(attachment_read(s(&dir), "Attachments/missing.png".into()).unwrap(), None);
+
+        // Both arguments are containment-guarded.
+        assert!(attachment_write(s(&dir), "../evil.png".into(), vec![1]).is_err());
+        assert!(attachment_read(s(&dir), "../../etc/passwd".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attachment_list_and_remove() {
+        let dir = temp_dir();
+        // No folder yet → empty list, not an error.
+        assert!(attachment_list(s(&dir)).unwrap().is_empty());
+
+        attachment_write(s(&dir), "Attachments/cat.png".into(), vec![1, 2, 3]).unwrap();
+        attachment_write(s(&dir), "Attachments/dog.gif".into(), vec![9]).unwrap();
+        // A dotfile in the folder must be ignored by the listing.
+        fs::write(dir.join("Attachments").join(".keep"), b"").unwrap();
+
+        let mut names: Vec<String> =
+            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        names.sort();
+        assert_eq!(names, vec!["cat.png", "dog.gif"]);
+        let cat = attachment_list(s(&dir)).unwrap().into_iter().find(|a| a.name == "cat.png").unwrap();
+        assert_eq!(cat.size, 3.0);
+
+        attachment_remove(s(&dir), "Attachments/cat.png".into()).unwrap();
+        let names: Vec<String> =
+            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        assert_eq!(names, vec!["dog.gif"]);
+        // Removing a missing file is a no-op; traversal is rejected.
+        assert!(attachment_remove(s(&dir), "Attachments/gone.png".into()).is_ok());
+        assert!(attachment_remove(s(&dir), "../escape.png".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attachments_folder_is_hidden_from_notes_and_folder_listings() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Note.md".into(), "x".into()).unwrap();
+        attachment_write(s(&dir), "Attachments/pic.png".into(), vec![1, 2, 3]).unwrap();
+        // A stray .md inside Attachments/ must not be picked up as a note.
+        fs::write(dir.join("Attachments").join("Stray.md"), "nope").unwrap();
+
+        let notes: Vec<String> = notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
+        assert_eq!(notes, vec!["Note.md"]);
+        assert!(notes_list_folders(s(&dir)).unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn write_into_a_not_yet_existent_nested_dir_succeeds_without_canonicalizing() {
         // The lexical guard must validate a path whose parent doesn't exist yet (no fs::canonicalize
         // of the target), so create_dir_all can then make it.
@@ -637,6 +820,20 @@ mod tests {
         assert!(!path.exists());
         notes_write(s(&dir), "A/B/C/Deep.md".into(), "ok".into()).unwrap();
         assert!(path.is_file());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reveal_rejects_traversal_and_missing_paths() {
+        // Both error cases return before the platform "open" call, so this never launches Finder.
+        let dir = temp_dir();
+        notes_write(s(&dir), "Note.md".into(), "x".into()).unwrap();
+
+        // A path escaping the picked folder is refused by the containment guard.
+        assert!(reveal_path(s(&dir), "../../Applications".into()).is_err());
+        // An in-bounds path that doesn't exist is reported, not launched on nothing.
+        assert!(reveal_path(s(&dir), "Nope.md".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

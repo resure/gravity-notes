@@ -2,20 +2,24 @@ import {invoke} from '@tauri-apps/api/core';
 
 import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
+    ATTACHMENTS_DIR,
     MD_EXT,
     basename,
     canonicalBody,
     dirname,
     joinPath,
+    mimeFromName,
     previewFromContent,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
     stripTrailingNewlines,
     titleFromFileName,
+    uniqueAttachmentName,
     uniqueName,
 } from './noteText';
 import {
+    type AttachmentMeta,
     ConflictError,
     NameCollisionError,
     type Note,
@@ -34,6 +38,12 @@ interface NoteHead {
     name: string;
     modifiedMs: number;
     head: string;
+}
+/** One attachment as returned by the Rust `attachment_list` command. */
+interface AttachmentEntry {
+    name: string;
+    size: number;
+    modifiedMs: number;
 }
 
 /** Mirror the web backend's deleted-note signal so `useNotes` maps it to a "deleted" conflict. */
@@ -183,6 +193,44 @@ export class TauriNoteStore implements NoteStore {
         await invoke('notes_remove', {dir: this.dir, name: id});
     }
 
+    async writeAttachment(file: File): Promise<string> {
+        const leaf = await uniqueAttachmentName(file.name, (name) =>
+            this.exists(joinPath(ATTACHMENTS_DIR, name)),
+        );
+        const path = joinPath(ATTACHMENTS_DIR, leaf);
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        await invoke('attachment_write', {dir: this.dir, path, bytes});
+        return path;
+    }
+
+    async writeAttachmentAt(ref: string, blob: Blob): Promise<void> {
+        // attachment_write already writes at an exact path (creating parent folders), so reuse it.
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+        await invoke('attachment_write', {dir: this.dir, path: ref, bytes});
+    }
+
+    async readAttachment(ref: string): Promise<Blob> {
+        const bytes = await invoke<number[] | null>('attachment_read', {dir: this.dir, name: ref});
+        if (bytes === null) throw notFound(ref);
+        // The Rust side returns raw bytes without a MIME type; tag the Blob from the extension so
+        // SVGs (which need an explicit type to render in <img>) and the like display correctly.
+        return new Blob([new Uint8Array(bytes)], {type: mimeFromName(ref)});
+    }
+
+    async listAttachments(): Promise<AttachmentMeta[]> {
+        const entries = await invoke<AttachmentEntry[]>('attachment_list', {dir: this.dir});
+        return entries.map((entry) => ({
+            ref: joinPath(ATTACHMENTS_DIR, entry.name),
+            name: entry.name,
+            size: entry.size,
+            updatedAt: entry.modifiedMs,
+        }));
+    }
+
+    async removeAttachment(ref: string): Promise<void> {
+        await invoke('attachment_remove', {dir: this.dir, name: ref});
+    }
+
     async createFolder(parentPath: string, name: string): Promise<string> {
         const path = joinPath(sanitizeDir(parentPath), sanitizeSegment(name));
         await invoke('notes_create_folder', {dir: this.dir, path});
@@ -209,6 +257,11 @@ export class TauriNoteStore implements NoteStore {
 
     async listFolders(): Promise<string[]> {
         return invoke<string[]>('notes_list_folders', {dir: this.dir});
+    }
+
+    /** Reveal a note / folder / attachment in Finder (native desktop only). */
+    async reveal(relPath: string): Promise<void> {
+        await invoke('reveal_path', {dir: this.dir, name: relPath});
     }
 
     async readMetadata(): Promise<NotesMetadata> {

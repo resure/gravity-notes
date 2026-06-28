@@ -22,6 +22,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         onChangeStorage: vi.fn(),
         onExport: vi.fn(),
         onImport: vi.fn(),
+        onManageAttachments: vi.fn(),
         onOpenHelp: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),

@@ -17,6 +17,7 @@ function makeActions(): ShortcutActions {
         openHelp: vi.fn(),
         renameSelected: vi.fn(),
         moveSelected: vi.fn(),
+        duplicateSelected: vi.fn(),
         deleteSelected: vi.fn(),
     };
 }
@@ -121,6 +122,13 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: 'M', metaKey: true, shiftKey: true});
         expect(actions.moveSelected).toHaveBeenCalledTimes(1);
+    });
+
+    it('duplicates the selected note on mod+d', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'd', metaKey: true});
+        expect(actions.duplicateSelected).toHaveBeenCalledTimes(1);
     });
 
     it('deletes the selected note on mod+shift+backspace', () => {

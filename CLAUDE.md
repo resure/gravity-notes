@@ -18,8 +18,14 @@ seam:
   absent in WKWebView. This makes folder storage work natively in the app, with no per-session
   permission re-grant.
 
+Notes live in **nested folders** — real subdirectories on disk; a note's id is its POSIX rel-path
+(`Work/Sub/Title.md`, basename = title) — and can carry **media attachments** (images written to a
+root `Attachments/` folder, referenced root-relatively, resolved to `blob:` URLs only at display
+time). Both work across all three backends.
+
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
-lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: the `notes_*` fs commands).
+lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
+commands, the folder ops, and `reveal_path`).
 
 ## Commands
 
@@ -51,16 +57,26 @@ FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ use
 ```
 
 All persistence sits behind the **`NoteStore` interface** (`src/storage/types.ts`) — the key extension
-seam, with three backends (two of them folder-of-`.md`). Note id = `<Title>.md` in all; the name
-without `.md` is the title. Anything above the seam (`useNotes`, navigation, UI) is backend-agnostic.
+seam, with three backends (two of them folder-of-`.md`). A note id is its POSIX rel-path (`<Title>.md`
+at the root, `Work/Sub/<Title>.md` when nested); the basename without `.md` is the title. The seam
+spans notes, **nested folders**, and **media attachments** (plus an optional desktop-only `reveal`).
+Anything above the seam (`useNotes`, navigation, UI) is backend-agnostic.
 
 Key modules:
 
 - `src/storage/types.ts` — the `NoteStore` interface (storage-agnostic; no FS-specific types leak in).
-  Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus.
+  Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus. The
+  seam also covers nested folders (`create(title, parentPath)`, `move`, `createFolder`/`removeFolder`/
+  `moveFolder`/`listFolders`, and `listsRecursively` so metadata reconcile never prunes ids a backend
+  can't yet enumerate), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
+  `listAttachments`/`removeAttachment`), and an optional desktop-only `reveal(relPath)`.
 - `src/search.ts` — pure full-text ranking (no I/O, no React): `tokenizeQuery`, `scoreNoteText`
   (multi-term AND; title ≫ body, word-boundary/prefix/phrase boosts), `buildSnippet`, `searchNotes`.
   The corpus (id → body) is loaded above it and passed in, so it stays trivially unit-testable.
+- `src/tree.ts` — pure tree shaping (no I/O, no React): `buildTree` / `buildFolderTree` /
+  `notesInFolder` / `visibleNoteIds` turn notes + folders + metadata into the `TreeRow[]` the folder
+  rail and list render, encoding the per-level order [pinned folders, folders, pinned notes, notes] and
+  synthesizing missing ancestor folders.
 - `src/storage/noteText.ts` — pure helpers shared by both backends: `titleFromFileName`,
   `sanitizeTitle`, `canonicalBody`, `previewFromContent`, `uniqueName`. Keeps id/body shape identical.
 - `src/storage/fileSystemStore.ts` — `FileSystemNoteStore` (File System Access API). Trickiest logic:
@@ -77,13 +93,19 @@ Key modules:
   when the file is gone (so `useNotes` maps it to a "deleted" conflict).
 - `src/storage/transfer.ts` — `.md` export (zip via `fflate`) and import (`.md` / `.zip`), for any
   backend; the way to get plain files out of in-browser storage and migrate between backends.
+  Preserves folder structure (incl. deliberately-empty folders, via a `.gnkeep` marker) and bundles
+  `Attachments/` bytes both ways.
 - `src/storage/handlePersistence.ts` — remembers the chosen backend in IndexedDB so reloads restore
   it: a `FileSystemDirectoryHandle` (web, per-session permission re-grant) or a plain folder-path
   string (`tauri-fs`, no re-grant — the OS governs access). Each `tx()` closes the connection on
   complete / error / abort.
 - `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
-  `orderNotes` (pins first, then the active sort).
+  `orderNotes` (pins first, then the active sort). The `pinned` set holds both note ids and folder
+  paths — folders are pinnable too.
+- `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
+  `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
+  change/unmount. The stored Markdown always keeps the root-relative ref, never a blob URL.
 - `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle (state machine:
   `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore`. Detects the Tauri
   shell (`__TAURI_INTERNALS__`): there `pickFolder()` uses the native dialog and the `tauri-fs`
@@ -104,11 +126,16 @@ Key modules:
   chords match by `event.code` (e.g. `⌘⇧;` → `Semicolon`), since the shifted `event.key` differs.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate), `Workspace`
   (top bar + layout + nav wiring; takes the `NoteStore`, owns export/import), `TopBar` (nvALT search
-  box + storage menu [export / import / change storage] + theme/help controls + save-status dot),
-  `NoteList` (sidebar with create/rename/delete, pin, sort), `EditorPane` (wraps the Gravity markdown
+  box + storage menu [export / import / manage attachments / change storage] + theme/help controls +
+  save-status dot), `FolderRail` (collapsible nested-folder tree left of the list — select/scope,
+  drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
+  sort), `MoveToDialog` (the ⌘⇧M move-to-folder picker), `EditorPane` (wraps the Gravity markdown
   editor; re-created per editing session via a stable `useNotes.sessionId`, so a rename doesn't remount
-  it) with `NoteTitle` and `NotePreview`, `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, and
-  `ErrorBoundary` (root render-crash net).
+  it) with `NoteTitle` and `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
+  delete + full-size view), `Lightbox` (shared full-size image overlay with pinch/scroll zoom +
+  drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
+  `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), `ConflictBanner`,
+  `ShortcutsDialog`, `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`.
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.

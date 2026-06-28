@@ -314,6 +314,72 @@ describe('IndexedDbNoteStore', () => {
         });
     });
 
+    describe('attachments', () => {
+        const file = (name: string, body: string) => new File([body], name, {type: 'image/png'});
+
+        it('stores a blob, returns a stable ref, and reads it back', async () => {
+            const ref = await store.writeAttachment(file('cat.png', 'PNGBYTES'));
+
+            expect(ref).toBe('Attachments/cat.png');
+            expect(await (await store.readAttachment(ref)).text()).toBe('PNGBYTES');
+        });
+
+        it('resolves name collisions, keeping the extension', async () => {
+            const first = await store.writeAttachment(file('cat.png', 'a'));
+            const second = await store.writeAttachment(file('cat.png', 'b'));
+
+            expect(first).toBe('Attachments/cat.png');
+            expect(second).toBe('Attachments/cat-2.png');
+            expect(await (await store.readAttachment(second)).text()).toBe('b');
+        });
+
+        it('does not surface attachments as notes or folders', async () => {
+            await store.create('Real');
+            await store.writeAttachment(file('cat.png', 'x'));
+
+            expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
+            expect(await store.listFolders()).toEqual([]);
+        });
+
+        it('throws when reading a missing attachment', async () => {
+            await expect(store.readAttachment('Attachments/missing.png')).rejects.toThrow();
+        });
+
+        it('lists stored attachments with name + size, and deletes by ref', async () => {
+            await store.writeAttachment(file('cat.png', 'PNG'));
+            await store.writeAttachment(file('dog.gif', 'GIFBYTES'));
+
+            const listed = await store.listAttachments();
+            expect(listed.map((a) => a.ref).sort()).toEqual([
+                'Attachments/cat.png',
+                'Attachments/dog.gif',
+            ]);
+            expect(listed.find((a) => a.name === 'dog.gif')?.size).toBe('GIFBYTES'.length);
+
+            await store.removeAttachment('Attachments/cat.png');
+            expect((await store.listAttachments()).map((a) => a.ref)).toEqual([
+                'Attachments/dog.gif',
+            ]);
+            // Removing a missing attachment is a no-op.
+            await expect(store.removeAttachment('Attachments/gone.png')).resolves.toBeUndefined();
+        });
+
+        it('lists nothing before any attachment exists', async () => {
+            expect(await store.listAttachments()).toEqual([]);
+        });
+
+        it('writeAttachmentAt writes at the exact ref and overwrites', async () => {
+            await store.writeAttachmentAt('Attachments/exact.png', new Blob(['v1']));
+            expect(await (await store.readAttachment('Attachments/exact.png')).text()).toBe('v1');
+
+            await store.writeAttachmentAt('Attachments/exact.png', new Blob(['v2']));
+            expect(await (await store.readAttachment('Attachments/exact.png')).text()).toBe('v2');
+            expect((await store.listAttachments()).map((a) => a.ref)).toEqual([
+                'Attachments/exact.png',
+            ]);
+        });
+    });
+
     describe('metadata', () => {
         it('returns defaults when nothing is stored', async () => {
             expect(await store.readMetadata()).toEqual({

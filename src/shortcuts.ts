@@ -12,6 +12,7 @@ export type ShortcutAction =
     | 'openHelp'
     | 'renameSelected'
     | 'moveSelected'
+    | 'duplicateSelected'
     | 'deleteSelected';
 
 /** How a globally-handled shortcut maps to a key event. */
@@ -151,6 +152,14 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
         // 'm' is a letter, so the shifted event.key ('M') matches case-insensitively — no code needed.
         global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true},
+    },
+    {
+        keys: 'mod+d',
+        description: 'Duplicate selected note',
+        group: 'Editing',
+        // ⌘D is reserved by browsers (bookmark); the handler preventDefaults it, so it's most
+        // dependable in the desktop app — like ⌘N.
+        global: {trigger: 'mod', key: 'd', action: 'duplicateSelected'},
     },
     {
         keys: 'mod+shift+backspace',

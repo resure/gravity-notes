@@ -28,6 +28,18 @@ export interface Note extends NoteMeta {
     content: string;
 }
 
+/** Descriptor for one stored media attachment (for the management view). */
+export interface AttachmentMeta {
+    /** Stable `Attachments/<name>` reference — the string a note's Markdown carries as the img src. */
+    ref: string;
+    /** File name leaf (e.g. `photo.png`). */
+    name: string;
+    /** Size in bytes. */
+    size: number;
+    /** Last-modified epoch ms, when the backend can provide it. */
+    updatedAt?: number;
+}
+
 /** How the note list is ordered. */
 export type SortMode = 'updated' | 'title' | 'title-desc' | 'created';
 
@@ -89,6 +101,28 @@ export interface NoteStore {
     /** Delete a note. */
     remove(id: string): Promise<void>;
     /**
+     * Store a binary media attachment under the root `Attachments/` folder, resolving name
+     * collisions (`foo.png` → `foo 2.png`). Returns its stable, root-relative reference
+     * (`Attachments/foo.png`) — the exact string written into a note's Markdown as the image `src`.
+     */
+    writeAttachment(file: File): Promise<string>;
+    /**
+     * Write an attachment at an *exact* `Attachments/<name>` reference, overwriting any existing file
+     * there (no unique-name resolution). Used by import/restore, where renaming would orphan the
+     * `![](Attachments/<name>)` references in the notes being imported alongside it.
+     */
+    writeAttachmentAt(ref: string, blob: Blob): Promise<void>;
+    /**
+     * Read an attachment's bytes for display, by its `Attachments/<name>` reference. Throws a
+     * `NotFoundError` `DOMException` when the attachment is gone. The caller turns the `Blob` into a
+     * displayable object URL.
+     */
+    readAttachment(ref: string): Promise<Blob>;
+    /** List every stored attachment (for the management view); empty when there are none. */
+    listAttachments(): Promise<AttachmentMeta[]>;
+    /** Delete an attachment by its `Attachments/<name>` reference; a missing attachment is a no-op. */
+    removeAttachment(ref: string): Promise<void>;
+    /**
      * Create an (initially empty) folder at `parentPath`/`name` and return its POSIX path. A
      * deliberately-empty folder persists — a `.gnkeep` marker on disk, or a marker entry in-browser
      * — so the auto-prune of emptied folders never destroys one the user created on purpose.
@@ -110,6 +144,13 @@ export interface NoteStore {
      * implied by a note's path are included alongside explicitly-created empty ones.
      */
     listFolders(): Promise<string[]>;
+    /**
+     * Reveal a note, folder, or attachment in the OS file manager (macOS Finder), by its store id,
+     * folder path, or `Attachments/<name>` ref. Present only on the native desktop backend, where
+     * notes are real files on disk — callers feature-detect it (`store.reveal`) and hide the
+     * affordance on the web / in-browser backends, which have no file to reveal.
+     */
+    reveal?(relPath: string): Promise<void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
     /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */

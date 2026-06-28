@@ -36,10 +36,12 @@
     background-color: var(--note-list-selected-bg);
 }
 
-/* Keyboard focus reuses the notes-pane focus wash, plus a brand left-bar so an *actually focused*
-   folder is unmistakable from a merely-selected (active) one — the rail's short rows make the wash
-   difference alone too subtle (the taller note rows + the open-note editor cue carry it in the list). */
-.folder-rail__row:focus-visible {
+/* The focused (cursor) row reuses the notes-pane focus wash, plus a brand left-bar so an *actually
+   focused* folder is unmistakable from a merely-selected (active) one — the rail's short rows make
+   the wash difference alone too subtle. Plain :focus, not :focus-visible — the cursor lands here via
+   a programmatic .focus() (arrowing/selecting), which WebKit doesn't flag as focus-visible, so the
+   stronger state would otherwise never show. */
+.folder-rail__row:focus {
     outline: none;
     background-color: var(--note-list-focus-bg);
     box-shadow: inset 3px 0 0 var(--g-color-line-brand);

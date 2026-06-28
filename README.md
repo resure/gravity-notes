@@ -134,10 +134,14 @@ Key modules:
   the browser's site data erases it — use **Export** to keep a `.md` backup.
 - **External changes** to the open note are detected when you return focus to the tab, not live while
   it stays focused.
+- **A selected image shows a faint caret line** beside it in the editor — the browser's native
+  object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected. See
+  `TODO.md`.
 
 ### Backlog
 
-- Tune line-height, padding before/after code blocks, height of inline code blocks
+- cmd+click on link should open it (without first opening popup for editing link)
+- ability to right click with mouse to open context menu for notes and folders
 
 - Tab-to-complete in the search box, nvALT-style
 
@@ -145,9 +149,8 @@ Key modules:
 - Recent-note history (cmd+[] - back/forward through visited notes)
 
 - Trash bin for deleted notes
-- Media attachments, with separate view for files management (and preview)
 
-- Folders support?
+- Notion-like font, width and density setting for each note? And ability to set default for all notes
 
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
@@ -156,5 +159,6 @@ Key modules:
 - Mobile view
 - Mobile app
 
-- Tags?
-- Daily notes?
+- Preview style (typography) should look more similar to editor style
+- Automatic deleted notes and unused attachments cleanup (after 30 days?)
+- Cmd+z for undoing deleting of notes and moves between folders?

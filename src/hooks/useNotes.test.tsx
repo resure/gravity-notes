@@ -88,6 +88,44 @@ describe('useNotes — single note', () => {
         await waitFor(async () => expect((await store.readMetadata()).active).toBe(id));
     });
 
+    it('duplicates a note, copying its body (shared attachment refs) into "<Title> copy"', async () => {
+        const body = '![pie](Attachments/pie.png)\n\nyum';
+        const {hook, store} = await setup((dir) => dir.seedFile('Recipe.md', body, 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+
+        let newId: string | null = null;
+        await act(async () => {
+            newId = await hook.result.current.duplicate('Recipe.md');
+        });
+
+        expect(newId).toBe('Recipe copy.md');
+        // The copy is opened and holds the same body, so it references the same attachment.
+        expect(hook.result.current.activeId).toBe('Recipe copy.md');
+        expect((await store.get('Recipe copy.md')).content).toBe(body);
+        // The original is untouched; both now exist.
+        expect((await store.get('Recipe.md')).content).toBe(body);
+        expect(hook.result.current.notes.map((n) => n.id).sort()).toEqual([
+            'Recipe copy.md',
+            'Recipe.md',
+        ]);
+    });
+
+    it('numbers repeated duplicates of the same note', async () => {
+        const {hook} = await setup((dir) => dir.seedFile('Note.md', 'body', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        await act(async () => {
+            await hook.result.current.duplicate('Note.md');
+        });
+        await act(async () => {
+            await hook.result.current.duplicate('Note.md');
+        });
+        expect(hook.result.current.notes.map((n) => n.id).sort()).toEqual([
+            'Note copy 2.md',
+            'Note copy.md',
+            'Note.md',
+        ]);
+    });
+
     it('restores the active note on remount', async () => {
         const onError = vi.fn();
         const dir = new FakeDirectoryHandle();
@@ -412,6 +450,22 @@ class DeferredSaveStore implements NoteStore {
         this.content.delete(id);
     }
 
+    async writeAttachment(): Promise<string> {
+        throw new Error('not used in these tests');
+    }
+
+    async writeAttachmentAt(): Promise<void> {}
+
+    async readAttachment(): Promise<Blob> {
+        throw new Error('not used in these tests');
+    }
+
+    async listAttachments(): Promise<never[]> {
+        return [];
+    }
+
+    async removeAttachment(): Promise<void> {}
+
     async createFolder(parentPath: string, name: string): Promise<string> {
         return parentPath ? `${parentPath}/${name}` : name;
     }
@@ -675,6 +729,22 @@ class ControllableStore implements NoteStore {
     async remove(id: string): Promise<void> {
         this.files.delete(id);
     }
+
+    async writeAttachment(): Promise<string> {
+        throw new Error('not used in these tests');
+    }
+
+    async writeAttachmentAt(): Promise<void> {}
+
+    async readAttachment(): Promise<Blob> {
+        throw new Error('not used in these tests');
+    }
+
+    async listAttachments(): Promise<never[]> {
+        return [];
+    }
+
+    async removeAttachment(): Promise<void> {}
 
     async createFolder(parentPath: string, name: string): Promise<string> {
         const path = parentPath ? `${parentPath}/${name}` : name;

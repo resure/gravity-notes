@@ -87,6 +87,7 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
             onChange={() => {}}
             onRename={() => {}}
             onEscape={() => {}}
+            onUploadFile={async () => 'Attachments/x.png'}
             {...props}
         />,
     );
