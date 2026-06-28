@@ -99,6 +99,7 @@ export function previewFromContent(text: string): string {
         .replace(/^\s*>\s?/gm, '') // blockquotes
         .replace(/^\s*[-*+]\s+/gm, '') // bullets
         .replace(/^\s*\d+\.\s+/gm, '') // ordered lists
+        .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
         .replace(/[*_`~]/g, '') // inline emphasis / code / strike
         .replace(/\\$/gm, '') // hard-line-break backslashes
         .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)

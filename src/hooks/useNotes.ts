@@ -11,7 +11,7 @@ import {
     withReprefixed,
     withSortMode,
 } from '../storage/metadata';
-import {dirname, titleFromFileName} from '../storage/noteText';
+import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -170,9 +170,20 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         );
     }, [store, applyMetadata]);
 
-    const bumpInList = useCallback((id: string, updatedAt: number | undefined) => {
-        setNotes((prev) => prev.map((n) => (n.id === id ? {...n, updatedAt} : n)));
-    }, []);
+    const bumpInList = useCallback(
+        (id: string, updatedAt: number | undefined, content?: string) => {
+            setNotes((prev) =>
+                prev.map((n) => {
+                    if (n.id !== id) return n;
+                    const next = {...n, updatedAt};
+                    // Refresh the list snippet from the just-saved body, so an edit shows in the list.
+                    if (content !== undefined) next.preview = previewFromContent(content);
+                    return next;
+                }),
+            );
+        },
+        [],
+    );
 
     const clearTimer = useCallback(() => {
         if (timerRef.current) {
@@ -190,7 +201,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             const meta = await store.save(pending.id, pending.content, baselineRef.current ?? 0);
             baselineRef.current = meta.updatedAt ?? null;
             setSaveState('saved');
-            bumpInList(pending.id, meta.updatedAt);
+            bumpInList(pending.id, meta.updatedAt, pending.content);
         } catch (err) {
             // Restore the snapshot only if no newer keystroke landed during the await — otherwise
             // the newer edit (already in pendingRef, with its own timer) must win, not be clobbered.
@@ -539,7 +550,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             bumpSession();
             setConflict(null);
             setSaveState('idle');
-            bumpInList(id, loaded.updatedAt);
+            bumpInList(id, loaded.updatedAt, loaded.content);
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to reload note');
         }
@@ -584,7 +595,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             baselineRef.current = meta.updatedAt ?? null;
             setConflict(null);
             setSaveState('saved');
-            bumpInList(conflict.id, meta.updatedAt);
+            bumpInList(conflict.id, meta.updatedAt, content);
         } catch (err) {
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save note');

@@ -196,6 +196,16 @@ describe('previewFromContent', () => {
             'Read the docs now',
         );
     });
+
+    it('unescapes CommonMark backslash-escapes so they do not show literally', () => {
+        // The editor stores a paragraph that begins with "0." as "0\\." so it isn't re-parsed as a
+        // list; the preview should show "0." as text, without the stray backslash.
+        expect(previewFromContent('0\\. Mental model: the three big shifts')).toBe(
+            '0. Mental model: the three big shifts',
+        );
+        // A real ordered-list marker is still stripped — only the escaped, literal one survives.
+        expect(previewFromContent('1. First\n2. Second')).toBe('First Second');
+    });
 });
 
 describe('isAttachmentRef', () => {
