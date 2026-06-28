@@ -140,18 +140,17 @@ Key modules:
 
 ### Backlog
 
+- cmd+click on link should open it (without first opening popup for editing link)
+- ability to right click with mouse to open context menu for notes and folders
+
 - Tab-to-complete in the search box, nvALT-style
 
 - Wiki-style links between notes, backlinks
 - Recent-note history (cmd+[] - back/forward through visited notes)
 
 - Trash bin for deleted notes
-- Media attachments — core + management view + export/import done (drag-drop / paste / image-command
-  into a root `Attachments/` folder, rendered in editor + preview across all backends; a "Manage
-  attachments" dialog lists/usage-flags/deletes them, sorts by recent / size / name, and opens any
-  image full-size with pinch / scroll zoom + pan; export/import bundles the bytes). On the desktop
-  app, **Reveal in Finder** is offered for notes, folders, and attachments. Automatic orphan cleanup
-  on note delete is still open — see `TODO.md`.
+
+- Notion-like font, width and density setting for each note? And ability to set default for all notes
 
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
@@ -159,3 +158,7 @@ Key modules:
 - Proper signed desktop macOS app
 - Mobile view
 - Mobile app
+
+- Preview style (typography) should look more similar to editor style
+- Automatic deleted notes and unused attachments cleanup (after 30 days?)
+- Cmd+z for undoing deleting of notes and moves between folders?
