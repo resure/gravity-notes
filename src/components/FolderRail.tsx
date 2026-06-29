@@ -111,10 +111,13 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     // The folder/All-Notes row a drag is hovering (the key), and the folder currently being dragged.
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
-    // The folder + viewport point for an open right-click context menu (null = closed).
-    const [contextMenu, setContextMenu] = useState<{row: FolderRow; x: number; y: number} | null>(
-        null,
-    );
+    // The folder + anchor for the one open action menu (null = closed). A single shared menu serves
+    // both each row's ⋯ button and the right-click context menu, so the rail mounts no per-row
+    // DropdownMenu (a popup instance + its rebuilt items array per folder row is needless work).
+    const [contextMenu, setContextMenu] = useState<{
+        row: FolderRow;
+        anchor: {getBoundingClientRect: () => DOMRect};
+    } | null>(null);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const newFolderInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
@@ -491,15 +494,6 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         ];
     };
 
-    // A zero-size virtual anchor at the right-click point, so the context menu opens at the cursor.
-    const contextAnchor = useMemo(
-        () =>
-            contextMenu
-                ? {getBoundingClientRect: () => new DOMRect(contextMenu.x, contextMenu.y, 0, 0)}
-                : undefined,
-        [contextMenu],
-    );
-
     const renderFolder = (row: FolderRow) => {
         if (renaming?.path === row.path) return renderRenameInput(row);
         const selected = selectedFolder === row.path;
@@ -538,7 +532,11 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 onContextMenu={(e) => {
                     e.preventDefault();
                     select({key: row.path, folder: row.path});
-                    setContextMenu({row, x: e.clientX, y: e.clientY});
+                    const {clientX, clientY} = e;
+                    setContextMenu({
+                        row,
+                        anchor: {getBoundingClientRect: () => new DOMRect(clientX, clientY, 0, 0)},
+                    });
                 }}
                 onDoubleClick={() => setRenaming({path: row.path, value: row.name})}
                 onKeyDown={(e) => onRowKeyDown(e, row.path)}
@@ -573,24 +571,23 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     <span className="folder-rail__count">{row.noteCount}</span>
                 ) : null}
                 <div className="folder-rail__actions">
-                    <DropdownMenu
-                        renderSwitcher={(props) => (
-                            <Button
-                                {...props}
-                                view="flat"
-                                size="s"
-                                tabIndex={-1}
-                                aria-label={`${row.name} actions`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    props.onClick?.(e);
-                                }}
-                            >
-                                <Icon data={Ellipsis} />
-                            </Button>
-                        )}
-                        items={folderMenuItems(row)}
-                    />
+                    <Button
+                        view="flat"
+                        size="s"
+                        tabIndex={-1}
+                        aria-label={`${row.name} actions`}
+                        onClick={(e) => {
+                            // Open the one shared menu anchored to this button — don't also select
+                            // the row (toggle off if it's already this row's menu).
+                            e.stopPropagation();
+                            const target = e.currentTarget;
+                            setContextMenu((open) =>
+                                open?.row.path === row.path ? null : {row, anchor: target},
+                            );
+                        }}
+                    >
+                        <Icon data={Ellipsis} />
+                    </Button>
                 </div>
             </div>
         );
@@ -673,17 +670,17 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 </Button>
             </div>
 
-            {/* Right-click context menu — one instance, controlled and anchored to the cursor via a
-                virtual element, so it needs no trigger of its own. Gravity substitutes its default ⋯
-                switcher button when renderSwitcher returns null/undefined, so return a hidden element
-                instead — otherwise that kebab leaks into the rail as a stray bottom-left button. */}
+            {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
+                cursor, for a right-click) opened it, so the rail needs no per-row DropdownMenu. Gravity
+                substitutes its default ⋯ switcher when renderSwitcher returns null/undefined, so return
+                a hidden element instead — otherwise that kebab leaks in as a stray bottom-left button. */}
             <DropdownMenu
                 open={contextMenu !== null}
                 onOpenToggle={(open: boolean) => {
                     if (!open) setContextMenu(null);
                 }}
                 renderSwitcher={() => <span hidden />}
-                popupProps={{anchorElement: contextAnchor}}
+                popupProps={{anchorElement: contextMenu?.anchor}}
                 items={contextMenu ? folderMenuItems(contextMenu.row) : []}
             />
         </div>

@@ -1,8 +1,9 @@
-import {act, renderHook, waitFor} from '@testing-library/react';
-import {describe, expect, it, vi} from 'vitest';
+import {renderHook} from '@testing-library/react';
+import {describe, expect, it} from 'vitest';
 
-import type {Note, NoteMeta} from '../storage/types';
+import type {NoteMeta} from '../storage/types';
 
+import type {Corpus} from './useCorpus';
 import {useNoteSearch} from './useNoteSearch';
 
 const NOTES: NoteMeta[] = [
@@ -11,121 +12,63 @@ const NOTES: NoteMeta[] = [
     {id: 'Gamma beta.md', title: 'Gamma beta', updatedAt: 1},
 ];
 
-/** A corpus stub (getAll + get) with spies, so we can assert how/when the corpus is read. */
-function makeStore(bodies: Record<string, string> = {}) {
-    const getAll = vi.fn(
-        async (): Promise<Note[]> => NOTES.map((n) => ({...n, content: bodies[n.id] ?? ''})),
-    );
-    const get = vi.fn(async (id: string): Promise<Note> => {
-        const meta = NOTES.find((n) => n.id === id);
-        return {
-            id,
-            title: meta?.title ?? id,
-            updatedAt: meta?.updatedAt,
-            content: bodies[id] ?? '',
-        };
-    });
-    return {getAll, get};
+/** A ready (or still-loading) {@link Corpus} built from id→body bodies — what `useCorpus` produces. */
+function corpusOf(bodies: Record<string, string> = {}, loading = false): Corpus {
+    const entries = Object.entries(bodies);
+    return {
+        contentById: new Map(entries),
+        lowerById: new Map(entries.map(([id, body]) => [id, body.toLowerCase()])),
+        linksById: new Map(),
+        loading,
+    };
 }
 
 describe('useNoteSearch — title matching', () => {
-    it('returns all notes for an empty query (original order, no corpus read)', () => {
-        const store = makeStore();
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
+    it('returns all notes for an empty query (original order preserved)', () => {
+        const {result} = renderHook(() => useNoteSearch(NOTES, '', corpusOf()));
         expect(result.current.filteredNotes).toEqual(NOTES);
-        expect(store.getAll).not.toHaveBeenCalled();
     });
 
     it('ranks title matches, preferring the prefix/word-start hit', () => {
-        const store = makeStore();
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('beta'));
+        const {result} = renderHook(() => useNoteSearch(NOTES, 'beta', corpusOf()));
         expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Beta.md', 'Gamma beta.md']);
     });
 
     it('returns an empty list when nothing matches', () => {
-        const store = makeStore();
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('zzz'));
+        const {result} = renderHook(() => useNoteSearch(NOTES, 'zzz', corpusOf()));
         expect(result.current.filteredNotes).toEqual([]);
     });
 
     it('treats a whitespace-only query as empty', () => {
-        const store = makeStore();
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('   '));
+        const {result} = renderHook(() => useNoteSearch(NOTES, '   ', corpusOf()));
         expect(result.current.filteredNotes).toEqual(NOTES);
-        expect(store.getAll).not.toHaveBeenCalled();
-    });
-
-    it('exposes lowercased query terms for highlighting', () => {
-        const store = makeStore();
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('Release NOTES'));
-        expect(result.current.terms).toEqual(['release', 'notes']);
     });
 });
 
 describe('useNoteSearch — full-text body matching', () => {
-    it('surfaces a body-only match once the corpus loads, with a snippet', async () => {
-        const store = makeStore({'Alpha.md': 'this note is all about kubernetes clusters'});
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('kubernetes'));
-        // Title-only first tick: nothing matches yet.
-        expect(result.current.filteredNotes).toEqual([]);
-        // Once getAll resolves, the body hit appears with its snippet.
-        await waitFor(() =>
-            expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Alpha.md']),
-        );
+    it('surfaces a body-only match from the corpus, with a snippet', () => {
+        const corpus = corpusOf({'Alpha.md': 'this note is all about kubernetes clusters'});
+        const {result} = renderHook(() => useNoteSearch(NOTES, 'kubernetes', corpus));
+        expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Alpha.md']);
         expect(result.current.snippetById.get('Alpha.md')).toContain('kubernetes');
     });
 
-    it('reads the corpus once across multiple keystrokes (stable note list)', async () => {
-        const store = makeStore({'Beta.md': 'mentions docker'});
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        act(() => result.current.setQuery('d'));
-        act(() => result.current.setQuery('do'));
-        act(() => result.current.setQuery('docker'));
-        await waitFor(() =>
-            expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Beta.md']),
+    it('is title-only (loading) until the corpus resolves, then body matches fold in', () => {
+        // Corpus still loading + empty: a body-only term matches nothing yet, and loading is true.
+        const {result, rerender} = renderHook(
+            ({corpus}: {corpus: Corpus}) => useNoteSearch(NOTES, 'kubernetes', corpus),
+            {initialProps: {corpus: corpusOf({}, true)}},
         );
-        expect(store.getAll).toHaveBeenCalledTimes(1);
-    });
-
-    it('refreshes incrementally when a note changes — reads only the changed note', async () => {
-        const store = makeStore({'Alpha.md': 'old body'});
-        const {result, rerender} = renderHook(({notes}) => useNoteSearch(notes, store), {
-            initialProps: {notes: NOTES},
-        });
-        act(() => result.current.setQuery('alpha'));
-        await waitFor(() => expect(store.getAll).toHaveBeenCalledTimes(1));
-        // Bump Alpha's updatedAt → signature changes → only the changed note is re-read via get(),
-        // not the whole corpus via getAll().
-        const bumped = NOTES.map((n) => (n.id === 'Alpha.md' ? {...n, updatedAt: 99} : n));
-        rerender({notes: bumped});
-        await waitFor(() => expect(store.get).toHaveBeenCalledWith('Alpha.md'));
-        expect(store.getAll).toHaveBeenCalledTimes(1);
-        expect(store.get).toHaveBeenCalledTimes(1);
-    });
-
-    it('reports loading while the corpus is in flight, then clears it', async () => {
-        const store = makeStore({'Alpha.md': 'all about kubernetes'});
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        expect(result.current.loading).toBe(false); // no active query → nothing to load
-        act(() => result.current.setQuery('kubernetes'));
-        expect(result.current.loading).toBe(true); // corpus not loaded yet
-        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.loading).toBe(true);
+        expect(result.current.filteredNotes).toEqual([]);
+        // The corpus resolves with the body → the match appears and loading clears.
+        rerender({corpus: corpusOf({'Alpha.md': 'all about kubernetes'}, false)});
+        expect(result.current.loading).toBe(false);
         expect(result.current.filteredNotes.map((n) => n.id)).toEqual(['Alpha.md']);
     });
 
-    it('clears loading after a getAll rejection (degrades to title-only, Enter can fall through)', async () => {
-        const store = makeStore();
-        store.getAll.mockRejectedValueOnce(new Error('disk gone'));
-        const {result} = renderHook(() => useNoteSearch(NOTES, store));
-        // A query with no title match: if `loading` stuck true, TopBar would swallow Enter-to-create.
-        act(() => result.current.setQuery('kubernetes'));
-        expect(result.current.loading).toBe(true);
-        await waitFor(() => expect(result.current.loading).toBe(false));
-        expect(result.current.filteredNotes).toEqual([]); // title-only, nothing matches → create path
+    it('never reports loading for an empty query, even while the corpus loads', () => {
+        const {result} = renderHook(() => useNoteSearch(NOTES, '', corpusOf({}, true)));
+        expect(result.current.loading).toBe(false);
     });
 });

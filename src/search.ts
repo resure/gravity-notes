@@ -39,27 +39,44 @@ function isWordStart(text: string, index: number): boolean {
     return !/[\p{L}\p{N}]/u.test(text[index - 1] ?? '');
 }
 
-/** Index of the first word-boundary occurrence of `term` in `text`, or -1. */
-function wordStartIndex(text: string, term: string): number {
-    let from = 0;
-    for (;;) {
-        const idx = text.indexOf(term, from);
-        if (idx === -1) return -1;
-        if (isWordStart(text, idx)) return idx;
-        from = idx + 1;
-    }
-}
+/**
+ * The score only consumes `min(count - 1, BODY_FREQ_CAP)`, so a count past `BODY_FREQ_CAP + 1` can
+ * never change it — stop counting there (see {@link scanTerm}).
+ */
+const BODY_COUNT_FLOOR = BODY_FREQ_CAP + 1;
 
-/** Count non-overlapping occurrences of `term` in `text` (used for the small frequency bonus). */
-function countOccurrences(text: string, term: string): number {
+/**
+ * One bounded walk of `text` for `term`, yielding everything the scorer needs in a single pass:
+ * whether `term` occurs at all, whether any occurrence sits at a word boundary, and how many times
+ * it occurs (capped at `floor`, since the scorer caps the frequency bonus). This replaces the three
+ * SEPARATE full-body scans the old code did per term (`.includes` + `wordStartIndex` +
+ * `countOccurrences`) — on a large folder that triple scan was the dominant per-keystroke cost.
+ *
+ * The walk stops as soon as both saturable signals are known: the count reached `floor` AND a
+ * word-boundary occurrence was seen. When `term` never appears at a word boundary the walk runs to
+ * completion (still capped in count) — matching the old `wordStartIndex` worst case, but rare.
+ */
+function scanTerm(text: string, term: string, floor: number): TermScan {
     let count = 0;
+    let wordStart = false;
     let from = 0;
     for (;;) {
         const idx = text.indexOf(term, from);
-        if (idx === -1) return count;
+        if (idx === -1) break;
         count += 1;
+        if (!wordStart && isWordStart(text, idx)) wordStart = true;
+        if (count >= floor && wordStart) break;
         from = idx + term.length;
     }
+    return {exists: count > 0, wordStart, count};
+}
+
+interface TermScan {
+    exists: boolean;
+    /** Whether any occurrence begins a word (drives the WORD_START boost). */
+    wordStart: boolean;
+    /** Occurrence count, capped at `floor` (the scorer uses `min(count - 1, BODY_FREQ_CAP)`). */
+    count: number;
 }
 
 /** Outcome of scoring one note: its relevance score and whether any term hit the body. */
@@ -87,18 +104,25 @@ export function scoreNoteText(
     for (const term of terms) {
         if (!term) continue; // callers pass non-empty terms; guard so an empty one can't hang loops
         let matched = false;
-        if (lowerTitle.includes(term)) {
+        // One scan of the title (short — a single line) for existence + word-boundary, then the
+        // cheap startsWith check for the prefix boost.
+        const title = scanTerm(lowerTitle, term, BODY_COUNT_FLOOR);
+        if (title.exists) {
             matched = true;
             score += TITLE_TERM;
-            if (wordStartIndex(lowerTitle, term) !== -1) score += TITLE_WORD_START;
+            if (title.wordStart) score += TITLE_WORD_START;
             if (lowerTitle.startsWith(term)) score += TITLE_PREFIX;
         }
-        if (lowerBody.includes(term)) {
+        // One CAPPED scan of the body replaces the old .includes + wordStartIndex + countOccurrences
+        // triple pass — the dominant per-keystroke cost on a large folder (a common term that appears
+        // many times used to re-scan the whole body to count occurrences the score then threw away).
+        const body = scanTerm(lowerBody, term, BODY_COUNT_FLOOR);
+        if (body.exists) {
             matched = true;
             bodyMatched = true;
             score += BODY_TERM;
-            if (wordStartIndex(lowerBody, term) !== -1) score += BODY_WORD_START;
-            score += Math.min(countOccurrences(lowerBody, term) - 1, BODY_FREQ_CAP) * BODY_FREQ;
+            if (body.wordStart) score += BODY_WORD_START;
+            score += Math.min(body.count - 1, BODY_FREQ_CAP) * BODY_FREQ;
         }
         if (!matched) return null;
     }
@@ -181,11 +205,17 @@ export interface NoteSearchResult {
  * whose body isn't loaded yet match on title alone (so results show instantly, then refine once the
  * corpus arrives). Returns matches only, ordered by score, then most-recently-updated, then title.
  * An empty query returns every note in its original order, unscored.
+ *
+ * `lowerById` is an optional precomputed index of `id → body.toLowerCase()`. When the caller keeps
+ * a warm search index (see `useNoteSearch`), pass it so a big corpus isn't re-lowercased on every
+ * keystroke — the single biggest avoidable cost when searching a large folder. Omit it and the body
+ * is lowercased on the fly, so direct/unindexed callers still work unchanged.
  */
 export function searchNotes(
     notes: NoteMeta[],
     contentById: Map<string, string>,
     query: string,
+    lowerById?: Map<string, string>,
 ): NoteSearchResult[] {
     const terms = tokenizeQuery(query);
     if (terms.length === 0) return notes.map((note) => ({note, score: 0}));
@@ -195,7 +225,9 @@ export function searchNotes(
     const results: NoteSearchResult[] = [];
     for (const note of notes) {
         const content = contentById.get(note.id) ?? '';
-        const lowerBody = content.toLowerCase(); // lowercased once, shared by scoring + snippet
+        // Prefer the precomputed lowercased body; fall back to lowercasing on the fly when no index
+        // was supplied. Shared by scoring + snippet so it's only computed once either way.
+        const lowerBody = lowerById?.get(note.id) ?? content.toLowerCase();
         const scored = scoreNoteText(note.title.toLowerCase(), lowerBody, terms, phrase, usePhrase);
         if (!scored) continue;
         const snippet = scored.bodyMatched ? buildSnippet(content, lowerBody, terms) : undefined;

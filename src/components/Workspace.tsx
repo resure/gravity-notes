@@ -4,6 +4,8 @@ import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useBacklinks} from '../hooks/useBacklinks';
+import {useCorpus} from '../hooks/useCorpus';
+import {useDebouncedValue} from '../hooks/useDebouncedValue';
 import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -38,6 +40,15 @@ interface WorkspaceProps {
     onChangeThemePref: (pref: ThemePref) => void;
     onChangeStorage: () => void;
 }
+
+/**
+ * Above this many notes, the search query is debounced by {@link SEARCH_DEBOUNCE_MS} before it drives
+ * re-scoring + the (large) result-list re-render; at or below it, search stays instant (no debounce).
+ * Keeps small vaults snappy-as-you-type while sparing a huge vault a full re-score + list reconcile on
+ * every keystroke of a fast typist.
+ */
+const SEARCH_DEBOUNCE_THRESHOLD = 500;
+const SEARCH_DEBOUNCE_MS = 120;
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
 const COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
@@ -133,20 +144,38 @@ export function Workspace({
         };
     }, [store, onError]);
 
+    // Ordering depends only on these metadata fields — never on `active`, which gets a fresh
+    // `metadata` identity on every note browse/open (each arrow-key preview). Keying the memo on the
+    // whole object would re-sort the entire list on every cursor move; key on just the fields that
+    // affect order so browsing a big folder doesn't re-sort thousands of notes per keypress.
     const orderedNotes = useMemo(
         () => orderNotes(notes.notes, notes.metadata),
-        [notes.notes, notes.metadata],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [notes.notes, notes.metadata.pinned, notes.metadata.sort, notes.metadata.created],
     );
-    const {
+    // The nvALT search query. Owned here (not inside useNoteSearch) so the corpus's load trigger can
+    // see "a query is active" alongside "a note is open" — both consumers then share one corpus load.
+    // `query` is the live text in the box (instant); `debouncedQuery` is what actually drives scoring +
+    // the result-list render, debounced only on a large vault (see SEARCH_DEBOUNCE_THRESHOLD).
+    const [query, setQuery] = useState('');
+    const debouncedQuery = useDebouncedValue(
         query,
-        setQuery,
+        notes.notes.length > SEARCH_DEBOUNCE_THRESHOLD ? SEARCH_DEBOUNCE_MS : 0,
+    );
+    // Load the body corpus once a query is live OR a note is open, and share it between full-text
+    // search and backlinks — so getAll() runs once (one big IPC on desktop) and bodies are held once.
+    // Gate on the live `query` so the (lazy) corpus read starts on the first keystroke, not after the
+    // debounce settles.
+    const corpusActive = notes.activeId !== null || query.trim().length > 0;
+    const corpus = useCorpus(store, orderedNotes, corpusActive);
+    const {
         filteredNotes,
         snippetById,
         loading: searchLoading,
-    } = useNoteSearch(orderedNotes, store);
+    } = useNoteSearch(orderedNotes, debouncedQuery, corpus);
 
-    // Backlinks for the open note ("linked references"), from a lazily-loaded body corpus.
-    const {backlinks} = useBacklinks(store, notes.notes, notes.activeId);
+    // Backlinks for the open note ("linked references"), from the shared corpus.
+    const {backlinks} = useBacklinks(orderedNotes, notes.activeId, corpus);
 
     // Which folders are collapsed in the tree (persisted). A toggle rebuilds the set immutably.
     const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(loadCollapsedFolders);
@@ -183,11 +212,17 @@ export function Workspace({
     }, [railOpen]);
     const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
 
-    const searching = query.trim().length > 0;
+    // Drive list MODE (ranked search vs folder scope) off the debounced query, so the list flips in
+    // step with the results it shows — not a keystroke ahead of them.
+    const searching = debouncedQuery.trim().length > 0;
     // The rail's folder tree (folders only).
+    // The tree depends only on folders/notes/pins + the collapse set — not on `active` (which
+    // changes on every browse). Key on `pinned` rather than the whole `metadata` so the tree isn't
+    // rebuilt on each cursor move.
     const folderRows = useMemo<FolderRow[]>(
         () => buildFolderTree(notes.folders, notes.notes, notes.metadata, collapsedFolders),
-        [notes.folders, notes.notes, notes.metadata, collapsedFolders],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [notes.folders, notes.notes, notes.metadata.pinned, collapsedFolders],
     );
     // The middle pane: a global ranked list while searching (folders never hide a match), otherwise
     // the selected folder's direct notes ('All Notes' = everything). Both stay ordered.
@@ -719,6 +754,9 @@ export function Workspace({
                     searchInputRef={searchInputRef}
                     notes={filteredNotes}
                     searchLoading={searchLoading}
+                    // On a big vault the box shows the live `query` but `notes`/`searchLoading` lag by
+                    // the debounce; flag that gap so the keyboard model doesn't act on a stale list.
+                    searchPending={query !== debouncedQuery}
                     selectedId={nav.selectedId}
                     onCommit={nav.commit}
                     onCreate={(title) => handleCreate(title, '')}
@@ -758,7 +796,7 @@ export function Workspace({
                             ref={listRef}
                             notes={listNotes}
                             selectedId={nav.selectedId}
-                            query={query}
+                            query={debouncedQuery}
                             scopeLabel={
                                 selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
                             }

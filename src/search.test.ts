@@ -170,3 +170,40 @@ describe('searchNotes', () => {
         );
     });
 });
+
+describe('searchNotes — precomputed lowercase index', () => {
+    const notes: NoteMeta[] = [{id: 'A.md', title: 'A', updatedAt: 1}];
+
+    it('scores + snippets against the supplied lowercased body (no on-the-fly lowercasing)', () => {
+        // contentById carries the display (mixed-case) body; lowerById is the search index. A body
+        // hit is found and the snippet preserves the original casing from contentById.
+        const content = new Map([['A.md', 'About KUBERNETES clusters']]);
+        const lower = new Map([['A.md', 'about kubernetes clusters']]);
+        const results = searchNotes(notes, content, 'kubernetes', lower);
+        expect(results.map((r) => r.note.id)).toEqual(['A.md']);
+        expect(results[0].snippet).toContain('KUBERNETES'); // sliced from the original content
+    });
+
+    it('produces identical rankings whether or not the index is supplied', () => {
+        const corpus: NoteMeta[] = [
+            {id: 'Alpha.md', title: 'Alpha', updatedAt: 3},
+            {id: 'Beta.md', title: 'Beta', updatedAt: 2},
+        ];
+        const bodies = new Map([
+            ['Alpha.md', 'docker compose notes'],
+            ['Beta.md', 'about DOCKER images'],
+        ]);
+        const lower = new Map([...bodies].map(([id, body]) => [id, body.toLowerCase()] as const));
+        const indexed = searchNotes(corpus, bodies, 'docker', lower).map((r) => r.note.id);
+        const onTheFly = searchNotes(corpus, bodies, 'docker').map((r) => r.note.id);
+        expect(indexed).toEqual(onTheFly);
+    });
+
+    it('is authoritative for body scoring — a stale/empty index masks a content-only match', () => {
+        // Proves the body text comes from lowerById, not contentById: the content mentions the term
+        // but the index does not, so there is no body hit (and the title doesn't match either).
+        const content = new Map([['A.md', 'mentions kubernetes']]);
+        const emptyIndex = new Map([['A.md', '']]);
+        expect(searchNotes(notes, content, 'kubernetes', emptyIndex)).toEqual([]);
+    });
+});

@@ -35,6 +35,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         searchInputRef: createRef<HTMLInputElement>(),
         notes: NOTES,
         searchLoading: false,
+        searchPending: false,
         selectedId: 'Alpha.md',
         onCommit: vi.fn(),
         onCreate: vi.fn(),
@@ -98,6 +99,18 @@ describe('TopBar — search keyboard model', () => {
         await user.keyboard('{Enter}');
         expect(props.onCreate).not.toHaveBeenCalled();
         expect(props.onCommit).not.toHaveBeenCalled();
+    });
+
+    it('swallows Enter while results are pending — never acts on a stale list', async () => {
+        const user = userEvent.setup();
+        // Big-vault debounce window: the box reads a fresh title but `notes` still reflects the
+        // previous query (here, the whole vault). Enter must neither open the stale top note nor
+        // fabricate a note — it waits for the debounce to settle.
+        const {props} = setup({notes: NOTES, query: 'Groceries', searchPending: true});
+        screen.getByPlaceholderText(SEARCH).focus();
+        await user.keyboard('{Enter}');
+        expect(props.onCommit).not.toHaveBeenCalled();
+        expect(props.onCreate).not.toHaveBeenCalled();
     });
 
     it('enters the list on ArrowDown from the search box', async () => {
@@ -168,6 +181,7 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             searchInputRef={searchInputRef}
             notes={NOTES}
             searchLoading={false}
+            searchPending={false}
             selectedId="Alpha.md"
             onCommit={onCommit}
             onCreate={noop}
