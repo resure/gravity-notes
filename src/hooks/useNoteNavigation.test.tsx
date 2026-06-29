@@ -58,6 +58,41 @@ describe('useNoteNavigation', () => {
         }
     });
 
+    it('coalesces a CONTINUOUS held-arrow burst to ~2 opens total (leading + settle)', () => {
+        // The finite-burst test above can't tell a leading+trailing coalesce from a re-arm-every-window
+        // one (its burst settles after one window). This covers the real symptom: a long held-arrow
+        // scroll whose key-repeat cadence is far shorter than the coalesce window. The editor must
+        // remount ~twice per gesture (leading + settle), not once per window (~10×/s).
+        vi.useFakeTimers();
+        try {
+            const deps = makeDeps();
+            const {result} = renderHook(() => useNoteNavigation(deps));
+            act(() => {
+                result.current.browse('N0.md');
+            });
+            // 50 presses, each 30 ms apart (< the 100 ms settle window) → one continuous burst.
+            for (let i = 1; i <= 50; i++) {
+                act(() => {
+                    vi.advanceTimersByTime(30);
+                });
+                act(() => {
+                    result.current.browse(`N${i}.md`);
+                });
+            }
+            expect(result.current.selectedId).toBe('N50.md'); // cursor tracked every press
+            expect(deps.open).toHaveBeenCalledTimes(1); // only the leading edge so far
+            expect(deps.open).toHaveBeenNthCalledWith(1, 'N0.md');
+            // The burst settles → the note landed on opens (the single trailing open).
+            act(() => {
+                vi.advanceTimersByTime(100);
+            });
+            expect(deps.open).toHaveBeenCalledTimes(2);
+            expect(deps.open).toHaveBeenNthCalledWith(2, 'N50.md');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('a slow (non-burst) browse previews immediately each time', () => {
         vi.useFakeTimers();
         try {

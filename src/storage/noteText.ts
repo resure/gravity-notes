@@ -113,21 +113,23 @@ export const PREVIEW_SCAN_BYTES = 500;
  * the list cell ellipsizes the visible overflow.
  */
 export function previewFromContent(text: string): string {
-    return text
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images → drop (no alt text in the flowing preview)
-        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → keep just the link text
-        .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
-        .replace(/^\s{0,3}#{1,6}\s+/gm, '') // ATX heading markers
-        .replace(/^\s*>\s?/gm, '') // blockquotes
-        .replace(/^\s*[-*+]\s+/gm, '') // bullets
-        .replace(/^\s*\d+\.\s+/gm, '') // ordered lists
-        .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
-        .replace(/[*_`~]/g, '') // inline emphasis / code / strike
-        .replace(/\\$/gm, '') // hard-line-break backslashes
-        .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
-        .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
-        .trim()
-        .slice(0, 140);
+    return (
+        text
+            // Images → drop, links → keep just their text. One pass (the image is a link prefixed by `!`):
+            // `bang` is non-empty for images (drop the whole node) and empty for links (keep the text).
+            .replace(/(!?)\[([^\]]*)\]\([^)]*\)/g, (_, bang, inner: string) => (bang ? '' : inner))
+            .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
+            // One line-prefix pass strips ATX headings / blockquotes / bullets / ordered-list markers at
+            // the start of each line (non-overlapping — a line is at most one). Was four separate passes.
+            .replace(/^(?:\s{0,3}#{1,6}\s+|\s*>\s?|\s*[-*+]\s+|\s*\d+\.\s+)/gm, '')
+            .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
+            .replace(/[*_`~]/g, '') // inline emphasis / code / strike
+            .replace(/\\$/gm, '') // hard-line-break backslashes
+            .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
+            .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
+            .trim()
+            .slice(0, 140)
+    );
 }
 
 /**
