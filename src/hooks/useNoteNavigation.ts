@@ -65,15 +65,13 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     // Leading-edge + single-trailing coalescing of browse previews. The cursor highlight moves on
     // every press (setCursor), but the editor is heavy to remount, so the PREVIEW-OPEN is coalesced:
     // fire once on the leading edge of a burst (instant-preview feel for a single/slow press), then
-    // once more for the note landed on when the burst settles. `armed` stays true across settles for
-    // the whole burst (each press within the window re-arms the settle timer), so a press mid-burst
-    // is never mistaken for a fresh leading edge — a continuous held-arrow scroll opens the editor
-    // ~twice per gesture instead of ~10×/s.
+    // once more for the note landed on when the burst settles. A live settle timer (`coalesceTimerRef`
+    // non-null) marks "inside a burst", and every press pushes it out, so a press mid-burst is never
+    // mistaken for a fresh leading edge — a continuous held-arrow scroll opens the editor ~twice per
+    // gesture instead of ~10×/s.
     const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // The latest note browsed during the burst, opened when it settles.
     const trailingIdRef = useRef<string | null>(null);
-    // True from the leading edge of a burst until its settle gap elapses with no further browse.
-    const armedRef = useRef(false);
     // The id the leading edge already opened this burst, so a single/slow browse (whose `trailing`
     // is that same id) isn't opened a second time at settle.
     const lastOpenedRef = useRef<string | null>(null);
@@ -84,7 +82,6 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
             coalesceTimerRef.current = null;
         }
         trailingIdRef.current = null;
-        armedRef.current = false;
         lastOpenedRef.current = null;
     }, []);
 
@@ -102,28 +99,25 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
             setCursor(id); // cursor highlight is always instant
             setAutofocus(null);
             trailingIdRef.current = id;
-            if (!armedRef.current) {
-                // Leading edge of a burst: preview immediately (the instant-preview feel for a single
-                // / slow press). `armed` then stays true through the whole burst, so further presses
-                // never re-fire a leading edge mid-burst.
-                armedRef.current = true;
+            // Leading edge of a burst (no settle timer pending): preview immediately — the
+            // instant-preview feel for a single / slow press. Inside a burst the timer is live, so
+            // further presses don't re-fire a leading edge; they only push out the settle gap below.
+            if (coalesceTimerRef.current === null) {
                 lastOpenedRef.current = id;
                 void openRef.current(id);
             }
-            // (Re)start the settle gap on every browse; it only fires once browsing pauses. A
-            // continuous burst keeps re-arming it, so the open below runs once at the end.
+            // (Re)start the settle gap on every browse; it only fires once browsing pauses for the
+            // window. A continuous burst keeps pushing it out, so the trailing open runs once at the end.
             if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current);
             coalesceTimerRef.current = setTimeout(() => {
                 coalesceTimerRef.current = null;
-                armedRef.current = false;
                 const next = trailingIdRef.current;
                 trailingIdRef.current = null;
-                // Open the note landed on — unless it's the same one the leading edge already opened
+                // Open the note landed on — unless it's the one the leading edge already opened
                 // (a single/slow browse), which must not double-open.
                 if (next !== null && next !== lastOpenedRef.current) {
                     void openRef.current(next);
                 }
-                lastOpenedRef.current = null;
             }, BROWSE_COALESCE_MS);
         },
         [setCursor],

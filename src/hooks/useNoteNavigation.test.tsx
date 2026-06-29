@@ -93,6 +93,41 @@ describe('useNoteNavigation', () => {
         }
     });
 
+    it('a commit mid-burst cancels the pending trailing open (no stale re-open over the committed note)', () => {
+        // While a held-arrow burst is mid-flight (a settle timer is pending), committing a different
+        // note must cancel that timer — otherwise ~100 ms later it would re-open the last-browsed note
+        // on top of the one the user just committed to. Guards the cancelCoalesce() call in `commit`.
+        vi.useFakeTimers();
+        try {
+            const deps = makeDeps();
+            const {result} = renderHook(() => useNoteNavigation(deps));
+            act(() => {
+                result.current.browse('N0.md'); // leading edge opens N0
+            });
+            act(() => {
+                vi.advanceTimersByTime(30);
+            });
+            act(() => {
+                result.current.browse('N1.md'); // within window → trailing = N1, no open yet
+            });
+            expect(deps.open).toHaveBeenCalledTimes(1);
+            // Commit a third note mid-burst (activeId is null, so it opens rather than just focusing).
+            act(() => {
+                result.current.commit('N9.md');
+            });
+            expect(deps.open).toHaveBeenCalledTimes(2);
+            expect(deps.open).toHaveBeenNthCalledWith(2, 'N9.md');
+            // Let the (now-cancelled) settle window elapse: the trailing open of N1 must NOT fire.
+            act(() => {
+                vi.advanceTimersByTime(200);
+            });
+            expect(deps.open).toHaveBeenCalledTimes(2);
+            expect(result.current.selectedId).toBe('N9.md');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('a slow (non-burst) browse previews immediately each time', () => {
         vi.useFakeTimers();
         try {
