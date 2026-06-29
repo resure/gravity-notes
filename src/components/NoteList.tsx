@@ -146,10 +146,14 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
-    // The note + viewport point for an open right-click context menu (null = closed).
-    const [contextMenu, setContextMenu] = useState<{note: NoteMeta; x: number; y: number} | null>(
-        null,
-    );
+    // The note + anchor for the one open action menu (null = closed). A single shared menu serves
+    // both the row's ⋯ button and the right-click context menu: mounting a DropdownMenu (and building
+    // its items) per row would be a large render cost on a folder with thousands of notes. The anchor
+    // is the ⋯ button element, or a zero-size virtual element at the cursor for a right-click.
+    const [menu, setMenu] = useState<{
+        note: NoteMeta;
+        anchor: {getBoundingClientRect: () => DOMRect};
+    } | null>(null);
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -308,15 +312,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         ];
     };
 
-    // A zero-size virtual anchor at the right-click point, so the context menu opens at the cursor.
-    const contextAnchor = useMemo(
-        () =>
-            contextMenu
-                ? {getBoundingClientRect: () => new DOMRect(contextMenu.x, contextMenu.y, 0, 0)}
-                : undefined,
-        [contextMenu],
-    );
-
     const renderNote = (note: NoteMeta) => {
         const selected = note.id === selectedId;
         const editing = note.id === editingId;
@@ -348,7 +343,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     if (editing) return;
                     e.preventDefault();
                     browseRow(note.id);
-                    setContextMenu({note, x: e.clientX, y: e.clientY});
+                    const {clientX, clientY} = e;
+                    setMenu({
+                        note,
+                        anchor: {getBoundingClientRect: () => new DOMRect(clientX, clientY, 0, 0)},
+                    });
                 }}
                 onKeyDown={(e) => onItemKeyDown(e, note.id)}
             >
@@ -384,22 +383,24 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                 {highlightTerms(note.title, terms)}
                             </Text>
                             <div className="note-list__actions">
-                                <DropdownMenu
-                                    renderSwitcher={(props) => (
-                                        <Button
-                                            {...props}
-                                            view="flat"
-                                            size="s"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                props.onClick?.(e);
-                                            }}
-                                        >
-                                            <Icon data={Ellipsis} />
-                                        </Button>
-                                    )}
-                                    items={noteMenuItems(note)}
-                                />
+                                <Button
+                                    view="flat"
+                                    size="s"
+                                    aria-label="Note actions"
+                                    onClick={(e) => {
+                                        // Don't browse the row; open the one shared menu anchored to
+                                        // this button (toggle off if it's already this row's menu).
+                                        e.stopPropagation();
+                                        const target = e.currentTarget;
+                                        setMenu((open) =>
+                                            open?.note.id === note.id
+                                                ? null
+                                                : {note, anchor: target},
+                                        );
+                                    }}
+                                >
+                                    <Icon data={Ellipsis} />
+                                </Button>
                             </div>
                         </div>
                         <div className="note-list__meta">
@@ -534,18 +535,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 />
             </Dialog>
 
-            {/* Right-click context menu — one instance, controlled and anchored to the cursor via a
-                virtual element, so it needs no trigger of its own. Gravity substitutes its default ⋯
-                switcher button when renderSwitcher returns null/undefined, so return a hidden element
-                instead — otherwise that kebab leaks into the list as a stray bottom-left button. */}
+            {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
+                cursor, for a right-click) opened it, so the list needs no per-row DropdownMenu. Gravity
+                substitutes its default ⋯ switcher when renderSwitcher returns null/undefined, so return
+                a hidden element instead — otherwise that kebab leaks in as a stray bottom-left button. */}
             <DropdownMenu
-                open={contextMenu !== null}
+                open={menu !== null}
                 onOpenToggle={(open: boolean) => {
-                    if (!open) setContextMenu(null);
+                    if (!open) setMenu(null);
                 }}
                 renderSwitcher={() => <span hidden />}
-                popupProps={{anchorElement: contextAnchor}}
-                items={contextMenu ? noteMenuItems(contextMenu.note) : []}
+                popupProps={{anchorElement: menu?.anchor}}
+                items={menu ? noteMenuItems(menu.note) : []}
             />
         </div>
     );

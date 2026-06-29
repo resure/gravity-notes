@@ -4,6 +4,7 @@ import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useBacklinks} from '../hooks/useBacklinks';
+import {useCorpus} from '../hooks/useCorpus';
 import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -133,20 +134,30 @@ export function Workspace({
         };
     }, [store, onError]);
 
+    // Ordering depends only on these metadata fields — never on `active`, which gets a fresh
+    // `metadata` identity on every note browse/open (each arrow-key preview). Keying the memo on the
+    // whole object would re-sort the entire list on every cursor move; key on just the fields that
+    // affect order so browsing a big folder doesn't re-sort thousands of notes per keypress.
     const orderedNotes = useMemo(
         () => orderNotes(notes.notes, notes.metadata),
-        [notes.notes, notes.metadata],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [notes.notes, notes.metadata.pinned, notes.metadata.sort, notes.metadata.created],
     );
+    // The nvALT search query. Owned here (not inside useNoteSearch) so the corpus's load trigger can
+    // see "a query is active" alongside "a note is open" — both consumers then share one corpus load.
+    const [query, setQuery] = useState('');
+    // Load the body corpus once a query is live OR a note is open, and share it between full-text
+    // search and backlinks — so getAll() runs once (one big IPC on desktop) and bodies are held once.
+    const corpusActive = notes.activeId !== null || query.trim().length > 0;
+    const corpus = useCorpus(store, orderedNotes, corpusActive);
     const {
-        query,
-        setQuery,
         filteredNotes,
         snippetById,
         loading: searchLoading,
-    } = useNoteSearch(orderedNotes, store);
+    } = useNoteSearch(orderedNotes, query, corpus);
 
-    // Backlinks for the open note ("linked references"), from a lazily-loaded body corpus.
-    const {backlinks} = useBacklinks(store, notes.notes, notes.activeId);
+    // Backlinks for the open note ("linked references"), from the shared corpus.
+    const {backlinks} = useBacklinks(orderedNotes, notes.activeId, corpus);
 
     // Which folders are collapsed in the tree (persisted). A toggle rebuilds the set immutably.
     const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(loadCollapsedFolders);
@@ -185,9 +196,13 @@ export function Workspace({
 
     const searching = query.trim().length > 0;
     // The rail's folder tree (folders only).
+    // The tree depends only on folders/notes/pins + the collapse set — not on `active` (which
+    // changes on every browse). Key on `pinned` rather than the whole `metadata` so the tree isn't
+    // rebuilt on each cursor move.
     const folderRows = useMemo<FolderRow[]>(
         () => buildFolderTree(notes.folders, notes.notes, notes.metadata, collapsedFolders),
-        [notes.folders, notes.notes, notes.metadata, collapsedFolders],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [notes.folders, notes.notes, notes.metadata.pinned, collapsedFolders],
     );
     // The middle pane: a global ranked list while searching (folders never hide a match), otherwise
     // the selected folder's direct notes ('All Notes' = everything). Both stay ordered.

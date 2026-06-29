@@ -26,19 +26,59 @@ describe('useNoteNavigation', () => {
         expect(deps.open).toHaveBeenCalledWith('A.md');
     });
 
-    it('rapid browse previews each note immediately (no debounce)', () => {
-        const deps = makeDeps();
-        const {result} = renderHook(() => useNoteNavigation(deps));
-        act(() => {
-            result.current.browse('A.md');
-        });
-        act(() => {
-            result.current.browse('B.md');
-        });
-        expect(deps.open).toHaveBeenCalledTimes(2);
-        expect(deps.open).toHaveBeenNthCalledWith(1, 'A.md');
-        expect(deps.open).toHaveBeenNthCalledWith(2, 'B.md');
-        expect(result.current.selectedId).toBe('B.md');
+    it('coalesces a rapid browse burst (leading-edge): previews the first, then the note it lands on', () => {
+        vi.useFakeTimers();
+        try {
+            const deps = makeDeps();
+            const {result} = renderHook(() => useNoteNavigation(deps));
+            // First browse previews immediately (leading edge — instant-preview feel preserved)…
+            act(() => {
+                result.current.browse('A.md');
+            });
+            expect(deps.open).toHaveBeenCalledTimes(1);
+            expect(deps.open).toHaveBeenNthCalledWith(1, 'A.md');
+            // …but a burst of further browses within the window doesn't remount the editor per press;
+            // the cursor still moves instantly to the latest row.
+            act(() => {
+                result.current.browse('B.md');
+            });
+            act(() => {
+                result.current.browse('C.md');
+            });
+            expect(deps.open).toHaveBeenCalledTimes(1); // still only the leading open
+            expect(result.current.selectedId).toBe('C.md');
+            // When the burst settles, the note actually landed on (C) opens.
+            act(() => {
+                vi.advanceTimersByTime(100);
+            });
+            expect(deps.open).toHaveBeenCalledTimes(2);
+            expect(deps.open).toHaveBeenNthCalledWith(2, 'C.md');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('a slow (non-burst) browse previews immediately each time', () => {
+        vi.useFakeTimers();
+        try {
+            const deps = makeDeps();
+            const {result} = renderHook(() => useNoteNavigation(deps));
+            act(() => {
+                result.current.browse('A.md');
+            });
+            // Let the coalesce window lapse, so the next browse is again a fresh leading edge.
+            act(() => {
+                vi.advanceTimersByTime(100);
+            });
+            act(() => {
+                result.current.browse('B.md');
+            });
+            expect(deps.open).toHaveBeenCalledTimes(2);
+            expect(deps.open).toHaveBeenNthCalledWith(1, 'A.md');
+            expect(deps.open).toHaveBeenNthCalledWith(2, 'B.md');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('commit on a not-yet-open note opens it with body autofocus', () => {

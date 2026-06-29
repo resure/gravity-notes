@@ -113,6 +113,21 @@ describe('buildBacklinks', () => {
         // The root Notes.md gets no backlink from Work/Plan.md (it lost the same-folder tiebreak).
         expect(buildBacklinks('Notes.md', dupes, dupeCorpus)).toEqual([]);
     });
+
+    it('uses the precomputed links index when supplied (authoritative over the body)', () => {
+        // A correct index yields the same result as on-the-fly extraction…
+        const linksById = new Map([...corpus].map(([id, body]) => [id, extractWikiLinks(body)]));
+        expect(
+            buildBacklinks('Roadmap.md', notes, corpus, linksById).map((b) => b.note.id),
+        ).toEqual(['Ideas.md', 'Work/Plan.md']);
+        // …and an index that drops Ideas' links makes Ideas stop contributing a backlink — proving the
+        // index, not the body, is what gets scanned (so the corpus never re-runs the link regex).
+        const stale = new Map(linksById);
+        stale.set('Ideas.md', []);
+        expect(buildBacklinks('Roadmap.md', notes, corpus, stale).map((b) => b.note.id)).toEqual([
+            'Work/Plan.md',
+        ]);
+    });
 });
 
 describe('suggestWikiTargets', () => {
