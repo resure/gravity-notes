@@ -1,6 +1,7 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
 import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
+import {EditorState} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
 import type {Note, NoteMeta} from '../storage/types';
@@ -31,8 +32,14 @@ export interface EditorPaneHandle {
 
 interface EditorPaneProps {
     note: Note;
-    /** Focus intent on (re)mount: the body (a commit), the title (a new note), or none (preview). */
+    /**
+     * Focus intent on a note switch: the body (a commit), the title (a new note), or none (a browse).
+     * Honored once per {@link sessionId} change (the shell no longer remounts, so focus is driven by
+     * an effect rather than a remount).
+     */
     autofocus: 'body' | 'title' | null;
+    /** Bumped by `useNotes` on a real note switch / disk reload. Keys the title, drives focus. */
+    sessionId: number;
     /** Read-only preview mode. Owned by Workspace so it persists across note switches. */
     preview?: boolean;
     onChange: (markup: string) => void;
@@ -55,29 +62,48 @@ interface EditorPaneProps {
     onOpenWikiLink: (target: string) => void;
 }
 
+/** Imperative surface the shell uses to drive the editor body. */
+interface EditorBodyHandle {
+    focus(): void;
+    toggleMode(): void;
+    moveCursorToStart(): void;
+    moveCursorEnd(): void;
+    /** Open a fresh empty line at the top of the body; false when the view isn't reachable (Markup mode). */
+    openLineAbove(): boolean;
+    atEmptyFirstLine(): boolean;
+    removeEmptyFirstLine(): void;
+    /** Focus the read-only preview surface shown in preview mode (the Esc ladder's target). */
+    focusPreview(): void;
+}
+
+interface EditorBodyProps {
+    note: Note;
+    /** Read-only preview mode (⌘⇧P) — renders the LIVE buffer, not disk. */
+    preview: boolean;
+    onChange: (markup: string) => void;
+    onUploadFile: (file: File) => Promise<string>;
+    wikiNotes: NoteMeta[];
+    onOpenWikiLink: (target: string) => void;
+}
+
 /**
- * The open-note surface: an editable title above the Gravity markdown editor body. The
- * editor instance is created once per mount; EditorPane is keyed by `useNotes.sessionId`,
- * so a real note switch / disk reload remounts it, but a rename — which changes `note.id`
- * in place — does not, keeping the caret during the title→body handoff. In `preview` mode
- * the body is a read-only render and the title is read-only.
+ * The WYSIWYG/Markdown editor, reused across note switches (the perf win: no ProseMirror
+ * schema/view/plugin rebuild per note). Created once; on a switch the content is swapped in place via
+ * `editor.replace()`, then the undo history is HARD-RESET so ⌘Z can't drag the previous note's text
+ * into the new one (which the change handler would then autosave — silent cross-note corruption). The
+ * editor's own `replace()`/`clear()` only push a normal transaction, so the reset has to reach into
+ * ProseMirror: a fresh `EditorState` over the same doc + plugins gives an empty history. The wiki
+ * extension's view ref is the one handle we have on the live `EditorView`.
+ *
+ * In `preview` mode the body is a read-only render of the editor's CURRENT (possibly unsaved) value
+ * (not the on-disk `note.content`), so previewing mid-edit shows the live buffer.
  */
-export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {
-        note,
-        autofocus,
-        preview = false,
-        onChange,
-        onRename,
-        onEscape,
-        onUploadFile,
-        wikiNotes,
-        onOpenWikiLink,
-    },
+const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function EditorBody(
+    {note, preview, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
     ref,
 ) {
-    // Stable across the editor's life (EditorPane remounts per session); read latest via a ref so the
-    // upload handler — captured once in useMarkdownEditor's []-deps — always calls the current one.
+    // Stable across the editor's life; read latest via a ref so the upload handler — captured once in
+    // useMarkdownEditor's []-deps — always calls the current one.
     const uploadRef = useRef(onUploadFile);
     uploadRef.current = onUploadFile;
 
@@ -133,21 +159,40 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     );
 
     const previewRef = useRef<HTMLDivElement>(null);
-    const titleRef = useRef<NoteTitleHandle>(null);
-    const bodyRef = useRef<HTMLDivElement>(null);
     // The editor emits a no-op 'change' as the initial markup loads; suppress only that FIRST emit,
     // not every value that equals the original — otherwise undoing back to the loaded content within
     // the autosave window leaves a stale pending edit that writes the pre-undo value to disk.
     const settledRef = useRef(false);
+    // True while a note-switch content swap is in flight (replace + history reset), so the change
+    // handler treats the load echo (and any echo from the state reset) as a load, not a user edit.
+    const swappingRef = useRef(false);
 
     useImperativeHandle(
         ref,
         () => ({
+            focus() {
+                editor.focus();
+            },
             toggleMode() {
                 editor.setEditorMode(editor.currentMode === 'wysiwyg' ? 'markup' : 'wysiwyg');
             },
-            focus() {
-                editor.focus();
+            moveCursorToStart() {
+                editor.moveCursor('start');
+            },
+            moveCursorEnd() {
+                editor.moveCursor('end');
+            },
+            openLineAbove() {
+                return openLineAbove(editor);
+            },
+            atEmptyFirstLine() {
+                return atEmptyFirstLine(editor);
+            },
+            removeEmptyFirstLine() {
+                removeEmptyFirstLine(editor);
+            },
+            focusPreview() {
+                previewRef.current?.focus();
             },
         }),
         [editor],
@@ -155,6 +200,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
 
     useEffect(() => {
         const handleChange = () => {
+            // A note-switch load echo (the replace, and possibly the history-reset state swap). The
+            // editor's serialize(parse(content)) round-trip can legitimately differ from the on-disk
+            // content (whitespace / &nbsp; / trailing-newline normalization), so suppress the echo
+            // UNCONDITIONALLY during a swap — never let it reach the autosave, or it would re-serialize
+            // the note to disk and bump its updatedAt (which reorders the list under "Updated" sort).
+            if (swappingRef.current) return;
             const value = editor.getValue();
             // Ignore only the first emit if it just echoes the loaded content (the no-op fired while
             // the initial markup loads), so we don't rewrite the file on open. Every later change —
@@ -171,6 +222,27 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         };
     }, [editor, note.content, onChange]);
 
+    // Swap the editor's content on a note switch (or disk reload). Skipped when the content is
+    // unchanged — a rename rekeys the note in place without touching the body, so the caret/scroll
+    // survive. On a real switch: replace, then HARD-RESET the undo history so ⌘Z stays within this
+    // note (see the class comment). `swappingRef` brackets the synchronous emits from both so the
+    // change handler treats them as a load echo, never a user edit (see handleChange).
+    useEffect(() => {
+        if (editor.getValue() === note.content) return;
+        swappingRef.current = true;
+        editor.replace(note.content);
+        resetHistory();
+        swappingRef.current = false;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- swap only when the body actually changes
+    }, [note.content]);
+
+    /** Drop the whole undo stack by re-creating the EditorState over the current doc + plugins. */
+    function resetHistory() {
+        const view = wikiViewRef.current;
+        if (!view) return;
+        view.updateState(EditorState.create({doc: view.state.doc, plugins: view.state.plugins}));
+    }
+
     // A link's broken state depends on the notes list and this note's id, neither of which is a doc
     // edit — so nudge the editor to re-evaluate them whenever that set changes (e.g. the target note
     // is created or renamed). Cheap: it only re-scans this note's own `[[links]]`.
@@ -184,21 +256,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         refreshWikiLinks(wikiViewRef.current);
     }, [note.id, wikiIdsSignature]);
 
-    // Focus on (re)mount per the autofocus intent: the title for a new note, else the body
-    // (the preview surface when previewing). `editor` changes per mount (sessionId key).
-    useEffect(() => {
-        if (autofocus === 'title') {
-            titleRef.current?.focus();
-            titleRef.current?.select();
-        } else if (autofocus === 'body') {
-            if (preview) previewRef.current?.focus();
-            else editor.focus();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on (re)mount
-    }, [editor]);
-
-    // Move focus when preview is toggled within a note: onto the preview on enter, back to
-    // the body on exit, so the Esc ladder keeps working.
+    // Move focus when preview is toggled within a note: onto the preview on enter, back to the
+    // body on exit, so the Esc ladder keeps working.
     const prevPreviewRef = useRef(preview);
     useEffect(() => {
         if (preview === prevPreviewRef.current) return;
@@ -207,27 +266,97 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         else editor.focus();
     }, [preview, editor]);
 
-    // Title → body: put the caret at the start of the body and focus it (the preview surface
-    // when previewing). Blurring the title here also commits the rename via NoteTitle.onBlur.
+    return (
+        <>
+            {preview ? (
+                <NotePreview ref={previewRef} markup={editor.getValue()} />
+            ) : (
+                <MarkdownEditorView settingsVisible={false} stickyToolbar={false} editor={editor} />
+            )}
+            <WikiLinkSuggest state={wikiSuggest} />
+            <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
+        </>
+    );
+});
+
+/**
+ * The open-note surface: an editable title above the Gravity markdown editor body. The pane no longer
+ * remounts on a note switch (that rebuild was the lag on a large vault); instead the editor instance is
+ * reused and its content swapped in place (see {@link EditorBody}). `NoteTitle` is still keyed by
+ * `sessionId`, so it remounts on a real switch / disk reload — keeping its dirty-draft commit-on-unmount
+ * safety net correct (a half-typed rename on the outgoing note is committed to THAT note, and a rename,
+ * which doesn't bump the session, doesn't remount it). `preview` (⌘⇧P) renders the editor's LIVE buffer
+ * read-only.
+ */
+export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
+    {
+        note,
+        autofocus,
+        sessionId,
+        preview = false,
+        onChange,
+        onRename,
+        onEscape,
+        onUploadFile,
+        wikiNotes,
+        onOpenWikiLink,
+    },
+    ref,
+) {
+    const titleRef = useRef<NoteTitleHandle>(null);
+    const bodyRef = useRef<EditorBodyHandle>(null);
+    const bodyWrapRef = useRef<HTMLDivElement>(null);
+    // Read the latest autofocus inside the session-driven focus effect without re-running it per change.
+    const autofocusRef = useRef(autofocus);
+    autofocusRef.current = autofocus;
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            toggleMode() {
+                bodyRef.current?.toggleMode();
+            },
+            focus() {
+                bodyRef.current?.focus();
+            },
+        }),
+        [],
+    );
+
+    // The pane no longer remounts on a switch, so focus intent is honored here, once per session
+    // change (a commit → body, a new note → title; a browse → nothing, focus stays in the list).
+    // `sessionId` is set by `useNotes.open`/`reloadDisk` right after `autofocus` is armed by navigation.
+    useEffect(() => {
+        if (autofocusRef.current === 'body') bodyRef.current?.focus();
+        else if (autofocusRef.current === 'title') {
+            titleRef.current?.focus();
+            titleRef.current?.select();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus once per note session
+    }, [sessionId]);
+
+    // Title → body: put the caret at the start of the body and focus it. In preview mode, focus the
+    // preview surface instead (the body editor isn't shown).
     const goToBody = () => {
         if (preview) {
-            previewRef.current?.focus();
+            bodyRef.current?.focusPreview();
             return;
         }
-        editor.moveCursor('start');
-        editor.focus();
+        bodyRef.current?.moveCursorToStart();
+        bodyRef.current?.focus();
     };
 
-    // Enter from the title: open a fresh empty line at the top of the body and land on it.
-    // Falls back to the body start when the ProseMirror view isn't reachable (Markup mode).
+    // Enter from the title: open a fresh empty line at the top of the body and land on it. Falls back
+    // to the body start when the ProseMirror view isn't reachable (Markup mode). In preview, focus the
+    // preview surface.
     const enterToBody = () => {
         if (preview) {
-            previewRef.current?.focus();
+            bodyRef.current?.focusPreview();
             return;
         }
-        if (!openLineAbove(editor)) {
-            editor.moveCursor('start');
-            editor.focus();
+        if (!bodyRef.current?.openLineAbove()) {
+            bodyRef.current?.moveCursorToStart();
+            bodyRef.current?.focus();
         }
     };
 
@@ -243,6 +372,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         >
             <NoteTitle
                 ref={titleRef}
+                key={sessionId}
                 title={note.title}
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
@@ -250,31 +380,32 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 onEnter={enterToBody}
                 onEscape={onEscape}
             />
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
             <div
-                ref={bodyRef}
+                ref={bodyWrapRef}
                 className="editor-pane__body"
                 onMouseDown={(event) => {
-                    // Click in the empty area around/below the editor (its bottom padding, or the
-                    // body grown taller than a short note) → drop the caret at the very end.
-                    // Clicks on the editable content itself fall through to the editor.
+                    // Preview mode is read-only — no click handling.
                     if (preview) return;
-                    // The selection formatting toolbar renders in a portal (outside this subtree),
-                    // but its mousedown still bubbles here via React's portal event propagation. Only
-                    // act on clicks that are real DOM descendants of the body wrapper; otherwise the
-                    // moveCursor('end') below would collapse the active selection and the toolbar's
-                    // formatting buttons would do nothing.
+                    // A click in the empty area around/below the editor (its bottom padding, or the body
+                    // grown taller than a short note) drops the caret at the very end. Clicks on the
+                    // editable content itself fall through to the editor.
+                    // The selection formatting toolbar renders in a portal (outside this subtree), but its
+                    // mousedown still bubbles here via React's portal event propagation. Only act on clicks
+                    // that are real DOM descendants of the body wrapper; otherwise the moveCursor('end')
+                    // below would collapse the active selection and the toolbar's formatting buttons would
+                    // do nothing.
                     if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
                         return;
                     if ((event.target as HTMLElement).closest('.g-md-editor')) return;
                     event.preventDefault();
-                    editor.moveCursor('end');
-                    editor.focus();
+                    bodyRef.current?.moveCursorEnd();
+                    bodyRef.current?.focus();
                 }}
                 onKeyDown={(event) => {
                     // Body → title handoffs. Ignore preview and the editor's own modifier combos.
                     if (preview || event.metaKey || event.ctrlKey || event.altKey) return;
-                    const body = bodyRef.current;
+                    const body = bodyWrapRef.current;
                     // ArrowUp on the first visual line → caret to the end of the title.
                     if (
                         event.key === 'ArrowUp' &&
@@ -287,26 +418,23 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                         return;
                     }
                     // Backspace on the empty line opened by Enter → remove it and go up to the title.
-                    if (event.key === 'Backspace' && atEmptyFirstLine(editor)) {
+                    if (event.key === 'Backspace' && bodyRef.current?.atEmptyFirstLine()) {
                         event.preventDefault();
-                        removeEmptyFirstLine(editor);
+                        bodyRef.current?.removeEmptyFirstLine();
                         titleRef.current?.focusAtEnd();
                     }
                 }}
             >
-                {preview ? (
-                    <NotePreview ref={previewRef} markup={editor.getValue()} />
-                ) : (
-                    <MarkdownEditorView
-                        settingsVisible={false}
-                        stickyToolbar={false}
-                        autofocus={autofocus === 'body'}
-                        editor={editor}
-                    />
-                )}
+                <EditorBody
+                    ref={bodyRef}
+                    note={note}
+                    preview={preview}
+                    onChange={onChange}
+                    onUploadFile={onUploadFile}
+                    wikiNotes={wikiNotes}
+                    onOpenWikiLink={onOpenWikiLink}
+                />
             </div>
-            <WikiLinkSuggest state={wikiSuggest} />
-            <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
         </div>
     );
 });
