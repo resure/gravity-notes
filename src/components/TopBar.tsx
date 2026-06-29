@@ -52,6 +52,12 @@ export interface TopBarProps {
      * empty `notes` as "no match → create" yet — a body match may still be about to appear.
      */
     searchLoading: boolean;
+    /**
+     * True while the live box text is ahead of the (debounced) results on a large vault — `notes` still
+     * reflects an older query. Enter/autocomplete must not act on that stale list: a quick Enter after
+     * typing a new title would otherwise open the vault's top note instead of creating the note.
+     */
+    searchPending: boolean;
     selectedId: string | null;
     onCommit: (id: string) => void;
     onCreate: (title?: string) => void;
@@ -96,6 +102,7 @@ export function TopBar({
     searchInputRef,
     notes,
     searchLoading,
+    searchPending,
     selectedId,
     onCommit,
     onCreate,
@@ -116,6 +123,9 @@ export function TopBar({
     const topTitle = notes[0]?.title ?? '';
     const completion =
         completing &&
+        // While results lag the typed text (debounce window), `notes[0]` reflects an older query —
+        // don't autocomplete against the wrong note.
+        !searchPending &&
         query.length > 0 &&
         topTitle.length > query.length &&
         topTitle.toLowerCase().startsWith(query.toLowerCase())
@@ -155,6 +165,11 @@ export function TopBar({
                     event.preventDefault();
                     onFocusList();
                 }
+            } else if (searchPending) {
+                // The (debounced) results haven't caught up to the typed query yet, so `notes` is a
+                // stale list. Swallow rather than open the wrong note / fabricate one; the debounce
+                // settles in ≤120ms and the next Enter does the right thing.
+                event.preventDefault();
             } else if (notes.length > 0) {
                 // A query that matches: open the top match (nvALT).
                 event.preventDefault();

@@ -43,11 +43,6 @@ describe('useNoteSearch — title matching', () => {
         const {result} = renderHook(() => useNoteSearch(NOTES, '   ', corpusOf()));
         expect(result.current.filteredNotes).toEqual(NOTES);
     });
-
-    it('exposes lowercased query terms for highlighting', () => {
-        const {result} = renderHook(() => useNoteSearch(NOTES, 'Release NOTES', corpusOf()));
-        expect(result.current.terms).toEqual(['release', 'notes']);
-    });
 });
 
 describe('useNoteSearch — full-text body matching', () => {

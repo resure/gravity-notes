@@ -50,20 +50,32 @@ function formatBytes(n: number): string {
 function Thumb({cache, refPath, alt}: {cache: AttachmentUrlCache; refPath: string; alt: string}) {
     const [url, setUrl] = useState<string | undefined>(() => cache.peek(refPath));
     useEffect(() => {
-        if (url) return undefined;
         let alive = true;
-        cache
-            .resolve(refPath)
-            .then((resolved) => {
-                if (alive) setUrl(resolved);
-            })
-            .catch(() => {
-                // Leave the placeholder if it can't be read.
-            });
+        // Resolve (reusing a seeded/cached URL when present), then subscribe: the cache never evicts a
+        // subscribed ref, so this on-screen thumbnail can't be revoked out from under its <img> by LRU
+        // eviction; the same subscription re-resolves it (to the placeholder) if the file is deleted.
+        const load = () => {
+            const seeded = cache.peek(refPath);
+            if (seeded) {
+                setUrl(seeded);
+                return;
+            }
+            cache
+                .resolve(refPath)
+                .then((resolved) => {
+                    if (alive) setUrl(resolved || undefined);
+                })
+                .catch(() => {
+                    // Leave the placeholder if it can't be read.
+                });
+        };
+        load();
+        const unsub = cache.subscribe(refPath, load);
         return () => {
             alive = false;
+            unsub();
         };
-    }, [cache, refPath, url]);
+    }, [cache, refPath]);
     return url ? (
         <img className="attachments__thumb" src={url} alt={alt} />
     ) : (
@@ -83,8 +95,9 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     const [pending, setPending] = useState<PendingDelete | null>(null);
     const [busy, setBusy] = useState(false);
     const [sort, setSort] = useState<AttachmentSort>('recent');
-    // The attachment being viewed full-size (null = none), resolved to an object URL.
-    const [viewing, setViewing] = useState<{url: string; name: string} | null>(null);
+    // The attachment being viewed full-size (null = none), resolved to an object URL. `ref` is kept so
+    // the open lightbox image can subscribe and stay protected from LRU eviction while it's on screen.
+    const [viewing, setViewing] = useState<{url: string; name: string; ref: string} | null>(null);
     // "Reveal in Finder" is desktop-only — present only when the backend can do it (Tauri folder).
     const reveal = store.reveal;
 
@@ -169,7 +182,7 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                         onError('Failed to open attachment');
                         return;
                     }
-                    setViewing({url, name: item.name});
+                    setViewing({url, name: item.name, ref: item.ref});
                 } catch {
                     onError('Failed to open attachment');
                 }
@@ -177,6 +190,13 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
         },
         [cache, onError],
     );
+
+    // While the lightbox is open, subscribe to its ref so LRU eviction can't revoke the URL it's
+    // showing; if the file is forgotten (deleted), close the view rather than show a dead blob URL.
+    useEffect(() => {
+        if (!viewing) return undefined;
+        return cache.subscribe(viewing.ref, () => setViewing(null));
+    }, [viewing, cache]);
 
     const onReveal = useCallback(
         (ref: string) => {
