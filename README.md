@@ -172,6 +172,9 @@ Key modules:
 - Versioning / snapshots (with manual snapshopts?)
 - Backend sync — add an `ApiStore` implementing `NoteStore`
 
+- Multi-window native app (with different workspaces)
+- Recent workspaces menu item (with cmd+r shortcut)
+
 - Preserve cmd+z between notes
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Cmd+z for undoing deleting of notes and moves between folders?
