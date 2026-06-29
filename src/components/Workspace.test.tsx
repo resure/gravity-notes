@@ -203,6 +203,12 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Beta/});
         await user.click(screen.getByRole('option', {name: /Beta/}));
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
+        // A click only browses (read-only preview); Enter commits the note into the editor so the
+        // preview toggle is observable (editor ↔ read-only preview).
+        await user.keyboard('{Enter}');
+        await waitFor(() =>
+            expect(document.querySelector('.note-preview')).not.toBeInTheDocument(),
+        );
         await user.keyboard('{Meta>}{Shift>}p{/Shift}{/Meta}');
         await waitFor(() => expect(document.querySelector('.note-preview')).toBeInTheDocument());
         // Toggling again returns to the editor.

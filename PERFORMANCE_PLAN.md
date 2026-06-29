@@ -23,6 +23,24 @@ The fix has three tiers, **cheapest + lowest-risk first**:
 
 **Measure first** (Step 0), then B → A, C only if needed.
 
+## Status — implemented on `perf/note-switching`
+
+- ✅ **Tier B** — browse preview-opens coalesced to leading + single-trailing (continuous scroll no
+  longer rebuilds the editor ~10×/s). Shipped.
+- ✅ **P1** — `previewFromContent` 12 → 8 regex passes. Shipped.
+- ✅ **Tier A** — the editor is split into a light shell + a lazily-mounted `EditorBody`. Browsing
+  (arrow / single-click / scope-flip) shows a cheap `NotePreview` from `note.content`; the ProseMirror
+  editor mounts only on a commit (Enter / click-into-body / follow-link / new note). Shipped.
+  - **UX change to be aware of:** clicking a note now shows a read-only preview; click into the body
+    (or Enter) to edit. This is the tradeoff that makes switching cheap. `preview` mode (⌘⇧P) now only
+    matters while editing (browse is already a preview).
+  - Did **not** touch the editor's lifecycle/undo/change-plumbing (Tier C) — the editor still mounts
+    fresh per edit session via `key={sessionId}`; it just isn't mounted while browsing.
+- ⏳ **Tier C** (`editor.replace()` reuse) — deferred; only if a measurement shows a live editor must
+  persist across switches. Hard-gate on undo-history reset + the `settledRef` race.
+- ⏳ **P2 / P3** (corpus + attachment raw-bytes IPC, rayon) — not started; one-time / image-heavy wins.
+
+
 ## How this was checked
 
 - Traced the switch path: `browse → useNotes.open() → EditorPane` (keyed by `sessionId`).

@@ -1,6 +1,6 @@
 import {type ComponentPropsWithRef, createRef} from 'react';
 
-import {fireEvent, render, screen} from '@testing-library/react';
+import {act, fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -83,7 +83,9 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
     return render(
         <EditorPane
             note={NOTE}
-            autofocus={null}
+            // Default to editing mode (a commit) so the editor-mounting tests exercise it; the
+            // autofocus-specific tests override this, and the browse/preview ones pass null.
+            autofocus={'body'}
             onChange={() => {}}
             onRename={() => {}}
             onEscape={() => {}}
@@ -122,11 +124,16 @@ describe('EditorPane — focus', () => {
         expect(focus).not.toHaveBeenCalled();
     });
 
-    it('focuses via the imperative handle', () => {
+    it('focuses via the imperative handle (mounting the editor on demand)', async () => {
         const ref = createRef<EditorPaneHandle>();
-        renderPane({ref});
+        // Start browsing (autofocus null → only a preview is shown, no editor mounted, nothing
+        // focused)…
+        renderPane({ref, autofocus: null});
         expect(focus).not.toHaveBeenCalled();
-        ref.current?.focus();
+        // …then focus() mounts the editor on demand and focuses its body.
+        await act(async () => {
+            ref.current?.focus();
+        });
         expect(focus).toHaveBeenCalledTimes(1);
     });
 
