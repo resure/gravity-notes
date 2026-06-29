@@ -36,9 +36,11 @@ export interface UseNoteNavigation {
 
 /**
  * Coalesce window for preview-opens while browsing. A single (or slow) arrow press still previews
- * instantly — the leading edge fires `open()` immediately. Only presses arriving *within* this window
- * (a held arrow key flying down a long list) are coalesced, so the heavy editor isn't remounted (and
- * the note re-read from disk) once per keystroke; the note you land on opens when the burst settles.
+ * instantly — the leading edge fires `open()` immediately. A burst of presses (a held arrow flying
+ * down a long list, or rapid clicks) is coalesced: the editor opens once on the leading edge and
+ * once more — for the note actually landed on — when the burst settles (no browse for this long). So
+ * a continuous scroll that used to remount the heavy editor ~10×/s (once per window) now does it
+ * roughly twice per whole gesture; the cursor highlight still tracks every press instantly.
  */
 const BROWSE_COALESCE_MS = 100;
 
@@ -60,31 +62,30 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const closeRef = useRef(deps.close);
     closeRef.current = deps.close;
 
-    // Leading-edge coalescing of browse previews. `coalesceTimer` non-null = inside a burst window;
-    // `trailingId` is the latest note browsed during the window, opened when it ends.
+    // Leading-edge + single-trailing coalescing of browse previews. The cursor highlight moves on
+    // every press (setCursor), but the editor is heavy to remount, so the PREVIEW-OPEN is coalesced:
+    // fire once on the leading edge of a burst (instant-preview feel for a single/slow press), then
+    // once more for the note landed on when the burst settles. `armed` stays true across settles for
+    // the whole burst (each press within the window re-arms the settle timer), so a press mid-burst
+    // is never mistaken for a fresh leading edge — a continuous held-arrow scroll opens the editor
+    // ~twice per gesture instead of ~10×/s.
     const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // The latest note browsed during the burst, opened when it settles.
     const trailingIdRef = useRef<string | null>(null);
-    // Re-armable via a ref so `browse` needn't depend on its identity (it's reset each render).
-    const armWindowRef = useRef<() => void>(() => {});
-    armWindowRef.current = () => {
-        coalesceTimerRef.current = setTimeout(() => {
-            coalesceTimerRef.current = null;
-            const next = trailingIdRef.current;
-            if (next !== null) {
-                // The burst settled (or continues): open the most-recent note and re-arm, so a long
-                // continuous scroll opens roughly once per window instead of once per keystroke.
-                trailingIdRef.current = null;
-                void openRef.current(next);
-                armWindowRef.current();
-            }
-        }, BROWSE_COALESCE_MS);
-    };
+    // True from the leading edge of a burst until its settle gap elapses with no further browse.
+    const armedRef = useRef(false);
+    // The id the leading edge already opened this burst, so a single/slow browse (whose `trailing`
+    // is that same id) isn't opened a second time at settle.
+    const lastOpenedRef = useRef<string | null>(null);
+
     const cancelCoalesce = useCallback(() => {
         if (coalesceTimerRef.current) {
             clearTimeout(coalesceTimerRef.current);
             coalesceTimerRef.current = null;
         }
         trailingIdRef.current = null;
+        armedRef.current = false;
+        lastOpenedRef.current = null;
     }, []);
 
     // The cursor auto-syncs to a restored open note exactly once, on startup; after any
@@ -100,14 +101,30 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
         (id: string) => {
             setCursor(id); // cursor highlight is always instant
             setAutofocus(null);
-            if (coalesceTimerRef.current === null) {
-                // Leading edge: a single / slow browse previews immediately (the instant-preview feel).
+            trailingIdRef.current = id;
+            if (!armedRef.current) {
+                // Leading edge of a burst: preview immediately (the instant-preview feel for a single
+                // / slow press). `armed` then stays true through the whole burst, so further presses
+                // never re-fire a leading edge mid-burst.
+                armedRef.current = true;
+                lastOpenedRef.current = id;
                 void openRef.current(id);
-                armWindowRef.current();
-            } else {
-                // Inside a burst (held-key scroll): remember the latest; it opens when the window ends.
-                trailingIdRef.current = id;
             }
+            // (Re)start the settle gap on every browse; it only fires once browsing pauses. A
+            // continuous burst keeps re-arming it, so the open below runs once at the end.
+            if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current);
+            coalesceTimerRef.current = setTimeout(() => {
+                coalesceTimerRef.current = null;
+                armedRef.current = false;
+                const next = trailingIdRef.current;
+                trailingIdRef.current = null;
+                // Open the note landed on — unless it's the same one the leading edge already opened
+                // (a single/slow browse), which must not double-open.
+                if (next !== null && next !== lastOpenedRef.current) {
+                    void openRef.current(next);
+                }
+                lastOpenedRef.current = null;
+            }, BROWSE_COALESCE_MS);
         },
         [setCursor],
     );
