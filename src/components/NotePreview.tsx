@@ -128,11 +128,20 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
         const refs = attachmentRefsIn(markup);
         if (refs.length === 0 || !cache) return undefined;
         let alive = true;
+        // Subscribe to each shown ref: (a) the cache never evicts a subscribed ref, so these on-screen
+        // preview images can't be revoked out from under their <img> by LRU eviction while the preview
+        // is open; (b) a forgotten ref (deleted from the manager) re-renders to its broken state.
+        const unsubs = refs.map((r) =>
+            cache.subscribe(r, () => {
+                if (alive) setRendered(render());
+            }),
+        );
         Promise.all(refs.map((r) => cache.resolve(r).catch(() => undefined))).then(() => {
             if (alive) setRendered(render());
         });
         return () => {
             alive = false;
+            for (const unsub of unsubs) unsub();
         };
     }, [markup, cache]);
 

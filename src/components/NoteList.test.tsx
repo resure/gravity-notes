@@ -7,7 +7,13 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
 
-import {NoteList, type NoteListHandle, type NoteListProps, formatNoteDate} from './NoteList';
+import {
+    NoteList,
+    type NoteListHandle,
+    type NoteListProps,
+    formatNoteDate,
+    noteRowRenders,
+} from './NoteList';
 
 const NOTES: NoteMeta[] = [
     {id: 'Alpha.md', title: 'Alpha', updatedAt: 3},
@@ -476,5 +482,60 @@ describe('NoteList — right-click context menu', () => {
         const {props} = setup({selectedId: 'Alpha.md'});
         fireEvent.contextMenu(screen.getByRole('option', {name: /Beta/}));
         expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+    });
+});
+
+describe('NoteList — row memoization (perf)', () => {
+    // A stable prop set reused across rerenders, so only the data that *should* change (selectedId)
+    // does. Callbacks/refs keep their identity (mirroring how Workspace passes them) — otherwise the
+    // memo would re-render every row and this test couldn't measure the win.
+    function memoSetup(count: number) {
+        const notes: NoteMeta[] = Array.from({length: count}, (_, i) => ({
+            id: `N${i}.md`,
+            title: `Note ${i}`,
+            updatedAt: count - i,
+            preview: `Body of note ${i}`,
+        }));
+        const props: NoteListProps = {
+            notes,
+            selectedId: notes[0].id,
+            query: '',
+            scopeLabel: null,
+            showCrumbs: false,
+            searchInputRef: createRef<HTMLInputElement>(),
+            onBrowse: vi.fn(),
+            onCommit: vi.fn(),
+            onEscapeList: vi.fn(),
+            onCreate: vi.fn(),
+            onRequestMove: vi.fn(),
+            onDuplicate: vi.fn(),
+            onRename: vi.fn(),
+            onDelete: vi.fn(),
+            sortMode: 'updated',
+            onSortChange: vi.fn(),
+            pinnedIds: [],
+            onTogglePin: vi.fn(),
+            railOpen: false,
+            onToggleRail: vi.fn(),
+            onFocusRail: vi.fn(),
+        };
+        const {rerender} = renderWithProviders(<NoteList {...props} />);
+        return {notes, props, rerender};
+    }
+
+    it('re-renders only the two affected rows when the selection changes', () => {
+        const {notes, props, rerender} = memoSetup(60);
+        noteRowRenders.count = 0; // ignore the initial full render
+        rerender(<NoteList {...props} selectedId={notes[30].id} />);
+        // Just the row losing selection + the row gaining it — never all 60.
+        expect(noteRowRenders.count).toBeLessThanOrEqual(2);
+        expect(noteRowRenders.count).toBeGreaterThan(0);
+    });
+
+    it('re-renders no rows when the parent re-renders with identical props', () => {
+        const {props, rerender} = memoSetup(60);
+        noteRowRenders.count = 0;
+        rerender(<NoteList {...props} />);
+        expect(noteRowRenders.count).toBe(0);
     });
 });
