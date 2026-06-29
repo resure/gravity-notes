@@ -9,6 +9,7 @@
  * mentions the word in passing.
  */
 
+import {deMarkdownInline} from './storage/noteText';
 import type {NoteMeta} from './storage/types';
 
 /** Split a raw query into lowercased, whitespace-separated search terms. */
@@ -182,12 +183,7 @@ export function buildSnippet(
     // toLowerCase isn't always length-preserving (e.g. 'İ' → two units), which would shift indices
     // and drop the match; in that rare case fall back to the lowercased text.
     const source = content.length === lowerBody.length ? content : lowerBody;
-    const cleaned = source
-        .slice(start, end)
-        .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
-        .replace(/[*_`~]/g, '') // inline emphasis / code / strike markers
-        .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
-        .trim();
+    const cleaned = deMarkdownInline(source.slice(start, end));
     if (!cleaned) return undefined;
     return (start > 0 ? '…' : '') + cleaned + (end < lowerBody.length ? '…' : '');
 }

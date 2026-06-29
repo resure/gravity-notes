@@ -108,28 +108,45 @@ export function canonicalBody(content: string): string {
 export const PREVIEW_SCAN_BYTES = 500;
 
 /**
+ * Collapse a slice of note Markdown to a flat one-line string for previews/snippets: drop the
+ * preserved empty-row markers (`&nbsp;`), strip inline emphasis/code/strike punctuation, flatten every
+ * whitespace run to a single space, then trim. Shared by the list preview, backlink snippets, and
+ * search snippets (`buildSnippet` / `backlinkSnippet`) so all three stay in lockstep as the editor's
+ * inline markup evolves. It does NOT touch block-level or link markup (callers strip those first) and
+ * does not clip length. The emphasis strip is unconditional — a literal `*`/`_`/`` ` ``/`~` inside a
+ * path or identifier also goes — a deliberate tradeoff: these are throwaway previews, so we accept the
+ * rare garbled char over real Markdown parsing.
+ */
+export function deMarkdownInline(text: string): string {
+    return text
+        .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
+        .replace(/[*_`~]/g, '') // inline emphasis / code / strike
+        .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
+        .trim();
+}
+
+/**
  * A single flowing snippet of the body for the list preview: Markdown markers stripped,
  * newlines (and hard-break backslashes) collapsed into spaces so nothing renders literally;
  * the list cell ellipsizes the visible overflow.
  */
 export function previewFromContent(text: string): string {
-    return (
+    return deMarkdownInline(
         text
-            // Images → drop, links → keep just their text. One pass (the image is a link prefixed by `!`):
-            // `bang` is non-empty for images (drop the whole node) and empty for links (keep the text).
-            .replace(/(!?)\[([^\]]*)\]\([^)]*\)/g, (_, bang, inner: string) => (bang ? '' : inner))
+            // Images → drop entirely (no alt text in a flowing preview); links → keep just their text.
+            // Images are stripped FIRST, as their own pass, so a linked image `[![alt](img)](link)`
+            // loses the image node before the link pass runs — a single combined `(!?)\[…\]\(…\)` pass
+            // would read the outer `[…]` as a plain link and leak the raw `![alt](link)` markup.
+            .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+            .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
             .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
-            // One line-prefix pass strips ATX headings / blockquotes / bullets / ordered-list markers at
-            // the start of each line (non-overlapping — a line is at most one). Was four separate passes.
-            .replace(/^(?:\s{0,3}#{1,6}\s+|\s*>\s?|\s*[-*+]\s+|\s*\d+\.\s+)/gm, '')
+            // Strip the stacked line-start block markers — ATX heading / blockquote / bullet / ordered —
+            // in one pass. The trailing `+` peels NESTED prefixes (e.g. a blockquoted list `> - item` →
+            // `item`); a single match would leave the inner marker behind.
+            .replace(/^(?:\s{0,3}#{1,6}\s+|\s*>\s?|\s*[-*+]\s+|\s*\d+\.\s+)+/gm, '')
             .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
-            .replace(/[*_`~]/g, '') // inline emphasis / code / strike
-            .replace(/\\$/gm, '') // hard-line-break backslashes
-            .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
-            .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
-            .trim()
-            .slice(0, 140)
-    );
+            .replace(/\\$/gm, ''), // hard-line-break backslashes
+    ).slice(0, 140);
 }
 
 /**

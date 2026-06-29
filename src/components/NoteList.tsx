@@ -41,10 +41,11 @@ const NOTE_MIME = 'application/x-gravity-note';
 
 /**
  * Perf-regression seam: counts {@link NoteRow} render-body executions. A folder can hold thousands of
- * notes and the list isn't virtualized, so a note switch must NOT re-render every row — only the row
- * losing selection and the row gaining it. The memoized `NoteRow` guarantees that; this counter lets a
- * test assert it (and catch a future change that drops the memo / destabilizes a row prop). The cost is
- * one integer increment per actual row render — negligible.
+ * notes; the list is virtualized (only visible rows mount), and on top of that a note switch must NOT
+ * re-render every mounted row — only the row losing selection and the row gaining it. The memoized
+ * `NoteRow` guarantees that; this counter lets a test assert it (and catch a future change that drops
+ * the memo / destabilizes a row prop). The cost is one integer increment per actual row render —
+ * negligible.
  */
 export const noteRowRenders = {count: 0};
 
