@@ -135,11 +135,13 @@ Key modules:
 - `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle; yields a ready
   `NoteStore`
 - `src/hooks/useNotes.ts` — note list, selection, debounced autosave, and conflict detection
-- `src/hooks/useNoteNavigation.ts`, `useNoteSearch.ts`, `useShortcuts.ts` — cursor/focus flow,
-  full-text search-or-create (ranking lives in pure `src/search.ts`, fed by `NoteStore.getAll()`),
-  and global keyboard shortcuts
-- `src/components/` — `FolderGate`, `Workspace`, `TopBar`, `NoteList`, `EditorPane` (+ `NoteTitle`,
-  `NotePreview`), `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, `ErrorBoundary`
+- `src/hooks/useNoteNavigation.ts`, `useNoteSearch.ts`, `useBacklinks.ts`, `useShortcuts.ts` —
+  cursor/focus flow, full-text search-or-create and backlinks (both scoring a shared in-memory corpus
+  loaded once by `useCorpus`; ranking + `[[wiki link]]` resolution are pure `src/search.ts` /
+  `src/wikiLinks.ts`, fed by `NoteStore.getAll()`), and global keyboard shortcuts
+- `src/components/` — `FolderGate`, `Workspace`, `TopBar`, `NoteList` (virtualized), `EditorPane`
+  (+ `NoteTitle`, `NotePreview`), `BacklinksPanel`, `ConflictBanner`, `ShortcutsDialog`,
+  `ThemeSwitcher`, `ErrorBoundary`
 - `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
 
 ### Known limitations
