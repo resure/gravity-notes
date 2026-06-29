@@ -14,7 +14,7 @@ export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
     return (
         // The app shell already locks scroll (index.css overflow:hidden), so the modal's own
         // body-scroll-lock is redundant — and toggling it on open repaints the whole page (flicker).
-        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock>
+        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock contentOverflow="auto">
             <Dialog.Header caption="Keyboard shortcuts" />
             <Dialog.Body>
                 <div className="shortcuts-dialog">
