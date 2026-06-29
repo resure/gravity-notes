@@ -72,7 +72,16 @@ Key modules:
   `listAttachments`/`removeAttachment`), and an optional desktop-only `reveal(relPath)`.
 - `src/search.ts` — pure full-text ranking (no I/O, no React): `tokenizeQuery`, `scoreNoteText`
   (multi-term AND; title ≫ body, word-boundary/prefix/phrase boosts), `buildSnippet`, `searchNotes`.
-  The corpus (id → body) is loaded above it and passed in, so it stays trivially unit-testable.
+  The corpus (id → body, plus a pre-lowercased `lowerById` so a big folder isn't re-lowercased on
+  every keystroke) is loaded above it by `useCorpus` and passed in, so it stays trivially unit-testable.
+- `src/wikiLinks.ts` — pure `[[wiki link]]` + backlink helpers (no I/O, no React; sibling to
+  `search.ts`): `extractWikiLinks`, `resolveWikiLink` (match by title case-insensitively, or an explicit
+  `Folder/Note` path; `|alias`/`#heading` ignored; same-folder ≫ shallowest ≫ lexicographic tiebreak),
+  `suggestWikiTargets` (the `[[`-autocomplete ranking). Backlinks invert in **two stages** so a corpus
+  change stays cheap: `buildBacklinkInversion` (resolve + group, NO snippets, once per graph change)
+  then `materializeBacklinks` (slice context snippets + sort for ONE bucket, lazily — only the open
+  note's). `buildBacklinks`/`buildBacklinkIndex` are the eager forms kept for direct/test callers. Notes
+  keep the literal `[[Title]]` on disk (Obsidian-compatible round-trip).
 - `src/tree.ts` — pure tree shaping (no I/O, no React): `buildFolderTree` / `notesInFolder` /
   `buildMoveTargets` turn notes + folders + metadata into the `FolderRow[]` the folder rail renders
   (and the move-to picker), encoding the per-level order [pinned folders, folders, pinned notes, notes]
@@ -106,7 +115,10 @@ Key modules:
   paths — folders are pinnable too.
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
-  change/unmount. The stored Markdown always keeps the root-relative ref, never a blob URL.
+  change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a
+  visible image's URL (subscribed entries are never evicted) and get notified if it's re-seeded; `peek`
+  is pure (no LRU touch), `resolve` touches. The stored Markdown always keeps the root-relative ref,
+  never a blob URL.
 - `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle (state machine:
   `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore`. Detects the Tauri
   shell (`__TAURI_INTERNALS__`): there `pickFolder()` uses the native dialog and the `tauri-fs`
@@ -121,22 +133,35 @@ Key modules:
   `visibilitychange` / `beforeunload`; `open()` is guarded by a generation counter (wrong-note race) and
   short-circuits the already-open note (no remount). Exposes `flushPending()` (teardown) and
   `refresh()` (re-list after import). Takes a `NoteStore` — agnostic to which backend it is.
-- `src/hooks/useNoteNavigation.ts` / `useNoteSearch.ts` / `useShortcuts.ts` — list cursor + focus ladder
-  (browse/commit/escape), full-text search-or-create, and the global keyboard shortcuts (driven by the
-  `SHORTCUTS` descriptor in `src/shortcuts.ts`, which the help dialog also renders from). Punctuation
-  chords match by `event.code` (e.g. `⌘⇧;` → `Semicolon`), since the shifted `event.key` differs.
+- `src/hooks/useCorpus.ts` — the **shared body corpus**, loaded once (lazily, while a query is live or a
+  note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
+  desktop) and every body is held once. Derives `contentById` (raw, for snippets), `lowerById`
+  (pre-lowercased), and `linksById` (`[[…]]` pre-extracted). Refreshes **incrementally** (re-reads only
+  notes whose `updatedAt` changed) and keeps `linksById`'s identity stable across a non-link edit, so a
+  plain autosave doesn't rebuild the backlink graph. Dropped on backend change.
+- `src/hooks/useNoteNavigation.ts` / `useNoteSearch.ts` / `useBacklinks.ts` / `useShortcuts.ts` — list
+  cursor + focus ladder (browse/commit/escape); search-or-create scoring against the shared corpus; the
+  open note's backlinks (invert once via `useCorpus.linksById`, then snippet + sort lazily per open
+  note); and the global keyboard shortcuts (driven by the `SHORTCUTS` descriptor in `src/shortcuts.ts`,
+  which the help dialog also renders from). Punctuation chords match by `event.code` (e.g. `⌘⇧;` →
+  `Semicolon`), since the shifted `event.key` differs. `useDebouncedValue` debounces the query (120 ms)
+  only above a 500-note vault (wired in `Workspace`).
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate), `Workspace`
   (top bar + layout + nav wiring; takes the `NoteStore`, owns export/import), `TopBar` (nvALT search
   box + storage menu [export / import / manage attachments / change storage] + theme/help controls +
   save-status dot), `FolderRail` (collapsible nested-folder tree left of the list — select/scope,
   drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
-  sort), `MoveToDialog` (the ⌘⇧M move-to-folder picker), `EditorPane` (wraps the Gravity markdown
+  sort; **virtualized** via `@tanstack/react-virtual`, with a `rangeExtractor` that keeps the
+  keyboard-focused row mounted), `MoveToDialog` (the ⌘⇧M move-to-folder picker), `EditorPane` (wraps the Gravity markdown
   editor; re-created per editing session via a stable `useNotes.sessionId`, so a rename doesn't remount
   it) with `NoteTitle` and `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
-  delete + full-size view), `Lightbox` (shared full-size image overlay with pinch/scroll zoom +
-  drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
-  `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), `ConflictBanner`,
-  `ShortcutsDialog`, `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
+  delete + full-size view; virtualized list), `Lightbox` (shared full-size image overlay with
+  pinch/scroll zoom + drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
+  `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), the `[[wiki link]]` editor
+  pieces (`editor/wikiLinkExtension` — a mark with `escape: false` so it round-trips — plus the
+  `WikiLinkSuggest` `[[` picker and `WikiLinkTooltip`), `BacklinksPanel` (the "linked references" list
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, and `ErrorBoundary` (root
+  render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`.
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
