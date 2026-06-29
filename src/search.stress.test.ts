@@ -99,4 +99,55 @@ describe('searchNotes — large-corpus stress', () => {
         // And the whole burst must stay comfortably interactive even at this scale.
         expect(indexed).toBeLessThan(1500);
     });
+
+    it(`caps the body-occurrence count so a term that repeats is scored in one short walk`, () => {
+        // The scorer only uses min(count-1, BODY_FREQ_CAP), so it must stop counting past the cap.
+        // Focused corpus: each note repeats the term many times. An UNcapped tally would walk every
+        // occurrence; the capped walk stops at BODY_FREQ_CAP+1. This is the regression guard — it
+        // fails loudly if the cap is removed (the uncapped pass balloons with REPEATS × N).
+        const TERM = 'kubernetes';
+        const REPEATS = 400;
+        const N = 800;
+        const body = `${TERM} `.repeat(REPEATS);
+        const dense: NoteMeta[] = [];
+        const denseContent = new Map<string, string>();
+        const denseLower = new Map<string, string>();
+        for (let i = 0; i < N; i++) {
+            const id = `D/Note ${i}.md`;
+            dense.push({id, title: `Note ${i}`, updatedAt: N - i});
+            denseContent.set(id, body);
+            denseLower.set(id, body);
+        }
+
+        // Reference: a deliberately UNcapped body-count pass over the same corpus (the work the cap
+        // removes). Only the body walk differs from the real scorer.
+        const tUncap = performance.now();
+        for (const note of dense) {
+            const b = denseLower.get(note.id) ?? body;
+            let from = 0;
+            for (;;) {
+                const i = b.indexOf(TERM, from);
+                if (i === -1) break;
+                from = i + TERM.length;
+            }
+        }
+        const uncappedMs = performance.now() - tUncap;
+
+        const tCap = performance.now();
+        const res = searchNotes(dense, denseContent, TERM, denseLower);
+        const cappedMs = performance.now() - tCap;
+
+        // eslint-disable-next-line no-console
+        console.log(
+            `[stress] repeat-term count — uncapped ${uncappedMs.toFixed(1)}ms vs capped ` +
+                `${cappedMs.toFixed(1)}ms (${(uncappedMs / Math.max(cappedMs, 0.01)).toFixed(2)}× faster)`,
+        );
+        // Every note matches (the term is throughout each body); ranking correctness is covered by
+        // search.test.ts — here we guard that the cap keeps the pass cheap despite N × REPEATS hits.
+        expect(res).toHaveLength(N);
+        expect(cappedMs).toBeLessThan(uncappedMs);
+        // Absolute budget: an uncapped tally of N×REPEATS occurrences blows past this; the capped walk
+        // (≈ BODY_FREQ_CAP+1 advances per note) stays well under it.
+        expect(cappedMs).toBeLessThan(50);
+    });
 });

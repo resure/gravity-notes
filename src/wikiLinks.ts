@@ -206,6 +206,18 @@ export interface BacklinkSource {
     contexts: string[];
 }
 
+/**
+ * One linking note in the (snippet-free) backlink inversion: the note plus the raw `[[…]]` refs in it
+ * that resolve to the target. Holds link positions, not snippet strings — snippets are sliced lazily
+ * in {@link materializeBacklinks} only for the target a view actually asks for, so a corpus change
+ * never pays to snippet+sort every bucket (the dominant cost of the old eager build).
+ */
+export interface BacklinkBucketEntry {
+    note: NoteMeta;
+    /** The raw wiki-link refs in `note` that resolve to this bucket's target (positions preserved). */
+    links: WikiLinkRef[];
+}
+
 /** Sort backlink sources newest-updated first, then by title, then id (stable). */
 function sortBacklinkSources(sources: BacklinkSource[]): void {
     sources.sort(
@@ -217,10 +229,73 @@ function sortBacklinkSources(sources: BacklinkSource[]): void {
 }
 
 /**
+ * Invert the link graph in one pass — WITHOUT building snippet strings or sorting. Returns
+ * `targetId → the linking notes` (each carrying the raw `[[…]]` refs that point at it). This is the
+ * cheap part (resolve + group); the expensive part (slicing a context snippet per link, per bucket)
+ * is deferred to {@link materializeBacklinks}, called only for the open note's bucket.
+ *
+ * Build this ONCE per corpus change (it depends only on the notes + their links, not which note is
+ * open); a note's backlinks are then an O(1) `Map.get` + a cheap snippet pass on open. `linksById` is
+ * the precomputed `id → extractWikiLinks(body)` index; omit it and links are extracted here on the fly
+ * (direct callers/tests), since this inversion no longer takes the bodies.
+ */
+export function buildBacklinkInversion(
+    notes: NoteMeta[],
+    linksById?: Map<string, WikiLinkRef[]>,
+): Map<string, BacklinkBucketEntry[]> {
+    // Build the resolution index once, not per link — keeps the whole pass O(N·L), not O(N²·L).
+    const index = buildResolveIndex(notes);
+    const map = new Map<string, BacklinkBucketEntry[]>();
+    for (const note of notes) {
+        // Prefer the precomputed links; fall back to extracting from the body when no index is given.
+        const links = linksById?.get(note.id);
+        if (!links || links.length === 0) continue;
+        // Group this note's links by the target they resolve to, so a note linking to the same target
+        // twice contributes one bucket entry carrying both raw refs.
+        let perTarget: Map<string, WikiLinkRef[]> | null = null;
+        for (const link of links) {
+            const target = resolveWith(link.target, note.id, index);
+            if (!target || target === note.id) continue; // a note linking to itself isn't a backlink
+            perTarget ??= new Map();
+            const existing = perTarget.get(target);
+            if (existing) existing.push(link);
+            else perTarget.set(target, [link]);
+        }
+        if (!perTarget) continue;
+        for (const [target, refs] of perTarget) {
+            const bucket = map.get(target);
+            if (bucket) bucket.push({note, links: refs});
+            else map.set(target, [{note, links: refs}]);
+        }
+    }
+    // Intentionally NO snippet building / per-bucket sort here — deferred to materializeBacklinks.
+    return map;
+}
+
+/**
+ * Slice a context snippet per link + sort, for ONE bucket — the snippet/sort work the old eager build
+ * did for *every* bucket up front. Called only for the open note's bucket (usually a handful of
+ * sources), so it's negligible even though it touches each linking note's body. Returns a fresh,
+ * sorted `BacklinkSource[]`; an absent/empty bucket yields `[]`.
+ */
+export function materializeBacklinks(
+    bucket: ReadonlyArray<BacklinkBucketEntry> | undefined,
+    corpus: Map<string, string>,
+): BacklinkSource[] {
+    if (!bucket || bucket.length === 0) return [];
+    const sources = bucket.map(({note, links}) => {
+        const body = corpus.get(note.id) ?? '';
+        return {note, contexts: links.map((link) => backlinkSnippet(body, link))};
+    });
+    sortBacklinkSources(sources);
+    return sources;
+}
+
+/**
  * Invert the whole link graph in one pass: `targetId → the notes that link to it` (each with the
- * context around every such link), buckets pre-sorted. Build this ONCE per corpus (it depends only on
- * the notes + their bodies, not on which note is open), then a note's backlinks are an O(1) `Map.get`
- * on open — instead of re-scanning every note's links on each switch (the cost it replaces).
+ * context around every such link), buckets pre-sorted. The eager, snippet-building form kept for
+ * direct/test callers; the hot path (`useBacklinks`) uses {@link buildBacklinkInversion} +
+ * {@link materializeBacklinks} so only the viewed bucket pays for snippets.
  *
  * `linksById` is an optional precomputed index of `id → extractWikiLinks(body)`. When the caller keeps
  * a warm corpus (see `useCorpus`), pass it so each note's links aren't re-extracted with the link
@@ -231,34 +306,12 @@ export function buildBacklinkIndex(
     corpus: Map<string, string>,
     linksById?: Map<string, WikiLinkRef[]>,
 ): Map<string, BacklinkSource[]> {
-    // Build the resolution index once, not per link — keeps the whole pass O(N·L), not O(N²·L).
-    const index = buildResolveIndex(notes);
+    const inversion = buildBacklinkInversion(
+        notes,
+        linksById ?? new Map([...corpus].map(([id, body]) => [id, extractWikiLinks(body)])),
+    );
     const map = new Map<string, BacklinkSource[]>();
-    for (const note of notes) {
-        const body = corpus.get(note.id);
-        if (!body) continue;
-        // Prefer the precomputed links; fall back to extracting from the body when no index is given.
-        const links = linksById?.get(note.id) ?? extractWikiLinks(body);
-        // Group this note's links by the target they resolve to, so a note linking to the same target
-        // twice contributes one source row carrying both context snippets.
-        let perTarget: Map<string, string[]> | null = null;
-        for (const link of links) {
-            const target = resolveWith(link.target, note.id, index);
-            if (!target || target === note.id) continue; // a note linking to itself isn't a backlink
-            perTarget ??= new Map();
-            const existing = perTarget.get(target);
-            const snippet = backlinkSnippet(body, link);
-            if (existing) existing.push(snippet);
-            else perTarget.set(target, [snippet]);
-        }
-        if (!perTarget) continue;
-        for (const [target, contexts] of perTarget) {
-            const bucket = map.get(target);
-            if (bucket) bucket.push({note, contexts});
-            else map.set(target, [{note, contexts}]);
-        }
-    }
-    for (const bucket of map.values()) sortBacklinkSources(bucket);
+    for (const [target, bucket] of inversion) map.set(target, materializeBacklinks(bucket, corpus));
     return map;
 }
 

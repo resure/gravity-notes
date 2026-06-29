@@ -94,4 +94,62 @@ describe('useCorpus — loading lifecycle', () => {
         expect(result.current.loading).toBe(true);
         await waitFor(() => expect(result.current.loading).toBe(false));
     });
+
+    it('keeps linksById identity across a position-preserving edit (backlinks skip a rebuild)', async () => {
+        // The link index is held separately so its object identity can stay stable across an edit that
+        // doesn't change any [[…]] (target or position). A backlinks inversion keyed on linksById then
+        // bails out instead of rebuilding the whole graph on every autosave.
+        const bodies: Record<string, string> = {'Alpha.md': 'see [[Beta]] please'};
+        const store = makeStore(bodies);
+        const {result, rerender} = renderHook(({notes}) => useCorpus(store, notes, true), {
+            initialProps: {notes: NOTES},
+        });
+        await waitFor(() => expect(store.getAll).toHaveBeenCalledTimes(1));
+        await waitFor(() =>
+            expect(result.current.contentById.get('Alpha.md')).toBe('see [[Beta]] please'),
+        );
+        const linksBefore = result.current.linksById;
+        const contentBefore = result.current.contentById;
+        expect(linksBefore.get('Alpha.md')?.map((l) => l.target)).toEqual(['Beta']);
+
+        // Edit Alpha's body (mutating the live bodies the store reads) + bump updatedAt, keeping
+        // [[Beta]] at the same offset so neither its target nor its position changes.
+        bodies['Alpha.md'] = 'see [[Beta]] and more prose now';
+        const bumped = NOTES.map((n) => (n.id === 'Alpha.md' ? {...n, updatedAt: 99} : n));
+        rerender({notes: bumped});
+        await waitFor(() => expect(store.get).toHaveBeenCalledWith('Alpha.md'));
+        await waitFor(() =>
+            expect(result.current.contentById.get('Alpha.md')).toContain('more prose'),
+        );
+
+        // Content changed identity (search must re-score), but the link index kept its identity.
+        expect(result.current.contentById).not.toBe(contentBefore);
+        expect(result.current.linksById).toBe(linksBefore);
+        expect(result.current.linksById.get('Alpha.md')?.map((l) => l.target)).toEqual(['Beta']);
+    });
+
+    it('takes a new linksById identity when a note acquires a new [[…]] link', async () => {
+        const bodies: Record<string, string> = {'Alpha.md': 'see [[Beta]]'};
+        const store = makeStore(bodies);
+        const {result, rerender} = renderHook(({notes}) => useCorpus(store, notes, true), {
+            initialProps: {notes: NOTES},
+        });
+        await waitFor(() => expect(store.getAll).toHaveBeenCalledTimes(1));
+        await waitFor(() =>
+            expect(result.current.contentById.get('Alpha.md')).toBe('see [[Beta]]'),
+        );
+        const linksBefore = result.current.linksById;
+
+        bodies['Alpha.md'] = 'see [[Beta]] and [[Gamma beta]]';
+        const bumped = NOTES.map((n) => (n.id === 'Alpha.md' ? {...n, updatedAt: 99} : n));
+        rerender({notes: bumped});
+        await waitFor(() =>
+            expect(result.current.linksById.get('Alpha.md')?.map((l) => l.target)).toEqual([
+                'Beta',
+                'Gamma beta',
+            ]),
+        );
+        // The graph changed → a fresh links map (new identity), so consumers rebuild.
+        expect(result.current.linksById).not.toBe(linksBefore);
+    });
 });
