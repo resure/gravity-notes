@@ -61,7 +61,13 @@ export function MoveToDialog({
     onMove,
     onClose,
 }: MoveToDialogProps) {
-    const currentFolder = note ? dirname(note.id) : '';
+    // Hold the last note through the Dialog's ~150ms close animation: the parent clears `note` on
+    // move/cancel, so reading off it directly would blank the header and reshape the tree mid-close.
+    const lastNoteRef = useRef(note);
+    if (note) lastNoteRef.current = note;
+    const noteView = note ?? lastNoteRef.current;
+
+    const currentFolder = noteView ? dirname(noteView.id) : '';
     const [query, setQuery] = useState('');
     // The picker keeps its own collapse state — opening it must not touch the rail's.
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -243,7 +249,7 @@ export function MoveToDialog({
 
     return (
         <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock>
-            <Dialog.Header caption={note ? `Move “${note.title}” to…` : 'Move'} />
+            <Dialog.Header caption={noteView ? `Move “${noteView.title}” to…` : 'Move'} />
             <Dialog.Body>
                 <TextInput
                     controlRef={inputRef}
