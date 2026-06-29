@@ -852,9 +852,9 @@ export function Workspace({
                                 <div className="workspace__panes">
                                     <EditorPane
                                         ref={editorRef}
-                                        key={notes.sessionId}
                                         note={notes.note}
                                         autofocus={nav.autofocus}
+                                        sessionId={notes.sessionId}
                                         preview={previewMode}
                                         onChange={notes.edit}
                                         onRename={handleEditorRename}

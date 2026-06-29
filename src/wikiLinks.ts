@@ -11,7 +11,7 @@
  * so it round-trips through any Markdown tool.
  */
 
-import {MD_EXT, dirname, titleFromFileName} from './storage/noteText';
+import {MD_EXT, deMarkdownInline, dirname, titleFromFileName} from './storage/noteText';
 import type {NoteMeta} from './storage/types';
 
 /** One `[[target]]` occurrence found in a note body. */
@@ -136,16 +136,9 @@ function backlinkSnippet(body: string, link: WikiLinkRef): string {
         const space = body.lastIndexOf(' ', end);
         if (space > matchEnd) end = space;
     }
-    const cleaned = body
-        .slice(start, end)
-        .replace(WIKI_LINK_RE, (_m, inner: string) => normalizeTarget(inner)) // [[x|y]] → x
-        .replace(/&nbsp;/g, ' ') // preserved empty-row markers (see EditorPane preserveEmptyRows)
-        // Strips emphasis/code/strike markers unconditionally — a known cosmetic tradeoff: a literal
-        // `*`/`_`/`` ` ``/`~` inside an identifier or path in the context also goes, but this is a
-        // throwaway one-line preview, so we accept the occasional garbled char over real parsing.
-        .replace(/[*_`~]/g, '') // inline emphasis / code / strike markers
-        .replace(/\s+/g, ' ') // flow newlines + indentation into single spaces
-        .trim();
+    const cleaned = deMarkdownInline(
+        body.slice(start, end).replace(WIKI_LINK_RE, (_m, inner: string) => normalizeTarget(inner)), // [[x|y]] → x
+    );
     return (start > 0 ? '…' : '') + cleaned + (end < body.length ? '…' : '');
 }
 

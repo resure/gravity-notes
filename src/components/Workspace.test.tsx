@@ -10,6 +10,7 @@ vi.mock('@gravity-ui/markdown-editor', () => ({
         setEditorMode: vi.fn(),
         focus: vi.fn(),
         moveCursor: vi.fn(),
+        replace: vi.fn(),
         getValue: () => '',
         on: () => {},
         off: () => {},
