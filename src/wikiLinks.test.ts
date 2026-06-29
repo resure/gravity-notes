@@ -1,7 +1,14 @@
 import {describe, expect, it} from 'vitest';
 
 import type {NoteMeta} from './storage/types';
-import {buildBacklinks, extractWikiLinks, resolveWikiLink, suggestWikiTargets} from './wikiLinks';
+import {
+    buildBacklinkInversion,
+    buildBacklinks,
+    extractWikiLinks,
+    materializeBacklinks,
+    resolveWikiLink,
+    suggestWikiTargets,
+} from './wikiLinks';
 
 /** Build a NoteMeta list from ids (title derived from the leaf), with descending updatedAt. */
 function notesFrom(ids: string[]): NoteMeta[] {
@@ -127,6 +134,29 @@ describe('buildBacklinks', () => {
         expect(buildBacklinks('Roadmap.md', notes, corpus, stale).map((b) => b.note.id)).toEqual([
             'Work/Plan.md',
         ]);
+    });
+
+    it('materializeBacklinks sorts/displays by the LIVE note meta when supplied (stale inversion)', () => {
+        // The inversion caches `note` refs; a prose-only edit bumps a linker's updatedAt without
+        // rebuilding it. Passing the current meta must re-sort by the live updatedAt so the just-edited
+        // source floats up — rather than ordering by the frozen pre-edit value.
+        const inversion = buildBacklinkInversion(
+            notes,
+            new Map([...corpus].map(([id, body]) => [id, extractWikiLinks(body)])),
+        );
+        const bucket = inversion.get('Roadmap.md');
+        // Default (cached) order: Ideas (999) before Work/Plan (998).
+        expect(materializeBacklinks(bucket, corpus).map((b) => b.note.id)).toEqual([
+            'Ideas.md',
+            'Work/Plan.md',
+        ]);
+        // Live meta bumps Work/Plan above Ideas → the sort + displayed meta follow the fresh updatedAt.
+        const fresh = new Map(
+            notes.map((n) => [n.id, n.id === 'Work/Plan.md' ? {...n, updatedAt: 5000} : n]),
+        );
+        const sorted = materializeBacklinks(bucket, corpus, fresh);
+        expect(sorted.map((b) => b.note.id)).toEqual(['Work/Plan.md', 'Ideas.md']);
+        expect(sorted[0].note.updatedAt).toBe(5000); // shows the live meta, not the cached ref
     });
 });
 

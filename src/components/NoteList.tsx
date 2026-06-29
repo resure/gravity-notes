@@ -25,7 +25,7 @@ import {
     TrashBin,
 } from '@gravity-ui/icons';
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
-import {useVirtualizer} from '@tanstack/react-virtual';
+import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {dirname, formatCrumb} from '../storage/noteText';
@@ -346,6 +346,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     // The note row that is tabbable: the selected one if visible, else the first note.
     const focusableId =
         selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
+    const focusableIndex = focusableId ? noteIds.indexOf(focusableId) : -1;
 
     // Live snapshot read by the stable row callbacks below — so those callbacks never close over a
     // stale value yet keep a constant identity (the key to NoteRow's memo bailing out for untouched
@@ -384,6 +385,17 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         estimateSize: () => 56,
         overscan: 8,
         getItemKey: (index) => notes[index].id,
+        // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
+        // so the list always has a keyboard-focusable element and focusing it never needs an async
+        // scroll-then-mount. A fresh closure per render keeps the forced index current.
+        rangeExtractor: (range) => {
+            const indexes = defaultRangeExtractor(range);
+            if (focusableIndex >= 0 && !indexes.includes(focusableIndex)) {
+                indexes.push(focusableIndex);
+                indexes.sort((a, b) => a - b);
+            }
+            return indexes;
+        },
     });
 
     // A row to focus once it has been scrolled into the virtual window (set by focusRowById below).
@@ -414,10 +426,14 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         const id = pendingFocusRef.current;
         if (!id) return;
         const el = itemRefs.current.get(id);
-        if (el) {
-            el.focus();
-            pendingFocusRef.current = null;
-        }
+        if (!el) return; // not mounted yet — wait for the next render after scrollToIndex
+        // Only claim focus if it's still "loose" (on <body>, or already inside this list). If the user
+        // has since clicked/typed into the search box (or anywhere outside the list) while the row was
+        // scrolling in, don't yank it back — but consume the request either way so it can't linger and
+        // steal focus on some later unrelated render.
+        const active = document.activeElement;
+        if (!active || active === document.body || scrollRef.current?.contains(active)) el.focus();
+        pendingFocusRef.current = null;
     });
 
     // Focus the rename field when inline editing begins.

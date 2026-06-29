@@ -754,6 +754,9 @@ export function Workspace({
                     searchInputRef={searchInputRef}
                     notes={filteredNotes}
                     searchLoading={searchLoading}
+                    // On a big vault the box shows the live `query` but `notes`/`searchLoading` lag by
+                    // the debounce; flag that gap so the keyboard model doesn't act on a stale list.
+                    searchPending={query !== debouncedQuery}
                     selectedId={nav.selectedId}
                     onCommit={nav.commit}
                     onCreate={(title) => handleCreate(title, '')}

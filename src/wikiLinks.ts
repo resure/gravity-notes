@@ -277,15 +277,21 @@ export function buildBacklinkInversion(
  * did for *every* bucket up front. Called only for the open note's bucket (usually a handful of
  * sources), so it's negligible even though it touches each linking note's body. Returns a fresh,
  * sorted `BacklinkSource[]`; an absent/empty bucket yields `[]`.
+ *
+ * `notesById` (optional) maps id → the CURRENT note meta. The inversion is cached across plain edits,
+ * so the `note` it stored can carry a stale `updatedAt`/title after a prose-only save; pass the live
+ * map so display + the newest-first sort use the current meta without rebuilding the whole inversion.
  */
 export function materializeBacklinks(
     bucket: ReadonlyArray<BacklinkBucketEntry> | undefined,
     corpus: Map<string, string>,
+    notesById?: Map<string, NoteMeta>,
 ): BacklinkSource[] {
     if (!bucket || bucket.length === 0) return [];
     const sources = bucket.map(({note, links}) => {
+        const fresh = notesById?.get(note.id) ?? note; // live meta when available (else the cached ref)
         const body = corpus.get(note.id) ?? '';
-        return {note, contexts: links.map((link) => backlinkSnippet(body, link))};
+        return {note: fresh, contexts: links.map((link) => backlinkSnippet(body, link))};
     });
     sortBacklinkSources(sources);
     return sources;

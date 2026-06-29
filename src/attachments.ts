@@ -13,8 +13,9 @@ import type {NoteStore} from './storage/types';
  * Default LRU byte budget for resolved object URLs. Browsing image-heavy notes accumulates decoded
  * `blob:` URLs (the bytes stay alive until revoked); without a cap a long session over a large media
  * vault grows unbounded. 256 MB comfortably holds the open note's images plus a generous working set,
- * so eviction only fires in genuinely heavy sessions — and never touches an on-screen image (see
- * {@link AttachmentUrlCache.evictToCap}).
+ * so eviction only fires in genuinely heavy sessions — and never revokes an on-screen image, since
+ * every display surface subscribes to the refs it shows and {@link AttachmentUrlCache.evictToCap}
+ * skips subscribed refs (making the budget a soft target — see that method).
  */
 const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
 
@@ -76,12 +77,13 @@ export class AttachmentUrlCache {
         };
     }
 
-    /** Synchronously return an already-resolved object URL for `ref`, or `undefined` if not yet read. */
+    /**
+     * Synchronously return an already-resolved object URL for `ref`, or `undefined` if not yet read.
+     * A pure read with no side effect (it's called during render): an on-screen image is kept off the
+     * LRU eviction front by {@link subscribe}, not by peeking it.
+     */
     peek(ref: string): string | undefined {
-        const entry = this.urls.get(ref);
-        if (!entry) return undefined;
-        this.touch(ref); // about to be displayed → keep it off the LRU eviction front
-        return entry.url;
+        return this.urls.get(ref)?.url;
     }
 
     /** Read `ref`'s bytes (once) and return a cached object URL for display. */
@@ -177,9 +179,14 @@ export class AttachmentUrlCache {
 
     /**
      * Revoke least-recently-used object URLs until back under the byte budget. Skips `keepRef` (the one
-     * just added) and any ref with a live subscriber — a mounted image view (the open note's NodeViews)
-     * subscribes, so its URL is never revoked out from under a visible <img>. Map iteration order is
+     * just added) and any ref with a live subscriber — every on-screen surface (the editor's image
+     * NodeViews, the preview pane, the attachment manager's thumbnails, the lightbox) subscribes to the
+     * refs it shows, so a visible <img>'s URL is never revoked out from under it. Map iteration order is
      * insertion/access order, so this walks oldest-first.
+     *
+     * The budget is therefore a soft target, not a hard ceiling: if everything still over budget is
+     * protected (e.g. one open note whose images alone exceed `maxBytes`), the loop frees nothing and
+     * `bytes` stays over — deliberately, since keeping visible images intact beats honoring the cap.
      */
     private evictToCap(keepRef?: string): void {
         if (this.bytes <= this.maxBytes) return;

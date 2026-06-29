@@ -1,6 +1,6 @@
 import {useMemo} from 'react';
 
-import {searchNotes, tokenizeQuery} from '../search';
+import {searchNotes} from '../search';
 import type {NoteMeta} from '../storage/types';
 
 import type {Corpus} from './useCorpus';
@@ -8,8 +8,6 @@ import type {Corpus} from './useCorpus';
 export interface UseNoteSearch {
     /** `notes` filtered + ranked by `query`; the original order when the query is empty. */
     filteredNotes: NoteMeta[];
-    /** Lowercased query terms, for match highlighting. */
-    terms: string[];
     /** Note id → body snippet around the match, when the match is in the body. */
     snippetById: Map<string, string>;
     /**
@@ -40,8 +38,6 @@ export function useNoteSearch(notes: NoteMeta[], query: string, corpus: Corpus):
         [results, notes],
     );
 
-    const terms = useMemo(() => tokenizeQuery(query), [query]);
-
     const snippetById = useMemo(() => {
         const map = new Map<string, string>();
         if (results) {
@@ -51,5 +47,5 @@ export function useNoteSearch(notes: NoteMeta[], query: string, corpus: Corpus):
     }, [results]);
 
     // Title-only results until the corpus reflects the current list (then body matches fold in).
-    return {filteredNotes, terms, snippetById, loading: active && corpus.loading};
+    return {filteredNotes, snippetById, loading: active && corpus.loading};
 }

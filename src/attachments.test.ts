@@ -164,7 +164,7 @@ describe('AttachmentUrlCache', () => {
         const cache = new AttachmentUrlCache(store, 40); // budget fits 2 refs (34 B), not 3 (51 B)
         const a = await cache.resolve('Attachments/a.png');
         const b = await cache.resolve('Attachments/b.png');
-        cache.peek('Attachments/a.png'); // touch a → b is now the least-recently-used
+        await cache.resolve('Attachments/a.png'); // re-resolve touches a → b is the least-recently-used
         const c = await cache.resolve('Attachments/c.png'); // 51 B > 40 → evict the LRU (b)
 
         expect(revoked).toEqual([b]); // exactly the LRU URL was revoked
