@@ -41,9 +41,20 @@ fi
 echo "==> Building, signing, and notarizing the app ..."
 npm run tauri:build -- "$@"
 
+# --- rename the DMG to a space-free artifact name ----------------------------
+# productName stays "Gravity Notes" (the app's display name), but the DMG file
+# should have no spaces, so Tauri's "Gravity Notes_<v>_<arch>.dmg" is renamed to
+# "Gravity_Notes_<v>_<arch>.dmg". Done before notarizing so the ticket staples
+# onto the final name (renaming a stapled DMG would be fine too — notarization
+# travels with the file's content, not its name).
+RAW_DMG="$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
+DMG="$(dirname "$RAW_DMG")/$(basename "$RAW_DMG" | tr ' ' '_')"
+if [[ "$RAW_DMG" != "$DMG" ]]; then
+  mv -f "$RAW_DMG" "$DMG"
+fi
+
 # --- notarize + staple the DMG ----------------------------------------------
 # Tauri staples the .app but not the DMG container, so do that here too.
-DMG="$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
 echo "==> Notarizing the DMG: $DMG"
 xcrun notarytool submit "$DMG" \
   --key "$APPLE_API_KEY_PATH" \
