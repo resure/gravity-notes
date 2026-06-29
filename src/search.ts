@@ -181,11 +181,17 @@ export interface NoteSearchResult {
  * whose body isn't loaded yet match on title alone (so results show instantly, then refine once the
  * corpus arrives). Returns matches only, ordered by score, then most-recently-updated, then title.
  * An empty query returns every note in its original order, unscored.
+ *
+ * `lowerById` is an optional precomputed index of `id → body.toLowerCase()`. When the caller keeps
+ * a warm search index (see `useNoteSearch`), pass it so a big corpus isn't re-lowercased on every
+ * keystroke — the single biggest avoidable cost when searching a large folder. Omit it and the body
+ * is lowercased on the fly, so direct/unindexed callers still work unchanged.
  */
 export function searchNotes(
     notes: NoteMeta[],
     contentById: Map<string, string>,
     query: string,
+    lowerById?: Map<string, string>,
 ): NoteSearchResult[] {
     const terms = tokenizeQuery(query);
     if (terms.length === 0) return notes.map((note) => ({note, score: 0}));
@@ -195,7 +201,9 @@ export function searchNotes(
     const results: NoteSearchResult[] = [];
     for (const note of notes) {
         const content = contentById.get(note.id) ?? '';
-        const lowerBody = content.toLowerCase(); // lowercased once, shared by scoring + snippet
+        // Prefer the precomputed lowercased body; fall back to lowercasing on the fly when no index
+        // was supplied. Shared by scoring + snippet so it's only computed once either way.
+        const lowerBody = lowerById?.get(note.id) ?? content.toLowerCase();
         const scored = scoreNoteText(note.title.toLowerCase(), lowerBody, terms, phrase, usePhrase);
         if (!scored) continue;
         const snippet = scored.bodyMatched ? buildSnippet(content, lowerBody, terms) : undefined;

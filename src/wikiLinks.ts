@@ -210,11 +210,16 @@ export interface BacklinkSource {
  * Every note (other than the target itself) whose body links to `targetId` via a `[[wiki link]]`,
  * with the context around each link. `corpus` maps note id → body. Ordered most-recently-updated
  * first, then by title, then id (stable).
+ *
+ * `linksById` is an optional precomputed index of `id → extractWikiLinks(body)`. When the caller
+ * keeps a warm corpus (see `useCorpus`), pass it so each note's links aren't re-extracted with the
+ * link regex on every open. Omit it and links are extracted on the fly, so direct callers/tests work.
  */
 export function buildBacklinks(
     targetId: string,
     notes: NoteMeta[],
     corpus: Map<string, string>,
+    linksById?: Map<string, WikiLinkRef[]>,
 ): BacklinkSource[] {
     // Build the resolution index once, not per link — keeps the whole scan O(N·L) instead of O(N²·L).
     const index = buildResolveIndex(notes);
@@ -224,7 +229,9 @@ export function buildBacklinks(
         const body = corpus.get(note.id);
         if (!body) continue;
         const contexts: string[] = [];
-        for (const link of extractWikiLinks(body)) {
+        // Prefer the precomputed links; fall back to extracting from the body when no index is given.
+        const links = linksById?.get(note.id) ?? extractWikiLinks(body);
+        for (const link of links) {
             if (resolveWith(link.target, note.id, index) === targetId) {
                 contexts.push(backlinkSnippet(body, link));
             }

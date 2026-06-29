@@ -35,6 +35,14 @@ export interface UseNoteNavigation {
 }
 
 /**
+ * Coalesce window for preview-opens while browsing. A single (or slow) arrow press still previews
+ * instantly — the leading edge fires `open()` immediately. Only presses arriving *within* this window
+ * (a held arrow key flying down a long list) are coalesced, so the heavy editor isn't remounted (and
+ * the note re-read from disk) once per keystroke; the note you land on opens when the burst settles.
+ */
+const BROWSE_COALESCE_MS = 100;
+
+/**
  * Keyboard-first browse/edit navigation for the single-pane note app. Owns the list
  * cursor (`selectedId`) and previews the highlighted note in the editor immediately,
  * without stealing focus. `commit` focuses the editor; the Esc ladder walks focus back
@@ -52,6 +60,33 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     const closeRef = useRef(deps.close);
     closeRef.current = deps.close;
 
+    // Leading-edge coalescing of browse previews. `coalesceTimer` non-null = inside a burst window;
+    // `trailingId` is the latest note browsed during the window, opened when it ends.
+    const coalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const trailingIdRef = useRef<string | null>(null);
+    // Re-armable via a ref so `browse` needn't depend on its identity (it's reset each render).
+    const armWindowRef = useRef<() => void>(() => {});
+    armWindowRef.current = () => {
+        coalesceTimerRef.current = setTimeout(() => {
+            coalesceTimerRef.current = null;
+            const next = trailingIdRef.current;
+            if (next !== null) {
+                // The burst settled (or continues): open the most-recent note and re-arm, so a long
+                // continuous scroll opens roughly once per window instead of once per keystroke.
+                trailingIdRef.current = null;
+                void openRef.current(next);
+                armWindowRef.current();
+            }
+        }, BROWSE_COALESCE_MS);
+    };
+    const cancelCoalesce = useCallback(() => {
+        if (coalesceTimerRef.current) {
+            clearTimeout(coalesceTimerRef.current);
+            coalesceTimerRef.current = null;
+        }
+        trailingIdRef.current = null;
+    }, []);
+
     // The cursor auto-syncs to a restored open note exactly once, on startup; after any
     // deliberate change we stop, so a search-box close stays cleared instead of snapping
     // back to the still-closing note.
@@ -63,15 +98,23 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
 
     const browse = useCallback(
         (id: string) => {
-            setCursor(id);
+            setCursor(id); // cursor highlight is always instant
             setAutofocus(null);
-            void openRef.current(id);
+            if (coalesceTimerRef.current === null) {
+                // Leading edge: a single / slow browse previews immediately (the instant-preview feel).
+                void openRef.current(id);
+                armWindowRef.current();
+            } else {
+                // Inside a burst (held-key scroll): remember the latest; it opens when the window ends.
+                trailingIdRef.current = id;
+            }
         },
         [setCursor],
     );
 
     const commit = useCallback(
         (id: string) => {
+            cancelCoalesce(); // a commit supersedes any pending coalesced preview
             setCursor(id);
             if (id === activeId) {
                 editorRef.current?.focus();
@@ -80,7 +123,16 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
                 void openRef.current(id);
             }
         },
-        [activeId, editorRef, setCursor],
+        [activeId, editorRef, setCursor, cancelCoalesce],
+    );
+
+    /** Set the cursor without previewing, cancelling any pending coalesced open (deliberate override). */
+    const setSelected = useCallback(
+        (id: string | null) => {
+            cancelCoalesce();
+            setCursor(id);
+        },
+        [cancelCoalesce, setCursor],
     );
 
     const escapeEditor = useCallback(() => {
@@ -94,9 +146,10 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
     // A final Esc in the search box closes the note and clears the cursor, so the next
     // arrow lands on the first row rather than the note we just left.
     const closeFromSearch = useCallback(() => {
+        cancelCoalesce(); // don't let a pending preview re-open the note after it's closed
         void closeRef.current();
         setCursor(null);
-    }, [setCursor]);
+    }, [setCursor, cancelCoalesce]);
 
     const prepareCreate = useCallback(() => setAutofocus('title'), []);
 
@@ -108,10 +161,17 @@ export function useNoteNavigation(deps: NoteNavigationDeps): UseNoteNavigation {
         }
     }, [activeId, selectedId]);
 
+    // Drop any pending coalesced preview-open when the hook unmounts.
+    useEffect(() => {
+        return () => {
+            if (coalesceTimerRef.current) clearTimeout(coalesceTimerRef.current);
+        };
+    }, []);
+
     return {
         selectedId,
         autofocus,
-        setSelected: setCursor,
+        setSelected,
         prepareCreate,
         browse,
         commit,

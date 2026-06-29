@@ -61,6 +61,13 @@ function buildTrashView(
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
 const AUTOSAVE_DELAY = 500;
+/**
+ * Coalesce the metadata sidecar's disk-write for active-pointer changes. Browsing previews a note on
+ * every arrow key, each of which would otherwise rewrite the whole sidecar (a JSON that grows with the
+ * collection — a `created` stamp per note + pins). The in-memory state still updates immediately; only
+ * the disk write is throttled, and it's flushed on teardown so the last-previewed note is remembered.
+ */
+const ACTIVE_PERSIST_DELAY = 400;
 /** Ceil a single backend write so a hung save can't block every note op indefinitely. */
 const SAVE_TIMEOUT_MS = 15_000;
 /** Retry a transient save failure a few times (capped backoff) before leaving it to the user. */
@@ -209,17 +216,51 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         setMetadata(next);
     }, []);
 
+    // Throttle for the active-pointer sidecar write (see ACTIVE_PERSIST_DELAY). `dirty` marks a
+    // deferred write owed; `timer` is the in-flight throttle window.
+    const metaWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const metaWriteDirtyRef = useRef(false);
+
+    /** Write the latest in-memory metadata to disk now, clearing any pending throttled write. */
+    const writeMetadataNow = useCallback(async () => {
+        metaWriteDirtyRef.current = false;
+        if (metaWriteTimerRef.current) {
+            clearTimeout(metaWriteTimerRef.current);
+            metaWriteTimerRef.current = null;
+        }
+        try {
+            await store.writeMetadata(metadataRef.current);
+        } catch (err) {
+            onError(err instanceof Error ? err.message : 'Failed to save notes metadata');
+        }
+    }, [store, onError]);
+
     const persistMetadata = useCallback(
-        async (next: NotesMetadata) => {
-            applyMetadata(next);
-            try {
-                await store.writeMetadata(next);
-            } catch (err) {
-                onError(err instanceof Error ? err.message : 'Failed to save notes metadata');
+        async (next: NotesMetadata, options?: {defer?: boolean}) => {
+            applyMetadata(next); // always update in-memory state immediately
+            if (options?.defer) {
+                // Hot path (active-pointer change on every browse): throttle the disk write. Leading
+                // timer, trailing write — at most one sidecar write per window, of the latest state.
+                metaWriteDirtyRef.current = true;
+                if (!metaWriteTimerRef.current) {
+                    metaWriteTimerRef.current = setTimeout(() => {
+                        metaWriteTimerRef.current = null;
+                        if (metaWriteDirtyRef.current) void writeMetadataNow();
+                    }, ACTIVE_PERSIST_DELAY);
+                }
+                return;
             }
+            // A deliberate mutation writes the whole (latest) metadata now — which also satisfies and
+            // cancels any pending deferred active-write (writeMetadataNow clears the throttle timer).
+            await writeMetadataNow();
         },
-        [applyMetadata, store, onError],
+        [applyMetadata, writeMetadataNow],
     );
+
+    /** Force any deferred metadata write to disk now — for teardown / before a storage switch. */
+    const flushMetadata = useCallback((): Promise<void> => {
+        return metaWriteDirtyRef.current ? writeMetadataNow() : Promise.resolve();
+    }, [writeMetadataNow]);
 
     const setSortMode = useCallback(
         (sort: SortMode) => void persistMetadata(withSortMode(metadataRef.current, sort)),
@@ -267,6 +308,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         // view next opens, not on every refresh.
     }, [store, applyMetadata]);
 
+    // Re-read just the folder list after an incremental note patch. On the folder backends this is a
+    // cheap directory walk (no per-file reads, unlike the full list() in refresh()), so an emptied
+    // folder pruned on disk drops out of the tree and a newly-created one appears — without paying to
+    // re-read every note. Metadata stays consistent via the with* helpers the mutation already applied,
+    // so no reconcile is needed here (an orphaned implicit-folder pin, rare, self-heals on reload).
+    const relistFolders = useCallback(async () => {
+        setFolders(await store.listFolders());
+    }, [store]);
+
     const bumpInList = useCallback(
         (id: string, updatedAt: number | undefined, content?: string) => {
             setNotes((prev) =>
@@ -281,6 +331,31 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         },
         [],
     );
+
+    // Incremental list patches: a single-note mutation already knows exactly what changed, so patch
+    // the in-memory list directly instead of re-reading the whole folder from disk via refresh()
+    // (which on a big folder re-reads the head of every `.md` file on every create/rename/move/delete).
+    // Folders need no patch — the tree synthesizes a folder from its notes' paths, so a moved/created
+    // note's folder appears/disappears automatically, and explicit (`.gnkeep`) folders are unaffected
+    // by note moves. Metadata stays consistent via the with* helpers each handler already applies.
+    /** Append a freshly-created note to the list (preview derived from its initial body). */
+    const addNote = useCallback((meta: NoteMeta, content = '') => {
+        setNotes((prev) => [...prev, {...meta, preview: previewFromContent(content)}]);
+    }, []);
+    /** Re-key a note after a rename/move (id + title + mtime change; body/preview unchanged). */
+    const rekeyNote = useCallback((oldId: string, meta: NoteMeta) => {
+        setNotes((prev) =>
+            prev.map((n) =>
+                n.id === oldId
+                    ? {...n, id: meta.id, title: meta.title, updatedAt: meta.updatedAt}
+                    : n,
+            ),
+        );
+    }, []);
+    /** Drop a note from the list after a delete/trash. */
+    const dropNote = useCallback((id: string) => {
+        setNotes((prev) => prev.filter((n) => n.id !== id));
+    }, []);
 
     const clearTimer = useCallback(() => {
         if (timerRef.current) {
@@ -365,6 +440,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         flushRef.current = flush;
     }, [flush]);
 
+    // Teardown flush (exposed): force out any pending content edit AND the deferred active-pointer
+    // write, so switching storage / exporting / closing never drops the last edit or open-note pointer.
+    const flushPending = useCallback(async (): Promise<boolean> => {
+        await flushMetadata();
+        return flush();
+    }, [flush, flushMetadata]);
+
     const open = useCallback(
         async (id: string) => {
             // Already the open note: don't reload — that would remount the editor (losing caret,
@@ -393,7 +475,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 bumpSession();
                 setConflict(null);
                 setSaveState('idle');
-                await persistMetadata(withActive(metadataRef.current, id));
+                // Defer the sidecar write: open() fires on every browse/preview, and the active
+                // pointer is pure UI-restoration state — coalesce its disk write (flushed on teardown).
+                await persistMetadata(withActive(metadataRef.current, id), {defer: true});
             } catch (err) {
                 if (generation !== openGenerationRef.current) return;
                 onError(err instanceof Error ? err.message : 'Failed to open note');
@@ -421,7 +505,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
                 );
-                await refresh();
+                addNote(meta); // brand-new note → empty preview
+                await relistFolders(); // a new note may introduce a new (implicit) folder
                 await open(meta.id);
                 return meta.id;
             } catch (err) {
@@ -429,7 +514,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 return null;
             }
         },
-        [flush, store, persistMetadata, refresh, open, onError],
+        [flush, store, persistMetadata, addNote, relistFolders, open, onError],
     );
 
     const duplicate = useCallback(
@@ -443,7 +528,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, saved.updatedAt ?? 0),
                 );
-                await refresh();
+                // Preview the copied body; carry the post-save mtime so the list date is right.
+                addNote({...meta, updatedAt: saved.updatedAt}, source.content);
+                await relistFolders(); // the copy lands in the same folder, but stay consistent
                 await open(meta.id); // open after the body is written, so the editor shows the copy
                 return meta.id;
             } catch (err) {
@@ -451,7 +538,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 return null;
             }
         },
-        [flush, store, persistMetadata, refresh, open, onError],
+        [flush, store, persistMetadata, addNote, relistFolders, open, onError],
     );
 
     const createFolder = useCallback(
@@ -592,7 +679,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setSaveState('saving');
                     timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
                 }
-                await refresh();
+                rekeyNote(id, meta); // re-key the list row in place (body/preview unchanged)
                 return meta.id;
             } catch (err) {
                 if (err instanceof NameCollisionError) {
@@ -603,7 +690,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 return null;
             }
         },
-        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
+        [conflict, flush, store, persistMetadata, rekeyNote, clearTimer, onError],
     );
 
     const move = useCallback(
@@ -653,7 +740,8 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setSaveState('saving');
                     timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
                 }
-                await refresh();
+                rekeyNote(id, meta); // re-key the list row in place; folder synthesizes from the path
+                await relistFolders(); // dest folder may be new; emptied source folder may be pruned
                 return meta.id;
             } catch (err) {
                 if (err instanceof NameCollisionError) {
@@ -666,13 +754,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 moveInProgressRef.current = false;
             }
         },
-        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
+        [conflict, flush, store, persistMetadata, rekeyNote, relistFolders, clearTimer, onError],
     );
 
     const remove = useCallback(
         async (id: string) => {
-            // Flush first so a pending edit to a *different* note isn't stranded by the refresh()
-            // below re-reading stale bytes (and to match open/create/rename/close, which all flush).
+            // Flush first so a pending edit to a *different* note isn't stranded (and to match
+            // open/create/rename/close, which all flush).
             await flush();
             try {
                 await store.remove(id);
@@ -685,12 +773,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setConflict(null);
                     setSaveState('idle');
                 }
-                await refresh();
+                dropNote(id); // drop the list row
+                await relistFolders(); // an emptied implicit folder is pruned on disk → drop it too
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to delete note');
             }
         },
-        [flush, store, persistMetadata, refresh, clearTimer, onError],
+        [flush, store, persistMetadata, dropNote, relistFolders, clearTimer, onError],
     );
 
     // Reload the trash from the store and reconcile the registry to mirror it (drop vanished entries,
@@ -745,14 +834,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 // No refreshTrash(): the trash view is closed during a delete (it's modal), and the
                 // badge reads metadata.trashed.length which withTrashed just updated. The view reloads
                 // from the store when it next opens.
-                await refresh();
+                dropNote(id); // drop the list row
+                await relistFolders(); // an emptied implicit folder is pruned on disk → drop it too
                 return true;
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to move note to Trash');
                 return false;
             }
         },
-        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
+        [conflict, flush, store, persistMetadata, dropNote, relistFolders, clearTimer, onError],
     );
 
     const restoreFromTrash = useCallback(
@@ -968,10 +1058,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         };
     }, [store, applyMetadata, bumpSession, onError]);
 
-    // Clear any pending autosave timer when the hook unmounts.
+    // Clear pending timers (autosave + the throttled metadata write) when the hook unmounts.
     useEffect(() => {
         return () => {
             if (timerRef.current) clearTimeout(timerRef.current);
+            if (metaWriteTimerRef.current) clearTimeout(metaWriteTimerRef.current);
         };
     }, []);
 
@@ -983,12 +1074,16 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
 
     // Best-effort save when hidden; warn before unload if edits are unsaved.
     useEffect(() => {
-        const onHide = () => void flush();
+        const onHide = () => {
+            void flushMetadata(); // persist the last-previewed note pointer too
+            void flush();
+        };
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
             // Capture intent BEFORE flushing: flush() nulls pendingRef synchronously (an async fn
             // runs to its first await), so checking it after would always read null and the prompt
             // would never fire for a normal pending edit.
             const hasUnsaved = Boolean(pendingRef.current || conflictRef.current);
+            void flushMetadata();
             void flush();
             if (hasUnsaved) {
                 event.preventDefault();
@@ -1002,7 +1097,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             document.removeEventListener('visibilitychange', onHide);
             window.removeEventListener('beforeunload', onBeforeUnload);
         };
-    }, [flush]);
+    }, [flush, flushMetadata]);
 
     // Desktop (Tauri) only: hiding/closing the native window doesn't fire a reliable
     // `beforeunload`, so flush the last debounced edit on the window's close request. Feature-detect
@@ -1014,6 +1109,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         void import('@tauri-apps/api/window').then(({getCurrentWindow}) => {
             void getCurrentWindow()
                 .onCloseRequested(async () => {
+                    await flushMetadata();
                     await flush();
                 })
                 .then((fn) => {
@@ -1025,7 +1121,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             disposed = true;
             unlisten?.();
         };
-    }, [flush]);
+    }, [flush, flushMetadata]);
 
     // Detect an external change to the open note when returning to the tab/window.
     useEffect(() => {
@@ -1088,7 +1184,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         removeFolder,
         moveFolder,
         edit,
-        flushPending: flush,
+        flushPending,
         refresh,
         reloadDisk,
         keepMine,
