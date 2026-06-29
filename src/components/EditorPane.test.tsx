@@ -43,7 +43,12 @@ const {
             setEditorMode,
             focus,
             moveCursor,
-            replace: vi.fn(),
+            // Mimic the real editor: replace() re-parses + re-serializes, so the value it emits can
+            // differ from the markup passed in (trailing newline, etc.) — and it fires 'change'.
+            replace: vi.fn((markup: string) => {
+                editorState.value = `${markup}\n`;
+                editorState.changeHandler?.();
+            }),
             getValue: () => editorState.value,
             on: (event: string, cb: () => void) => {
                 if (event === 'change') editorState.changeHandler = cb;
@@ -318,5 +323,32 @@ describe('EditorPane — change emission', () => {
         editorState.value = 'hello';
         editorState.changeHandler?.();
         expect(onChange).toHaveBeenLastCalledWith('hello');
+    });
+});
+
+describe('EditorPane — note switch', () => {
+    it('does not emit a change when switching notes, even though replace() round-trips the content', () => {
+        // Regression: editor.replace() re-parses + re-serializes, so the 'change' it fires can carry a
+        // value that differs from the on-disk content (trailing newline, &nbsp;, …). That load echo
+        // must be suppressed — otherwise it reaches the autosave, re-serializing the note to disk AND
+        // bumping its updatedAt, which reorders the note list under the "Updated" sort.
+        const onChange = vi.fn();
+        const {rerender} = renderPane({onChange});
+        onChange.mockClear(); // ignore any mount-time activity
+
+        rerender(
+            <EditorPane
+                note={{id: 'b.md', title: 'b', content: 'world', updatedAt: 2}}
+                autofocus={null}
+                sessionId={1}
+                onChange={onChange}
+                onRename={() => {}}
+                onEscape={() => {}}
+                onUploadFile={async () => 'Attachments/x.png'}
+                wikiNotes={[]}
+                onOpenWikiLink={() => {}}
+            />,
+        );
+        expect(onChange).not.toHaveBeenCalled();
     });
 });
