@@ -158,4 +158,31 @@ describe('AttachmentUrlCache', () => {
         await expect(pending).resolves.toBe(''); // no URL minted onto a retired cache
         expect(urls).toEqual([]); // createObjectURL was never called for the late read
     });
+
+    it('evicts the least-recently-used URL once the byte budget is exceeded', async () => {
+        const {store} = fakeStore(); // blob size = ref string's byte length (all refs here are 17 B)
+        const cache = new AttachmentUrlCache(store, 40); // budget fits 2 refs (34 B), not 3 (51 B)
+        const a = await cache.resolve('Attachments/a.png');
+        const b = await cache.resolve('Attachments/b.png');
+        cache.peek('Attachments/a.png'); // touch a → b is now the least-recently-used
+        const c = await cache.resolve('Attachments/c.png'); // 51 B > 40 → evict the LRU (b)
+
+        expect(revoked).toEqual([b]); // exactly the LRU URL was revoked
+        expect(cache.peek('Attachments/b.png')).toBeUndefined();
+        expect(cache.peek('Attachments/a.png')).toBe(a); // recently touched → survived
+        expect(cache.peek('Attachments/c.png')).toBe(c);
+    });
+
+    it('never evicts a ref a live view still subscribes to, even when it is the LRU', async () => {
+        const {store} = fakeStore();
+        const cache = new AttachmentUrlCache(store, 40);
+        const a = await cache.resolve('Attachments/a.png'); // oldest (LRU)…
+        const unsub = cache.subscribe('Attachments/a.png', () => {}); // …but a live view shows it
+        await cache.resolve('Attachments/b.png');
+        await cache.resolve('Attachments/c.png'); // over budget → must evict, but a is protected → b
+
+        expect(cache.peek('Attachments/a.png')).toBe(a); // protected subscriber survived
+        expect(cache.peek('Attachments/b.png')).toBeUndefined(); // next-oldest unsubscribed → evicted
+        unsub();
+    });
 });

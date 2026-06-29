@@ -174,13 +174,15 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     // A link's broken state depends on the notes list and this note's id, neither of which is a doc
     // edit — so nudge the editor to re-evaluate them whenever that set changes (e.g. the target note
     // is created or renamed). Cheap: it only re-scans this note's own `[[links]]`.
-    const wikiSignature = useMemo(
-        () => note.id + ' ' + wikiNotes.map((n) => n.id).join('\n'),
-        [note.id, wikiNotes],
-    );
+    //
+    // Fingerprint the id set, but key the memo on `wikiNotes` ALONE (not `note.id`): the list array
+    // gets a fresh identity only when notes are actually created/renamed/moved/deleted, so the O(N)
+    // join runs then — never on a plain note switch (which changes `note.id`, not the list). The effect
+    // still re-runs on a switch via its own `note.id` dep, reusing the already-built signature.
+    const wikiIdsSignature = useMemo(() => wikiNotes.map((n) => n.id).join('\n'), [wikiNotes]);
     useEffect(() => {
         refreshWikiLinks(wikiViewRef.current);
-    }, [wikiSignature]);
+    }, [note.id, wikiIdsSignature]);
 
     // Focus on (re)mount per the autofocus intent: the title for a new note, else the body
     // (the preview surface when previewing). `editor` changes per mount (sessionId key).

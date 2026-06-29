@@ -55,6 +55,35 @@ function notFound(id: string): DOMException {
 }
 
 /**
+ * How many file reads to keep in flight at once for the bulk passes (`list`/`getAll`/`listAttachments`).
+ * The File System Access API has no batch read, so a big folder would otherwise read its files strictly
+ * one-at-a-time (await per file) — serializing thousands of opens and dominating cold load / corpus
+ * build. A bounded pool overlaps the I/O without unleashing thousands of concurrent handles at once.
+ */
+const READ_CONCURRENCY = 24;
+
+/**
+ * Map `items` through async `fn` with at most `limit` calls in flight, preserving input order in the
+ * result. Used for the bulk file-read passes so a large folder reads its files concurrently (bounded)
+ * instead of one after another.
+ */
+async function mapPool<T, R>(
+    items: readonly T[],
+    limit: number,
+    fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const worker = async () => {
+        for (let i = next++; i < items.length; i = next++) {
+            results[i] = await fn(items[i], i);
+        }
+    };
+    await Promise.all(Array.from({length: Math.min(limit, items.length)}, () => worker()));
+    return results;
+}
+
+/**
  * Notes stored as individual `.md` files in a user-picked directory, accessed through the File
  * System Access API. A note id is its POSIX-relative path from the picked folder (`Work/Sub/Title.md`
  * for a nested note, `Title.md` at the root); the leaf without `.md` is the title. Folders are real
@@ -69,46 +98,61 @@ export class FileSystemNoteStore implements NoteStore {
     constructor(private readonly dir: FileSystemDirectoryHandle) {}
 
     async list(): Promise<NoteMeta[]> {
-        const metas: NoteMeta[] = [];
-        for await (const {id, handle} of this.walkNotes()) {
-            try {
-                const file = await handle.getFile();
-                // Read only the head of each file — enough for a one-line list preview.
-                const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
-                metas.push({
-                    id,
-                    title: titleFromFileName(id),
-                    updatedAt: file.lastModified,
-                    preview: previewFromContent(head),
-                });
-            } catch (err) {
-                // One unreadable file (deleted mid-scan, permission glitch) must not blank the whole
-                // list — skip it so every other note still loads.
-                console.warn(`Skipping unreadable note "${id}":`, err);
-            }
-        }
+        // Enumerate the tree first (cheap dir walk, no content), then read the file heads through a
+        // bounded pool so a big folder's reads overlap instead of running strictly one-at-a-time.
+        const entries: {id: string; handle: FileSystemFileHandle}[] = [];
+        for await (const entry of this.walkNotes()) entries.push(entry);
+        const metas = (
+            await mapPool(
+                entries,
+                READ_CONCURRENCY,
+                async ({id, handle}): Promise<NoteMeta | null> => {
+                    try {
+                        const file = await handle.getFile();
+                        // Read only the head of each file — enough for a one-line list preview.
+                        const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+                        return {
+                            id,
+                            title: titleFromFileName(id),
+                            updatedAt: file.lastModified,
+                            preview: previewFromContent(head),
+                        };
+                    } catch (err) {
+                        // One unreadable file (deleted mid-scan, permission glitch) must not blank the
+                        // whole list — skip it so every other note still loads.
+                        console.warn(`Skipping unreadable note "${id}":`, err);
+                        return null;
+                    }
+                },
+            )
+        ).filter((m): m is NoteMeta => m !== null);
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return metas;
     }
 
     async getAll(): Promise<Note[]> {
-        const notes: Note[] = [];
-        for await (const {id, handle} of this.walkNotes()) {
-            try {
-                const file = await handle.getFile();
-                notes.push({
-                    id,
-                    title: titleFromFileName(id),
-                    updatedAt: file.lastModified,
-                    // Stripped to match get()/the editor's serialized shape (search-corpus parity).
-                    content: stripTrailingNewlines(await file.text()),
-                });
-            } catch (err) {
-                // Skip an unreadable file so the search corpus still gets every readable note.
-                console.warn(`Skipping unreadable note "${id}":`, err);
-            }
-        }
-        return notes;
+        const entries: {id: string; handle: FileSystemFileHandle}[] = [];
+        for await (const entry of this.walkNotes()) entries.push(entry);
+        // The bodies of a big folder are the corpus's dominant I/O — read them through a bounded pool
+        // so they overlap (one giant folder no longer serializes thousands of full-file reads).
+        return (
+            await mapPool(entries, READ_CONCURRENCY, async ({id, handle}): Promise<Note | null> => {
+                try {
+                    const file = await handle.getFile();
+                    return {
+                        id,
+                        title: titleFromFileName(id),
+                        updatedAt: file.lastModified,
+                        // Stripped to match get()/the editor's serialized shape (corpus parity).
+                        content: stripTrailingNewlines(await file.text()),
+                    };
+                } catch (err) {
+                    // Skip an unreadable file so the search corpus still gets every readable note.
+                    console.warn(`Skipping unreadable note "${id}":`, err);
+                    return null;
+                }
+            })
+        ).filter((n): n is Note => n !== null);
     }
 
     async get(id: string): Promise<Note> {
@@ -380,19 +424,23 @@ export class FileSystemNoteStore implements NoteStore {
     async listAttachments(): Promise<AttachmentMeta[]> {
         const dir = await this.resolveDir(ATTACHMENTS_DIR);
         if (!dir) return [];
-        const out: AttachmentMeta[] = [];
+        // Collect handles first, then stat them through a bounded pool — a vault with many attachments
+        // shouldn't open the manager via hundreds of strictly-serial getFile() calls.
+        const handles: FileSystemFileHandle[] = [];
         for await (const handle of dir.values()) {
             // Skip dotfiles (markers/temps); only real files are attachments.
             if (handle.kind !== 'file' || handle.name.startsWith('.')) continue;
-            const file = await (handle as FileSystemFileHandle).getFile();
-            out.push({
+            handles.push(handle as FileSystemFileHandle);
+        }
+        return mapPool(handles, READ_CONCURRENCY, async (handle): Promise<AttachmentMeta> => {
+            const file = await handle.getFile();
+            return {
                 ref: joinPath(ATTACHMENTS_DIR, handle.name),
                 name: handle.name,
                 size: file.size,
                 updatedAt: file.lastModified,
-            });
-        }
-        return out;
+            };
+        });
     }
 
     async removeAttachment(ref: string): Promise<void> {
