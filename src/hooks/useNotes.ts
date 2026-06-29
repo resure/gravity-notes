@@ -239,15 +239,19 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         async (next: NotesMetadata, options?: {defer?: boolean}) => {
             applyMetadata(next); // always update in-memory state immediately
             if (options?.defer) {
-                // Hot path (active-pointer change on every browse): throttle the disk write. Leading
-                // timer, trailing write — at most one sidecar write per window, of the latest state.
+                // Hot path (active-pointer change on every browse): debounce the disk write. TRAILING
+                // debounce — reset the window on each browse, so a continuous scroll through a big
+                // folder writes the sidecar ONCE after it settles, not once per ACTIVE_PERSIST_DELAY
+                // for the whole burst. Each write re-serializes the entire sidecar (a `created` stamp
+                // per note), so on a large collection the old fixed-interval firing was real write
+                // amplification. In-memory state still updates immediately above; a teardown flush
+                // (flushMetadata) still persists the last-previewed note if you leave mid-window.
                 metaWriteDirtyRef.current = true;
-                if (!metaWriteTimerRef.current) {
-                    metaWriteTimerRef.current = setTimeout(() => {
-                        metaWriteTimerRef.current = null;
-                        if (metaWriteDirtyRef.current) void writeMetadataNow();
-                    }, ACTIVE_PERSIST_DELAY);
-                }
+                if (metaWriteTimerRef.current) clearTimeout(metaWriteTimerRef.current);
+                metaWriteTimerRef.current = setTimeout(() => {
+                    metaWriteTimerRef.current = null;
+                    if (metaWriteDirtyRef.current) void writeMetadataNow();
+                }, ACTIVE_PERSIST_DELAY);
                 return;
             }
             // A deliberate mutation writes the whole (latest) metadata now — which also satisfies and

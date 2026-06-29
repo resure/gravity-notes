@@ -17,9 +17,30 @@ const WORDS_PER_NOTE = 220; // ≈ 1.5 KB of body per note → ≈ 6 MB corpus
 
 // A fixed vocabulary so the corpus is deterministic (no Math.random) yet varied enough to rank.
 const VOCAB = [
-    'alpha', 'beta', 'gamma', 'kubernetes', 'docker', 'roadmap', 'meeting', 'invoice',
-    'design', 'retro', 'budget', 'release', 'sprint', 'backlog', 'incident', 'postmortem',
-    'objective', 'hiring', 'latency', 'cache', 'pipeline', 'storage', 'search', 'editor',
+    'alpha',
+    'beta',
+    'gamma',
+    'kubernetes',
+    'docker',
+    'roadmap',
+    'meeting',
+    'invoice',
+    'design',
+    'retro',
+    'budget',
+    'release',
+    'sprint',
+    'backlog',
+    'incident',
+    'postmortem',
+    'objective',
+    'hiring',
+    'latency',
+    'cache',
+    'pipeline',
+    'storage',
+    'search',
+    'editor',
 ];
 
 function makeCorpus(count: number) {

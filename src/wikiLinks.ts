@@ -206,14 +206,67 @@ export interface BacklinkSource {
     contexts: string[];
 }
 
+/** Sort backlink sources newest-updated first, then by title, then id (stable). */
+function sortBacklinkSources(sources: BacklinkSource[]): void {
+    sources.sort(
+        (a, b) =>
+            (b.note.updatedAt ?? 0) - (a.note.updatedAt ?? 0) ||
+            a.note.title.localeCompare(b.note.title) ||
+            a.note.id.localeCompare(b.note.id),
+    );
+}
+
+/**
+ * Invert the whole link graph in one pass: `targetId → the notes that link to it` (each with the
+ * context around every such link), buckets pre-sorted. Build this ONCE per corpus (it depends only on
+ * the notes + their bodies, not on which note is open), then a note's backlinks are an O(1) `Map.get`
+ * on open — instead of re-scanning every note's links on each switch (the cost it replaces).
+ *
+ * `linksById` is an optional precomputed index of `id → extractWikiLinks(body)`. When the caller keeps
+ * a warm corpus (see `useCorpus`), pass it so each note's links aren't re-extracted with the link
+ * regex. Omit it and links are extracted on the fly, so direct callers/tests still work.
+ */
+export function buildBacklinkIndex(
+    notes: NoteMeta[],
+    corpus: Map<string, string>,
+    linksById?: Map<string, WikiLinkRef[]>,
+): Map<string, BacklinkSource[]> {
+    // Build the resolution index once, not per link — keeps the whole pass O(N·L), not O(N²·L).
+    const index = buildResolveIndex(notes);
+    const map = new Map<string, BacklinkSource[]>();
+    for (const note of notes) {
+        const body = corpus.get(note.id);
+        if (!body) continue;
+        // Prefer the precomputed links; fall back to extracting from the body when no index is given.
+        const links = linksById?.get(note.id) ?? extractWikiLinks(body);
+        // Group this note's links by the target they resolve to, so a note linking to the same target
+        // twice contributes one source row carrying both context snippets.
+        let perTarget: Map<string, string[]> | null = null;
+        for (const link of links) {
+            const target = resolveWith(link.target, note.id, index);
+            if (!target || target === note.id) continue; // a note linking to itself isn't a backlink
+            perTarget ??= new Map();
+            const existing = perTarget.get(target);
+            const snippet = backlinkSnippet(body, link);
+            if (existing) existing.push(snippet);
+            else perTarget.set(target, [snippet]);
+        }
+        if (!perTarget) continue;
+        for (const [target, contexts] of perTarget) {
+            const bucket = map.get(target);
+            if (bucket) bucket.push({note, contexts});
+            else map.set(target, [{note, contexts}]);
+        }
+    }
+    for (const bucket of map.values()) sortBacklinkSources(bucket);
+    return map;
+}
+
 /**
  * Every note (other than the target itself) whose body links to `targetId` via a `[[wiki link]]`,
- * with the context around each link. `corpus` maps note id → body. Ordered most-recently-updated
- * first, then by title, then id (stable).
- *
- * `linksById` is an optional precomputed index of `id → extractWikiLinks(body)`. When the caller
- * keeps a warm corpus (see `useCorpus`), pass it so each note's links aren't re-extracted with the
- * link regex on every open. Omit it and links are extracted on the fly, so direct callers/tests work.
+ * with the context around each link. Ordered most-recently-updated first, then by title, then id.
+ * A thin lookup over {@link buildBacklinkIndex}; on the hot path (open after open) callers should keep
+ * the index memoized across switches and look up directly, rather than rebuilding it here per target.
  */
 export function buildBacklinks(
     targetId: string,
@@ -221,28 +274,5 @@ export function buildBacklinks(
     corpus: Map<string, string>,
     linksById?: Map<string, WikiLinkRef[]>,
 ): BacklinkSource[] {
-    // Build the resolution index once, not per link — keeps the whole scan O(N·L) instead of O(N²·L).
-    const index = buildResolveIndex(notes);
-    const out: BacklinkSource[] = [];
-    for (const note of notes) {
-        if (note.id === targetId) continue; // a note linking to itself isn't a backlink
-        const body = corpus.get(note.id);
-        if (!body) continue;
-        const contexts: string[] = [];
-        // Prefer the precomputed links; fall back to extracting from the body when no index is given.
-        const links = linksById?.get(note.id) ?? extractWikiLinks(body);
-        for (const link of links) {
-            if (resolveWith(link.target, note.id, index) === targetId) {
-                contexts.push(backlinkSnippet(body, link));
-            }
-        }
-        if (contexts.length) out.push({note, contexts});
-    }
-    out.sort(
-        (a, b) =>
-            (b.note.updatedAt ?? 0) - (a.note.updatedAt ?? 0) ||
-            a.note.title.localeCompare(b.note.title) ||
-            a.note.id.localeCompare(b.note.id),
-    );
-    return out;
+    return buildBacklinkIndex(notes, corpus, linksById).get(targetId) ?? [];
 }
