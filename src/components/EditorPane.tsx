@@ -25,13 +25,13 @@ import './EditorPane.css';
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
     toggleMode(): void;
-    /** Move keyboard focus into the editor body. */
+    /** Move keyboard focus into the editor body (mounting it first if only a preview is shown). */
     focus(): void;
 }
 
 interface EditorPaneProps {
     note: Note;
-    /** Focus intent on (re)mount: the body (a commit), the title (a new note), or none (preview). */
+    /** Focus intent on (re)mount: the body (a commit), the title (a new note), or none (a browse). */
     autofocus: 'body' | 'title' | null;
     /** Read-only preview mode. Owned by Workspace so it persists across note switches. */
     preview?: boolean;
@@ -55,29 +55,48 @@ interface EditorPaneProps {
     onOpenWikiLink: (target: string) => void;
 }
 
+/** Imperative surface the shell uses to drive the (lazily-mounted) editor body. */
+interface EditorBodyHandle {
+    focus(): void;
+    toggleMode(): void;
+    moveCursorToStart(): void;
+    moveCursorEnd(): void;
+    /** Open a fresh empty line at the top of the body; false when the view isn't reachable (Markup mode). */
+    openLineAbove(): boolean;
+    atEmptyFirstLine(): boolean;
+    removeEmptyFirstLine(): void;
+    /** Focus the read-only preview surface shown in preview mode (the Esc ladder's target). */
+    focusPreview(): void;
+}
+
+interface EditorBodyProps {
+    note: Note;
+    /** Focus the body once, on mount (a commit / click-to-edit / follow-link). */
+    focusBody: boolean;
+    /** Read-only preview mode (⌘⇧P) within an editing session — renders the LIVE buffer, not disk. */
+    preview: boolean;
+    onChange: (markup: string) => void;
+    onUploadFile: (file: File) => Promise<string>;
+    wikiNotes: NoteMeta[];
+    onOpenWikiLink: (target: string) => void;
+}
+
 /**
- * The open-note surface: an editable title above the Gravity markdown editor body. The
- * editor instance is created once per mount; EditorPane is keyed by `useNotes.sessionId`,
- * so a real note switch / disk reload remounts it, but a rename — which changes `note.id`
- * in place — does not, keeping the caret during the title→body handoff. In `preview` mode
- * the body is a read-only render and the title is read-only.
+ * The heavy WYSIWYG/Markdown editor, split out so the shell can leave it UNMOUNTED while a note is
+ * merely browsed (a `NotePreview` is shown instead — far cheaper than rebuilding ProseMirror). It
+ * mounts the moment the user commits to editing (Enter / click-into-body / follow-link). Created
+ * once per editing session; the shell keys the whole pane by `useNotes.sessionId`, so switching
+ * notes remounts the shell (and drops this editor) — exactly the cost we now skip while browsing.
+ *
+ * In `preview` mode the body is a read-only render of the editor's CURRENT (possibly unsaved) value
+ * (not the on-disk `note.content`), so previewing mid-edit shows the live buffer.
  */
-export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
-    {
-        note,
-        autofocus,
-        preview = false,
-        onChange,
-        onRename,
-        onEscape,
-        onUploadFile,
-        wikiNotes,
-        onOpenWikiLink,
-    },
+const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function EditorBody(
+    {note, focusBody, preview, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
     ref,
 ) {
-    // Stable across the editor's life (EditorPane remounts per session); read latest via a ref so the
-    // upload handler — captured once in useMarkdownEditor's []-deps — always calls the current one.
+    // Stable across the editor's life; read latest via a ref so the upload handler — captured once in
+    // useMarkdownEditor's []-deps — always calls the current one.
     const uploadRef = useRef(onUploadFile);
     uploadRef.current = onUploadFile;
 
@@ -133,8 +152,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     );
 
     const previewRef = useRef<HTMLDivElement>(null);
-    const titleRef = useRef<NoteTitleHandle>(null);
-    const bodyRef = useRef<HTMLDivElement>(null);
     // The editor emits a no-op 'change' as the initial markup loads; suppress only that FIRST emit,
     // not every value that equals the original — otherwise undoing back to the loaded content within
     // the autosave window leaves a stale pending edit that writes the pre-undo value to disk.
@@ -143,11 +160,29 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     useImperativeHandle(
         ref,
         () => ({
+            focus() {
+                editor.focus();
+            },
             toggleMode() {
                 editor.setEditorMode(editor.currentMode === 'wysiwyg' ? 'markup' : 'wysiwyg');
             },
-            focus() {
-                editor.focus();
+            moveCursorToStart() {
+                editor.moveCursor('start');
+            },
+            moveCursorEnd() {
+                editor.moveCursor('end');
+            },
+            openLineAbove() {
+                return openLineAbove(editor);
+            },
+            atEmptyFirstLine() {
+                return atEmptyFirstLine(editor);
+            },
+            removeEmptyFirstLine() {
+                removeEmptyFirstLine(editor);
+            },
+            focusPreview() {
+                previewRef.current?.focus();
             },
         }),
         [editor],
@@ -184,21 +219,18 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         refreshWikiLinks(wikiViewRef.current);
     }, [note.id, wikiIdsSignature]);
 
-    // Focus on (re)mount per the autofocus intent: the title for a new note, else the body
-    // (the preview surface when previewing). `editor` changes per mount (sessionId key).
+    // Focus on mount per the focus intent: the body, or (in preview mode) the preview surface. The
+    // title-focus case is handled by the shell (the title lives there); here `focusBody` is false for
+    // a title autofocus, so the body is left unfocused.
     useEffect(() => {
-        if (autofocus === 'title') {
-            titleRef.current?.focus();
-            titleRef.current?.select();
-        } else if (autofocus === 'body') {
-            if (preview) previewRef.current?.focus();
-            else editor.focus();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on (re)mount
+        if (!focusBody) return;
+        if (preview) previewRef.current?.focus();
+        else editor.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on mount
     }, [editor]);
 
-    // Move focus when preview is toggled within a note: onto the preview on enter, back to
-    // the body on exit, so the Esc ladder keeps working.
+    // Move focus when preview is toggled within a note: onto the preview on enter, back to the
+    // body on exit, so the Esc ladder keeps working.
     const prevPreviewRef = useRef(preview);
     useEffect(() => {
         if (preview === prevPreviewRef.current) return;
@@ -207,27 +239,135 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         else editor.focus();
     }, [preview, editor]);
 
-    // Title → body: put the caret at the start of the body and focus it (the preview surface
-    // when previewing). Blurring the title here also commits the rename via NoteTitle.onBlur.
-    const goToBody = () => {
-        if (preview) {
-            previewRef.current?.focus();
-            return;
+    return (
+        <>
+            {preview ? (
+                <NotePreview ref={previewRef} markup={editor.getValue()} />
+            ) : (
+                <MarkdownEditorView
+                    settingsVisible={false}
+                    stickyToolbar={false}
+                    autofocus={focusBody}
+                    editor={editor}
+                />
+            )}
+            <WikiLinkSuggest state={wikiSuggest} />
+            <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
+        </>
+    );
+});
+
+/**
+ * The open-note surface: an editable title above either the Gravity markdown editor body (while
+ * editing) or a cheap read-only `NotePreview` (while merely browsing). The editor is the expensive
+ * part — parsing the note into a ProseMirror doc and rendering a DOM node per block — so it's mounted
+ * ONLY when the user is actually editing: on a commit (Enter / ⌘J-in), a click-into-body, or a
+ * follow-link. Browsing (arrows / single click / scope-flip) shows `NotePreview` from `note.content`
+ * instead, so flying through a large vault no longer rebuilds the editor per note.
+ *
+ * `autofocus` drives the initial mode: `'body'`/`'title'` (a commit / new note) mounts the editor at
+ * once; `null` (a browse) shows the preview. The shell is keyed by `useNotes.sessionId`, so a real
+ * note switch remounts it (re-deriving the mode) — but a rename, which changes `note.id` in place,
+ * does not, keeping the caret during the title→body handoff. `preview` (⌘⇧P) renders the editor's
+ * LIVE buffer read-only; while browsing it just keeps the preview.
+ */
+export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
+    {
+        note,
+        autofocus,
+        preview = false,
+        onChange,
+        onRename,
+        onEscape,
+        onUploadFile,
+        wikiNotes,
+        onOpenWikiLink,
+    },
+    ref,
+) {
+    // Editing = the heavy editor is mounted. Derived from the focus intent on (re)mount: a commit or
+    // new note mounts it at once; a browse (null) shows the preview until the user starts editing.
+    const [editing, setEditing] = useState(autofocus !== null);
+    // Whether to focus the body once the editor mounts (a commit, a click-into-body, a follow-link).
+    const [focusBody, setFocusBody] = useState(autofocus === 'body');
+
+    const titleRef = useRef<NoteTitleHandle>(null);
+    const bodyRef = useRef<EditorBodyHandle>(null);
+    const bodyWrapRef = useRef<HTMLDivElement>(null);
+    // The preview surface shown while browsing (focus target for the title→body handoff in preview).
+    const browsePreviewRef = useRef<HTMLDivElement>(null);
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            toggleMode() {
+                bodyRef.current?.toggleMode();
+            },
+            focus() {
+                // Already editing: focus the live body. Browsing: mount the editor (focused) on demand —
+                // this is the path a commit-on-the-already-open note and a follow-link-to-a-new-note take.
+                if (editing) bodyRef.current?.focus();
+                else {
+                    setFocusBody(true);
+                    setEditing(true);
+                }
+            },
+        }),
+        [editing],
+    );
+
+    // Focus the title on mount when the intent was a new note (the body editor mounts unfocused).
+    useEffect(() => {
+        if (autofocus === 'title') {
+            titleRef.current?.focus();
+            titleRef.current?.select();
         }
-        editor.moveCursor('start');
-        editor.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus only on mount
+    }, []);
+
+    /** Mount the editor (focused at the body start) — used when the user starts editing a browsed note. */
+    const startEditing = () => {
+        setFocusBody(true);
+        setEditing(true);
     };
 
-    // Enter from the title: open a fresh empty line at the top of the body and land on it.
-    // Falls back to the body start when the ProseMirror view isn't reachable (Markup mode).
-    const enterToBody = () => {
+    /** Focus the read-only preview surface currently shown (EditorBody's in an edit session, the
+     * browse preview otherwise) — the target of the title→body handoff while previewing. */
+    const focusPreviewSurface = () => {
+        if (editing) bodyRef.current?.focusPreview();
+        else browsePreviewRef.current?.focus();
+    };
+
+    // Title → body: put the caret at the start of the body and focus it. While browsing, enter edit
+    // mode first (the body editor isn't mounted yet). In preview mode, focus the preview surface.
+    const goToBody = () => {
         if (preview) {
-            previewRef.current?.focus();
+            focusPreviewSurface();
             return;
         }
-        if (!openLineAbove(editor)) {
-            editor.moveCursor('start');
-            editor.focus();
+        if (!editing) {
+            startEditing();
+            return;
+        }
+        bodyRef.current?.moveCursorToStart();
+        bodyRef.current?.focus();
+    };
+
+    // Enter from the title: open a fresh empty line at the top of the body and land on it. While
+    // browsing, just enter edit mode at the body start (no line to open above yet). In preview, focus
+    // the preview surface. Falls back to the body start when the ProseMirror view isn't reachable.
+    const enterToBody = () => {
+        if (preview) {
+            focusPreviewSurface();
+            return;
+        }
+        if (!editing) {
+            startEditing();
+            return;
+        }
+        if (!bodyRef.current?.openLineAbove()) {
+            bodyRef.current?.moveCursorToStart();
+            bodyRef.current?.focus();
         }
     };
 
@@ -250,31 +390,40 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 onEnter={enterToBody}
                 onEscape={onEscape}
             />
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
             <div
-                ref={bodyRef}
+                ref={bodyWrapRef}
                 className="editor-pane__body"
                 onMouseDown={(event) => {
-                    // Click in the empty area around/below the editor (its bottom padding, or the
-                    // body grown taller than a short note) → drop the caret at the very end.
-                    // Clicks on the editable content itself fall through to the editor.
+                    // Preview mode is read-only — no click handling (the editor/preview isn't editable).
                     if (preview) return;
-                    // The selection formatting toolbar renders in a portal (outside this subtree),
-                    // but its mousedown still bubbles here via React's portal event propagation. Only
-                    // act on clicks that are real DOM descendants of the body wrapper; otherwise the
-                    // moveCursor('end') below would collapse the active selection and the toolbar's
-                    // formatting buttons would do nothing.
+                    // Browsing: a click anywhere in the body area enters edit mode (mounts the editor).
+                    if (!editing) {
+                        event.preventDefault();
+                        startEditing();
+                        return;
+                    }
+                    // Editing: a click in the empty area around/below the editor (its bottom padding, or
+                    // the body grown taller than a short note) drops the caret at the very end. Clicks on
+                    // the editable content itself fall through to the editor.
+                    // The selection formatting toolbar renders in a portal (outside this subtree), but its
+                    // mousedown still bubbles here via React's portal event propagation. Only act on clicks
+                    // that are real DOM descendants of the body wrapper; otherwise the moveCursor('end')
+                    // below would collapse the active selection and the toolbar's formatting buttons would
+                    // do nothing.
                     if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
                         return;
                     if ((event.target as HTMLElement).closest('.g-md-editor')) return;
                     event.preventDefault();
-                    editor.moveCursor('end');
-                    editor.focus();
+                    bodyRef.current?.moveCursorEnd();
+                    bodyRef.current?.focus();
                 }}
                 onKeyDown={(event) => {
-                    // Body → title handoffs. Ignore preview and the editor's own modifier combos.
-                    if (preview || event.metaKey || event.ctrlKey || event.altKey) return;
-                    const body = bodyRef.current;
+                    // Body → title handoffs. Ignore preview, browse (no editor mounted), and the editor's
+                    // own modifier combos.
+                    if (preview || !editing || event.metaKey || event.ctrlKey || event.altKey)
+                        return;
+                    const body = bodyWrapRef.current;
                     // ArrowUp on the first visual line → caret to the end of the title.
                     if (
                         event.key === 'ArrowUp' &&
@@ -287,26 +436,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                         return;
                     }
                     // Backspace on the empty line opened by Enter → remove it and go up to the title.
-                    if (event.key === 'Backspace' && atEmptyFirstLine(editor)) {
+                    if (event.key === 'Backspace' && bodyRef.current?.atEmptyFirstLine()) {
                         event.preventDefault();
-                        removeEmptyFirstLine(editor);
+                        bodyRef.current?.removeEmptyFirstLine();
                         titleRef.current?.focusAtEnd();
                     }
                 }}
             >
-                {preview ? (
-                    <NotePreview ref={previewRef} markup={editor.getValue()} />
-                ) : (
-                    <MarkdownEditorView
-                        settingsVisible={false}
-                        stickyToolbar={false}
-                        autofocus={autofocus === 'body'}
-                        editor={editor}
+                {editing ? (
+                    <EditorBody
+                        ref={bodyRef}
+                        note={note}
+                        focusBody={focusBody}
+                        preview={preview}
+                        onChange={onChange}
+                        onUploadFile={onUploadFile}
+                        wikiNotes={wikiNotes}
+                        onOpenWikiLink={onOpenWikiLink}
                     />
+                ) : (
+                    <NotePreview ref={browsePreviewRef} markup={note.content} />
                 )}
             </div>
-            <WikiLinkSuggest state={wikiSuggest} />
-            <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
         </div>
     );
 });
