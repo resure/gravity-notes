@@ -200,10 +200,13 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
 
     useEffect(() => {
         const handleChange = () => {
+            // A note-switch load echo (the replace, and possibly the history-reset state swap). The
+            // editor's serialize(parse(content)) round-trip can legitimately differ from the on-disk
+            // content (whitespace / &nbsp; / trailing-newline normalization), so suppress the echo
+            // UNCONDITIONALLY during a swap — never let it reach the autosave, or it would re-serialize
+            // the note to disk and bump its updatedAt (which reorders the list under "Updated" sort).
+            if (swappingRef.current) return;
             const value = editor.getValue();
-            // A note-switch load echo (the replace, and possibly the history-reset state swap): the
-            // value is the just-loaded content, so treat it as a load, never a user edit to save.
-            if (swappingRef.current && value === note.content) return;
             // Ignore only the first emit if it just echoes the loaded content (the no-op fired while
             // the initial markup loads), so we don't rewrite the file on open. Every later change —
             // including an undo back to the original — flows through so disk matches the screen.
@@ -222,11 +225,11 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     // Swap the editor's content on a note switch (or disk reload). Skipped when the content is
     // unchanged — a rename rekeys the note in place without touching the body, so the caret/scroll
     // survive. On a real switch: replace, then HARD-RESET the undo history so ⌘Z stays within this
-    // note (see the class comment), and re-arm the load-echo suppression around both.
+    // note (see the class comment). `swappingRef` brackets the synchronous emits from both so the
+    // change handler treats them as a load echo, never a user edit (see handleChange).
     useEffect(() => {
         if (editor.getValue() === note.content) return;
         swappingRef.current = true;
-        settledRef.current = false;
         editor.replace(note.content);
         resetHistory();
         swappingRef.current = false;
