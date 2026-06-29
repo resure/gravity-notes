@@ -28,16 +28,17 @@ The fix has three tiers, **cheapest + lowest-risk first**:
 - ✅ **Tier B** — browse preview-opens coalesced to leading + single-trailing (continuous scroll no
   longer rebuilds the editor ~10×/s). Shipped.
 - ✅ **P1** — `previewFromContent` 12 → 8 regex passes. Shipped.
-- ✅ **Tier A** — the editor is split into a light shell + a lazily-mounted `EditorBody`. Browsing
-  (arrow / single-click / scope-flip) shows a cheap `NotePreview` from `note.content`; the ProseMirror
-  editor mounts only on a commit (Enter / click-into-body / follow-link / new note). Shipped.
-  - **UX change to be aware of:** clicking a note now shows a read-only preview; click into the body
-    (or Enter) to edit. This is the tradeoff that makes switching cheap. `preview` mode (⌘⇧P) now only
-    matters while editing (browse is already a preview).
-  - Did **not** touch the editor's lifecycle/undo/change-plumbing (Tier C) — the editor still mounts
-    fresh per edit session via `key={sessionId}`; it just isn't mounted while browsing.
-- ⏳ **Tier C** (`editor.replace()` reuse) — deferred; only if a measurement shows a live editor must
-  persist across switches. Hard-gate on undo-history reset + the `settledRef` race.
+- ✅ **Tier C** — the editor is now **reused across note switches** (editable by default + fast). The
+  pane no longer remounts on a switch; `EditorBody` swaps content in place via `editor.replace()` and
+  **hard-resets the undo history** (`view.updateState(EditorState.create({doc, plugins}))`) so ⌘Z
+  can't drag the previous note's text into the new one. `NoteTitle` is still keyed by `sessionId`
+  (its dirty-draft safety net + the autofocus focus model both ride on it). Replaces the earlier
+  Tier A lazy-mount approach (browse-preview), which was reverted in favor of editable-by-default.
+  - **⚠ Needs real-app verification** (the test suite mocks the editor, so `replace()`/history-reset
+    run as no-ops in tests): (1) switch notes then ⌘Z — no cross-note text; (2) switch then edit + ⌘Z
+    — normal in-note undo still works; (3) switch while editing the title — draft committed to the old
+    note; (4) edit a note, switch away + back — content saved/restored; (5) ⌘⇧P preview across a
+    switch; (6) toggle WYSIWYG↔Markup after a switch (the `updateState` reset's residual risk area).
 - ⏳ **P2 / P3** (corpus + attachment raw-bytes IPC, rayon) — not started; one-time / image-heavy wins.
 
 
