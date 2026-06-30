@@ -1,3 +1,6 @@
+import {useMemo} from 'react';
+
+import transform from '@diplodoc/transform';
 import {Dialog, Loader, Progress, Text} from '@gravity-ui/uikit';
 
 import type {AppUpdater, UpdaterStatus} from '../hooks/useAppUpdater';
@@ -63,7 +66,7 @@ function UpdateBody({updater}: {updater: AppUpdater}) {
                     <Text color="secondary" variant="body-1">
                         You have v{info.currentVersion}.
                     </Text>
-                    {info.notes ? <div className="update-dialog__notes">{info.notes}</div> : null}
+                    {info.notes ? <ReleaseNotes notes={info.notes} /> : null}
                 </>
             ) : null}
 
@@ -83,6 +86,26 @@ function UpdateBody({updater}: {updater: AppUpdater}) {
             {status === 'error' && error ? <Text color="danger">{error}</Text> : null}
         </div>
     );
+}
+
+/**
+ * Render the release's Markdown notes as HTML (GitHub release body / changelog), via the same
+ * `@diplodoc/transform` the note preview uses — so a bulleted changelog reads as a list, not raw
+ * `- ` text. The transform escapes raw HTML and sanitizes by default; the `.yfm` class picks up the
+ * globally-loaded YFM typography. Falls back to plain pre-wrapped text if the transform throws.
+ */
+function ReleaseNotes({notes}: {notes: string}) {
+    const html = useMemo(() => {
+        try {
+            return transform(notes).result.html;
+        } catch {
+            return null;
+        }
+    }, [notes]);
+    if (html === null) {
+        return <div className="update-dialog__notes update-dialog__notes_plain">{notes}</div>;
+    }
+    return <div className="update-dialog__notes yfm" dangerouslySetInnerHTML={{__html: html}} />;
 }
 
 /** Download line: a determinate bar with byte counts, or an indeterminate spinner if size is unknown. */

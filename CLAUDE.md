@@ -25,7 +25,9 @@ time). Both work across all three backends.
 
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
-commands, the folder ops, and `reveal_path`; it also registers the **updater** + **process** plugins).
+commands, the folder ops, and `reveal_path`; it also registers the **updater** + **process** plugins,
+sets a theme-aware native window background (anti-flash), and builds a **custom app menu** whose macOS
+"About" item emits `menu:about` so the frontend can open its own `AboutDialog`).
 
 The desktop app ships **in-app auto-update** via the official Tauri 2 updater, delivered through GitHub
 Releases (`src/hooks/useAppUpdater.ts`; cut a release with the `/release` runbook in `.claude/skills/release`).
@@ -172,18 +174,25 @@ Key modules:
   save-status dot), `FolderRail` (collapsible nested-folder tree left of the list — select/scope,
   drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
   sort; **virtualized** via `@tanstack/react-virtual`, with a `rangeExtractor` that keeps the
-  keyboard-focused row mounted), `MoveToDialog` (the ⌘⇧M move-to-folder picker), `EditorPane` (wraps the Gravity markdown
-  editor; re-created per editing session via a stable `useNotes.sessionId`, so a rename doesn't remount
-  it) with `NoteTitle` and `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
+  keyboard-focused row mounted), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
+  list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut),
+  `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
+  `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
+  switch — the reused editor would otherwise carry the previous note's scrollTop) with `NoteTitle` and
+  `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
   delete + full-size view; virtualized list), `Lightbox` (shared full-size image overlay with
   pinch/scroll zoom + drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
   `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), the `[[wiki link]]` editor
   pieces (`editor/wikiLinkExtension` — a mark with `escape: false` so it round-trips — plus the
   `WikiLinkSuggest` `[[` picker and `WikiLinkTooltip`), `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `UpdateDialog` (the software-update sheet),
-  `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `UpdateDialog` (the software-update sheet;
+  release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
+  with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
+  clickable links), `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
-  `ErrorBoundary`.
+  `ErrorBoundary`. The theme key (`gravity-notes:theme`) is also read by an inline anti-flash
+  script in `index.html` that paints the document background in the resolved theme before the bundle
+  loads (so launch doesn't flash white before dark) — keep the two in sync.
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
 
 ## Conventions

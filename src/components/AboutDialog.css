@@ -1,0 +1,26 @@
+.about-dialog {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 0 4px;
+    text-align: center;
+}
+
+/* The app mark — the same orb (and luminous halo) as the top bar, so the About box wears the app's
+   identity; it inherits --gn-orange, so it goes blue in the dev build like the rest of the mark. */
+.about-dialog__orb {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 8px;
+    border-radius: 50%;
+    background-color: var(--gn-orange);
+    box-shadow: 0 0 24px -4px var(--gn-orb-halo);
+}
+
+.about-dialog__links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+}

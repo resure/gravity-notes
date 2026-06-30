@@ -11,6 +11,37 @@
             href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJvIiB4MT0iMTYiIHkxPSIzIiB4Mj0iMTYiIHkyPSIyOSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIHN0b3AtY29sb3I9IiNGNTlBMzgiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNFMDc4MUUiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxMyIgZmlsbD0idXJsKCNvKSIvPjwvc3ZnPg=="
         />
         <title>Gravity Notes</title>
+        <!-- Anti-flash: paint the document background in the resolved theme BEFORE the JS bundle and
+             Gravity's theming load, so launch (esp. the desktop WKWebView) doesn't flash white before
+             dark. The colors mirror Gravity's --g-color-base-background (dark tuned in index.css);
+             the key must match THEME_KEY in App.tsx. 'system'/unset falls through to the media query. -->
+        <style>
+            html {
+                background-color: #fff;
+            }
+            @media (prefers-color-scheme: dark) {
+                html {
+                    background-color: #211e1a;
+                }
+            }
+            html.gn-boot-dark {
+                background-color: #211e1a;
+            }
+            html.gn-boot-light {
+                background-color: #fff;
+            }
+        </style>
+        <script>
+            (function () {
+                try {
+                    var t = localStorage.getItem('gravity-notes:theme');
+                    if (t === 'dark') document.documentElement.classList.add('gn-boot-dark');
+                    else if (t === 'light') document.documentElement.classList.add('gn-boot-light');
+                } catch (e) {
+                    /* private mode: localStorage may throw — fall back to the media query */
+                }
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>

@@ -1,7 +1,7 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
 import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
-import {EditorState} from 'prosemirror-state';
+import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
 import type {Note, NoteMeta} from '../storage/types';
@@ -80,6 +80,12 @@ interface EditorBodyProps {
     note: Note;
     /** Read-only preview mode (⌘⇧P) — renders the LIVE buffer, not disk. */
     preview: boolean;
+    /**
+     * The scroll container (`.editor-pane`), so a note switch can save/restore the outgoing note's
+     * scroll position. The editor is reused across switches, so without this the previous note's
+     * scrollTop carries over and the new note opens mid-document.
+     */
+    scrollContainerRef: React.RefObject<HTMLDivElement>;
     onChange: (markup: string) => void;
     onUploadFile: (file: File) => Promise<string>;
     wikiNotes: NoteMeta[];
@@ -99,7 +105,7 @@ interface EditorBodyProps {
  * (not the on-disk `note.content`), so previewing mid-edit shows the live buffer.
  */
 const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function EditorBody(
-    {note, preview, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
+    {note, preview, scrollContainerRef, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
     ref,
 ) {
     // Stable across the editor's life; read latest via a ref so the upload handler — captured once in
@@ -222,25 +228,84 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         };
     }, [editor, note.content, onChange]);
 
+    // Per-note caret + scroll, so switching away and back lands you where you left off (and a
+    // first-time open lands at the TOP, not wherever the previous note was scrolled — the editor is
+    // reused, so its scrollTop would otherwise carry over). Keyed by note id; survives a rename/move
+    // via the re-key effect below. Kept in a ref (UI-restoration state, never rendered).
+    const viewStateByIdRef = useRef<Map<string, {scrollTop: number; selection: unknown}>>(
+        new Map(),
+    );
+    // The id of the note currently loaded in the (reused) editor — lags `note.id` so the swap effect
+    // can attribute the outgoing scroll/caret to the right note before the swap.
+    const prevNoteIdRef = useRef(note.id);
+
+    /** Snapshot a note's scroll position + caret before we swap its content out. */
+    const saveViewState = (id: string) => {
+        const view = wikiViewRef.current;
+        if (!view || !id) return;
+        viewStateByIdRef.current.set(id, {
+            scrollTop: scrollContainerRef.current?.scrollTop ?? 0,
+            selection: view.state.selection.toJSON(),
+        });
+    };
+
     // Swap the editor's content on a note switch (or disk reload). Skipped when the content is
     // unchanged — a rename rekeys the note in place without touching the body, so the caret/scroll
-    // survive. On a real switch: replace, then HARD-RESET the undo history so ⌘Z stays within this
-    // note (see the class comment). `swappingRef` brackets the synchronous emits from both so the
-    // change handler treats them as a load echo, never a user edit (see handleChange).
+    // survive. On a real switch: save the OUTGOING note's caret/scroll, replace, HARD-RESET the undo
+    // history so ⌘Z stays within this note (see the class comment), restore the INCOMING note's
+    // caret/scroll (or reset to the top for a note opened for the first time). `swappingRef` brackets
+    // the synchronous emits from replace + the state reset + the selection restore so the change
+    // handler treats them as a load echo, never a user edit (see handleChange).
     useEffect(() => {
+        const prevId = prevNoteIdRef.current;
+        prevNoteIdRef.current = note.id;
         if (editor.getValue() === note.content) return;
+        saveViewState(prevId);
         swappingRef.current = true;
         editor.replace(note.content);
         resetHistory();
+        restoreSelection(note.id);
         swappingRef.current = false;
+        // Scroll last (a plain scrollTop set emits no transaction), once the new content's layout exists.
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop =
+                viewStateByIdRef.current.get(note.id)?.scrollTop ?? 0;
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- swap only when the body actually changes
     }, [note.content]);
+
+    // A rename/move re-keys the open note in place (id changes, body doesn't), so the swap effect
+    // above doesn't run. Carry the saved view-state to the new id so a later switch-and-back restores it.
+    useEffect(() => {
+        const prev = prevNoteIdRef.current;
+        if (prev === note.id) return;
+        const saved = viewStateByIdRef.current.get(prev);
+        if (saved) {
+            viewStateByIdRef.current.set(note.id, saved);
+            viewStateByIdRef.current.delete(prev);
+        }
+        prevNoteIdRef.current = note.id;
+    }, [note.id]);
 
     /** Drop the whole undo stack by re-creating the EditorState over the current doc + plugins. */
     function resetHistory() {
         const view = wikiViewRef.current;
         if (!view) return;
         view.updateState(EditorState.create({doc: view.state.doc, plugins: view.state.plugins}));
+    }
+
+    /** Restore a note's saved caret, clamped to the freshly-loaded doc (no-op for a first open). */
+    function restoreSelection(id: string) {
+        const view = wikiViewRef.current;
+        const saved = viewStateByIdRef.current.get(id);
+        if (!view || !saved) return;
+        try {
+            const selection = Selection.fromJSON(view.state.doc, saved.selection as never);
+            view.dispatch(view.state.tr.setSelection(selection));
+        } catch {
+            // The doc changed since we saved (e.g. an external edit on disk reload) so the positions
+            // no longer resolve — leave the default selection (doc start) the history reset produced.
+        }
     }
 
     // A link's broken state depends on the notes list and this note's id, neither of which is a doc
@@ -306,6 +371,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     const titleRef = useRef<NoteTitleHandle>(null);
     const bodyRef = useRef<EditorBodyHandle>(null);
     const bodyWrapRef = useRef<HTMLDivElement>(null);
+    // The vertical scroll container (see EditorPane.css); EditorBody saves/restores its scrollTop per
+    // note so a switch doesn't carry the previous note's scroll over.
+    const paneRef = useRef<HTMLDivElement>(null);
     // Read the latest autofocus inside the session-driven focus effect without re-running it per change.
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
@@ -362,6 +430,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     return (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
+            ref={paneRef}
             className="editor-pane"
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
@@ -428,6 +497,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     ref={bodyRef}
                     note={note}
                     preview={preview}
+                    scrollContainerRef={paneRef}
                     onChange={onChange}
                     onUploadFile={onUploadFile}
                     wikiNotes={wikiNotes}

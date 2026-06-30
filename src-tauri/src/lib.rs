@@ -21,6 +21,8 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+// `Emitter` brings `app.emit` into scope for the menu-event handler (cross-platform).
+use tauri::Emitter;
 // Only the macOS window/Dock handlers below call `Manager::get_webview_window`; elsewhere `App`'s
 // inherent `handle()` is used, so on non-macOS builds the trait import would be dead (-D warnings).
 #[cfg(target_os = "macos")]
@@ -690,9 +692,91 @@ fn open_external(url: String) -> Result<(), String> {
     }
 }
 
+/// Build the application menu. On macOS the app submenu's "About <App>" is a *custom* item (id
+/// `about`) that emits `menu:about` to the frontend (opening our own about dialog with clickable
+/// links); the rest mirrors Tauri's default menu so Edit (copy/paste/undo), View and Window keep
+/// working. On other platforms we fall back to the stock default menu.
+fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        let name = app.package_info().name.clone();
+        let about = MenuItem::with_id(
+            app,
+            "about",
+            format!("About {name}"),
+            true,
+            None::<&str>,
+        )?;
+        let app_menu = Submenu::with_items(
+            app,
+            &name,
+            true,
+            &[
+                &about,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::services(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::hide(app, None)?,
+                &PredefinedMenuItem::hide_others(app, None)?,
+                &PredefinedMenuItem::show_all(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ],
+        )?;
+        let edit_menu = Submenu::with_items(
+            app,
+            "Edit",
+            true,
+            &[
+                &PredefinedMenuItem::undo(app, None)?,
+                &PredefinedMenuItem::redo(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::cut(app, None)?,
+                &PredefinedMenuItem::copy(app, None)?,
+                &PredefinedMenuItem::paste(app, None)?,
+                &PredefinedMenuItem::select_all(app, None)?,
+            ],
+        )?;
+        let view_menu = Submenu::with_items(
+            app,
+            "View",
+            true,
+            &[&PredefinedMenuItem::fullscreen(app, None)?],
+        )?;
+        let window_menu = Submenu::with_items(
+            app,
+            "Window",
+            true,
+            &[
+                &PredefinedMenuItem::minimize(app, None)?,
+                &PredefinedMenuItem::maximize(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::close_window(app, None)?,
+            ],
+        )?;
+        Menu::with_items(app, &[&app_menu, &edit_menu, &view_menu, &window_menu])
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tauri::menu::Menu::default(app)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Custom menu so the macOS "About Gravity Notes" item opens our own dialog (with clickable
+        // links) instead of the default native panel — muda renders the panel's credits as plain text
+        // and ignores `website`, so links can't be clickable there. Everything else mirrors the
+        // default menu (Edit's copy/paste/undo, Window, View) so nothing is lost.
+        .menu(build_menu)
+        .on_menu_event(|app, event| {
+            if event.id() == "about" {
+                // The frontend (Workspace) listens for this and opens <AboutDialog>.
+                let _ = app.emit("menu:about", ());
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_decorum::init())
         // In-app auto-update (macOS) via GitHub Releases: the updater downloads + verifies the
@@ -715,6 +799,18 @@ pub fn run() {
                 use tauri_plugin_decorum::WebviewWindowExt;
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_traffic_lights_inset(16.0, 20.0);
+                    // Paint the webview backdrop in the resolved theme so launch doesn't flash white
+                    // before the page background loads. The index.html anti-flash style covers the
+                    // content paint; this covers the empty frame before it. Colors mirror Gravity's
+                    // base background (dark tuned in index.css). Default to dark if the theme can't be
+                    // read — "better dark than white" (the requested fallback).
+                    let dark = window.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true);
+                    let bg = if dark {
+                        tauri::window::Color(33, 30, 26, 255)
+                    } else {
+                        tauri::window::Color(255, 255, 255, 255)
+                    };
+                    let _ = window.set_background_color(Some(bg));
                 }
             }
             Ok(())

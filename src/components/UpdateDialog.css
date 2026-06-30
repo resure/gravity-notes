@@ -15,7 +15,8 @@
     text-align: center;
 }
 
-/* Release notes — the manifest's `notes` (changelog text) shown verbatim, scrollable if long. */
+/* Release notes — the manifest's `notes` (changelog), rendered as Markdown (.yfm) and scrollable
+   if long. The `_plain` modifier is the no-render fallback (verbatim, pre-wrapped). */
 .update-dialog__notes {
     max-height: 240px;
     overflow-y: auto;
@@ -23,11 +24,29 @@
     border: 1px solid var(--g-color-line-generic);
     border-radius: var(--g-border-radius-m);
     background: var(--g-color-base-generic);
-    white-space: pre-wrap;
     word-break: break-word;
     font-size: var(--g-text-body-1-font-size);
     line-height: var(--g-text-body-1-line-height);
     color: var(--g-color-text-primary);
+}
+
+.update-dialog__notes_plain {
+    white-space: pre-wrap;
+}
+
+/* Trim the YFM block margins so the rendered changelog sits flush inside the box (no big leading/
+   trailing gap), and keep headings/list spacing compact for a release-notes context. */
+.update-dialog__notes.yfm > :first-child {
+    margin-top: 0;
+}
+.update-dialog__notes.yfm > :last-child {
+    margin-bottom: 0;
+}
+.update-dialog__notes.yfm :where(h1, h2, h3, h4, h5, h6) {
+    margin-top: 12px;
+    margin-bottom: 4px;
+    font-size: var(--g-text-subheader-1-font-size);
+    line-height: var(--g-text-subheader-1-line-height);
 }
 
 .update-dialog__progress {
