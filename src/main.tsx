@@ -33,6 +33,13 @@ if (isTauri) {
     document.documentElement.classList.add('tauri-app');
 }
 
+// Dev build: flag the document so the app mark (menu orb + status swatch) goes blue, matching the
+// blue dev icon. `import.meta.env.DEV` is true under Vite dev (what `npm run tauri:dev` runs) and
+// false in the released production build.
+if (import.meta.env.DEV) {
+    document.documentElement.classList.add('gn-dev');
+}
+
 createRoot(rootEl).render(
     <StrictMode>
         <App />

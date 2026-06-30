@@ -13,9 +13,18 @@ body,
 }
 
 /* The app icon's orange (mid-tone of the disc gradient). Single source of truth for the menu orb
-   and the saving status dot; theme-independent, so it lives on :root. */
+   and the saving status dot; theme-independent, so it lives on :root. The orb's luminous halo is
+   derived from the same hue. */
 :root {
     --gn-orange: #ea892b;
+    --gn-orb-halo: rgba(238, 152, 46, 0.55);
+}
+
+/* Dev build (Vite dev mode → `npm run tauri:dev`): recolor the app mark blue to match the blue
+   "supernova" dev icon, so the running build is unmistakable. Web prod / released app stay orange. */
+.gn-dev {
+    --gn-orange: #1f81ff;
+    --gn-orb-halo: rgba(31, 129, 255, 0.55);
 }
 
 /* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand

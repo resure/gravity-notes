@@ -48,11 +48,21 @@ npm run format:check # Prettier check (used in CI)
 npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config.ts
 
 # Desktop app (Tauri 2, macOS arm64). Needs Rust ≥ 1.88 (rustup recommended).
-npm run tauri:dev    # run the desktop app against the Vite dev server
+npm run tauri:dev    # run the desktop app (dev config: blue icon + "Gravity Notes Dev" name/title)
 npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/target/release/bundle
 # Signed + notarized release: the /release skill → scripts/build-mac-release.sh (emits DMG + updater
 # .app.tar.gz + latest.json); needs rustup's cargo + the Apple/updater signing env vars.
 ```
+
+**App icons.** Two SVG sources: `src-tauri/icon-source.svg` (prod — orange disc on a dark squircle)
+and `src-tauri/icon-source-dev.svg` (dev — a blue "supernova" sun). Regenerate with
+`npx tauri icon <1024.png> [-o src-tauri/icons-dev]`, then delete the `android/`, `ios/`, and
+`64x64.png` it emits (macOS-only). **Gotcha:** rasterize the SVG to a _transparent_ 1024px PNG first —
+`qlmanage -t` renders on a white background, so flood-fill it away before `tauri icon`
+(`magick in.png -alpha set -bordercolor white -border 1 -fuzz 8% -fill none -draw "alpha 0,0 floodfill" -shave 1x1 out.png`),
+or every generated asset gets a white box behind the squircle. `npm run tauri:dev` passes
+`--config src-tauri/tauri.dev.conf.json` so the dev build gets the blue icon + a distinct name/identifier;
+`tauri:build` and `/release` use the prod config untouched.
 
 ## Architecture
 
