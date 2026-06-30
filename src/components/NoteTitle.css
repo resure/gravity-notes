@@ -2,17 +2,25 @@
    Left/right padding uses the shared --editor-gutter (set on .workspace__editor, the same
    value the editor body uses) so the title and the first body line share a left edge. The
    top gap gives it breathing room under the top bar; the body adds its own gap below. */
+
+/* Row wrapping the icon button + title input. The gutter lives here so the icon button
+   and input share the same left edge as the body text. */
+.note-title-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 12px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
+}
+
 .note-title {
-    display: block;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     border: none;
     outline: none;
     background: transparent;
     margin: 0;
-    /* Left edge sits a hair (2px) right of the body's gutter — optically aligns the large
-       title with the body text. Right/top/bottom as before. */
-    padding: 12px var(--editor-gutter, 16px) 4px calc(var(--editor-gutter, 16px) + 2px);
+    padding: 0 0 0 2px;
     color: var(--g-color-text-primary);
     font-family: inherit;
     font-size: 1.6rem;

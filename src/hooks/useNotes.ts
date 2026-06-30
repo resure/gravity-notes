@@ -6,6 +6,7 @@ import {
     reconcile,
     withActive,
     withCreatedStamp,
+    withIcon,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -98,6 +99,8 @@ export interface UseNotes {
     sessionId: number;
     setSortMode(sort: SortMode): void;
     togglePin(id: string): void;
+    /** Set (or clear, with an empty string) a note's icon (a Gravity component name). */
+    setIcon(id: string, icon: string): void;
     /** The single open note's id (mirrors `metadata.active`), or null. */
     activeId: string | null;
     /** Full content of the open note (the editor's initial markup), or null. */
@@ -253,6 +256,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     );
     const togglePin = useCallback(
         (id: string) => void persistMetadata(withPinToggled(metadataRef.current, id)),
+        [persistMetadata],
+    );
+    const setIcon = useCallback(
+        (id: string, icon: string) => void persistMetadata(withIcon(metadataRef.current, id, icon)),
         [persistMetadata],
     );
 
@@ -1147,6 +1154,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         sessionId,
         setSortMode,
         togglePin,
+        setIcon,
         activeId: metadata.active,
         note,
         saveState,

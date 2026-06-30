@@ -27,6 +27,7 @@
     "@diplodoc/file-extension": "^0.2.1",
     "@diplodoc/tabs-extension": "^3.5.1",
     "@diplodoc/transform": "^4.43.0",
+    "@emoji-mart/data": "^1.2.1",
     "@gravity-ui/components": "^4.20.2",
     "@gravity-ui/icons": "^2.18.0",
     "@gravity-ui/markdown-editor": "^15.40.0",

@@ -375,6 +375,7 @@ class DeferredSaveStore implements NoteStore {
         sort: 'updated',
         pinned: [],
         created: {},
+        icons: {},
         active: null,
         trashed: [],
     };
@@ -704,6 +705,7 @@ class ControllableStore implements NoteStore {
         sort: 'updated',
         pinned: [],
         created: {},
+        icons: {},
         active: null,
         trashed: [],
     };

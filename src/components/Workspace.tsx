@@ -879,6 +879,8 @@ export function Workspace({
                             onSortChange={notes.setSortMode}
                             pinnedIds={notes.metadata.pinned}
                             onTogglePin={notes.togglePin}
+                            icons={notes.metadata.icons}
+                            onSetIcon={notes.setIcon}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
                             onFocusRail={() => railRef.current?.focusSelected()}
@@ -919,6 +921,8 @@ export function Workspace({
                                         onUploadFile={handleUploadFile}
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
+                                        icon={notes.metadata.icons[notes.note.id]}
+                                        onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                     />
                                 </div>
                                 <BacklinksPanel

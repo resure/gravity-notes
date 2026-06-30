@@ -126,7 +126,7 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
 
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
         await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
 
@@ -681,7 +681,7 @@ describe('Workspace — trash', () => {
 
         // Delete Beta → confirm "Move to Trash" → it leaves the list.
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
         await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
         await waitFor(() =>
