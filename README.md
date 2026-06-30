@@ -37,6 +37,9 @@ Markdown files, and they are yours.
 - Debounced **autosave**, with a status indicator and unsaved-changes guards
 - **Conflict handling** when a note changes underneath you (reload / keep mine / save a copy / discard)
 - Light / dark / system theme
+- **Automatic updates** (desktop app): the macOS app checks for a newer release on launch and installs
+  it in place once you confirm — plus a manual **Check for Updates…** in the storage menu. Updates are
+  delivered through GitHub Releases and verified by signature
 - **Keyboard-first** navigation (nvALT / Notational Velocity style): type to search-or-create, arrow to
   preview, Enter to edit, Esc to step back. Press `⌘/` in the app for the full shortcut sheet.
 
@@ -156,6 +159,8 @@ Key modules:
 - **A selected image shows a faint caret line** beside it in the editor — the browser's native
   object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected. See
   `TODO.md`.
+- **Auto-update (desktop) starts from the release that introduced it.** A build without the updater
+  (≤ 0.2.0) has to be updated by hand once; from there the macOS app updates itself in place. arm64 only.
 
 ### Backlog
 
@@ -164,7 +169,6 @@ Key modules:
 - Notion-like font, width and density setting for each note? And ability to set default for all notes
 
 - Mac App Store?
-- Autoupdate via GitHub Releases
 
 - Mobile view
 - Mobile app

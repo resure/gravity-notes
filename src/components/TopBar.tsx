@@ -4,6 +4,8 @@ import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 import {
     ArrowDownToLine,
     ArrowUpFromLine,
+    ArrowsRotateRight,
+    CircleArrowUp,
     CircleQuestion,
     Folder,
     LayoutSideContent,
@@ -35,6 +37,10 @@ export interface TopBarProps {
     /** Number of notes currently in the Trash, for the menu-item badge. */
     trashCount: number;
     onOpenHelp: () => void;
+    /** Open the software-update dialog + kick off a check. Native shell only; omit to hide the item. */
+    onCheckForUpdates?: () => void;
+    /** Whether an update is already known to be available — turns the item into a call to action. */
+    updateAvailable?: boolean;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
     /** Toggle the sidebar collapsed/docked. */
@@ -93,6 +99,8 @@ export function TopBar({
     onOpenTrash,
     trashCount,
     onOpenHelp,
+    onCheckForUpdates,
+    updateAvailable,
     themePref,
     onChangeThemePref,
     onToggleCollapsed,
@@ -276,6 +284,20 @@ export function TopBar({
                 action: onOpenHelp,
             },
         ],
+        // The native shell can self-update; the web build omits the handler, hiding this group.
+        ...(onCheckForUpdates
+            ? [
+                  [
+                      {
+                          text: updateAvailable ? 'Install update…' : 'Check for Updates…',
+                          iconStart: (
+                              <Icon data={updateAvailable ? CircleArrowUp : ArrowsRotateRight} />
+                          ),
+                          action: onCheckForUpdates,
+                      },
+                  ],
+              ]
+            : []),
     ];
 
     return (

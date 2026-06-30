@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
+import {isTauri} from '../isTauri';
 import {
     DEFAULT_METADATA,
     reconcile,
@@ -1087,7 +1088,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     // `beforeunload`, so flush the last debounced edit on the window's close request. Feature-detect
     // the shell and load the API via dynamic import() so neither enters the web bundle.
     useEffect(() => {
-        if (!('__TAURI_INTERNALS__' in window)) return undefined;
+        if (!isTauri) return undefined;
         let unlisten: (() => void) | undefined;
         let disposed = false;
         void import('@tauri-apps/api/window').then(({getCurrentWindow}) => {
