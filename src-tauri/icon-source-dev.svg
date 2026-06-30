@@ -4,11 +4,19 @@
       <stop stop-color="#24262D"/>
       <stop offset="1" stop-color="#141620"/>
     </linearGradient>
-    <!-- orange disc gradient (lit from the top) -->
+
+    <!-- blue disc, lit from the top (sibling of the orange prod disc), centered on #1f81ff -->
     <linearGradient id="disc" x1="512" y1="216" x2="512" y2="808" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F59A38"/>
-      <stop offset="1" stop-color="#E0781E"/>
+      <stop stop-color="#4D9BFF"/>
+      <stop offset="1" stop-color="#0A6BF0"/>
     </linearGradient>
+
+    <!-- whisper of bloom so it still reads "supernova", not just a flat dot -->
+    <radialGradient id="glow" cx="512" cy="512" r="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D9BFF" stop-opacity="0.22"/>
+      <stop offset="0.6" stop-color="#1f81ff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#1f81ff" stop-opacity="0"/>
+    </radialGradient>
 
     <clipPath id="sq">
       <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
@@ -19,7 +27,9 @@
   <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#body)"/>
 
   <g clip-path="url(#sq)">
-    <!-- one big orange circle -->
+    <!-- faint bloom -->
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+    <!-- the blue sun -->
     <circle cx="512" cy="512" r="296" fill="url(#disc)"/>
   </g>
 

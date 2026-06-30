@@ -19,7 +19,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc && tsc -p tsconfig.node.json",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri build"
   },
   "dependencies": {
