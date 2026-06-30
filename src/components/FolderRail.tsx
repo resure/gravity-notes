@@ -35,8 +35,10 @@ import './FolderRail.css';
 const ALL_KEY = ' all';
 /** dataTransfer type carrying a dragged folder's path (notes use `NOTE_MIME`, so the two differ). */
 const FOLDER_MIME = 'application/x-gravity-folder';
-/** dataTransfer type carrying a dragged note's id — gates note drops so foreign `text/plain` drags
- * (arbitrary external text) can't be passed into `onMoveTo`. Must match `NOTE_MIME` in NoteList. */
+/**
+ * dataTransfer type carrying a dragged note's id — gates note drops so foreign `text/plain` drags
+ * (arbitrary external text) can't be passed into `onMoveTo`. Must match `NOTE_MIME` in NoteList.
+ */
 const NOTE_MIME = 'application/x-gravity-note';
 
 export interface FolderRailHandle {
@@ -63,8 +65,10 @@ export interface FolderRailProps {
     onCreateFolder: (parentPath: string, name: string) => void;
     /** Remove an empty folder (no notes anywhere under it, no subfolders). */
     onRemoveFolder: (path: string) => void;
-    /** Move / rename a folder (re-keying its whole subtree). May resolve `false` on a rejected move
-     * (name collision / no-op), which lets the rail clear its pending select-after-refresh. */
+    /**
+     * Move / rename a folder (re-keying its whole subtree). May resolve `false` on a rejected move
+     * (name collision / no-op), which lets the rail clear its pending select-after-refresh.
+     */
     onMoveFolder: (fromPath: string, toPath: string) => void | Promise<boolean>;
     /** Toggle a folder's pin. */
     onTogglePin: (path: string) => void;

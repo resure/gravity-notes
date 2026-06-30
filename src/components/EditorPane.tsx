@@ -332,7 +332,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             titleRef.current?.focus();
             titleRef.current?.select();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- focus once per note session
     }, [sessionId]);
 
     // Title → body: put the caret at the start of the body and focus it. In preview mode, focus the

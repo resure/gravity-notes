@@ -26,6 +26,7 @@ import {
     type TrashEntry,
     type TrashedNote,
 } from '../storage/types';
+import {TimeoutError, withTimeout} from '../timeout';
 
 /**
  * Reconcile the persisted trash registry against the backend's actual trash list (from `listTrash`):
@@ -73,27 +74,6 @@ const SAVE_TIMEOUT_MS = 15_000;
 /** Retry a transient save failure a few times (capped backoff) before leaving it to the user. */
 const MAX_SAVE_RETRIES = 5;
 const RETRY_MAX_DELAY = 30_000;
-
-/**
- * Race `promise` against a `ms` deadline. The underlying promise still settles in the background
- * (it can't be cancelled) — this just stops the caller from awaiting it forever; on timeout it
- * rejects so the caller can surface an error and move on instead of hanging.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-        promise.then(
-            (value) => {
-                clearTimeout(timer);
-                resolve(value);
-            },
-            (err) => {
-                clearTimeout(timer);
-                reject(err);
-            },
-        );
-    });
-}
 
 /** A detected external change to the open note. */
 export interface NoteConflict {
@@ -394,7 +374,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             // retry below, racing the same file) would raise a phantom conflict. Reconcile the
             // baseline when the original promise resolves — guarded to the still-open note, only
             // advancing it (never downgrading a fresher baseline a newer save already set).
-            if (err instanceof Error && err.message.startsWith('Save timed out')) {
+            if (err instanceof TimeoutError) {
                 void savePromise.then(
                     (meta) => {
                         const next = meta.updatedAt ?? null;

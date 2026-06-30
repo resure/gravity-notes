@@ -8,7 +8,7 @@ import {
     dirname,
     isAttachmentRef,
     joinPath,
-    sanitizeDir,
+    sanitizeImportDir,
     sanitizeSegment,
     titleFromFileName,
 } from './noteText';
@@ -129,7 +129,7 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
                 if (baseName(path) === FOLDER_MARKER) {
                     // An empty-folder marker (see buildExportZip): recreate the folder so the tree
                     // survives the roundtrip. It's not a note, so it doesn't count toward the total.
-                    const dir = sanitizeDir(dirname(path));
+                    const dir = sanitizeImportDir(dirname(path));
                     if (dir) await store.createFolder(dirname(dir), baseName(dir));
                     continue;
                 }
@@ -148,7 +148,7 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
                 if (!path.toLowerCase().endsWith(MD_EXT)) continue; // skip dir entries / non-md
                 // Preserve the entry's subfolder path (sanitized: drops `.`/`..`), so a zip exported
                 // with nested folders re-imports into the same structure instead of flattening.
-                await importOne(store, path, strFromU8(bytes), sanitizeDir(dirname(path)));
+                await importOne(store, path, strFromU8(bytes), sanitizeImportDir(dirname(path)));
                 count += 1;
             }
         } else if (lower.endsWith(MD_EXT)) {
