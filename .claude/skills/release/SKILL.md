@@ -25,12 +25,14 @@ throwaway uncommitted edits.
 1. **Clean main, in sync.** `git rev-parse --abbrev-ref HEAD` is `main`; `git status
 --porcelain` is empty; `git fetch` then confirm not behind `origin/main`. If the tree
    is dirty or you're not on main, stop and tell the user.
-2. **Toolchain.** macOS arm64 with Xcode Command Line Tools, and **rustup's** cargo on
-   PATH (`cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
-   `rust-toolchain-tauri` memory).
+2. **Toolchain.** macOS arm64 with Xcode Command Line Tools, and **rustup's** cargo installed
+   (`~/.cargo/bin/cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
+   `rust-toolchain-tauri` memory). The build script prepends `~/.cargo/bin` to PATH itself, so a
+   Homebrew cargo sitting first on PATH no longer breaks the build.
 3. **Signing credentials** in the environment (the build script reads these; never print their
-   values): the Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
-   `APPLE_API_KEY_PATH` (the `.p8` file is readable) — **and** the updater key
+   values): the Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`, which
+   the build script aliases to it), `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (the `.p8` file is
+   readable) — **and** the updater key
    `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
    `~/Documents/Apple Connect Keys/gravity-notes-updater.key`;
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may be empty). Check each is set — without the updater key

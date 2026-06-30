@@ -10,7 +10,8 @@
 # your shell profile) — nothing secret lives in this file:
 #
 #   APPLE_SIGNING_IDENTITY     "Developer ID Application: Your Name (TEAMID)"
-#   APPLE_API_KEY              App Store Connect API Key ID (the AuthKey_<ID>.p8 ID)
+#   APPLE_API_KEY              App Store Connect API Key ID (the AuthKey_<ID>.p8 ID); APPLE_API_KEY_ID
+#                              is accepted as an alias
 #   APPLE_API_ISSUER           App Store Connect issuer ID (a UUID)
 #   APPLE_API_KEY_PATH         absolute path to the AuthKey_<ID>.p8 file
 #   TAURI_SIGNING_PRIVATE_KEY  path to (or content of) the updater's Ed25519 private key — signs the
@@ -20,6 +21,16 @@
 # Output: src-tauri/target/release/bundle/{macos,dmg}/ — .dmg + .app.tar.gz + latest.json
 
 set -euo pipefail
+
+# Use rustup's toolchain, not a stray Homebrew rust: prepend ~/.cargo/bin so `cargo`/`rustc` resolve
+# to the rustup proxy even when the shell's PATH lists Homebrew first. Homebrew's rust can lag the
+# MSRV the Tauri deps require (see the rust-toolchain-tauri memory), failing the build at resolve time.
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+
+# Tauri's notarization reads APPLE_API_KEY (the App Store Connect key ID). Accept APPLE_API_KEY_ID as
+# an alias so either name in your profile works; export it so `tauri build` (a child) inherits it.
+: "${APPLE_API_KEY:=${APPLE_API_KEY_ID:-}}"
+export APPLE_API_KEY
 
 # --- require credentials from the environment --------------------------------
 missing=()
