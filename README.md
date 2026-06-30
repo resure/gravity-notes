@@ -164,21 +164,21 @@ Key modules:
 
 ### Backlog
 
-- Search index update on file reload
-
+- Search index update on external file updates (+ reload workspace menu item?)
 - Notion-like font, width and density setting for each note? And ability to set default for all notes
-
-- Mac App Store?
-
-- Mobile view
-- Mobile app
-- Drop standalone web version support?
-- Versioning / snapshots (with manual snapshopts?)
-- Backend sync — add an `ApiStore` implementing `NoteStore`
-
 - Multi-window native app (with different workspaces)
 - Recent workspaces menu item (with cmd+r shortcut)
 
+- Easter egg in top bar (to the right of the search bar) ?
+
 - Preserve cmd+z between notes
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
+
+- Drop standalone web version support?
+- Versioning / snapshots (with manual snapshopts?)
+
 - Cmd+z for undoing deleting of notes and moves between folders?
+- Backend sync — add an `ApiStore` implementing `NoteStore`
+- Mobile view
+- Mobile app
+- Mac App Store?
