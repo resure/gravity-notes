@@ -16,6 +16,7 @@ import {
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
 import {TauriNoteStore} from '../storage/tauriStore';
 import type {NoteStore} from '../storage/types';
+import {TimeoutError, withTimeout} from '../timeout';
 
 export type StorageState =
     | 'loading' // checking for a previously-chosen backend
@@ -37,6 +38,12 @@ function folderName(path: string): string {
     const parts = path.split(/[/\\]/).filter(Boolean);
     return parts[parts.length - 1] ?? path;
 }
+
+/**
+ * How long the startup folder probe may run before we give up and route back to the picker. The
+ *  underlying walk can't be cancelled (a Tauri `invoke`), so it keeps running, but the UI moves on.
+ */
+const PROBE_TIMEOUT_MS = 10_000;
 
 export interface NotesStorage {
     state: StorageState;
@@ -106,15 +113,28 @@ export function useNotesStorage(): NotesStorage {
                     // Probe that the remembered folder still exists/reads before landing in the
                     // workspace: if it was moved/deleted/unmounted, every fs call there would fail.
                     // A failed probe surfaces the error and routes back to the choice screen so the
-                    // user can re-pick, rather than stranding them on a broken workspace.
+                    // user can re-pick, rather than stranding them on a broken workspace. The probe
+                    // is time-bounded: a huge/strange folder (home dir, a network mount) makes the
+                    // recursive walk hang instead of throw, which would otherwise leave the app stuck
+                    // on the loading spinner — where the choice buttons are disabled — forever.
                     try {
-                        await tauriStore.list();
+                        await withTimeout(tauriStore.list(), PROBE_TIMEOUT_MS, 'Folder probe');
                     } catch (err) {
                         if (cancelled || interactedRef.current) return;
+                        const timedOut = err instanceof TimeoutError;
+                        // A timeout means the folder is effectively unusable (too large / too slow),
+                        // so forget it — otherwise the next launch re-hangs on the same path. A plain
+                        // read error may be transient (an unplugged drive that comes back), so keep
+                        // the choice and only route back to the picker.
+                        if (timedOut) await clearStorageChoice().catch(() => {});
+                        if (cancelled || interactedRef.current) return;
                         setError(
-                            err instanceof Error
-                                ? err.message
-                                : 'Your notes folder is no longer available.',
+                            timedOut
+                                ? 'That folder took too long to open — it may be very large or on a ' +
+                                      'disconnected drive. Choose a different folder.'
+                                : err instanceof Error
+                                  ? err.message
+                                  : 'Your notes folder is no longer available.',
                         );
                         setState('choosing');
                         return;

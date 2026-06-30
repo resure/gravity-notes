@@ -13,6 +13,7 @@ import {
     mimeFromName,
     previewFromContent,
     sanitizeDir,
+    sanitizeImportDir,
     sanitizeSegment,
     sanitizeTitle,
     splitExt,
@@ -142,6 +143,22 @@ describe('sanitizeDir', () => {
 
     it('sanitizes illegal characters within a segment', () => {
         expect(sanitizeDir('Work:1/Sub*2')).toBe('Work 1/Sub 2');
+    });
+});
+
+describe('sanitizeImportDir', () => {
+    it('de-reserves segments the walk would hide so imported notes stay visible', () => {
+        // Dot-dirs lose their leading dots; reserved media/skip names get a `_` suffix.
+        expect(sanitizeImportDir('.git/Notes')).toBe('git/Notes');
+        expect(sanitizeImportDir('node_modules/pkg')).toBe('node_modules_/pkg');
+        expect(sanitizeImportDir('Attachments/sub')).toBe('Attachments_/sub');
+        expect(sanitizeImportDir('NODE_MODULES')).toBe('NODE_MODULES_'); // case-insensitive
+    });
+
+    it('leaves ordinary folder paths untouched and still strips traversal', () => {
+        expect(sanitizeImportDir('Work/Sub')).toBe('Work/Sub');
+        expect(sanitizeImportDir('../../etc/Work')).toBe('etc/Work');
+        expect(sanitizeImportDir('')).toBe('');
     });
 });
 

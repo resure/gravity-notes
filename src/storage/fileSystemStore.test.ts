@@ -48,6 +48,16 @@ describe('FileSystemNoteStore', () => {
             expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
             expect((await store.getAll()).map((n) => n.id)).toEqual(['Real.md']);
         });
+
+        it('skips node_modules at every depth (notes, corpus, and folder tree)', async () => {
+            dir.seedFile('Real.md', 'x', 1);
+            dir.seedFile('node_modules/pkg/Index.md', 'dep', 2);
+            dir.seedFile('Work/node_modules/Nested.md', 'dep', 3);
+
+            expect((await store.list()).map((m) => m.id)).toEqual(['Real.md']);
+            expect((await store.getAll()).map((n) => n.id)).toEqual(['Real.md']);
+            expect(await store.listFolders()).toEqual(['Work']);
+        });
     });
 
     describe('folders: nested create / move / rename', () => {
@@ -160,7 +170,15 @@ describe('FileSystemNoteStore', () => {
             await expect(store.createFolder('Work', '.hidden')).rejects.toBeInstanceOf(
                 NameCollisionError,
             );
-            // Nothing was created on disk for either rejected name.
+            // node_modules is skipped by the walk too, so creating one (any casing) is refused —
+            // otherwise it would exist on disk yet be invisible, orphaning any notes inside.
+            await expect(store.createFolder('', 'node_modules')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            await expect(store.createFolder('', 'Node_Modules')).rejects.toBeInstanceOf(
+                NameCollisionError,
+            );
+            // Nothing was created on disk for any rejected name.
             expect(await store.listFolders()).toEqual([]);
         });
 

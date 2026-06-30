@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 
 import {DEFAULT_METADATA} from './storage/metadata';
 import type {NoteMeta, NotesMetadata} from './storage/types';
-import {buildFolderTree, buildMoveTargets, notesInFolder} from './tree';
+import {buildFolderTree, buildMoveTargets, notesInFolder, synthesizeFolderPaths} from './tree';
 
 const note = (id: string, updatedAt = 1): NoteMeta => ({
     id,
@@ -20,6 +20,39 @@ const meta = (over: Partial<NotesMetadata> = {}): NotesMetadata => ({
 function shape(rows: ReturnType<typeof buildFolderTree>): string[] {
     return rows.map((row) => `${'  '.repeat(row.depth)}${row.name}/`);
 }
+
+describe('synthesizeFolderPaths', () => {
+    it('returns every folder plus the ancestors implied by folders and note paths', () => {
+        const paths = synthesizeFolderPaths(['Work/Sub'], [note('Personal/Trips/Japan.md')]);
+        expect([...paths].sort()).toEqual(['Personal', 'Personal/Trips', 'Work', 'Work/Sub']);
+    });
+
+    it('returns every folder plus ancestors from a note path alone (no explicit folders)', () => {
+        expect([...synthesizeFolderPaths([], [note('A/B/C/Deep.md')])].sort()).toEqual([
+            'A',
+            'A/B',
+            'A/B/C',
+        ]);
+    });
+});
+
+describe("buildFolderTree — 'expanded-set' mode (the rail)", () => {
+    it('treats the state set as EXPANSIONS: every folder collapsed unless listed', () => {
+        const folders = ['Work', 'Work/Sub', 'Personal'];
+        // Only `Work` is expanded → its subfolder shows; `Personal` stays collapsed (closed caret).
+        const rows = buildFolderTree(folders, [], meta(), new Set(['Work']), 'expanded-set');
+        expect(shape(rows)).toEqual(['Personal/', 'Work/', '  Sub/']);
+        expect(rows.find((r) => r.name === 'Personal')?.collapsed).toBe(true);
+        expect(rows.find((r) => r.name === 'Work')?.collapsed).toBe(false);
+    });
+
+    it('collapses everything when nothing is expanded (the default first-run view)', () => {
+        const rows = buildFolderTree(['A', 'A/B', 'C'], [], meta(), new Set(), 'expanded-set');
+        // Only the roots show; their subfolders stay hidden until expanded.
+        expect(shape(rows)).toEqual(['A/', 'C/']);
+        expect(rows.every((r) => r.collapsed)).toBe(true);
+    });
+});
 
 describe('buildFolderTree', () => {
     it('is empty when there are no folders (notes alone create none at root)', () => {

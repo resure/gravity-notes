@@ -27,25 +27,50 @@ export interface FolderRow {
 }
 
 /**
- * Build the visible folder rows. `collapsed` is the set of folder paths whose subfolders are hidden.
- * `folders` need not be complete — every ancestor implied by a folder or a note path is synthesized,
- * so no folder is ever orphaned.
+ * Every folder path that should exist for a given set of folders + notes, including the ancestors
+ * implied by a nested folder or note path (`Work/Sub/N.md` → `Work`, `Work/Sub`). The complete
+ * universe of rail folders — used by {@link buildFolderTree} and by callers that need to invert a
+ * collapse set (e.g. "collapsed unless explicitly expanded").
+ */
+export function synthesizeFolderPaths(folders: string[], notes: NoteMeta[]): Set<string> {
+    const all = new Set<string>();
+    const addWithAncestors = (path: string) => {
+        for (let p = path; p; p = dirname(p)) all.add(p);
+    };
+    folders.forEach(addWithAncestors);
+    notes.forEach((note) => addWithAncestors(dirname(note.id)));
+    return all;
+}
+
+/**
+ * How the `state` set passed to {@link buildFolderTree} is interpreted — naming which membership the
+ * set encodes, so a caller can't pass the wrong polarity without saying so:
+ *  - `'collapsed-set'` (default, the move picker): expanded-by-default — `state` lists the *collapsed*
+ *    folders.
+ *  - `'expanded-set'` (the rail): collapsed-by-default — `state` lists the *expanded* folders, so any
+ *    folder not in it (including ones that appear later) starts collapsed. Lets the caller pass its
+ *    persisted expanded set straight through, with no separate inversion pass.
+ */
+export type FolderDisclosureMode = 'collapsed-set' | 'expanded-set';
+
+/**
+ * Build the visible folder rows. `folders` need not be complete — every ancestor implied by a folder
+ * or a note path is synthesized, so no folder is ever orphaned. `mode` names how `state` is read (see
+ * {@link FolderDisclosureMode}).
  */
 export function buildFolderTree(
     folders: string[],
     notes: NoteMeta[],
     metadata: NotesMetadata,
-    collapsed: ReadonlySet<string>,
+    state: ReadonlySet<string>,
+    mode: FolderDisclosureMode = 'collapsed-set',
 ): FolderRow[] {
     const pinned = new Set(metadata.pinned);
+    const isCollapsedFolder = (folder: string) =>
+        mode === 'expanded-set' ? !state.has(folder) : state.has(folder);
 
     // Every folder path that should exist, including synthesized ancestors.
-    const allFolders = new Set<string>();
-    const addWithAncestors = (path: string) => {
-        for (let p = path; p; p = dirname(p)) allFolders.add(p);
-    };
-    folders.forEach(addWithAncestors);
-    notes.forEach((note) => addWithAncestors(dirname(note.id)));
+    const allFolders = synthesizeFolderPaths(folders, notes);
 
     // Child folders keyed by parent path ('' = root).
     const childFolders = new Map<string, string[]>();
@@ -76,7 +101,7 @@ export function buildFolderTree(
                 basename(a).localeCompare(basename(b)),
         );
         for (const folder of level) {
-            const isCollapsed = collapsed.has(folder);
+            const isCollapsed = isCollapsedFolder(folder);
             rows.push({
                 path: folder,
                 name: basename(folder),
