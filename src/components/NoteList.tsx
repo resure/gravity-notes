@@ -487,6 +487,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         setDeleting(null);
     };
 
+    // Hold the last value through the Dialog's ~150ms close animation: `deleting` clears on
+    // confirm/cancel, so reading the title off it directly would blank the body mid-close.
+    const lastDeletingRef = useRef(deleting);
+    if (deleting) lastDeletingRef.current = deleting;
+    const deletingView = deleting ?? lastDeletingRef.current;
+
     // --- Stable per-row callbacks (constant identity; read current state via `live`). ---
 
     /** Move the highlight to a row, preview it, and keep DOM focus on the list. */
@@ -756,8 +762,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 <Dialog.Header caption="Move to Trash" />
                 <Dialog.Body>
                     <Text>
-                        {deleting
-                            ? `Move "${deleting.title}" to the Trash? You can restore it later from the Trash.`
+                        {deletingView
+                            ? `Move "${deletingView.title}" to the Trash? You can restore it later from the Trash.`
                             : ''}
                     </Text>
                 </Dialog.Body>
