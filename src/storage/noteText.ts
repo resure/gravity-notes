@@ -22,6 +22,15 @@ export const FOLDER_MARKER = '.gnkeep';
  */
 export const ATTACHMENTS_DIR = 'Attachments';
 
+/**
+ * Directory names the note/folder walks never descend at any depth — heavy non-note trees a user can
+ * pull in by picking or importing a project folder. The recursive walks skip them (Rust `SKIP_DIRS`
+ * and the FS store's `isSkippedDir` mirror this list) AND {@link isReservedSegment} forbids creating
+ * one, so a name the tree would hide can never be made (which would orphan any notes inside it).
+ * Lower-cased for case-insensitive matching, like {@link ATTACHMENTS_DIR}.
+ */
+export const SKIP_DIR_NAMES = ['node_modules'];
+
 /** Whether a Markdown image `src` points at an in-vault attachment (vs. an external/data/blob URL). */
 export function isAttachmentRef(src: string): boolean {
     return src.startsWith(`${ATTACHMENTS_DIR}/`);
@@ -187,12 +196,34 @@ export const sanitizeTitle = sanitizeSegment;
  */
 export function isReservedSegment(segment: string): boolean {
     const trimmed = segment.trim();
-    return trimmed.startsWith('.') || trimmed.toLowerCase() === ATTACHMENTS_DIR.toLowerCase();
+    const lower = trimmed.toLowerCase();
+    return (
+        trimmed.startsWith('.') ||
+        lower === ATTACHMENTS_DIR.toLowerCase() ||
+        SKIP_DIR_NAMES.includes(lower)
+    );
+}
+
+/**
+ * Make one path segment safe as a real, *visible* folder name: strip leading dots and de-reserve a
+ * name the walk would hide ({@link isReservedSegment} — `Attachments`, `node_modules`) by suffixing
+ * `_`. So a folder path from an untrusted source (an imported zip with `.git/…` or `node_modules/…`)
+ * can never resolve to a hidden directory that would silently swallow the notes inside it. An
+ * already-clean segment passes through unchanged.
+ */
+function dereserveSegment(segment: string): string {
+    let s = segment.replace(/^\.+/, '').trim() || 'Untitled';
+    while (isReservedSegment(s)) s += '_';
+    return s;
 }
 
 /**
  * Clean a user-supplied POSIX-relative folder path: sanitize each segment, and drop empty, `.`, and
  * `..` segments so a folder path can never escape the notes root. Returns `''` for the root.
+ *
+ * Reserved segments are *kept* here (not de-reserved) on purpose: `createFolder`/`moveFolder` sanitize
+ * a destination and then reject it via {@link isReservedSegment}, so the reserved name must survive to
+ * be caught. Untrusted *import* paths use {@link sanitizeImportDir}, which salvages them instead.
  */
 export function sanitizeDir(relDir: string): string {
     return relDir
@@ -201,6 +232,16 @@ export function sanitizeDir(relDir: string): string {
         .filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
         .map(sanitizeSegment)
         .join('/');
+}
+
+/**
+ * Like {@link sanitizeDir}, but for an *untrusted import path* (a zip entry): additionally de-reserve
+ * every segment the walk would hide, so an imported `.git/Note.md` or `node_modules/Note.md` lands in
+ * a visible folder (`git/…`, `node_modules_/…`) instead of a hidden one that silently swallows it.
+ */
+export function sanitizeImportDir(relDir: string): string {
+    const clean = sanitizeDir(relDir);
+    return clean ? clean.split('/').map(dereserveSegment).join('/') : '';
 }
 
 /**

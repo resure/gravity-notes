@@ -67,6 +67,19 @@ fn is_md(name: &str) -> bool {
     name.to_lowercase().ends_with(MD_EXT)
 }
 
+/// Directory names never descended during the note/folder walks, at any depth: heavy non-note
+/// trees a user can pull in by accidentally picking a project folder. Dot-directories (`.git`,
+/// `.obsidian`, the `.trash`, …) are excluded by the leading-dot check in {@link is_skipped_dir}.
+const SKIP_DIRS: &[&str] = &["node_modules"];
+
+/// Whether a directory `name` should be skipped (not descended) by the recursive walks. Centralises
+/// the dot-directory and {@link SKIP_DIRS} exclusions shared by `collect_md` and `collect_folders`.
+/// Case-insensitive on `SKIP_DIRS`, mirroring the TS `isSkippedDir`/`isReservedSegment` (macOS and
+/// the web Chromium target both sit on case-insensitive filesystems).
+fn is_skipped_dir(name: &str) -> bool {
+    name.starts_with('.') || SKIP_DIRS.contains(&name.to_lowercase().as_str())
+}
+
 /// Resolve a caller-supplied relative `name` to an absolute path inside `dir`, rejecting any
 /// attempt to escape the picked notes folder. A lexical pass first refuses `../`, absolute paths,
 /// and root/prefix components; then a filesystem pass ({@link confine_to_root}) refuses a path that
@@ -210,7 +223,7 @@ fn collect_md(root: &Path, current: &Path, full: bool, out: &mut Vec<Found>) -> 
         }
         let name = entry.file_name().to_string_lossy().into_owned();
         if file_type.is_dir() {
-            if name.starts_with('.') {
+            if is_skipped_dir(&name) {
                 continue;
             }
             // The root Attachments/ folder holds media, not notes — don't descend it.
@@ -579,7 +592,7 @@ fn collect_folders(root: &Path, current: &Path, out: &mut Vec<String>) -> std::i
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') {
+        if is_skipped_dir(&name) {
             continue;
         }
         // The root Attachments/ folder is media storage, not a user folder — hide it from the tree.
@@ -787,6 +800,12 @@ mod tests {
         fs::write(dir.join(".gravity-notes.json"), "{}").unwrap();
         fs::create_dir_all(dir.join(".hidden")).unwrap();
         fs::write(dir.join(".hidden").join("Secret.md"), "x").unwrap();
+        // node_modules is skipped at every depth — picking a project folder must not pull in deps.
+        fs::create_dir_all(dir.join("node_modules").join("pkg")).unwrap();
+        fs::write(dir.join("node_modules").join("README.md"), "dep").unwrap();
+        fs::write(dir.join("node_modules").join("pkg").join("Index.md"), "dep").unwrap();
+        fs::create_dir_all(dir.join("Work").join("node_modules")).unwrap();
+        fs::write(dir.join("Work").join("node_modules").join("Nested.md"), "dep").unwrap();
 
         let mut ids: Vec<String> = notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
         ids.sort();
@@ -795,6 +814,13 @@ mod tests {
         let mut all: Vec<String> = notes_read_all(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
         all.sort();
         assert_eq!(all, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
+
+        // node_modules is absent from the folder tree too (at root and nested under Work/).
+        let folders = notes_list_folders(s(&dir)).unwrap();
+        assert!(
+            !folders.iter().any(|f| f.contains("node_modules")),
+            "node_modules leaked into the folder tree: {folders:?}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

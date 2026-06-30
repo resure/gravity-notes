@@ -4,6 +4,7 @@ import {
     FOLDER_MARKER,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
+    SKIP_DIR_NAMES,
     TRASH_DIR,
     basename,
     canonicalBody,
@@ -61,6 +62,16 @@ function notFound(id: string): DOMException {
  * build. A bounded pool overlaps the I/O without unleashing thousands of concurrent handles at once.
  */
 const READ_CONCURRENCY = 24;
+
+/** Skip-list as a lookup, from the one shared spelling — also forbidden by `isReservedSegment`. */
+const SKIP_DIRS = new Set(SKIP_DIR_NAMES);
+
+/**
+ * Whether a directory `name` should be skipped by the recursive walks (`walkNotes`/`listFolders`).
+ *  Mirrors the Rust walk's `is_skipped_dir`; dot-folders (`.git`, `.obsidian`, …) are skipped too.
+ */
+const isSkippedDir = (name: string): boolean =>
+    name.startsWith('.') || SKIP_DIRS.has(name.toLowerCase());
 
 /**
  * Map `items` through async `fn` with at most `limit` calls in flight, preserving input order in the
@@ -532,8 +543,8 @@ export class FileSystemNoteStore implements NoteStore {
         const out: string[] = [];
         const recurse = async (dir: FileSystemDirectoryHandle, prefix: string) => {
             for await (const handle of dir.values()) {
-                // Skip non-directories and dot-folders (.git, .obsidian, …).
-                if (handle.kind !== 'directory' || handle.name.startsWith('.')) continue;
+                // Skip non-directories, dot-folders (.git, .obsidian, …), and node_modules.
+                if (handle.kind !== 'directory' || isSkippedDir(handle.name)) continue;
                 // The root Attachments/ folder is media storage, not a user folder — hide it.
                 if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                 const path = `${prefix}${handle.name}`;
@@ -556,7 +567,7 @@ export class FileSystemNoteStore implements NoteStore {
         ): AsyncGenerator<{id: string; handle: FileSystemFileHandle}> {
             for await (const handle of dir.values()) {
                 if (handle.kind === 'directory') {
-                    if (handle.name.startsWith('.')) continue; // skip dot-dirs (.git, .obsidian, …)
+                    if (isSkippedDir(handle.name)) continue; // skip dot-dirs (.git, …) + node_modules
                     // Don't descend the root Attachments/ folder — its files aren't notes.
                     if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                     yield* recurse(handle, `${prefix}${handle.name}/`);
