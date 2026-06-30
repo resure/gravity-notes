@@ -21,6 +21,9 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+// Only the macOS window/Dock handlers below call `Manager::get_webview_window`; elsewhere `App`'s
+// inherent `handle()` is used, so on non-macOS builds the trait import would be dead (-D warnings).
+#[cfg(target_os = "macos")]
 use tauri::Manager;
 
 /// Note files end in `.md` (matched case-insensitively, like the web backend).
@@ -720,6 +723,9 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // The handler is macOS-only; consume the args elsewhere so the build stays warning-free.
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             notes_list,
@@ -754,6 +760,9 @@ pub fn run() {
                     let _ = window.set_focus();
                 }
             }
+            // The handler is macOS-only; consume the args elsewhere so the build stays warning-free.
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app_handle, event);
         });
 }
 
