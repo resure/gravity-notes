@@ -4,6 +4,25 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-30
+
+### Added
+
+- **Automatic updates (desktop app)** — the macOS app now checks for a new release on launch and
+  from a **Check for Updates…** menu item, then downloads, verifies, and installs the update in
+  place and relaunches. Updates are delivered through GitHub Releases and verified by signature.
+
+### Changed
+
+- **Folders in the rail now start collapsed.** The folder tree opens fully collapsed and remembers
+  the folders you expand, instead of showing every nested subfolder expanded by default.
+
+### Fixed
+
+- More resilient **folder-storage bootstrap** when the app starts up.
+- Fixed **dialog rendering glitches**: content no longer blanks out while a dialog closes, and the
+  page no longer flickers when the keyboard-shortcuts dialog opens.
+
 ## [0.2.0] - 2026-06-30
 
 ### Added
