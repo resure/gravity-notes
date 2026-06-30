@@ -51,7 +51,12 @@ const SEARCH_DEBOUNCE_THRESHOLD = 500;
 const SEARCH_DEBOUNCE_MS = 120;
 
 const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
-const COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
+// Folders the user has explicitly expanded in the rail. The tree is collapsed by default, so this
+// tracks the *exceptions* (empty = every folder collapsed) — the inverse of the old collapsed-set.
+const EXPANDED_FOLDERS_KEY = 'gravity-notes:expanded-folders';
+// The pre-inversion key (a *collapsed* set, expanded-by-default). Its meaning flipped, so the old
+// value can't be reused; clear it once on load so it doesn't linger as dead localStorage.
+const LEGACY_COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
 const SELECTED_FOLDER_KEY = 'gravity-notes:selected-folder';
 const RAIL_OPEN_KEY = 'gravity-notes:rail-open';
 
@@ -64,9 +69,9 @@ function reprefixPath(path: string, from: string, to: string): string {
     return path === from || path.startsWith(`${from}/`) ? to + path.slice(from.length) : path;
 }
 
-function loadCollapsedFolders(): Set<string> {
+function loadExpandedFolders(): Set<string> {
     try {
-        const raw = JSON.parse(localStorage.getItem(COLLAPSED_FOLDERS_KEY) ?? '[]');
+        const raw = JSON.parse(localStorage.getItem(EXPANDED_FOLDERS_KEY) ?? '[]');
         return new Set(
             Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [],
         );
@@ -177,13 +182,16 @@ export function Workspace({
     // Backlinks for the open note ("linked references"), from the shared corpus.
     const {backlinks} = useBacklinks(orderedNotes, notes.activeId, corpus);
 
-    // Which folders are collapsed in the tree (persisted). A toggle rebuilds the set immutably.
-    const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(loadCollapsedFolders);
+    // The tree is collapsed by default; this persists the folders the user has explicitly expanded
+    // (the exceptions). A toggle rebuilds the set immutably.
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(loadExpandedFolders);
     useEffect(() => {
-        localStorage.setItem(COLLAPSED_FOLDERS_KEY, JSON.stringify([...collapsedFolders]));
-    }, [collapsedFolders]);
+        localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify([...expandedFolders]));
+    }, [expandedFolders]);
+    // One-time cleanup of the orphaned pre-inversion key (its semantics flipped, so it's unusable).
+    useEffect(() => localStorage.removeItem(LEGACY_COLLAPSED_FOLDERS_KEY), []);
     const toggleCollapse = useCallback((path: string) => {
-        setCollapsedFolders((prev) => {
+        setExpandedFolders((prev) => {
             const next = new Set(prev);
             if (next.has(path)) next.delete(path);
             else next.add(path);
@@ -215,14 +223,22 @@ export function Workspace({
     // Drive list MODE (ranked search vs folder scope) off the debounced query, so the list flips in
     // step with the results it shows — not a keystroke ahead of them.
     const searching = debouncedQuery.trim().length > 0;
-    // The rail's folder tree (folders only).
-    // The tree depends only on folders/notes/pins + the collapse set — not on `active` (which
-    // changes on every browse). Key on `pinned` rather than the whole `metadata` so the tree isn't
-    // rebuilt on each cursor move.
+    // The rail's folder tree (folders only). Collapsed-by-default: `expandedFolders` lists the
+    // exceptions, passed straight through (the builder inverts it — no separate universe pass here).
+    // The tree depends only on folders/notes/pins + the expand set — not on `active` (which changes
+    // on every browse). Key on `pinned` rather than the whole `metadata` so the tree isn't rebuilt
+    // on each cursor move.
     const folderRows = useMemo<FolderRow[]>(
-        () => buildFolderTree(notes.folders, notes.notes, notes.metadata, collapsedFolders),
+        () =>
+            buildFolderTree(
+                notes.folders,
+                notes.notes,
+                notes.metadata,
+                expandedFolders,
+                'expanded-set',
+            ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [notes.folders, notes.notes, notes.metadata.pinned, collapsedFolders],
+        [notes.folders, notes.notes, notes.metadata.pinned, expandedFolders],
     );
     // The middle pane: a global ranked list while searching (folders never hide a match), otherwise
     // the selected folder's direct notes ('All Notes' = everything). Both stay ordered.
@@ -580,7 +596,7 @@ export function Workspace({
             // folder keeps its selection and expand state instead of the list-validation effect
             // racing the refresh and snapping back to All Notes.
             setSelectedFolder((cur) => (cur ? reprefixPath(cur, from, to) : cur));
-            setCollapsedFolders((prev) => new Set([...prev].map((p) => reprefixPath(p, from, to))));
+            setExpandedFolders((prev) => new Set([...prev].map((p) => reprefixPath(p, from, to))));
             // Return the promise (resolving to `moved`) so the rail only commits its select-after-rename
             // once the move actually succeeds — a rejected move (collision) resolves false, so the rail
             // doesn't dangle pendingRenameToRef on a path that was never created.
@@ -590,7 +606,7 @@ export function Workspace({
                 // path that doesn't exist.
                 if (!moved) {
                     setSelectedFolder((cur) => (cur ? reprefixPath(cur, to, from) : cur));
-                    setCollapsedFolders(
+                    setExpandedFolders(
                         (prev) => new Set([...prev].map((p) => reprefixPath(p, to, from))),
                     );
                 }
