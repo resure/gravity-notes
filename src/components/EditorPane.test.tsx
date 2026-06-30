@@ -65,6 +65,8 @@ vi.mock('@gravity-ui/markdown-editor', async () => {
     const {createPortal} = await import('react-dom');
     return {
         useMarkdownEditor: () => fakeEditor,
+        // The selection-toolbar config EditorPane derives at module load (only needs `.full` to map over).
+        wSelectionMenuConfigByPreset: {full: []},
         // Renders nothing by default. With the portal enabled, it emits a button into document.body
         // (a React portal child of this view) to mimic the selection toolbar's DOM placement.
         MarkdownEditorView: () =>

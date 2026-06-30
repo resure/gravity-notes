@@ -63,7 +63,6 @@ export function AboutDialog({open, onClose}: {open: boolean; onClose: () => void
                     </div>
                 </div>
             </Dialog.Body>
-            <Dialog.Footer textButtonCancel="Close" onClickButtonCancel={onClose} />
         </Dialog>
     );
 }

@@ -8,19 +8,19 @@ Author: Claude (Opus 4.8). All changes are on `various-fixes`.
 
 ## TL;DR status
 
-| #   | Fix                               | Files                                                           | Verified                                                               |
-| --- | --------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 1   | Release notes render as Markdown  | `UpdateDialog.tsx`, `UpdateDialog.css`                          | typecheck + logic (no live release to test against)                    |
-| 2   | No white flash on startup (dark)  | `index.html`, `src-tauri/src/lib.rs`                            | live (web): `<html>` paints `#211e1a` pre-React                        |
-| 3   | ⌘⇧M move scoped to the list       | `shortcuts.ts`                                                  | unit-test-safe + logic                                                 |
-| 4   | Selection formatting toolbar      | **none**                                                        | **already works** (see below) — needs desktop re-confirm               |
-| 5   | Per-note scroll + caret on switch | `EditorPane.tsx`                                                | live (web): new note→top, return→scroll restored                       |
-| 6   | About dialog w/ links             | `AboutDialog.tsx/.css`, `Workspace.tsx`, `src-tauri/src/lib.rs` | Rust compiles, frontend typechecks (native menu click not auto-tested) |
+| #   | Fix                                 | Files                                                           | Verified                                                               |
+| --- | ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | Release notes render as Markdown    | `UpdateDialog.tsx`, `UpdateDialog.css`                          | typecheck + logic (no live release to test against)                    |
+| 2   | No white flash on startup (dark)    | `index.html`, `src-tauri/src/lib.rs`                            | live (web): `<html>` paints `#211e1a` pre-React                        |
+| 3   | ⌘⇧M move scoped to the list         | `shortcuts.ts`                                                  | unit-test-safe + logic                                                 |
+| 4   | Selection toolbar: drop dead Select | `EditorPane.tsx` (+ 2 test mocks)                               | live (web): toolbar buttons + color dropdown work; Text Select removed |
+| 5   | Per-note scroll + caret on switch   | `EditorPane.tsx`                                                | live (web): new note→top, return→scroll restored                       |
+| 6   | About dialog w/ links + padding     | `AboutDialog.tsx/.css`, `Workspace.tsx`, `src-tauri/src/lib.rs` | live (web, forced-open): layout verified; Rust compiles                |
 
 Checks: `npm run typecheck` ✓, `npm run lint` (0 errors; 45 pre-existing warnings) ✓,
-`npm run format:check` ✓, `npm test` 738/739 ✓ (the 1 "failure" is `search.stress.test.ts`, a
-timing assertion that passes in isolation — it was CPU contention from the dev server + a headless
-browser running during the suite), `cargo check` (rustup 1.96) ✓.
+`npm run format:check` ✓, `npm test` 739/739 ✓, `cargo check` (rustup 1.96) ✓. (`search.stress.test.ts`
+is a timing assertion that can flake under CPU load from a concurrent dev server / browser; it passes
+in isolation.)
 
 ---
 
@@ -71,25 +71,33 @@ is focused — so ⌘⇧M only opens the move picker from the list; in the edito
 opt-out. Existing test `useShortcuts.test.tsx` still passes (jsdom `activeElement` is `body`, not a
 typing target).
 
-## 4. Selection formatting toolbar — ALREADY WORKS (no change)
+## 4. Selection formatting toolbar — the dead block-type "Text" Select, removed
 
-**Finding:** The user reported the text-selection format popup is missing. It is **not** missing.
-Driven live in Playwright WebKit (the desktop's engine): selecting body text in WYSIWYG shows the
-floating toolbar with Bold/Italic/Underline/Strikethrough/Monospace/Marked/Inline code/Text
-color/Link, and formatting applies.
+**History:** First pass concluded "already works" — the floating toolbar appears on selection and the
+inline-format buttons (Bold/Italic/Underline/Strike/Monospace/Marked/Inline code/**Text color** dropdown/
+Link) all work (verified live by clicking them, not just keyboard). But the user pointed out the **first
+control — a block-type "Text" Select (paragraph/H1–H6)** — doesn't open on click. Confirmed.
 
-- Enabled by the editor's default `preset: 'full'` → `SelectionContext` extension with
-  `wSelectionMenuConfigByPreset.full` (see `useMarkdownEditor` → `BundlePreset` in
-  `@gravity-ui/markdown-editor`).
-- The popup portals to `document.body` (no portal-container override), so the
-  `.editor-pane .g-md-toolbar { display:none }` rule in `EditorPane.css` does **not** hide it (that
-  rule targets the in-pane sticky toolbar; the selection toolbar's `Toolbar` div carries class
-  `g-md-toolbar` plus `data-qa="g-md-toolbar-selection"`, but it lives at body level).
-- The `.tauri-app` class does not suppress it; there's no global `user-select:none` on the editor.
+**Root cause:** That control is a Gravity `<Select>` (`ToolbarSelect` → `WToolbarTextSelect`, rendered
+as the `textContextItemData` ReactComponent in `wSelectionMenuConfigByPreset`). Its `onOpenChange`
+calls `view.focus()` to keep the editor focused; inside the floating selection toolbar that immediately
+re-closes the just-opened menu. The toolbar itself portals to `document.body` (our
+`.editor-pane .g-md-toolbar{display:none}` does NOT hit it — that rule is for the in-pane sticky
+toolbar; the selection toolbar's `Toolbar` div has class `g-md-toolbar` + `data-qa="g-md-toolbar-selection"`
+but lives at body level). Tried in Playwright WebKit: preventing the editor blur, and portaling the
+Select (`disablePortal:false`) — **neither** makes it open. The sibling **color** dropdown is a
+ButtonPopup (not a Select) and opens fine.
 
-**Action for reviewer / user:** Re-confirm on the actual desktop (drag-select or double-click body
-text in WYSIWYG). If it genuinely doesn't appear on the system WKWebView (which Playwright WebKit
-only approximates), that's the place to dig — not the config.
+**Change:** `EditorPane.tsx` passes a custom `wysiwygConfig.extensionOptions.selectionContext.config`
+(`SELECTION_MENU_CONFIG`) = the `full` preset selection menu with the `id:'text'` item filtered out
+(and any emptied group dropped). Result: a clean popup, every control works, no dead button. Block-type
+conversion stays reachable via Markdown (`# `) and the `/` slash menu. Two test files mock
+`@gravity-ui/markdown-editor`, so the mocks gained `wSelectionMenuConfigByPreset: {full: []}`.
+
+**Review notes:** If you'd rather keep an in-toolbar heading picker, the supported path is the same
+config — but the Gravity Select-in-floating-toolbar focus bug would need an upstream fix or a custom
+non-Select control. Verified live: toolbar shows 9 working controls, clicking Italic bolds/italicizes,
+the color dropdown opens.
 
 ## 5. Preserve per-note scroll + caret on switch
 
@@ -130,7 +138,9 @@ dialog**.
   Non-macOS falls back to `Menu::default`.
 - `AboutDialog.tsx`/`.css`: app orb (inherits `--gn-orange`, so blue in dev), "Gravity Notes",
   version (via `@tauri-apps/api/app` `getVersion`, desktop only), and the two links opened through
-  `openExternalUrl` (OS browser on desktop, new tab on web).
+  `openExternalUrl` (OS browser on desktop, new tab on web). No `Dialog.Footer` (the ✕ + Esc close it);
+  `.about-dialog` has 32px top padding so the orb clears the ✕ and isn't cramped (a follow-up fix —
+  verified by temporarily forcing the dialog open in the web build and screenshotting).
 - `Workspace.tsx`: `aboutOpen` state + a `menu:about` event listener (dynamic `import('@tauri-apps/api/event')`,
   `isTauri`-guarded) + renders `<AboutDialog>`.
 

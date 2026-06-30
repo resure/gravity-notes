@@ -3,7 +3,9 @@
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    padding: 12px 0 4px;
+    /* Generous top padding so the orb clears the dialog's ✕ close button (top-right) and doesn't look
+       cramped against the top edge; balanced bottom padding since there's no footer. */
+    padding: 32px 0 20px;
     text-align: center;
 }
 

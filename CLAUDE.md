@@ -178,7 +178,9 @@ Key modules:
   list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut),
   `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
   `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
-  switch — the reused editor would otherwise carry the previous note's scrollTop) with `NoteTitle` and
+  switch — the reused editor would otherwise carry the previous note's scrollTop; passes a custom
+  `selectionContext` config that drops the block-type "Text" Select, which doesn't open inside the
+  floating selection toolbar — see `SELECTION_MENU_CONFIG`) with `NoteTitle` and
   `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
   delete + full-size view; virtualized list), `Lightbox` (shared full-size image overlay with
   pinch/scroll zoom + drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +

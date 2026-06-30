@@ -1,6 +1,10 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
-import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
+import {
+    MarkdownEditorView,
+    useMarkdownEditor,
+    wSelectionMenuConfigByPreset,
+} from '@gravity-ui/markdown-editor';
 import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
@@ -22,6 +26,17 @@ import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBod
 import {isCaretOnFirstLine} from './editorCaret';
 
 import './EditorPane.css';
+
+// The selection (text-format) toolbar's first control is a block-type "Text" Select. It does NOT open
+// inside our floating selection toolbar: the Gravity Select's `onOpenChange` refocuses the editor,
+// which immediately closes the just-opened menu (portaling it / preventing the blur don't help). The
+// inline-format buttons (bold/italic/…) all work, so drop the dead Select (id 'text') and keep the
+// rest — block type stays reachable via Markdown ('# ') and the '/' slash menu. Rebuilt from the 'full'
+// preset, our editor's default `preset`; an emptied group (just the heading-folding button, itself
+// disabled for plain text) is dropped so no blank group shows.
+const SELECTION_MENU_CONFIG = wSelectionMenuConfigByPreset.full
+    .map((group) => group.filter((item) => item.id !== 'text'))
+    .filter((group) => group.length > 0);
 
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
@@ -143,8 +158,13 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                 },
             },
             wysiwygConfig: {
-                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
-                extensionOptions: {link: {linkKey: 'Mod-Shift-k'}},
+                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation; and use a
+                // selection-toolbar config with the non-opening block-type "Text" Select removed (see
+                // SELECTION_MENU_CONFIG). `selectionContext` is read by the bundle preset.
+                extensionOptions: {
+                    link: {linkKey: 'Mod-Shift-k'},
+                    selectionContext: {config: SELECTION_MENU_CONFIG},
+                },
                 // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
                 // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
                 extensions: (builder) => {
