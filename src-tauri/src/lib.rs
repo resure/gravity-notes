@@ -695,6 +695,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_decorum::init())
+        // In-app auto-update (macOS) via GitHub Releases: the updater downloads + verifies the
+        // signed `.app.tar.gz` against the pubkey in tauri.conf.json; `process` provides relaunch().
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

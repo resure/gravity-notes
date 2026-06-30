@@ -30,6 +30,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "dmg"],
     "icon": [
       "icons/32x32.png",
@@ -38,5 +39,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcwM0RCQzE5QjZBOEQzMApSV1F3aldxYndkc0RCNlJXN3hMMzVyam5JQm1UYXlFT0dVRnBobWdKNUo1cm9mOEJmdGE4S1lSRAo=",
+      "endpoints": ["https://github.com/resure/gravity-notes/releases/latest/download/latest.json"]
+    }
   }
 }

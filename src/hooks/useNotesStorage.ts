@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
+import {isTauri} from '../isTauri';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {
     type StorageBackend,
@@ -24,8 +25,6 @@ export type StorageState =
     | 'needs-permission' // a folder was remembered, but permission must be re-granted
     | 'ready';
 
-/** Running inside the Tauri desktop shell (native folder access), not a plain browser. */
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 /** Browser File System Access API (Chromium web build). Absent in the WKWebView desktop shell. */
 const supportsFileSystem = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 /** Whether folder-on-disk storage is offered at all: native in the app, or FSA in the browser. */

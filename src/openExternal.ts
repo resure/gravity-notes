@@ -1,7 +1,6 @@
 import {invoke} from '@tauri-apps/api/core';
 
-/** True when running inside the Tauri desktop shell (WKWebView), false in a browser. */
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+import {isTauri} from './isTauri';
 
 /**
  * Schemes a note's link may open. Mirrors the Rust `open_external` allow-list (`src-tauri/src/lib.rs`)

@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a new signed + notarized macOS release of Gravity Notes. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, tags, and publishes a GitHub release with the DMG attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
+description: Cut a new signed + notarized macOS release of Gravity Notes. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, tags, and publishes a GitHub release with the DMG + auto-update artifacts (.app.tar.gz + latest.json) attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
 ---
 
 # Release runbook (signed + notarized macOS build)
@@ -28,9 +28,13 @@ throwaway uncommitted edits.
 2. **Toolchain.** macOS arm64 with Xcode Command Line Tools, and **rustup's** cargo on
    PATH (`cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
    `rust-toolchain-tauri` memory).
-3. **Apple credentials** in the environment (the build script reads these; never print
-   their values): `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
-   `APPLE_API_KEY_PATH` (and the `.p8` file is readable). Check each is set.
+3. **Signing credentials** in the environment (the build script reads these; never print their
+   values): the Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
+   `APPLE_API_KEY_PATH` (the `.p8` file is readable) — **and** the updater key
+   `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
+   `~/Documents/Apple Connect Keys/gravity-notes-updater.key`;
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may be empty). Check each is set — without the updater key
+   the build can't sign the auto-update bundle and fails.
 4. **GitHub CLI.** `gh auth status` is logged in.
 5. **Green tree.** Run `npm run typecheck`, `npm test`, and `npm run lint`. Do not
    release a red tree.
@@ -80,14 +84,19 @@ lockstep (leave them **uncommitted** for now). Capture `$NEW` — every later st
 ```
 
 Tauri builds + signs the `.app` (hardened runtime, Developer ID) and notarizes+staples
-it; the script then notarizes + staples the **DMG** too. Notarization waits on Apple, so
-this takes minutes. If it fails, **STOP** and report — discard the uncommitted version
-edits with `git checkout -- package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml`
-if abandoning. Then verify **both** artifacts pass Gatekeeper offline:
+it; the script then notarizes + staples the **DMG** too. Because `createUpdaterArtifacts` is on,
+the build also emits a **signed `…app.tar.gz` + `latest.json`** (the auto-update bundle + its
+manifest) in `bundle/macos/` — the script renames the tarball to the space-free form and writes
+`latest.json` from its `.sig`. Notarization waits on Apple, so this takes minutes. If it fails,
+**STOP** and report — discard the uncommitted version edits with
+`git checkout -- package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml` if abandoning.
+Then verify **both** Gatekeeper artifacts pass offline:
 
 ```bash
 APP="src-tauri/target/release/bundle/macos/Gravity Notes.app"
 DMG="src-tauri/target/release/bundle/dmg/Gravity_Notes_${NEW}_aarch64.dmg"
+TARBALL="src-tauri/target/release/bundle/macos/Gravity_Notes_${NEW}_aarch64.app.tar.gz"
+LATEST="src-tauri/target/release/bundle/macos/latest.json"
 xcrun stapler validate "$APP"
 xcrun stapler validate "$DMG"
 spctl -a -vvv "$APP"                 # → "accepted", source=Notarized Developer ID
@@ -123,16 +132,21 @@ contains the `.app`):
 gh release create "v$NEW" \
   --title "Gravity Notes v$NEW" \
   --notes-file <(printf '%s\n' "$NOTES") \
-  "$DMG"
+  "$DMG" "$TARBALL" "$LATEST"
 ```
 
 `$NOTES` is the body of the `## [X.Y.Z]` section (without the `## [X.Y.Z]` header line).
-Use `--draft` first if the user wants to eyeball it on GitHub before going public.
+Attach **all three** assets: the `$DMG` (first install), the `$TARBALL` (the bundle the updater
+swaps in), and `$LATEST` (`latest.json`, the manifest the updater fetches from the release's
+`latest/download/` URL). The updater only sees **published, non-draft, non-prerelease** releases —
+if you `--draft` first to eyeball it, the auto-update path stays dark until you publish.
 
 ## Step 7 — Report
 
 Print the release URL (`gh release view "v$NEW" --json url -q .url`), the version, and
-confirm the DMG asset uploaded (`gh release view "v$NEW" --json assets -q '.assets[].name'`).
+confirm **all three** assets uploaded — the DMG, the `.app.tar.gz`, and `latest.json`
+(`gh release view "v$NEW" --json assets -q '.assets[].name'`). A missing `latest.json` or tarball
+silently breaks auto-update for everyone on the previous version.
 
 ## Notes & failure handling
 
@@ -143,6 +157,10 @@ confirm the DMG asset uploaded (`gh release view "v$NEW" --json assets -q '.asse
   failed step using the same `$NEW` (e.g. delete a bad tag with
   `git push --delete origin "v$NEW"` before re-tagging; `gh release delete` to redo a
   release).
-- **Only the DMG is uploaded** as the asset (the `.app` lives inside it). Add a zipped,
-  stapled `.app` as a second asset only if the user asks.
+- **Three assets per release:** the DMG (first install — the `.app` lives inside it), the
+  `.app.tar.gz` (the auto-update bundle), and `latest.json` (the update manifest). The updater uses
+  only the tarball + manifest; the DMG is for fresh installs.
+- **First updater release is a baseline.** Anyone on a version without the updater (≤ 0.2.0) must
+  download the next release manually; auto-update only works from one updater-carrying release to
+  the next. The `latest.json` version is read from `package.json`, so it always matches the bump.
 - **Never echo** the Apple credential values; only check that the env vars are set.

@@ -3,6 +3,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
+import {useAppUpdater} from '../hooks/useAppUpdater';
 import {useBacklinks} from '../hooks/useBacklinks';
 import {useCorpus} from '../hooks/useCorpus';
 import {useDebouncedValue} from '../hooks/useDebouncedValue';
@@ -28,6 +29,7 @@ import {NoteList, type NoteListHandle} from './NoteList';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
 import {TrashDialog} from './TrashDialog';
+import {UpdateDialog} from './UpdateDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
@@ -264,6 +266,29 @@ export function Workspace({
     const [helpOpen, setHelpOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const [trashOpen, setTrashOpen] = useState(false);
+    // In-app auto-update (native desktop shell only). Checked silently on launch; an available
+    // update surfaces as a toast → the update dialog. The menu's "Check for Updates…" opens it on
+    // demand. The whole feature no-ops in the browser build (updater.supported === false).
+    const updater = useAppUpdater();
+    const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+    useEffect(() => {
+        // Production-only so `tauri dev` doesn't prompt; manual checks still work in any build.
+        if (!updater.supported || !import.meta.env.PROD) return;
+        void (async () => {
+            const found = await updater.check({silent: true});
+            if (!found) return;
+            add({
+                name: `update-available-${toastSeq++}`,
+                title: 'Update available',
+                content: `Gravity Notes v${found.version} is ready to install.`,
+                theme: 'info',
+                autoHiding: false,
+                actions: [{label: 'View', onClick: () => setUpdateDialogOpen(true)}],
+            });
+        })();
+        // Run once on mount; updater.check + add are stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Set after following a wiki link to a freshly-created note, to land the caret in its body once
     // the new editor has mounted (a brand-new note has no body yet, so there's nothing else to focus).
@@ -761,6 +786,22 @@ export function Workspace({
                     onOpenTrash={() => setTrashOpen(true)}
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}
+                    onCheckForUpdates={
+                        updater.supported
+                            ? () => {
+                                  setUpdateDialogOpen(true);
+                                  // Skip a redundant round trip if an update is already known (from
+                                  // the launch check) or a check is already in flight.
+                                  if (
+                                      updater.status !== 'available' &&
+                                      updater.status !== 'checking'
+                                  ) {
+                                      void updater.check();
+                                  }
+                              }
+                            : undefined
+                    }
+                    updateAvailable={updater.status === 'available'}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
                     onToggleCollapsed={toggleCollapsed}
@@ -899,6 +940,12 @@ export function Workspace({
                 </div>
 
                 <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+                <UpdateDialog
+                    open={updateDialogOpen}
+                    updater={updater}
+                    onClose={() => setUpdateDialogOpen(false)}
+                />
 
                 <AttachmentsDialog
                     open={attachmentsOpen}

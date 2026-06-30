@@ -19,6 +19,7 @@ import '@gravity-ui/markdown-editor/styles/yfm-themes.css';
 import './index.css';
 
 import {App} from './App';
+import {isTauri} from './isTauri';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
@@ -28,7 +29,7 @@ if (!rootEl) {
 // Desktop shell (Tauri): the OS title bar is hidden (titleBarStyle "Overlay") and our top bar plays
 // its part, so flag the document — the topbar then insets to clear the macOS traffic lights and the
 // whole strip becomes a window drag handle (see TopBar.tsx / TopBar.css). No-op in the web build.
-if ('__TAURI_INTERNALS__' in window) {
+if (isTauri) {
     document.documentElement.classList.add('tauri-app');
 }
 
