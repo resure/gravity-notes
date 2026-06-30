@@ -4,6 +4,7 @@ import type {KeyboardEvent as ReactKeyboardEvent, ReactNode} from 'react';
 import {ChevronDown, ChevronRight, Folder, House} from '@gravity-ui/icons';
 import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
+import {useHeldValue} from '../hooks/useHeldValue';
 import {dirname} from '../storage/noteText';
 import type {NoteMeta, NotesMetadata} from '../storage/types';
 import {type MoveTargetRow, buildMoveTargets} from '../tree';
@@ -61,12 +62,10 @@ export function MoveToDialog({
     onMove,
     onClose,
 }: MoveToDialogProps) {
-    // Hold the last note through the Dialog's ~150ms close animation: the parent clears `note` on
-    // move/cancel, so reading off it directly would blank the header and reshape the tree mid-close.
-    const lastNoteRef = useRef(note);
-    if (note) lastNoteRef.current = note;
-    const noteView = note ?? lastNoteRef.current;
-
+    // Keep the header + tree rendered through the Dialog's ~150ms close animation: the parent clears
+    // `note` on move/cancel, so reading off it directly would blank the header and reshape the tree
+    // mid-close. Display-only — the actual move reads live state.
+    const noteView = useHeldValue(note);
     const currentFolder = noteView ? dirname(noteView.id) : '';
     const [query, setQuery] = useState('');
     // The picker keeps its own collapse state — opening it must not touch the rail's.

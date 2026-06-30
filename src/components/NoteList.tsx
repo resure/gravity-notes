@@ -27,6 +27,7 @@ import {
 import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
 import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
+import {useHeldValue} from '../hooks/useHeldValue';
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
@@ -487,11 +488,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         setDeleting(null);
     };
 
-    // Hold the last value through the Dialog's ~150ms close animation: `deleting` clears on
-    // confirm/cancel, so reading the title off it directly would blank the body mid-close.
-    const lastDeletingRef = useRef(deleting);
-    if (deleting) lastDeletingRef.current = deleting;
-    const deletingView = deleting ?? lastDeletingRef.current;
+    // Keep the title rendered through the Dialog's ~150ms close animation: `deleting` clears on
+    // confirm/cancel, so reading off it directly would blank the body mid-close. Display-only —
+    // confirmDelete still reads live `deleting`.
+    const deletingView = useHeldValue(deleting);
 
     // --- Stable per-row callbacks (constant identity; read current state via `live`). ---
 
