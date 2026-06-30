@@ -25,7 +25,10 @@ time). Both work across all three backends.
 
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
-commands, the folder ops, and `reveal_path`).
+commands, the folder ops, and `reveal_path`; it also registers the **updater** + **process** plugins).
+
+The desktop app ships **in-app auto-update** via the official Tauri 2 updater, delivered through GitHub
+Releases (`src/hooks/useAppUpdater.ts`; cut a release with the `/release` runbook in `.claude/skills/release`).
 
 ## Commands
 
@@ -47,6 +50,8 @@ npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config
 # Desktop app (Tauri 2, macOS arm64). Needs Rust ≥ 1.88 (rustup recommended).
 npm run tauri:dev    # run the desktop app against the Vite dev server
 npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/target/release/bundle
+# Signed + notarized release: the /release skill → scripts/build-mac-release.sh (emits DMG + updater
+# .app.tar.gz + latest.json); needs rustup's cargo + the Apple/updater signing env vars.
 ```
 
 ## Architecture
@@ -146,6 +151,11 @@ Key modules:
   which the help dialog also renders from). Punctuation chords match by `event.code` (e.g. `⌘⇧;` →
   `Semicolon`), since the shifted `event.key` differs. `useDebouncedValue` debounces the query (120 ms)
   only above a 500-note vault (wired in `Workspace`).
+- `src/hooks/useAppUpdater.ts` — in-app auto-update (macOS desktop) over the Tauri updater/process
+  plugins: a small state machine (check → available → downloading → installed / restart-required /
+  error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
+  out of the web bundle. `Workspace` runs a silent check on launch (production only) → toast; `TopBar`
+  adds a manual "Check for Updates…" item; `UpdateDialog` renders the flow.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate), `Workspace`
   (top bar + layout + nav wiring; takes the `NoteStore`, owns export/import), `TopBar` (nvALT search
   box + storage menu [export / import / manage attachments / change storage] + theme/help controls +
@@ -160,8 +170,8 @@ Key modules:
   `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), the `[[wiki link]]` editor
   pieces (`editor/wikiLinkExtension` — a mark with `escape: false` so it round-trips — plus the
   `WikiLinkSuggest` `[[` picker and `WikiLinkTooltip`), `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `ThemeSwitcher`, and `ErrorBoundary` (root
-  render-crash net).
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `UpdateDialog` (the software-update sheet),
+  `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`.
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
@@ -175,9 +185,10 @@ Key modules:
 - Errors surface to the user via the toaster (`onError` in `Workspace`); storage methods throw and
   callers translate to toasts.
 - Keep new persistence behind `NoteStore` so alternative backends (the Tauri `fs` store, HTTP API,
-  IndexedDB) stay drop-in. Anything that runs only in the desktop shell must feature-detect Tauri and
-  keep the browser build working (e.g. `pickFolder` branches; `@tauri-apps/plugin-dialog` is loaded
-  via dynamic `import()` so it never enters the web bundle).
+  IndexedDB) stay drop-in. Anything that runs only in the desktop shell must feature-detect Tauri (the
+  canonical `isTauri` lives in `src/isTauri.ts`) and keep the browser build working (e.g. `pickFolder`
+  branches; `@tauri-apps/plugin-dialog`/`-updater`/`-process` are loaded via dynamic `import()` so they
+  never enter the web bundle).
 
 ## Roadmap
 
