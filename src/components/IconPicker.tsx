@@ -1,4 +1,13 @@
-import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
+import {
+    useCallback,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from 'react';
+import type {KeyboardEvent as ReactKeyboardEvent} from 'react';
 
 import {Button, Icon, Popup, SegmentedRadioGroup, TextInput} from '@gravity-ui/uikit';
 import type {ButtonProps} from '@gravity-ui/uikit';
@@ -62,7 +71,13 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
     const [type, setType] = useState<IconPickerType>('all');
     const [emojis, setEmojis] = useState<EmojiItem[] | null>(null);
     const [icons, setIcons] = useState<IconItem[] | null>(() => getIconCatalog()?.all ?? null);
+    // Roving keyboard focus: index into `entries` of the highlighted grid item (-1 = none, focus in
+    // search). Focus stays in the search box; arrows move this highlight (aria-activedescendant), Enter
+    // picks it. Reset whenever the list changes so a stale index can't point past the new results.
+    const [activeIndex, setActiveIndex] = useState(-1);
     const searchRef = useRef<HTMLInputElement>(null);
+    const listId = useId();
+    const optionId = (index: number) => `${listId}-opt-${index}`;
 
     // Lazily load the emoji + icon catalogs the first time the picker opens (keeps both out of the main
     // bundle). Each is memoized, so reopening is free.
@@ -141,10 +156,56 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         scrollRef.current?.scrollTo({top: 0});
     }, [type]);
 
+    // Drop the highlight whenever the result set changes (new query/tab/catalog), so the index can't
+    // dangle past the new `entries`.
+    useEffect(() => {
+        setActiveIndex(-1);
+    }, [entries]);
+
     const handleOpenChange = useCallback((next: boolean) => {
         setOpen(next);
-        if (!next) setQuery('');
+        if (!next) {
+            setQuery('');
+            setActiveIndex(-1);
+        }
     }, []);
+
+    // Grid keyboard navigation, handled on the popup so it works while the search box keeps DOM focus.
+    // Left/Right/Up stay as normal text editing until the user steps into the grid with ↓; from then on
+    // the arrows rove the highlight and Enter commits it. Typing resets the list (and the highlight).
+    const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        const count = entries.length;
+        if (!count) return;
+        const move = (to: number) => {
+            event.preventDefault();
+            const next = Math.max(0, Math.min(to, count - 1));
+            setActiveIndex(next);
+            rowVirtualizer.scrollToIndex(Math.floor(next / COLUMNS));
+        };
+        switch (event.key) {
+            case 'ArrowDown':
+                move(activeIndex < 0 ? 0 : activeIndex + COLUMNS);
+                break;
+            case 'ArrowRight':
+                if (activeIndex >= 0) move(activeIndex + 1);
+                break;
+            case 'ArrowUp':
+                if (activeIndex >= 0) move(activeIndex - COLUMNS);
+                break;
+            case 'ArrowLeft':
+                if (activeIndex > 0) move(activeIndex - 1);
+                break;
+            case 'Enter':
+                if (activeIndex >= 0 && entries[activeIndex]) {
+                    event.preventDefault();
+                    onChange(entries[activeIndex].value);
+                    handleOpenChange(false);
+                }
+                break;
+            default:
+                break;
+        }
+    };
 
     const iconSize = useMemo(() => {
         switch (size) {
@@ -173,15 +234,17 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                     setOpen((o) => !o);
                 }}
             >
-                {resolved.kind === 'emoji' ? (
-                    <span className="icon-picker__emoji-container">
+                {/* Button.Icon makes the button square + centers the glyph (Gravity's own icon-only
+                    sizing), so we don't reach into its private CSS vars. */}
+                <Button.Icon>
+                    {resolved.kind === 'emoji' ? (
                         <span className="icon-picker__emoji" style={{fontSize: iconSize}}>
                             {resolved.char}
                         </span>
-                    </span>
-                ) : (
-                    <Icon size={iconSize} data={resolved.data} />
-                )}
+                    ) : (
+                        <Icon size={iconSize} data={resolved.data} />
+                    )}
+                </Button.Icon>
             </Button>
 
             <Popup
@@ -195,13 +258,25 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                     className="icon-picker__popup"
                     role="presentation"
                     onClick={(e) => e.stopPropagation()}
+                    // Grid navigation catches keys bubbling up from the focused search box (a combobox).
+                    onKeyDown={onKeyDown}
                 >
+                    {/* Combobox pattern: focus stays in the search box, which owns the roving
+                        aria-activedescendant over the listbox below. */}
                     <TextInput
                         controlRef={searchRef}
                         placeholder="Search icons…"
                         value={query}
                         onUpdate={setQuery}
                         size="s"
+                        controlProps={{
+                            role: 'combobox',
+                            'aria-expanded': true,
+                            'aria-controls': listId,
+                            'aria-activedescendant':
+                                activeIndex >= 0 ? optionId(activeIndex) : undefined,
+                            'aria-autocomplete': 'list',
+                        }}
                     />
                     <SegmentedRadioGroup
                         className="icon-picker__types"
@@ -215,6 +290,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                     </SegmentedRadioGroup>
                     <div
                         ref={scrollRef}
+                        id={listId}
                         className="icon-picker__grid"
                         role="listbox"
                         aria-label="Pick an icon"
@@ -229,31 +305,38 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                                     className="icon-picker__row"
                                     style={{transform: `translateY(${virtualRow.start}px)`}}
                                 >
-                                    {rows[virtualRow.index].map((entry) => (
-                                        <Button
-                                            key={entry.key}
-                                            view={value === entry.value ? 'normal' : 'flat'}
-                                            size="m"
-                                            role="option"
-                                            aria-selected={value === entry.value}
-                                            title={entry.title}
-                                            className="icon-picker__item"
-                                            onClick={() => {
-                                                onChange(entry.value);
-                                                handleOpenChange(false);
-                                            }}
-                                        >
-                                            {entry.kind === 'emoji' ? (
-                                                <span className="icon-picker__emoji-container">
-                                                    <span className="icon-picker__emoji">
-                                                        {entry.char}
-                                                    </span>
-                                                </span>
-                                            ) : (
-                                                <Icon data={iconByName(entry.value)} size={16} />
-                                            )}
-                                        </Button>
-                                    ))}
+                                    {rows[virtualRow.index].map((entry, colIndex) => {
+                                        const index = virtualRow.index * COLUMNS + colIndex;
+                                        return (
+                                            <Button
+                                                key={entry.key}
+                                                id={optionId(index)}
+                                                view={value === entry.value ? 'normal' : 'flat'}
+                                                size="m"
+                                                role="option"
+                                                aria-selected={value === entry.value}
+                                                title={entry.title}
+                                                className={`icon-picker__item${index === activeIndex ? ' icon-picker__item_active' : ''}`}
+                                                onClick={() => {
+                                                    onChange(entry.value);
+                                                    handleOpenChange(false);
+                                                }}
+                                            >
+                                                <Button.Icon>
+                                                    {entry.kind === 'emoji' ? (
+                                                        <span className="icon-picker__emoji">
+                                                            {entry.char}
+                                                        </span>
+                                                    ) : (
+                                                        <Icon
+                                                            data={iconByName(entry.value)}
+                                                            size={16}
+                                                        />
+                                                    )}
+                                                </Button.Icon>
+                                            </Button>
+                                        );
+                                    })}
                                 </div>
                             ))}
                         </div>
