@@ -28,7 +28,9 @@
 /* Comfortable reading rhythm: a relaxed line-height. Blank lines between paragraphs are real empty
    rows (preserveEmptyRows) that carry most of the gap, but a small paragraph bottom-margin gives
    adjacent paragraphs (no explicit blank line) a little air too. The content typography lives deep in
-   the YFM stylesheets; the extra .ProseMirror.yfm classes outrank it so these win without !important. */
+   the YFM stylesheets; the extra .ProseMirror.yfm classes outrank it so these win without !important.
+   Read-only preview mode re-scopes this same rhythm onto its static `.yfm` HTML — keep the values
+   here and in NotePreview.css in sync. */
 .editor-pane .g-md-editor.ProseMirror.yfm {
     line-height: 1.2;
 }

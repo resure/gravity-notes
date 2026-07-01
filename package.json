@@ -23,6 +23,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@diplodoc/color-extension": "^0.1.1",
     "@diplodoc/cut-extension": "^1.0.0",
     "@diplodoc/file-extension": "^0.2.1",
     "@diplodoc/tabs-extension": "^3.5.1",

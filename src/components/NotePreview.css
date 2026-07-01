@@ -1,19 +1,28 @@
+/* NOT a scroll container. The pane's scroller is `.editor-pane` (EditorPane.css) — it owns the
+   per-note scroll save/restore (EditorBody's scrollContainerRef = paneRef) for BOTH the editor and
+   the preview. If `.note-preview` also scrolls (its own `overflow-y:auto` + `height:100%` turns it
+   into a scroller whenever the flex parent resolves a definite height — which macOS's always-on
+   native scrollbars trigger), it gets a SECOND scrollbar inside `.editor-pane`'s, narrowing the
+   preview text column by one scrollbar-width vs the editor (and quietly breaking scroll-restore).
+   So stay a plain block that grows inside `.editor-pane__body` and let `.editor-pane` do the
+   scrolling — identical column width in both modes on every engine. */
 .note-preview {
-    height: 100%;
-    overflow-y: auto;
     outline: none;
 }
 
-/* Match the editor's content inset (same horizontal gutter) so toggling edit/preview doesn't
-   shift the text. */
+/* Match the editor's text column exactly so toggling edit/preview doesn't shift/re-wrap the text.
+   The editor insets its content by the --editor-gutter (16px, on .g-md-wysiwyg-editor__editor) PLUS
+   the ProseMirror node's own 4px padding (.g-md-editor.ProseMirror). The preview HTML has no
+   ProseMirror node, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
+   the two columns don't line up. */
 .note-preview__body {
-    padding: 8px var(--editor-gutter, 16px) 16px;
+    padding: 12px calc(var(--editor-gutter, 16px) + 8px) 16px calc(var(--editor-gutter, 16px) + 4px);
 }
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
 .note-preview__error {
     display: block;
-    padding: 8px var(--editor-gutter, 16px) 16px;
+    padding: 8px calc(var(--editor-gutter, 16px) + 4px) 16px;
 }
 
 /* [[wiki links]] post-processed into spans (see withWikiLinks) read as links, matching the editor.
@@ -25,36 +34,68 @@
 /* Mirror the editor's Apple-Notes rhythm (see EditorPane.css) onto the diplodoc-rendered preview
    HTML so read-only preview looks like the WYSIWYG surface. Both are `.yfm` content; the editor
    overrides live on its ProseMirror node, so the same rules are duplicated here for the static
-   HTML. The doubled `.note-preview__body.yfm` outranks the base `.yfm` typography without
-   !important; `:where(...)` keeps element specificity at zero so these win. */
+   HTML. KEEP THESE VALUES IDENTICAL to the matching block in EditorPane.css — they are the same
+   typographic rhythm, just re-scoped from the ProseMirror node to the static preview container.
+   The doubled `.note-preview__body.yfm` outranks the base `.yfm` typography without !important;
+   `:where(...)` keeps element specificity at zero so these win. */
 .note-preview__body.yfm {
-    line-height: 1.25;
+    line-height: 1.2;
 }
 
 .note-preview__body.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.3;
+    line-height: 1.35;
+}
+
+/* YFM's own base rule `.yfm li:first-child, .yfm li + li { margin-block: 0.33em 0 }` carries element
+   specificity (`li` + `:first-child`/`+ li`) that OUTRANKS the zero-element `:where(p, li)` rule above,
+   so preview list items would inherit a ~5px top gap. The editor doesn't show it: its selector
+   (`.g-md-editor.ProseMirror.yfm …`) carries extra classes and wins. Re-assert the tight rhythm here at
+   matching specificity so lists line up with the editor (mirrors its computed `margin: 0 0 1px`). */
+.note-preview__body.yfm li:first-child,
+.note-preview__body.yfm li + li {
+    margin-top: 0;
+    margin-bottom: 1px;
+}
+
+/* A touch of margin between paragraphs. diplodoc renders each markdown paragraph as its own <p>
+   (a blank line is a plain break, not an empty row), so this is the only gap between them —
+   matching the editor, where adjacent paragraphs get the same 6px. */
+.note-preview__body.yfm p {
+    margin-bottom: 6px;
+}
+
+/* …but a loose list wraps each item's text in its own <p> (<li><p>…</p></li>), so the rule above
+   would balloon the gap between list items. Keep list paragraphs tight so lists stay compact. */
+.note-preview__body.yfm li p {
+    margin-bottom: 0;
+}
+
+/* Block elements get real air above them: the paragraph above has an almost-zero bottom margin, so
+   without this a code block / table / quote would hug the preceding line. Mirrors the editor. */
+.note-preview__body.yfm :where(pre, table, blockquote) {
+    margin-top: 12px;
 }
 
 .note-preview__body.yfm :where(h1, h2, h3, h4, h5, h6) {
     margin-bottom: 4px;
 }
 .note-preview__body.yfm h1 {
-    margin-top: 28px;
+    margin-top: 24px;
 }
 .note-preview__body.yfm h2 {
-    margin-top: 22px;
+    margin-top: 19px;
 }
 .note-preview__body.yfm h3 {
-    margin-top: 18px;
+    margin-top: 15px;
 }
 .note-preview__body.yfm h4 {
-    margin-top: 14px;
+    margin-top: 12px;
 }
 .note-preview__body.yfm h5,
 .note-preview__body.yfm h6 {
-    margin-top: 10px;
+    margin-top: 9px;
 }
 
 /* No empty gap above the first block — the body's top padding already spaces it. */
