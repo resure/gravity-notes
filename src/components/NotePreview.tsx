@@ -1,40 +1,59 @@
 import {forwardRef, useEffect, useState} from 'react';
 
 import * as colorExtension from '@diplodoc/color-extension';
+import * as cutExtension from '@diplodoc/cut-extension';
+// Cut runtime side-effect: auto-inits a single controller on `window` and attaches delegated listeners
+// to `document`, so injected preview HTML stays interactive. It guards on window and inits once, so
+// importing at module load is safe. Cut renders as native <details>, so it toggles even WITHOUT this
+// runtime; the runtime only adds the focus-into-a-collapsed-cut reveal.
+import '@diplodoc/cut-extension/runtime';
 import transform from '@diplodoc/transform';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
 import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
 
+// Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
+import '@diplodoc/cut-extension/runtime/styles.css';
 
 // The preview renders via @diplodoc/transform (markdown-it), a DIFFERENT engine from the WYSIWYG
 // editor (@gravity-ui/markdown-editor / ProseMirror). To keep the two surfaces consistent, the
 // transform must mirror the editor's YFM feature set — otherwise editor-only syntax leaks through as
-// literal text in preview. So far:
+// literal text in preview:
 //   • colorPlugin — `{red}(text)` → <span class="yfm-colorify yfm-colorify--red">. Class-based (the
 //     plugin's default, matching the editor's ColorSpecs toDOM); the colors come from yc-colors.css,
 //     already loaded app-wide (main.tsx), so no inline styles needed.
+//   • cut — `{% cut %}` collapsibles. Its `transform` is a plugin FACTORY (call it to get the
+//     markdown-it plugin); interactivity comes from the runtime imported above.
 //   • disableCommonAnchors — the editor shows no `#` anchor buttons beside headings; diplodoc adds
 //     them by default, so turn them off to match.
-// @diplodoc/color-extension is CJS, and bundlers expose its shape inconsistently: under Node the named
-// `colorPlugin` binds directly, but Vite pre-bundles it so the plugin sits nested under `default`
-// (the whole `module.exports` object) — a bare named/default import resolves to `undefined` in one env
-// or the other (a silent no-op, leaking `{red}(x)` as literal text). Dig through the wrappers to the
-// actual plugin function so it works under Vite dev, the rollup prod build, AND vitest.
-function resolveColorPlugin(mod: unknown): unknown {
+// Both packages are CJS, and bundlers expose their shape inconsistently: under Node the named export
+// binds directly, but Vite pre-bundles them so the export sits nested under `default` (the whole
+// `module.exports` object) — a bare named/default import resolves to `undefined` in one env or the
+// other (a silent no-op, leaking the raw syntax as literal text). Dig through the wrappers to the
+// actual function so it works under Vite dev, the rollup prod build, AND vitest.
+function resolveCjsExport(mod: unknown, name: string): unknown {
     let cur: unknown = mod;
     for (let depth = 0; depth < 4 && cur && typeof cur !== 'function'; depth++) {
         const obj = cur as Record<string, unknown>;
-        cur = obj.colorPlugin ?? obj.default;
+        cur = obj[name] ?? obj.default;
     }
     return cur;
 }
-const colorPlugin = resolveColorPlugin(colorExtension);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- markdown-it plugin vs diplodoc's ExtendedPluginWithCollect type
-const TRANSFORM_OPTIONS = {plugins: [colorPlugin as any], disableCommonAnchors: true};
+type PluginFactory = (options?: unknown) => unknown;
+const colorPlugin = resolveCjsExport(colorExtension, 'colorPlugin');
+const cutTransform = resolveCjsExport(cutExtension, 'transform') as PluginFactory;
+
+const TRANSFORM_OPTIONS = {
+    // `bundle: false` is load-bearing: the cut factory otherwise defaults to bundling its runtime
+    // assets to disk via Node `fs`, which throws in the browser (fs is externalized) and fails the
+    // whole transform. We ship the runtime ourselves (the side-effect import above), so no bundling.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- markdown-it plugins vs diplodoc's ExtendedPluginWithCollect type
+    plugins: [colorPlugin, cutTransform({bundle: false})].filter(Boolean) as any[],
+    disableCommonAnchors: true,
+};
 
 interface NotePreviewProps {
     /** The Markdown to render (captured from the editor when preview is toggled on). */
