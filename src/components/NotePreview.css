@@ -4,16 +4,19 @@
     outline: none;
 }
 
-/* Match the editor's content inset (same horizontal gutter) so toggling edit/preview doesn't
-   shift the text. */
+/* Match the editor's text column exactly so toggling edit/preview doesn't shift/re-wrap the text.
+   The editor insets its content by the --editor-gutter (16px, on .g-md-wysiwyg-editor__editor) PLUS
+   the ProseMirror node's own 4px padding (.g-md-editor.ProseMirror). The preview HTML has no
+   ProseMirror node, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
+   the two columns don't line up. */
 .note-preview__body {
-    padding: 8px var(--editor-gutter, 16px) 16px;
+    padding: 8px calc(var(--editor-gutter, 16px) + 4px) 16px;
 }
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
 .note-preview__error {
     display: block;
-    padding: 8px var(--editor-gutter, 16px) 16px;
+    padding: 8px calc(var(--editor-gutter, 16px) + 4px) 16px;
 }
 
 /* [[wiki links]] post-processed into spans (see withWikiLinks) read as links, matching the editor.
