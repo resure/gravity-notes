@@ -104,16 +104,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         // pay to assemble the ~1500-icon list.
         if (!open) return [];
         const out: Entry[] = [];
-        if (type !== 'emoji' && icons) {
-            for (const icon of filterIcons(query, icons)) {
-                out.push({
-                    kind: 'icon',
-                    key: icon.name,
-                    value: icon.name,
-                    title: icon.meta?.name ?? icon.name,
-                });
-            }
-        }
+        // In the "All" view, emoji come first, then the Gravity symbols.
         if (type !== 'icons' && emojis) {
             for (const emoji of filterEmojis(query, emojis)) {
                 out.push({
@@ -122,6 +113,16 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                     value: emoji.char,
                     title: emoji.name,
                     char: emoji.char,
+                });
+            }
+        }
+        if (type !== 'emoji' && icons) {
+            for (const icon of filterIcons(query, icons)) {
+                out.push({
+                    kind: 'icon',
+                    key: icon.name,
+                    value: icon.name,
+                    title: icon.meta?.name ?? icon.name,
                 });
             }
         }
