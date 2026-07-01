@@ -359,6 +359,7 @@ describe('EditorPane — note switch', () => {
                 onUploadFile={async () => 'Attachments/x.png'}
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
+                onSetIcon={() => {}}
             />,
         );
         // The swap fired on the session bump and re-homed the (first-time-opened) note to the top…
@@ -392,6 +393,7 @@ describe('EditorPane — note switch', () => {
                 onUploadFile={async () => 'Attachments/x.png'}
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
+                onSetIcon={() => {}}
             />,
         );
         // No swap fired: the editor buffer is untouched (no replace) on a rename.

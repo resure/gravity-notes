@@ -1,14 +1,43 @@
-/* Markdown-first surface: hide the formatting toolbar strip + the settings gear.
+/* Markdown-first surface: hide the formatting toolbar strip + the settings gear — UNLESS the
+   "Show editor toolbar" setting is on (`.editor-pane_toolbar`, see EditorPane.tsx / useSettings).
    (Selectors target the shipped @gravity-ui/markdown-editor classes.) */
-.editor-pane .g-md-editor-sticky,
-.editor-pane .g-md-toolbar {
+.editor-pane:not(.editor-pane_toolbar) .g-md-editor-sticky,
+.editor-pane:not(.editor-pane_toolbar) .g-md-toolbar {
     display: none;
 }
 
-/* The editor keeps its "has toolbar" modifier (which pads the content 16px top/bottom)
-   even though we hid the toolbar — bring the top gap down to a small, comfortable value. */
-.editor-pane .g-md-wysiwyg-editor_toolbar .yfm-editor {
+/* With the toolbar hidden the editor keeps its "has toolbar" modifier (which pads the content 16px
+   top/bottom) — bring the top gap down to a small, comfortable value. When the toolbar is shown, leave
+   the editor's own padding so the content clears the sticky bar. */
+.editor-pane:not(.editor-pane_toolbar) .g-md-wysiwyg-editor_toolbar .yfm-editor {
     padding-top: 8px;
+}
+
+/* Toolbar shown (Settings › Show editor toolbar): give the sticky bar a solid background so scrolling
+   note text doesn't bleed through it, and inset its controls by --editor-gutter so they left-align
+   with the title + body (which the bar otherwise sits flush-left of). The `z-index` is load-bearing:
+   the sticky bar has `z-index: auto`, so the (later-painted) note content stacks ON TOP of it — even
+   with a solid background — and shows through; lifting it above the content fixes that. */
+.editor-pane_toolbar .g-md-editor-sticky {
+    background: var(--g-color-base-background);
+    z-index: 2;
+    /* The bundle sticks it at `top: 8px`, leaving an 8px strip above the bar where scrolling content
+       shows through; stick it flush to the pane top instead. */
+    top: 0;
+    /* A little vertical breathing room so an active button's highlight doesn't touch the bar edges.
+       Padded here (the outer wrapper) so the whole button row AND the trailing "…" overflow button
+       inset together — and the background/hairline still sit at the wrapper's outer edges. */
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+.editor-pane_toolbar .g-md-toolbar {
+    padding-left: var(--editor-gutter, 16px);
+}
+
+/* Once the note is scrolled the toolbar is stuck to the top with content sliding under it — a hairline
+   separates the two (box-shadow, not border, so toggling it adds no 1px layout shift). */
+.editor-pane_toolbar.editor-pane_scrolled .g-md-editor-sticky {
+    box-shadow: 0 1px 0 0 var(--g-color-line-generic);
 }
 
 /* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label + the

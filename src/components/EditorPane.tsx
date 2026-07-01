@@ -155,6 +155,10 @@ interface EditorPaneProps {
     icon?: string;
     /** Called when the user picks or clears an icon from the title area. */
     onSetIcon: (name: string) => void;
+    /** Show the editor's formatting toolbar (Settings › Show editor toolbar). */
+    showToolbar?: boolean;
+    /** Show the note's title icon (Settings › Show note icons, experimental). */
+    showNoteIcons?: boolean;
 }
 
 /** Imperative surface the shell uses to drive the editor body. */
@@ -191,6 +195,8 @@ interface EditorBodyProps {
     onUploadFile: (file: File) => Promise<string>;
     wikiNotes: NoteMeta[];
     onOpenWikiLink: (target: string) => void;
+    /** Show the editor's formatting toolbar (else the surface is markdown-first with no toolbar). */
+    showToolbar?: boolean;
 }
 
 /**
@@ -215,6 +221,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         onUploadFile,
         wikiNotes,
         onOpenWikiLink,
+        showToolbar,
     },
     ref,
 ) {
@@ -411,6 +418,16 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
     }, [sessionId, note.content]);
 
+    // Preview mode renders the editor's live buffer, but `editor.getValue()` is a snapshot and the swap
+    // effect ABOVE replaces the buffer in an effect (after render) WITHOUT re-rendering — so reading it
+    // inline left the preview stuck on the previous note after a switch (title changed, body didn't).
+    // Read it into state here instead: this effect is declared after the swap, so on a switch it runs
+    // once the new content is in place, keyed on the same triggers (+ `preview`, to capture on toggle).
+    const [previewMarkup, setPreviewMarkup] = useState(() => editor.getValue());
+    useEffect(() => {
+        if (preview) setPreviewMarkup(editor.getValue());
+    }, [preview, sessionId, note.content, editor]);
+
     // A rename/move re-keys the open note in place (id changes, body + session don't), so the swap
     // effect above (keyed on [sessionId, note.content]) doesn't run. Carry the saved view-state to the
     // new id so a later switch-and-back restores it. This reads its OWN tracker (`rekeyPrevRef`), not
@@ -482,9 +499,13 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     return (
         <>
             {preview ? (
-                <NotePreview ref={previewRef} markup={editor.getValue()} />
+                <NotePreview ref={previewRef} markup={previewMarkup} />
             ) : (
-                <MarkdownEditorView settingsVisible={false} stickyToolbar={false} editor={editor} />
+                <MarkdownEditorView
+                    settingsVisible={false}
+                    stickyToolbar={Boolean(showToolbar)}
+                    editor={editor}
+                />
             )}
             <WikiLinkSuggest state={wikiSuggest} />
             <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
@@ -515,6 +536,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onOpenWikiLink,
         icon,
         onSetIcon,
+        showToolbar,
+        showNoteIcons,
     },
     ref,
 ) {
@@ -527,6 +550,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     // Read the latest autofocus inside the session-driven focus effect without re-running it per change.
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
+
+    // Only relevant with the toolbar shown: give the (sticky) toolbar a hairline once the pane scrolls,
+    // so a stuck bar reads as separate from the content under it. `setScrolled(bool)` re-renders only
+    // when the boolean flips (React bails on an equal value), not on every scroll event.
+    const [scrolled, setScrolled] = useState(false);
+    useEffect(() => {
+        const pane = paneRef.current;
+        if (!pane || !showToolbar) {
+            setScrolled(false);
+            return undefined;
+        }
+        const onScroll = () => setScrolled(pane.scrollTop > 0);
+        onScroll();
+        pane.addEventListener('scroll', onScroll, {passive: true});
+        return () => pane.removeEventListener('scroll', onScroll);
+    }, [showToolbar]);
 
     useImperativeHandle(
         ref,
@@ -581,7 +620,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
             ref={paneRef}
-            className="editor-pane"
+            className={`editor-pane${showToolbar ? ' editor-pane_toolbar' : ''}${
+                scrolled ? ' editor-pane_scrolled' : ''
+            }`}
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
                 // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
@@ -594,6 +635,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 title={note.title}
                 icon={icon}
                 onSetIcon={onSetIcon}
+                showIcon={showNoteIcons}
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
                 onLeaveToBody={goToBody}
@@ -617,7 +659,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     // do nothing.
                     if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
                         return;
-                    if ((event.target as HTMLElement).closest('.g-md-editor')) return;
+                    // Ignore clicks on the editor content AND on the formatting toolbar (shown via
+                    // Settings): the toolbar lives in this wrapper but isn't `.g-md-editor`, so without
+                    // this a toolbar-button click would fall through to moveCursorEnd() and yank the
+                    // caret to the end of the document.
+                    if ((event.target as HTMLElement).closest('.g-md-editor, .g-md-editor-sticky'))
+                        return;
                     event.preventDefault();
                     bodyRef.current?.moveCursorEnd();
                     bodyRef.current?.focus();
@@ -655,6 +702,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     onUploadFile={onUploadFile}
                     wikiNotes={wikiNotes}
                     onOpenWikiLink={onOpenWikiLink}
+                    showToolbar={showToolbar}
                 />
             </div>
         </div>

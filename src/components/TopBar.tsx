@@ -8,6 +8,7 @@ import {
     CircleArrowUp,
     CircleQuestion,
     Folder,
+    Gear,
     LayoutSideContent,
     Picture,
     TrashBin,
@@ -37,6 +38,8 @@ export interface TopBarProps {
     /** Number of notes currently in the Trash, for the menu-item badge. */
     trashCount: number;
     onOpenHelp: () => void;
+    /** Open the app settings dialog (⌘,). */
+    onOpenSettings: () => void;
     /** Open the software-update dialog + kick off a check. Native shell only; omit to hide the item. */
     onCheckForUpdates?: () => void;
     /** Whether an update is already known to be available — turns the item into a call to action. */
@@ -99,6 +102,7 @@ export function TopBar({
     onOpenTrash,
     trashCount,
     onOpenHelp,
+    onOpenSettings,
     onCheckForUpdates,
     updateAvailable,
     themePref,
@@ -276,6 +280,12 @@ export function TopBar({
                     selected: themePref === o.value,
                     action: () => onChangeThemePref(o.value),
                 })),
+            },
+            {
+                text: 'Settings…',
+                iconStart: <Icon data={Gear} />,
+                iconEnd: <span className="topbar__menu-kbd">⌘,</span>,
+                action: onOpenSettings,
             },
             {
                 text: 'Keyboard shortcuts',

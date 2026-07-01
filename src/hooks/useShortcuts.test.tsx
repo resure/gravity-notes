@@ -17,6 +17,7 @@ function makeActions(): ShortcutActions {
         toggleEditorMode: vi.fn(),
         togglePreview: vi.fn(),
         openHelp: vi.fn(),
+        openSettings: vi.fn(),
         renameSelected: vi.fn(),
         moveSelected: vi.fn(),
         duplicateSelected: vi.fn(),

@@ -26,6 +26,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         onOpenTrash: vi.fn(),
         trashCount: 0,
         onOpenHelp: vi.fn(),
+        onOpenSettings: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
         onToggleCollapsed: vi.fn(),
@@ -172,6 +173,7 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             onOpenTrash={noop}
             trashCount={0}
             onOpenHelp={noop}
+            onOpenSettings={noop}
             themePref="light"
             onChangeThemePref={noop}
             onToggleCollapsed={noop}

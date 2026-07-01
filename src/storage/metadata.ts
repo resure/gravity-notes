@@ -59,6 +59,7 @@ function parseTrashEntry(raw: unknown): TrashEntry[] {
             originalPath: typeof obj.originalPath === 'string' ? obj.originalPath : '',
             trashedAt: typeof obj.trashedAt === 'number' ? obj.trashedAt : 0,
             ...(typeof obj.created === 'number' ? {created: obj.created} : {}),
+            ...(typeof obj.icon === 'string' ? {icon: obj.icon} : {}),
         },
     ];
 }

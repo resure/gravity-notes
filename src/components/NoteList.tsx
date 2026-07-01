@@ -99,6 +99,8 @@ export interface NoteListProps {
     onTogglePin: (id: string) => void;
     icons: Readonly<Record<string, string>>;
     onSetIcon: (id: string, icon: string) => void;
+    /** Show a per-note icon picker on each row (Settings › Show note icons). */
+    showIcons: boolean;
     /** Whether the folder rail is shown (drives the toggle button state + ← behavior). */
     railOpen: boolean;
     /** Show / hide the folder rail. */
@@ -164,6 +166,7 @@ interface NoteRowProps {
     registerRef: (id: string, el: HTMLDivElement | null) => void;
     icon?: string;
     onSetIcon: (id: string, icon: string) => void;
+    showIcons: boolean;
     onClickRow: (id: string) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
     onKeyDownRow: (event: ReactKeyboardEvent<HTMLDivElement>, id: string) => void;
@@ -193,6 +196,7 @@ const NoteRow = memo(function NoteRow({
     registerRef,
     icon,
     onSetIcon,
+    showIcons,
     onClickRow,
     onContextMenuRow,
     onKeyDownRow,
@@ -243,12 +247,14 @@ const NoteRow = memo(function NoteRow({
             ) : (
                 <>
                     <div className="note-list__row">
-                        <IconPicker
-                            className="note-list__icon"
-                            size="s"
-                            value={icon}
-                            onChange={(name) => onSetIcon(note.id, name)}
-                        />
+                        {showIcons ? (
+                            <IconPicker
+                                className="note-list__icon"
+                                size="s"
+                                value={icon}
+                                onChange={(name) => onSetIcon(note.id, name)}
+                            />
+                        ) : null}
                         {pinned ? (
                             <Icon className="note-list__pin" data={PinFill} size={14} aria-hidden />
                         ) : null}
@@ -336,6 +342,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onTogglePin,
         icons,
         onSetIcon,
+        showIcons,
         railOpen,
         onToggleRail,
         onFocusRail,
@@ -755,6 +762,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         registerRef={registerRef}
                                         icon={icons[note.id]}
                                         onSetIcon={onSetIcon}
+                                        showIcons={showIcons}
                                         onClickRow={onClickRow}
                                         onContextMenuRow={onContextMenuRow}
                                         onKeyDownRow={onKeyDownRow}

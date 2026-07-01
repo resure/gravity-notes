@@ -21,6 +21,8 @@ interface NoteTitleProps {
     icon?: string;
     /** Called when the user picks or clears an icon (empty string = clear). */
     onSetIcon?: (name: string) => void;
+    /** Show the note-icon picker beside the title (Settings › Show note icons). */
+    showIcon?: boolean;
     /** Read-only in preview mode. */
     readOnly?: boolean;
     /**
@@ -45,7 +47,17 @@ interface NoteTitleProps {
  * dirty draft is also committed on unmount.
  */
 export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function NoteTitle(
-    {title, icon, onSetIcon, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
+    {
+        title,
+        icon,
+        onSetIcon,
+        showIcon = false,
+        readOnly = false,
+        onCommit,
+        onLeaveToBody,
+        onEnter,
+        onEscape,
+    },
     ref,
 ) {
     const [draft, setDraft] = useState(title);
@@ -117,14 +129,29 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
     };
 
     return (
-        <div className="note-title-row">
-            <IconPicker
-                className="note-title__icon"
-                value={icon}
-                disabled={readOnly}
-                onChange={(name) => onSetIcon?.(name)}
-                size="l"
-            />
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the row just forwards a click on its own padding to the title input, which is the interactive element
+        <div
+            className="note-title-row"
+            onMouseDown={(event) => {
+                // The row now carries the padding that used to sit on the input itself, so a click in
+                // that padding would land on this bare div and no longer focus the title. Restore the
+                // old behavior: a click on the row's own area (not the icon button or the input) focuses
+                // the title input. preventDefault keeps focus from bouncing off the div first.
+                if (event.target === event.currentTarget && !readOnly) {
+                    event.preventDefault();
+                    inputRef.current?.focus();
+                }
+            }}
+        >
+            {showIcon ? (
+                <IconPicker
+                    className="note-title__icon"
+                    value={icon}
+                    disabled={readOnly}
+                    onChange={(name) => onSetIcon?.(name)}
+                    size="l"
+                />
+            ) : null}
             <input
                 ref={inputRef}
                 className="note-title"

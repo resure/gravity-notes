@@ -1,8 +1,5 @@
 import {FileText} from '@gravity-ui/icons';
-import * as gravityIcons from '@gravity-ui/icons';
 import type {IconData} from '@gravity-ui/uikit';
-
-import iconsMetadata from '@gravity-ui/icons/metadata.json';
 
 export interface IconMeta {
     name: string;
@@ -22,53 +19,107 @@ export interface IconItem {
     lowerKeywords: string[];
 }
 
-const byComponentName = new Map(
-    (iconsMetadata.icons as IconMeta[]).map((m) => [m.componentName, m]),
-);
+export interface IconCatalog {
+    /** Every Gravity icon, sorted by component name. */
+    all: IconItem[];
+    /** Component name → icon data, for O(1) resolution. */
+    byName: Map<string, IconData>;
+}
 
-export const allIcons: IconItem[] = Object.entries(gravityIcons as Record<string, IconData>)
-    .map(([name, data]) => {
-        const meta = byComponentName.get(name);
-        return {
-            name,
-            data,
-            meta,
-            lowerName: name.toLowerCase(),
-            lowerMeta: meta?.name.toLowerCase() ?? '',
-            lowerKeywords: meta?.keywords.map((k) => k.toLowerCase()) ?? [],
-        };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+// The full @gravity-ui/icons set (~1500 components) + its metadata.json weighs ~110 KB gzip, and most
+// launches never render a custom icon (notes default to the File icon) — so load it as a SEPARATE chunk
+// on demand: the first time a component-name icon is rendered (see useIcon in IconPicker) or the picker
+// opens. Emojis (non-ASCII values) render with no catalog at all. `catalogVersion` bumps once loaded so
+// useSyncExternalStore subscribers re-render and swap the File placeholder → the real icon.
+let catalog: IconCatalog | null = null;
+let catalogPromise: Promise<IconCatalog> | null = null;
+let catalogVersion = 0;
+const catalogListeners = new Set<() => void>();
 
-const dataByName = new Map(allIcons.map((i) => [i.name, i.data]));
+/** Lazily load (once) the Gravity icon catalog + its search metadata. Memoized; notifies subscribers. */
+export function loadIconCatalog(): Promise<IconCatalog> {
+    if (!catalogPromise) {
+        catalogPromise = Promise.all([
+            import('@gravity-ui/icons'),
+            import('@gravity-ui/icons/metadata.json'),
+        ]).then(([iconsMod, metaMod]) => {
+            const gravityIcons = iconsMod as unknown as Record<string, IconData>;
+            const meta = metaMod as {default?: {icons: IconMeta[]}; icons?: IconMeta[]};
+            const metaIcons = meta.default?.icons ?? meta.icons ?? [];
+            const byComponentName = new Map(metaIcons.map((m) => [m.componentName, m]));
+            const all: IconItem[] = Object.entries(gravityIcons)
+                .filter(([name]) => name !== 'default' && name !== '__esModule')
+                .map(([name, data]) => {
+                    const iconMeta = byComponentName.get(name);
+                    return {
+                        name,
+                        data,
+                        meta: iconMeta,
+                        lowerName: name.toLowerCase(),
+                        lowerMeta: iconMeta?.name.toLowerCase() ?? '',
+                        lowerKeywords: iconMeta?.keywords.map((k) => k.toLowerCase()) ?? [],
+                    };
+                })
+                .sort((a, b) => a.name.localeCompare(b.name));
+            catalog = {all, byName: new Map(all.map((i) => [i.name, i.data]))};
+            catalogVersion += 1;
+            for (const listener of catalogListeners) listener();
+            return catalog;
+        });
+    }
+    return catalogPromise;
+}
+
+/** The loaded catalog, or null until {@link loadIconCatalog} resolves. */
+export function getIconCatalog(): IconCatalog | null {
+    return catalog;
+}
+
+/** Subscribe to catalog-load (for `useSyncExternalStore`); returns an unsubscribe. */
+export function subscribeIconCatalog(onChange: () => void): () => void {
+    catalogListeners.add(onChange);
+    return () => {
+        catalogListeners.delete(onChange);
+    };
+}
+
+/** A snapshot that changes once the catalog loads (`useSyncExternalStore` getSnapshot). */
+export function getIconCatalogVersion(): number {
+    return catalogVersion;
+}
 
 /** A stored icon value resolved for rendering: either a Gravity icon or a literal emoji. */
 export type ResolvedIcon = {kind: 'icon'; data: IconData} | {kind: 'emoji'; char: string};
 
+/** Gravity component names are ASCII PascalCase (e.g. `"Star"`); emoji are their literal (non-ASCII) char. */
+const COMPONENT_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
+export function isComponentName(value: string): boolean {
+    return COMPONENT_NAME.test(value);
+}
+
 /**
- * Resolve a stored icon value for display. Gravity component names (ASCII PascalCase) live in the
- * catalog; any other non-empty value is treated as a literal emoji character (stored verbatim in the
- * metadata sidecar). Falls back to the File icon when unset or an unknown component name.
+ * Resolve a stored icon value for display. A component-name value renders as its Gravity icon once the
+ * catalog has loaded (the File icon until then, or if the name is unknown); any other non-empty value is
+ * a literal emoji character, rendered immediately (no catalog needed). Unset → the default File icon.
  */
 export function resolveIcon(value?: string): ResolvedIcon {
-    if (value) {
-        const data = dataByName.get(value);
-        if (data) return {kind: 'icon', data};
-        if (!dataByName.has(value)) return {kind: 'emoji', char: value};
+    if (!value) return {kind: 'icon', data: FileText};
+    if (isComponentName(value)) {
+        return {kind: 'icon', data: catalog?.byName.get(value) ?? FileText};
     }
-    return {kind: 'icon', data: FileText};
+    return {kind: 'emoji', char: value};
 }
 
-/** Resolve a stored component name to its icon data, falling back to the File icon when unset/unknown. */
+/** Resolve a component name to its icon data, falling back to the File icon when unset/unknown/unloaded. */
 export function iconByName(name?: string): IconData {
-    return (name && dataByName.get(name)) || FileText;
+    return (name ? catalog?.byName.get(name) : undefined) ?? FileText;
 }
 
-/** Filter the catalog by a trimmed, case-insensitive query (matches component name or keywords). */
-export function filterIcons(query: string): IconItem[] {
+/** Filter a catalog list by a trimmed, case-insensitive query (matches component name, meta name, or keywords). */
+export function filterIcons(query: string, icons: IconItem[]): IconItem[] {
     const q = query.trim().toLowerCase();
-    if (!q) return allIcons;
-    return allIcons.filter(
+    if (!q) return icons;
+    return icons.filter(
         (i) =>
             i.lowerName.includes(q) ||
             i.lowerMeta.includes(q) ||

@@ -11,6 +11,7 @@ import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
+import {useSettings} from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {isTauri} from '../isTauri';
 import {orderNotes} from '../storage/metadata';
@@ -28,6 +29,7 @@ import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {FolderRail, type FolderRailHandle} from './FolderRail';
 import {MoveToDialog} from './MoveToDialog';
 import {NoteList, type NoteListHandle} from './NoteList';
+import {SettingsDialog} from './SettingsDialog';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
 import {TrashDialog} from './TrashDialog';
@@ -266,6 +268,8 @@ export function Workspace({
         }
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const {settings, setSetting} = useSettings();
     const [aboutOpen, setAboutOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const [trashOpen, setTrashOpen] = useState(false);
@@ -793,6 +797,7 @@ export function Workspace({
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
+        openSettings: () => setSettingsOpen(true),
         renameSelected: () => {
             // F2 fires even while typing. Context-aware: a focused folder row → rename the folder;
             // the in-editor title handles F2 itself; otherwise rename the selected note.
@@ -841,6 +846,7 @@ export function Workspace({
                     onOpenTrash={() => setTrashOpen(true)}
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}
+                    onOpenSettings={() => setSettingsOpen(true)}
                     onCheckForUpdates={
                         updater.supported
                             ? () => {
@@ -936,6 +942,7 @@ export function Workspace({
                             onTogglePin={notes.togglePin}
                             icons={notes.metadata.icons}
                             onSetIcon={notes.setIcon}
+                            showIcons={settings.showNoteIcons}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
                             onFocusRail={() => railRef.current?.focusSelected()}
@@ -978,6 +985,8 @@ export function Workspace({
                                         onOpenWikiLink={handleOpenWikiLink}
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
+                                        showToolbar={settings.showEditorToolbar}
+                                        showNoteIcons={settings.showNoteIcons}
                                     />
                                 </div>
                                 <BacklinksPanel
@@ -999,6 +1008,12 @@ export function Workspace({
                 </div>
 
                 <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+                <SettingsDialog
+                    open={settingsOpen}
+                    onClose={() => setSettingsOpen(false)}
+                    settings={settings}
+                    setSetting={setSetting}
+                />
 
                 <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
 

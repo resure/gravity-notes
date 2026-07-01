@@ -1266,6 +1266,37 @@ describe('useNotes — trash', () => {
         expect(hook.result.current.trashedNotes).toEqual([]); // dropped from the view in-memory
     });
 
+    it('preserves a note icon across trash → restore', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        act(() => {
+            hook.result.current.setIcon('Work/A.md', 'Star');
+        });
+        expect(hook.result.current.metadata.icons['Work/A.md']).toBe('Star');
+
+        await act(async () => {
+            await hook.result.current.trash('Work/A.md');
+        });
+        // Trashing drops the icon from the LIVE metadata (the note is no longer a live id)…
+        expect(hook.result.current.metadata.icons['Work/A.md']).toBeUndefined();
+
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        const trashId = hook.result.current.trashedNotes[0].id;
+        let restoredId: string | null = null;
+        await act(async () => {
+            restoredId = await hook.result.current.restoreFromTrash(trashId);
+        });
+
+        // …and restore reinstates it on the restored id.
+        expect(restoredId).toBe('Work/A.md');
+        expect(hook.result.current.metadata.icons['Work/A.md']).toBe('Star');
+    });
+
     it('purges one trashed note and empties the rest', async () => {
         const store = new ControllableStore();
         store.seed('A.md', 'a');

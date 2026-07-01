@@ -1,12 +1,3 @@
-.icon-picker__button {
-    --_--padding: 0;
-    width: var(--_--height);
-}
-
-.icon-picker__button .g-button__text {
-    height: 100%; /* hack for align emoji with the button for Safari */
-}
-
 .icon-picker__popup {
     display: flex;
     flex-direction: column;
@@ -37,16 +28,11 @@
     gap: 6px;
 }
 
-.icon-picker__item {
-    --_--padding: 0;
-}
-
-.icon-picker__emoji-container {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    height: 100%;
+/* Keyboard-roved item: a focus ring, distinct from the filled `view="normal"` of the SELECTED item. */
+.icon-picker__item_active {
+    outline: 2px solid var(--g-color-line-focus);
+    outline-offset: -2px;
+    border-radius: var(--g-focus-border-radius, 5px);
 }
 
 .icon-picker__emoji {
