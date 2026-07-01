@@ -3,7 +3,7 @@
     flex-direction: column;
     gap: 4px;
     /* The Dialog.Body has no bottom padding of its own, so give the content some breathing room. */
-    padding-bottom: 8px;
+    padding-bottom: 20px;
 }
 
 .settings-dialog__row {
