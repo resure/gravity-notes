@@ -16,6 +16,8 @@ vi.mock('@gravity-ui/markdown-editor', () => ({
         off: () => {},
     }),
     MarkdownEditorView: () => null,
+    // EditorPane derives its selection-toolbar config from this at module load.
+    wSelectionMenuConfigByPreset: {full: []},
 }));
 
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';

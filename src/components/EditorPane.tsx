@@ -1,7 +1,13 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
-import {MarkdownEditorView, useMarkdownEditor} from '@gravity-ui/markdown-editor';
-import {EditorState} from 'prosemirror-state';
+import {
+    MarkdownEditorView,
+    useMarkdownEditor,
+    wHeadingListConfig,
+    wSelectionMenuConfigByPreset,
+} from '@gravity-ui/markdown-editor';
+import {Hotkey, Icon, Select} from '@gravity-ui/uikit';
+import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
 import type {Note, NoteMeta} from '../storage/types';
@@ -22,6 +28,91 @@ import {atEmptyFirstLine, openLineAbove, removeEmptyFirstLine} from './editorBod
 import {isCaretOnFirstLine} from './editorCaret';
 
 import './EditorPane.css';
+
+// The selection (text-format) toolbar's first control is a block-type "Text"/H1–H6 Select. The
+// bundle's WToolbarTextSelect renders it via ToolbarSelect, which wires the editor `focus()` to the
+// Gravity Select's `onOpenChange` — so opening the dropdown synchronously refocuses the editor
+// contenteditable, blurring the Select and snapping its menu shut before it ever shows (portaling the
+// dropdown / preventing the blur don't help — the focus() call is the killer). Rather than drop the
+// control, we swap in SelectionHeadingSelect below: the same heading Select minus that wiring. The
+// dropdown then stays open (no focus steal); focus returns to the editor only once a heading is
+// chosen, exactly like the inline Bold/Italic buttons. Rebuilt from the 'full' preset (our editor's
+// default `preset`), swapping just the one item so its show/hide `condition` and the rest of the
+// toolbar are untouched.
+const SELECTION_MENU_CONFIG = wSelectionMenuConfigByPreset.full.map((group) =>
+    group.map((item) => {
+        // The text/heading Select is a ReactComponent item; narrow to it so we can replace `component`
+        // without disturbing the rest of the toolbar (its `condition`, the folding toggle beside it, …).
+        if (item.id === 'text' && 'component' in item) {
+            return {...item, component: SelectionHeadingSelect};
+        }
+        return item;
+    }),
+);
+
+type HeadingSelectItem = (typeof wHeadingListConfig)['data'][number];
+
+/**
+ * Block-type "Text"/H1–H6 Select for the floating selection toolbar — a local re-render of the
+ * bundle's `WToolbarTextSelect` that does NOT wire the Gravity Select's `onOpenChange` to the
+ * editor `focus()` (see SELECTION_MENU_CONFIG for why that wiring made the dropdown unopenable).
+ * Rendered by the toolbar, which passes `editor`/`focus`/`onClick` plus the item's `props`
+ * (`disablePortal`); `focus()` is invoked only after a heading is chosen, returning focus to the
+ * editor so the command lands.
+ */
+function SelectionHeadingSelect({
+    editor,
+    focus,
+    onClick,
+    className,
+    disablePortal,
+}: {
+    editor: Parameters<HeadingSelectItem['isActive']>[0];
+    focus: () => void;
+    onClick?: (id: string) => void;
+    className?: string;
+    disablePortal?: boolean;
+}) {
+    const items = wHeadingListConfig.data;
+    const active = items.find((item) => item.isActive(editor));
+    return (
+        <Select
+            qa="g-md-toolbar-text-select"
+            size="m"
+            view="clear"
+            className={className}
+            disablePortal={disablePortal}
+            value={active ? [active.id] : undefined}
+            options={items.map((item) => ({
+                value: item.id,
+                text: typeof item.title === 'function' ? item.title() : item.title,
+                data: item,
+            }))}
+            // Mirror the bundle's ToolbarSelect option: icon + label + the block's keyboard-shortcut
+            // badge, with an `aria-label` for screen readers (dropped when the control was rebuilt).
+            // The hover style-preview the bundle also shows needs a bundle-internal import, so it's
+            // omitted; the hotkey + aria-label are the accessibility/discoverability essentials.
+            renderOption={(option) => (
+                <span className="g-md-toolbar-text-select__option" aria-label={option.text}>
+                    {option.data?.icon ? (
+                        <Icon
+                            data={option.data.icon.data}
+                            size={Number(option.data.icon.size ?? 16) + 2}
+                        />
+                    ) : null}
+                    <span className="g-md-toolbar-text-select__option-label">{option.text}</span>
+                    {option.data?.hotkey ? <Hotkey value={option.data.hotkey} /> : null}
+                </span>
+            )}
+            onUpdate={(ids) => {
+                const id = ids[0];
+                items.find((item) => item.id === id)?.exec(editor);
+                onClick?.(id);
+                focus();
+            }}
+        />
+    );
+}
 
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
@@ -78,8 +169,20 @@ interface EditorBodyHandle {
 
 interface EditorBodyProps {
     note: Note;
+    /**
+     * Bumped by `useNotes` on a real note switch / disk reload (never on an in-place rename/move).
+     * Drives the content swap so switching to a different note is distinguished from a rename even
+     * when the two bodies are byte-identical (see the swap effect).
+     */
+    sessionId: number;
     /** Read-only preview mode (⌘⇧P) — renders the LIVE buffer, not disk. */
     preview: boolean;
+    /**
+     * The scroll container (`.editor-pane`), so a note switch can save/restore the outgoing note's
+     * scroll position. The editor is reused across switches, so without this the previous note's
+     * scrollTop carries over and the new note opens mid-document.
+     */
+    scrollContainerRef: React.RefObject<HTMLDivElement>;
     onChange: (markup: string) => void;
     onUploadFile: (file: File) => Promise<string>;
     wikiNotes: NoteMeta[];
@@ -99,7 +202,16 @@ interface EditorBodyProps {
  * (not the on-disk `note.content`), so previewing mid-edit shows the live buffer.
  */
 const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function EditorBody(
-    {note, preview, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
+    {
+        note,
+        sessionId,
+        preview,
+        scrollContainerRef,
+        onChange,
+        onUploadFile,
+        wikiNotes,
+        onOpenWikiLink,
+    },
     ref,
 ) {
     // Stable across the editor's life; read latest via a ref so the upload handler — captured once in
@@ -137,8 +249,13 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                 },
             },
             wysiwygConfig: {
-                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation.
-                extensionOptions: {link: {linkKey: 'Mod-Shift-k'}},
+                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation; and use a
+                // selection-toolbar config with the block-type "Text"/H1–H6 Select repaired (see
+                // SELECTION_MENU_CONFIG). `selectionContext` is read by the bundle preset.
+                extensionOptions: {
+                    link: {linkKey: 'Mod-Shift-k'},
+                    selectionContext: {config: SELECTION_MENU_CONFIG},
+                },
                 // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
                 // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
                 extensions: (builder) => {
@@ -222,25 +339,113 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         };
     }, [editor, note.content, onChange]);
 
-    // Swap the editor's content on a note switch (or disk reload). Skipped when the content is
-    // unchanged — a rename rekeys the note in place without touching the body, so the caret/scroll
-    // survive. On a real switch: replace, then HARD-RESET the undo history so ⌘Z stays within this
-    // note (see the class comment). `swappingRef` brackets the synchronous emits from both so the
+    // Per-note caret + scroll, so switching away and back lands you where you left off (and a
+    // first-time open lands at the TOP, not wherever the previous note was scrolled — the editor is
+    // reused, so its scrollTop would otherwise carry over). Keyed by note id; survives a rename/move
+    // via the re-key effect below. Kept in a ref (UI-restoration state, never rendered).
+    const viewStateByIdRef = useRef<Map<string, {scrollTop: number; selection: unknown}>>(
+        new Map(),
+    );
+    // The id of the note currently loaded in the (reused) editor — lags `note.id` so the swap effect
+    // can attribute the outgoing scroll/caret to the right note before the swap. Owned by the swap
+    // effect; the rename re-key effect below keeps it current on a rename.
+    const prevNoteIdRef = useRef(note.id);
+    // The rename re-key effect's OWN previous-state tracker ({id, session}), separate from
+    // `prevNoteIdRef` so that effect's carry/no-carry decision doesn't depend on the swap effect
+    // having run first (i.e. on the two effects' declaration order).
+    const rekeyPrevRef = useRef<{id: string; session: number}>({id: note.id, session: sessionId});
+
+    /** Snapshot a note's scroll position + caret before we swap its content out. */
+    const saveViewState = (id: string) => {
+        const view = wikiViewRef.current;
+        if (!view || !id) return;
+        viewStateByIdRef.current.set(id, {
+            scrollTop: scrollContainerRef.current?.scrollTop ?? 0,
+            selection: view.state.selection.toJSON(),
+        });
+    };
+
+    // Swap the editor's content on a note switch (or disk reload) — keyed on `sessionId`, which
+    // `useNotes` bumps on exactly those (open / reloadDisk), NEVER on an in-place rename/move. That
+    // distinction is load-bearing: a rename changes `note.id` while keeping the body, and so does
+    // switching to a DIFFERENT note that happens to have byte-identical content (two empty notes, a
+    // duplicate, a template) — the two are indistinguishable by id/content alone, but a real switch
+    // bumps the session and a rename doesn't. So a real switch always re-homes the caret + scroll
+    // (which a `[note.content]` key silently skipped for identical bodies, leaving the new note at the
+    // old one's scroll); a rename is left to the re-key effect below. `editor.replace()` is gated on an
+    // actual content change (no point rebuilding an identical doc), but the history HARD-RESET (so ⌘Z
+    // stays within this note — see the class comment) and the scroll restore run on any switch; the
+    // caret restore runs only on a REAL switch (a same-note reload would replay a now-stale caret).
+    // `swappingRef` brackets the synchronous emits (replace + state reset + selection restore) so the
     // change handler treats them as a load echo, never a user edit (see handleChange).
     useEffect(() => {
-        if (editor.getValue() === note.content) return;
+        const prevId = prevNoteIdRef.current;
+        prevNoteIdRef.current = note.id;
+        const switched = prevId !== note.id;
+        const contentChanged = editor.getValue() !== note.content;
+        // Nothing to do: initial mount / a no-op reload / a rename (carried by the re-key effect).
+        if (!switched && !contentChanged) return;
+        saveViewState(prevId); // snapshot the outgoing note (or this note, before a reload)
         swappingRef.current = true;
-        editor.replace(note.content);
-        resetHistory();
-        swappingRef.current = false;
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- swap only when the body actually changes
-    }, [note.content]);
+        // try/finally so a throw in replace()/resetHistory() can't wedge swappingRef true — which
+        // would make the change handler swallow every later edit, silently killing autosave.
+        try {
+            if (contentChanged) editor.replace(note.content);
+            resetHistory(); // fresh undo stack; also resets the selection to doc start
+            // Restore the saved caret only on a REAL switch — on a same-note disk reload the saved
+            // caret came from the pre-reload doc, so replaying it lands at a meaningless offset in the
+            // new content; leave the doc-start `resetHistory()` produced instead.
+            if (switched) restoreSelection(note.id);
+        } finally {
+            swappingRef.current = false;
+        }
+        // Scroll last (a plain scrollTop set emits no transaction), once the new content's layout exists.
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop =
+                viewStateByIdRef.current.get(note.id)?.scrollTop ?? 0;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
+    }, [sessionId, note.content]);
+
+    // A rename/move re-keys the open note in place (id changes, body + session don't), so the swap
+    // effect above (keyed on [sessionId, note.content]) doesn't run. Carry the saved view-state to the
+    // new id so a later switch-and-back restores it. This reads its OWN tracker (`rekeyPrevRef`), not
+    // the swap effect's `prevNoteIdRef`, so it stays correct regardless of the two effects' run order:
+    // a real switch bumps `sessionId` (the swap effect already snapshotted the old note + restored the
+    // new one) and is skipped; only a rename (id changed, session unchanged) carries. It still advances
+    // `prevNoteIdRef` on a rename so the swap effect's tracker stays current across the rename.
+    useEffect(() => {
+        const prev = rekeyPrevRef.current;
+        rekeyPrevRef.current = {id: note.id, session: sessionId};
+        if (prev.id === note.id) return; // no id change (initial mount / a content-only reload)
+        if (prev.session !== sessionId) return; // a real switch — the swap effect handled it
+        const saved = viewStateByIdRef.current.get(prev.id);
+        if (saved) {
+            viewStateByIdRef.current.set(note.id, saved);
+            viewStateByIdRef.current.delete(prev.id);
+        }
+        prevNoteIdRef.current = note.id; // keep the swap effect's tracker current (it skips renames)
+    }, [note.id, sessionId]);
 
     /** Drop the whole undo stack by re-creating the EditorState over the current doc + plugins. */
     function resetHistory() {
         const view = wikiViewRef.current;
         if (!view) return;
         view.updateState(EditorState.create({doc: view.state.doc, plugins: view.state.plugins}));
+    }
+
+    /** Restore a note's saved caret, clamped to the freshly-loaded doc (no-op for a first open). */
+    function restoreSelection(id: string) {
+        const view = wikiViewRef.current;
+        const saved = viewStateByIdRef.current.get(id);
+        if (!view || !saved) return;
+        try {
+            const selection = Selection.fromJSON(view.state.doc, saved.selection as never);
+            view.dispatch(view.state.tr.setSelection(selection));
+        } catch {
+            // The doc changed since we saved (e.g. an external edit on disk reload) so the positions
+            // no longer resolve — leave the default selection (doc start) the history reset produced.
+        }
     }
 
     // A link's broken state depends on the notes list and this note's id, neither of which is a doc
@@ -306,6 +511,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     const titleRef = useRef<NoteTitleHandle>(null);
     const bodyRef = useRef<EditorBodyHandle>(null);
     const bodyWrapRef = useRef<HTMLDivElement>(null);
+    // The vertical scroll container (see EditorPane.css); EditorBody saves/restores its scrollTop per
+    // note so a switch doesn't carry the previous note's scroll over.
+    const paneRef = useRef<HTMLDivElement>(null);
     // Read the latest autofocus inside the session-driven focus effect without re-running it per change.
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
@@ -362,6 +570,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     return (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
+            ref={paneRef}
             className="editor-pane"
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
@@ -427,7 +636,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 <EditorBody
                     ref={bodyRef}
                     note={note}
+                    sessionId={sessionId}
                     preview={preview}
+                    scrollContainerRef={paneRef}
                     onChange={onChange}
                     onUploadFile={onUploadFile}
                     wikiNotes={wikiNotes}

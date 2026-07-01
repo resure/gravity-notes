@@ -65,6 +65,8 @@ vi.mock('@gravity-ui/markdown-editor', async () => {
     const {createPortal} = await import('react-dom');
     return {
         useMarkdownEditor: () => fakeEditor,
+        // The selection-toolbar config EditorPane derives at module load (only needs `.full` to map over).
+        wSelectionMenuConfigByPreset: {full: []},
         // Renders nothing by default. With the portal enabled, it emits a button into document.body
         // (a React portal child of this view) to mimic the selection toolbar's DOM placement.
         MarkdownEditorView: () =>
@@ -327,6 +329,74 @@ describe('EditorPane — change emission', () => {
 });
 
 describe('EditorPane — note switch', () => {
+    it('re-homes scroll to the top on a switch to a different note with an IDENTICAL body', () => {
+        // Regression: the content-swap used to be keyed on `note.content` alone, so switching between
+        // two DIFFERENT notes whose bodies are byte-identical (two empty notes, a duplicate, a
+        // template) never ran — the incoming note kept the OUTGOING one's scroll position. Keying on
+        // `sessionId` (bumped on a real switch, never on a rename) fires the swap even when the body
+        // string is unchanged. We assert the real user-facing effect (scroll re-homed to the top of a
+        // first-time-opened note) AND that the byte-identical body is NOT needlessly re-`replace()`d.
+        editorState.value = '';
+        editorState.changeHandler = null;
+        const {container, rerender} = renderPane(); // a.md / 'hello'
+        const pane = container.querySelector('.editor-pane') as HTMLElement;
+        pane.scrollTop = 120; // the user scrolled note A down
+        // Make the editor buffer byte-identical to the incoming note so this exercises the
+        // identical-content path (contentChanged === false → replace() is skipped), the exact case
+        // the old `[note.content]` key silently ignored.
+        editorState.value = 'hello';
+        fakeEditor.replace.mockClear();
+
+        rerender(
+            <EditorPane
+                note={{id: 'b.md', title: 'b', content: 'hello', updatedAt: 2}} // SAME body, new id + session
+                autofocus={null}
+                sessionId={1}
+                onChange={() => {}}
+                onRename={() => {}}
+                onEscape={() => {}}
+                onUploadFile={async () => 'Attachments/x.png'}
+                wikiNotes={[]}
+                onOpenWikiLink={() => {}}
+            />,
+        );
+        // The swap fired on the session bump and re-homed the (first-time-opened) note to the top…
+        expect(pane.scrollTop).toBe(0);
+        // …without rebuilding an identical doc.
+        expect(fakeEditor.replace).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire the content swap on an in-place rename (id changes, session + body do not)', () => {
+        // A rename/move re-keys the open note WITHOUT bumping the session or touching the body, so the
+        // swap effect (keyed on [sessionId, note.content]) must stay dormant — no replace(), no history
+        // reset. (The re-key effect carries the saved view-state to the new id instead.) Firing the swap
+        // on a rename would wipe the undo stack every rename and re-emit the body as a load echo. The
+        // swap and re-key effects share `prevNoteIdRef`, so this also pins that they cooperate without
+        // a spurious swap on an id-only change.
+        editorState.value = 'hello';
+        editorState.changeHandler = null;
+        const {rerender} = renderPane(); // a.md / 'hello', sessionId 0
+        fakeEditor.replace.mockClear(); // ignore the mount-time load
+
+        rerender(
+            <EditorPane
+                note={
+                    {id: 'a-renamed.md', title: 'a-renamed', content: 'hello', updatedAt: 1} // rename: new id, SAME body + session
+                }
+                autofocus={null}
+                sessionId={0} // unchanged — that's what makes it a rename, not a switch
+                onChange={() => {}}
+                onRename={() => {}}
+                onEscape={() => {}}
+                onUploadFile={async () => 'Attachments/x.png'}
+                wikiNotes={[]}
+                onOpenWikiLink={() => {}}
+            />,
+        );
+        // No swap fired: the editor buffer is untouched (no replace) on a rename.
+        expect(fakeEditor.replace).not.toHaveBeenCalled();
+    });
+
     it('does not emit a change when switching notes, even though replace() round-trips the content', () => {
         // Regression: editor.replace() re-parses + re-serializes, so the 'change' it fires can carry a
         // value that differs from the on-disk content (trailing newline, &nbsp;, …). That load echo

@@ -12,6 +12,7 @@ import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import {useShortcuts} from '../hooks/useShortcuts';
+import {isTauri} from '../isTauri';
 import {orderNotes} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
@@ -19,6 +20,7 @@ import type {NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
 import {resolveWikiLink} from '../wikiLinks';
 
+import {AboutDialog} from './AboutDialog';
 import {AttachmentsDialog} from './AttachmentsDialog';
 import {BacklinksPanel} from './BacklinksPanel';
 import {ConflictBanner} from './ConflictBanner';
@@ -264,8 +266,28 @@ export function Workspace({
         }
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [aboutOpen, setAboutOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const [trashOpen, setTrashOpen] = useState(false);
+
+    // Open the About dialog when the native "About Gravity Notes" menu item fires (the Rust menu
+    // handler emits `menu:about`). Desktop only; the event API is dynamically imported so it never
+    // enters the web bundle (mirrors the close-request listener in useNotes).
+    useEffect(() => {
+        if (!isTauri) return undefined;
+        let unlisten: (() => void) | undefined;
+        let disposed = false;
+        void import('@tauri-apps/api/event').then(({listen}) =>
+            listen('menu:about', () => setAboutOpen(true)).then((fn) => {
+                if (disposed) fn();
+                else unlisten = fn;
+            }),
+        );
+        return () => {
+            disposed = true;
+            unlisten?.();
+        };
+    }, []);
     // In-app auto-update (native desktop shell only). Checked silently on launch; an available
     // update surfaces as a toast → the update dialog. The menu's "Check for Updates…" opens it on
     // demand. The whole feature no-ops in the browser build (updater.supported === false).
@@ -940,6 +962,8 @@ export function Workspace({
                 </div>
 
                 <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+                <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
                 <UpdateDialog
                     open={updateDialogOpen}

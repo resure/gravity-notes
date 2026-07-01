@@ -182,10 +182,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+shift+m',
-        description: 'Move selected note to a folder',
+        description: 'Move selected note to a folder (from the list)',
         group: 'Editing',
         // 'm' is a letter, so the shifted event.key ('M') matches case-insensitively — no code needed.
-        global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true},
+        // inTyping:false scopes this to the list: in the editor ⌘⇧M is the markdown-editor's own
+        // heading chord, so firing the move dialog there too opened both at once (see the gotcha memory).
+        global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true, inTyping: false},
     },
     {
         keys: 'mod+d',
