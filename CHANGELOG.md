@@ -4,6 +4,36 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-07-02
+
+### Added
+
+- **Note icons (experimental)** — give any note a custom icon: pick a Gravity symbol or an
+  emoji from a searchable picker (with full keyboard navigation), and it shows in the note list
+  and beside the title. Turn it on in **Settings › Show note icons**.
+- **Settings dialog (⌘,)** — a new preferences sheet, also reachable from the menu, with toggles
+  for note icons and the editor toolbar.
+- **Optional editor toolbar** — switch on a sticky formatting toolbar above the note
+  (**Settings › Show editor toolbar**); it stays hidden by default so the surface remains
+  markdown-first, and sticks to the top with a hairline once you scroll.
+
+### Changed
+
+- **Read-only preview (⌘⇧P) now matches the editor** — `{% cut %}` collapsibles render, colored
+  text shows, and list spacing, typography, and the text-column width all line up with the
+  WYSIWYG editor. Preview no longer adds a second scrollbar.
+
+### Fixed
+
+- A note's **icon is preserved across trash → restore**, now including across an app restart.
+- **ArrowUp** from an empty first line hands off to the title.
+- Assorted **editor glitches**: a toolbar caret jump, a stale preview after switching notes, and
+  scroll/caret position when switching between notes with identical content.
+- Restored the selection toolbar's **heading (Text / H1–H6) picker**.
+- **⌘⇧P** no longer strands the top bar off-screen, and clicking the title padding focuses the
+  title again.
+- Native window **theme sync** and dialog polish (About dialog padding, startup flash).
+
 ## [0.3.0] - 2026-06-30
 
 ### Added
