@@ -13,6 +13,16 @@
     padding-top: 8px;
 }
 
+/* Toolbar shown (Settings › Show editor toolbar): give the sticky bar a solid background so scrolling
+   note text doesn't bleed through it, and inset its controls by --editor-gutter so they left-align
+   with the title + body (which the bar otherwise sits flush-left of). */
+.editor-pane_toolbar .g-md-editor-sticky {
+    background: var(--g-color-base-background);
+}
+.editor-pane_toolbar .g-md-toolbar {
+    padding-left: var(--editor-gutter, 16px);
+}
+
 /* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label + the
    shortcut badge in a row. The selection toolbar portals to document.body, so this is NOT nested
    under .editor-pane. */
