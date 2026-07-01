@@ -324,6 +324,39 @@ export function Workspace({
     );
     // Read-only preview mode, kept here so it persists as the open note changes.
     const [previewMode, setPreviewMode] = useState(false);
+
+    // Keep the app shell pinned home. The shell (html/body/#root) is a fixed layout locked with
+    // `overflow: hidden` (index.css) so only the inner panes scroll — but `overflow: hidden` blocks
+    // only USER scrolling, not PROGRAMMATIC scrolling. A `.focus()` (e.g. focusing the preview when
+    // toggling it with ⌘⇧P) can scroll-into-view an ancestor, and WKWebView (unlike Chromium)
+    // scrolls the shell into its momentary overflow — stranding the top bar above the viewport with
+    // no way to scroll it back. Snap any shell scroll straight back to 0. Inner-pane scrolls target
+    // their own element, so the target check leaves them untouched (no reflow on the hot path).
+    useEffect(() => {
+        const root = document.getElementById('root');
+        const onScroll = (event: Event) => {
+            const t = event.target;
+            if (
+                t !== document &&
+                t !== document.documentElement &&
+                t !== document.body &&
+                t !== root
+            )
+                return; // an inner pane scrolled — leave it be
+            const se = document.scrollingElement;
+            if (se && (se.scrollTop !== 0 || se.scrollLeft !== 0)) {
+                se.scrollTop = 0;
+                se.scrollLeft = 0;
+            }
+            if (root && (root.scrollTop !== 0 || root.scrollLeft !== 0)) {
+                root.scrollTop = 0;
+                root.scrollLeft = 0;
+            }
+        };
+        // Capture phase: scroll events don't bubble, so a bubble listener would miss element scrolls.
+        window.addEventListener('scroll', onScroll, true);
+        return () => window.removeEventListener('scroll', onScroll, true);
+    }, []);
     const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
     useEffect(() => {
         localStorage.setItem(SIDEBAR_KEY, String(collapsed));

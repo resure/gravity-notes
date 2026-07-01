@@ -462,12 +462,16 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     }, [note.id, wikiIdsSignature]);
 
     // Move focus when preview is toggled within a note: onto the preview on enter, back to the
-    // body on exit, so the Esc ladder keeps working.
+    // body on exit, so the Esc ladder keeps working. `preventScroll` on the preview focus is
+    // load-bearing: without it, focusing the preview scroll-into-views an ancestor, and the
+    // `overflow: hidden` app shell (see index.css) still scrolls PROGRAMMATICALLY in WKWebView —
+    // stranding the top bar above the viewport on ⌘⇧P. (The Workspace shell scroll-pin is the
+    // belt-and-suspenders catch-all; this just avoids the scroll at its source.)
     const prevPreviewRef = useRef(preview);
     useEffect(() => {
         if (preview === prevPreviewRef.current) return;
         prevPreviewRef.current = preview;
-        if (preview) previewRef.current?.focus();
+        if (preview) previewRef.current?.focus({preventScroll: true});
         else editor.focus();
     }, [preview, editor]);
 
