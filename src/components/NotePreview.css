@@ -1,6 +1,12 @@
+/* NOT a scroll container. The pane's scroller is `.editor-pane` (EditorPane.css) — it owns the
+   per-note scroll save/restore (EditorBody's scrollContainerRef = paneRef) for BOTH the editor and
+   the preview. If `.note-preview` also scrolls (its own `overflow-y:auto` + `height:100%` turns it
+   into a scroller whenever the flex parent resolves a definite height — which macOS's always-on
+   native scrollbars trigger), it gets a SECOND scrollbar inside `.editor-pane`'s, narrowing the
+   preview text column by one scrollbar-width vs the editor (and quietly breaking scroll-restore).
+   So stay a plain block that grows inside `.editor-pane__body` and let `.editor-pane` do the
+   scrolling — identical column width in both modes on every engine. */
 .note-preview {
-    height: 100%;
-    overflow-y: auto;
     outline: none;
 }
 
