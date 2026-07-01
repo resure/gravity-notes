@@ -1,6 +1,8 @@
 import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent} from 'react';
 
+import {IconPicker} from './IconPicker';
+
 import './NoteTitle.css';
 
 export interface NoteTitleHandle {
@@ -15,6 +17,10 @@ export interface NoteTitleHandle {
 interface NoteTitleProps {
     /** The committed title (file name without `.md`). */
     title: string;
+    /** Gravity icon component name for this note; absent = default File icon. */
+    icon?: string;
+    /** Called when the user picks or clears an icon (empty string = clear). */
+    onSetIcon?: (name: string) => void;
     /** Read-only in preview mode. */
     readOnly?: boolean;
     /**
@@ -39,7 +45,7 @@ interface NoteTitleProps {
  * dirty draft is also committed on unmount.
  */
 export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function NoteTitle(
-    {title, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
+    {title, icon, onSetIcon, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
     ref,
 ) {
     const [draft, setDraft] = useState(title);
@@ -111,36 +117,45 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
     };
 
     return (
-        <input
-            ref={inputRef}
-            className="note-title"
-            type="text"
-            aria-label="Note title"
-            placeholder="Untitled"
-            spellCheck={false}
-            value={draft}
-            readOnly={readOnly}
-            onChange={(event) => {
-                revertedRef.current = false; // a real edit re-arms commit-on-blur
-                setDraft(event.target.value);
-            }}
-            onBlur={() => {
-                // After an Escape-revert, the resulting blur must not commit the cancelled draft.
-                if (revertedRef.current) {
-                    revertedRef.current = false;
-                    return;
-                }
-                // Unchanged → nothing to rename. This also stops a later blur from re-firing a
-                // rename that was just reverted below (which would stack another error toast).
-                if (draftRef.current === titleRef.current) return;
-                void (async () => {
-                    const applied = await onCommitRef.current(draftRef.current);
-                    // A rejected rename (e.g. a name collision) leaves the file unchanged; snap the
-                    // field back to the committed title so it matches the list.
-                    if (applied === false) setDraft(titleRef.current);
-                })();
-            }}
-            onKeyDown={onKeyDown}
-        />
+        <div className="note-title-row">
+            <IconPicker
+                className="note-title__icon"
+                value={icon}
+                disabled={readOnly}
+                onChange={(name) => onSetIcon?.(name)}
+                size="l"
+            />
+            <input
+                ref={inputRef}
+                className="note-title"
+                type="text"
+                aria-label="Note title"
+                placeholder="Untitled"
+                spellCheck={false}
+                value={draft}
+                readOnly={readOnly}
+                onChange={(event) => {
+                    revertedRef.current = false; // a real edit re-arms commit-on-blur
+                    setDraft(event.target.value);
+                }}
+                onBlur={() => {
+                    // After an Escape-revert, the resulting blur must not commit the cancelled draft.
+                    if (revertedRef.current) {
+                        revertedRef.current = false;
+                        return;
+                    }
+                    // Unchanged → nothing to rename. This also stops a later blur from re-firing a
+                    // rename that was just reverted below (which would stack another error toast).
+                    if (draftRef.current === titleRef.current) return;
+                    void (async () => {
+                        const applied = await onCommitRef.current(draftRef.current);
+                        // A rejected rename (e.g. a name collision) leaves the file unchanged; snap the
+                        // field back to the committed title so it matches the list.
+                        if (applied === false) setDraft(titleRef.current);
+                    })();
+                }}
+                onKeyDown={onKeyDown}
+            />
+        </div>
     );
 });

@@ -9,6 +9,7 @@ export const DEFAULT_METADATA: NotesMetadata = {
     sort: 'updated',
     pinned: [],
     created: {},
+    icons: {},
     active: null,
     trashed: [],
 };
@@ -35,9 +36,15 @@ export function parseMetadata(raw: unknown): NotesMetadata {
             if (typeof value === 'number') created[id] = value;
         }
     }
+    const icons: Record<string, string> = {};
+    if (typeof obj.icons === 'object' && obj.icons !== null) {
+        for (const [id, value] of Object.entries(obj.icons as Record<string, unknown>)) {
+            if (typeof value === 'string') icons[id] = value;
+        }
+    }
     const active = typeof obj.active === 'string' ? obj.active : null;
     const trashed = Array.isArray(obj.trashed) ? obj.trashed.flatMap(parseTrashEntry) : [];
-    return {version: 1, sort, pinned, created, active, trashed};
+    return {version: 1, sort, pinned, created, icons, active, trashed};
 }
 
 /** Coerce one raw trash entry to a well-formed {@link TrashEntry}; drop it (empty array) if junk. */
@@ -57,7 +64,15 @@ function parseTrashEntry(raw: unknown): TrashEntry[] {
 }
 
 function cloneDefault(): NotesMetadata {
-    return {version: 1, sort: 'updated', pinned: [], created: {}, active: null, trashed: []};
+    return {
+        version: 1,
+        sort: 'updated',
+        pinned: [],
+        created: {},
+        icons: {},
+        active: null,
+        trashed: [],
+    };
 }
 
 export function withSortMode(meta: NotesMetadata, sort: SortMode): NotesMetadata {
@@ -81,6 +96,18 @@ export function withCreatedStamp(meta: NotesMetadata, id: string, created: numbe
     return {...meta, created: {...meta.created, [id]: created}};
 }
 
+/** Set a note's icon (a Gravity component name like `"Star"`, or an emoji character), or clear it (empty string → default File icon). */
+export function withIcon(meta: NotesMetadata, id: string, icon: string): NotesMetadata {
+    if (!icon) {
+        if (meta.icons[id] === undefined) return meta;
+        const icons = {...meta.icons};
+        delete icons[id];
+        return {...meta, icons};
+    }
+    if (meta.icons[id] === icon) return meta;
+    return {...meta, icons: {...meta.icons, [id]: icon}};
+}
+
 export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): NotesMetadata {
     if (oldId === newId) return meta;
     const pinned = meta.pinned.map((p) => (p === oldId ? newId : p));
@@ -89,8 +116,13 @@ export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): 
         created[newId] = created[oldId];
         delete created[oldId];
     }
+    const icons = {...meta.icons};
+    if (oldId in icons) {
+        icons[newId] = icons[oldId];
+        delete icons[oldId];
+    }
     const active = meta.active === oldId ? newId : meta.active;
-    return {...meta, pinned, created, active};
+    return {...meta, pinned, created, icons, active};
 }
 
 /**
@@ -105,6 +137,8 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
         id === from || id.startsWith(prefix) ? to + id.slice(from.length) : id;
     const created: Record<string, number> = {};
     for (const [id, time] of Object.entries(meta.created)) created[remap(id)] = time;
+    const icons: Record<string, string> = {};
+    for (const [id, icon] of Object.entries(meta.icons)) icons[remap(id)] = icon;
     // A trashed note's id lives under `.trash/` (untouched), but its recorded original folder shares
     // the moved prefix — remap it so a later restore still lands in the renamed folder.
     const trashed = meta.trashed.map((t) => ({...t, originalPath: remap(t.originalPath)}));
@@ -112,6 +146,7 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
         ...meta,
         pinned: meta.pinned.map(remap),
         created,
+        icons,
         active: meta.active ? remap(meta.active) : null,
         trashed,
     };
@@ -120,10 +155,13 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
 export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     const created = {...meta.created};
     delete created[id];
+    const icons = {...meta.icons};
+    delete icons[id];
     return {
         ...meta,
         pinned: meta.pinned.filter((p) => p !== id),
         created,
+        icons,
         active: meta.active === id ? null : meta.active,
     };
 }
@@ -177,8 +215,12 @@ export function reconcile(
     for (const [id, time] of Object.entries(meta.created)) {
         if (keep(id)) created[id] = time;
     }
+    const icons: Record<string, string> = {};
+    for (const [id, icon] of Object.entries(meta.icons)) {
+        if (keep(id)) icons[id] = icon;
+    }
     const active = meta.active && keep(meta.active) ? meta.active : null;
-    return {...meta, pinned: meta.pinned.filter(keep), created, active};
+    return {...meta, pinned: meta.pinned.filter(keep), created, icons, active};
 }
 
 /** Pure ordering: pinned notes first, each group sorted by the active sort. Does not mutate input. */
