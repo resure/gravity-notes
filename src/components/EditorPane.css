@@ -21,6 +21,9 @@
 .editor-pane_toolbar .g-md-editor-sticky {
     background: var(--g-color-base-background);
     z-index: 2;
+    /* The bundle sticks it at `top: 8px`, leaving an 8px strip above the bar where scrolling content
+       shows through; stick it flush to the pane top instead. */
+    top: 0;
 }
 .editor-pane_toolbar .g-md-toolbar {
     padding-left: var(--editor-gutter, 16px);
