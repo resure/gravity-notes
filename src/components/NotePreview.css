@@ -42,6 +42,17 @@
     line-height: 1.35;
 }
 
+/* YFM's own base rule `.yfm li:first-child, .yfm li + li { margin-block: 0.33em 0 }` carries element
+   specificity (`li` + `:first-child`/`+ li`) that OUTRANKS the zero-element `:where(p, li)` rule above,
+   so preview list items would inherit a ~5px top gap. The editor doesn't show it: its selector
+   (`.g-md-editor.ProseMirror.yfm …`) carries extra classes and wins. Re-assert the tight rhythm here at
+   matching specificity so lists line up with the editor (mirrors its computed `margin: 0 0 1px`). */
+.note-preview__body.yfm li:first-child,
+.note-preview__body.yfm li + li {
+    margin-top: 0;
+    margin-bottom: 1px;
+}
+
 /* A touch of margin between paragraphs. diplodoc renders each markdown paragraph as its own <p>
    (a blank line is a plain break, not an empty row), so this is the only gap between them —
    matching the editor, where adjacent paragraphs get the same 6px. */
