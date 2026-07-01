@@ -129,7 +129,20 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
     };
 
     return (
-        <div className="note-title-row">
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the row just forwards a click on its own padding to the title input, which is the interactive element
+        <div
+            className="note-title-row"
+            onMouseDown={(event) => {
+                // The row now carries the padding that used to sit on the input itself, so a click in
+                // that padding would land on this bare div and no longer focus the title. Restore the
+                // old behavior: a click on the row's own area (not the icon button or the input) focuses
+                // the title input. preventDefault keeps focus from bouncing off the div first.
+                if (event.target === event.currentTarget && !readOnly) {
+                    event.preventDefault();
+                    inputRef.current?.focus();
+                }
+            }}
+        >
             {showIcon ? (
                 <IconPicker
                     className="note-title__icon"

@@ -412,6 +412,40 @@ describe('trash registry', () => {
         ]);
     });
 
+    it('parseMetadata round-trips a trashed entry’s optional created + icon', () => {
+        // Regression: parseTrashEntry must read the icon (and created) a note carried into the Trash,
+        // else a trash → reload → restore silently loses the note’s icon (restoreFromTrash keys off
+        // entry.icon). Both are optional, so absent stays absent.
+        const parsed = parseMetadata({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            trashed: [
+                {
+                    id: '.trash/A.md',
+                    title: 'A',
+                    originalPath: 'Work',
+                    trashedAt: 10,
+                    created: 3,
+                    icon: '⭐',
+                },
+                {id: '.trash/B.md', title: 'B', originalPath: '', trashedAt: 20},
+            ],
+        });
+        expect(parsed.trashed).toEqual([
+            {
+                id: '.trash/A.md',
+                title: 'A',
+                originalPath: 'Work',
+                trashedAt: 10,
+                created: 3,
+                icon: '⭐',
+            },
+            {id: '.trash/B.md', title: 'B', originalPath: '', trashedAt: 20},
+        ]);
+    });
+
     it('parseMetadata defaults trashed to [] when absent or not an array', () => {
         expect(
             parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}}).trashed,

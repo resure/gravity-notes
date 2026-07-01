@@ -228,11 +228,14 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
                 view="flat"
                 size={size}
                 disabled={disabled}
-                className={`${className} icon-picker__button`}
+                className={className ? `${className} icon-picker__button` : 'icon-picker__button'}
                 aria-label={value ? 'Change note icon' : 'Set note icon'}
                 onClick={(e) => {
                     e.stopPropagation();
-                    setOpen((o) => !o);
+                    // Toggle through handleOpenChange (not setOpen) so closing via the button also
+                    // resets the query/highlight — floating-ui excludes the anchor from outside-click
+                    // dismissal, so onOpenChange doesn't fire on this path and the search would persist.
+                    handleOpenChange(!open);
                 }}
             >
                 {/* Button.Icon makes the button square + centers the glyph (Gravity's own icon-only
