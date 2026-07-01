@@ -24,6 +24,11 @@
     /* The bundle sticks it at `top: 8px`, leaving an 8px strip above the bar where scrolling content
        shows through; stick it flush to the pane top instead. */
     top: 0;
+    /* A little vertical breathing room so an active button's highlight doesn't touch the bar edges.
+       Padded here (the outer wrapper) so the whole button row AND the trailing "…" overflow button
+       inset together — and the background/hairline still sit at the wrapper's outer edges. */
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
 .editor-pane_toolbar .g-md-toolbar {
     padding-left: var(--editor-gutter, 16px);
