@@ -15,9 +15,12 @@
 
 /* Toolbar shown (Settings › Show editor toolbar): give the sticky bar a solid background so scrolling
    note text doesn't bleed through it, and inset its controls by --editor-gutter so they left-align
-   with the title + body (which the bar otherwise sits flush-left of). */
+   with the title + body (which the bar otherwise sits flush-left of). The `z-index` is load-bearing:
+   the sticky bar has `z-index: auto`, so the (later-painted) note content stacks ON TOP of it — even
+   with a solid background — and shows through; lifting it above the content fixes that. */
 .editor-pane_toolbar .g-md-editor-sticky {
     background: var(--g-color-base-background);
+    z-index: 2;
 }
 .editor-pane_toolbar .g-md-toolbar {
     padding-left: var(--editor-gutter, 16px);
