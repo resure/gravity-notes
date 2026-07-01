@@ -1,5 +1,6 @@
 import {forwardRef, useEffect, useState} from 'react';
 
+import * as colorExtension from '@diplodoc/color-extension';
 import transform from '@diplodoc/transform';
 import {Text} from '@gravity-ui/uikit';
 
@@ -7,6 +8,33 @@ import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
 import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
 
 import './NotePreview.css';
+
+// The preview renders via @diplodoc/transform (markdown-it), a DIFFERENT engine from the WYSIWYG
+// editor (@gravity-ui/markdown-editor / ProseMirror). To keep the two surfaces consistent, the
+// transform must mirror the editor's YFM feature set — otherwise editor-only syntax leaks through as
+// literal text in preview. So far:
+//   • colorPlugin — `{red}(text)` → <span class="yfm-colorify yfm-colorify--red">. Class-based (the
+//     plugin's default, matching the editor's ColorSpecs toDOM); the colors come from yc-colors.css,
+//     already loaded app-wide (main.tsx), so no inline styles needed.
+//   • disableCommonAnchors — the editor shows no `#` anchor buttons beside headings; diplodoc adds
+//     them by default, so turn them off to match.
+// @diplodoc/color-extension is CJS, and bundlers expose its shape inconsistently: under Node the named
+// `colorPlugin` binds directly, but Vite pre-bundles it so the plugin sits nested under `default`
+// (the whole `module.exports` object) — a bare named/default import resolves to `undefined` in one env
+// or the other (a silent no-op, leaking `{red}(x)` as literal text). Dig through the wrappers to the
+// actual plugin function so it works under Vite dev, the rollup prod build, AND vitest.
+function resolveColorPlugin(mod: unknown): unknown {
+    let cur: unknown = mod;
+    for (let depth = 0; depth < 4 && cur && typeof cur !== 'function'; depth++) {
+        const obj = cur as Record<string, unknown>;
+        cur = obj.colorPlugin ?? obj.default;
+    }
+    return cur;
+}
+const colorPlugin = resolveColorPlugin(colorExtension);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- markdown-it plugin vs diplodoc's ExtendedPluginWithCollect type
+const TRANSFORM_OPTIONS = {plugins: [colorPlugin as any], disableCommonAnchors: true};
 
 interface NotePreviewProps {
     /** The Markdown to render (captured from the editor when preview is toggled on). */
@@ -114,7 +142,7 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             try {
                 // @diplodoc/transform escapes raw HTML and sanitizes its output by default, matching
                 // the editor's no-raw-HTML policy; we only swap attachment img srcs afterward.
-                let html = withWikiLinks(transform(markup).result.html);
+                let html = withWikiLinks(transform(markup, TRANSFORM_OPTIONS).result.html);
                 if (cache) html = withResolvedImages(html, cache);
                 return {html, error: false};
             } catch {
