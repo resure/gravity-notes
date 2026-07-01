@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 
 import {Button, Icon, Popup, SegmentedRadioGroup, TextInput} from '@gravity-ui/uikit';
 import type {ButtonProps} from '@gravity-ui/uikit';
@@ -6,15 +6,35 @@ import {useVirtualizer} from '@tanstack/react-virtual';
 
 import {
     type EmojiItem,
-    allIcons,
+    type IconItem,
+    type ResolvedIcon,
     filterEmojis,
     filterIcons,
+    getIconCatalog,
+    getIconCatalogVersion,
     iconByName,
+    isComponentName,
     loadEmojis,
+    loadIconCatalog,
     resolveIcon,
+    subscribeIconCatalog,
 } from '../icons';
 
 import './IconPicker.css';
+
+/**
+ * Resolve a stored icon value for display, re-rendering once the lazily-loaded icon catalog arrives so a
+ * component-name icon swaps its File placeholder → the real glyph. Emojis need no catalog (they render
+ * immediately); a component-name value triggers the one-time catalog load.
+ */
+function useIcon(value?: string): ResolvedIcon {
+    useSyncExternalStore(subscribeIconCatalog, getIconCatalogVersion, getIconCatalogVersion);
+    const needsCatalog = Boolean(value && !getIconCatalog() && isComponentName(value));
+    useEffect(() => {
+        if (needsCatalog) void loadIconCatalog();
+    }, [needsCatalog]);
+    return resolveIcon(value);
+}
 
 interface IconPickerProps {
     value?: string;
@@ -41,25 +61,36 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
     const [query, setQuery] = useState('');
     const [type, setType] = useState<IconPickerType>('all');
     const [emojis, setEmojis] = useState<EmojiItem[] | null>(null);
+    const [icons, setIcons] = useState<IconItem[] | null>(() => getIconCatalog()?.all ?? null);
     const searchRef = useRef<HTMLInputElement>(null);
 
-    // Lazily load the emoji catalog the first time the picker opens (keeps it out of the main bundle).
+    // Lazily load the emoji + icon catalogs the first time the picker opens (keeps both out of the main
+    // bundle). Each is memoized, so reopening is free.
     useEffect(() => {
-        if (!open || emojis) return undefined;
+        if (!open) return undefined;
         let cancelled = false;
-        void loadEmojis().then((loaded) => {
-            if (!cancelled) setEmojis(loaded);
-        });
+        if (!emojis) {
+            void loadEmojis().then((loaded) => {
+                if (!cancelled) setEmojis(loaded);
+            });
+        }
+        if (!icons) {
+            void loadIconCatalog().then((catalog) => {
+                if (!cancelled) setIcons(catalog.all);
+            });
+        }
         return () => {
             cancelled = true;
         };
-    }, [open, emojis]);
+    }, [open, emojis, icons]);
 
     const entries = useMemo<Entry[]>(() => {
+        // Only the open picker's grid is built — a closed picker (e.g. one per note-list row) shouldn't
+        // pay to assemble the ~1500-icon list.
+        if (!open) return [];
         const out: Entry[] = [];
-        if (type !== 'emoji') {
-            const icons = query.trim() ? filterIcons(query) : allIcons;
-            for (const icon of icons) {
+        if (type !== 'emoji' && icons) {
+            for (const icon of filterIcons(query, icons)) {
                 out.push({
                     kind: 'icon',
                     key: icon.name,
@@ -80,7 +111,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
             }
         }
         return out;
-    }, [query, type, emojis]);
+    }, [open, query, type, emojis, icons]);
 
     // Chunk the flat entry list into fixed 8-wide rows so we can virtualize by row: the catalog runs
     // to thousands of icons/emoji and mounting them all was what made the popup lag.
@@ -126,7 +157,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         }
     }, [size]);
 
-    const resolved = resolveIcon(value);
+    const resolved = useIcon(value);
 
     return (
         <>
