@@ -53,7 +53,7 @@ function SettingRow({title, description, experimental, checked, onUpdate}: Setti
                 <div className="settings-dialog__title">
                     <Text variant="subheader-1">{title}</Text>
                     {experimental ? (
-                        <Label theme="warning" size="xs">
+                        <Label theme="info" size="xs">
                             Experimental
                         </Label>
                     ) : null}
