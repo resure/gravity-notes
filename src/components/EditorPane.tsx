@@ -6,7 +6,7 @@ import {
     wHeadingListConfig,
     wSelectionMenuConfigByPreset,
 } from '@gravity-ui/markdown-editor';
-import {Icon, Select} from '@gravity-ui/uikit';
+import {Hotkey, Icon, Select} from '@gravity-ui/uikit';
 import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
@@ -88,15 +88,20 @@ function SelectionHeadingSelect({
                 text: typeof item.title === 'function' ? item.title() : item.title,
                 data: item,
             }))}
+            // Mirror the bundle's ToolbarSelect option: icon + label + the block's keyboard-shortcut
+            // badge, with an `aria-label` for screen readers (dropped when the control was rebuilt).
+            // The hover style-preview the bundle also shows needs a bundle-internal import, so it's
+            // omitted; the hotkey + aria-label are the accessibility/discoverability essentials.
             renderOption={(option) => (
-                <span className="g-md-toolbar-text-select__option">
+                <span className="g-md-toolbar-text-select__option" aria-label={option.text}>
                     {option.data?.icon ? (
                         <Icon
                             data={option.data.icon.data}
                             size={Number(option.data.icon.size ?? 16) + 2}
                         />
                     ) : null}
-                    <span>{option.text}</span>
+                    <span className="g-md-toolbar-text-select__option-label">{option.text}</span>
+                    {option.data?.hotkey ? <Hotkey value={option.data.hotkey} /> : null}
                 </span>
             )}
             onUpdate={(ids) => {
@@ -164,6 +169,12 @@ interface EditorBodyHandle {
 
 interface EditorBodyProps {
     note: Note;
+    /**
+     * Bumped by `useNotes` on a real note switch / disk reload (never on an in-place rename/move).
+     * Drives the content swap so switching to a different note is distinguished from a rename even
+     * when the two bodies are byte-identical (see the swap effect).
+     */
+    sessionId: number;
     /** Read-only preview mode (⌘⇧P) — renders the LIVE buffer, not disk. */
     preview: boolean;
     /**
@@ -191,7 +202,16 @@ interface EditorBodyProps {
  * (not the on-disk `note.content`), so previewing mid-edit shows the live buffer.
  */
 const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function EditorBody(
-    {note, preview, scrollContainerRef, onChange, onUploadFile, wikiNotes, onOpenWikiLink},
+    {
+        note,
+        sessionId,
+        preview,
+        scrollContainerRef,
+        onChange,
+        onUploadFile,
+        wikiNotes,
+        onOpenWikiLink,
+    },
     ref,
 ) {
     // Stable across the editor's life; read latest via a ref so the upload handler — captured once in
@@ -340,30 +360,38 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         });
     };
 
-    // Swap the editor's content on a note switch (or disk reload). Skipped when the content is
-    // unchanged — a rename rekeys the note in place without touching the body, so the caret/scroll
-    // survive. On a real switch: save the OUTGOING note's caret/scroll, replace, HARD-RESET the undo
-    // history so ⌘Z stays within this note (see the class comment), restore the INCOMING note's
-    // caret/scroll (or reset to the top for a note opened for the first time). `swappingRef` brackets
-    // the synchronous emits from replace + the state reset + the selection restore so the change
-    // handler treats them as a load echo, never a user edit (see handleChange).
+    // Swap the editor's content on a note switch (or disk reload) — keyed on `sessionId`, which
+    // `useNotes` bumps on exactly those (open / reloadDisk), NEVER on an in-place rename/move. That
+    // distinction is load-bearing: a rename changes `note.id` while keeping the body, and so does
+    // switching to a DIFFERENT note that happens to have byte-identical content (two empty notes, a
+    // duplicate, a template) — the two are indistinguishable by id/content alone, but a real switch
+    // bumps the session and a rename doesn't. So a real switch always re-homes the caret + scroll
+    // (which a `[note.content]` key silently skipped for identical bodies, leaving the new note at the
+    // old one's scroll); a rename is left to the re-key effect below. `editor.replace()` is gated on an
+    // actual content change (no point rebuilding an identical doc), but the history HARD-RESET (so ⌘Z
+    // stays within this note — see the class comment) and the caret/scroll restore run on any switch.
+    // `swappingRef` brackets the synchronous emits (replace + state reset + selection restore) so the
+    // change handler treats them as a load echo, never a user edit (see handleChange).
     useEffect(() => {
         const prevId = prevNoteIdRef.current;
         prevNoteIdRef.current = note.id;
-        if (editor.getValue() === note.content) return;
-        saveViewState(prevId);
+        const switched = prevId !== note.id;
+        const contentChanged = editor.getValue() !== note.content;
+        // Nothing to do: initial mount / a no-op reload / a rename (carried by the re-key effect).
+        if (!switched && !contentChanged) return;
+        saveViewState(prevId); // snapshot the outgoing note (or this note, before a reload)
         swappingRef.current = true;
-        editor.replace(note.content);
-        resetHistory();
-        restoreSelection(note.id);
+        if (contentChanged) editor.replace(note.content);
+        resetHistory(); // fresh undo stack; also resets the selection to doc start
+        restoreSelection(note.id); // restore the saved caret, else leave it at doc start
         swappingRef.current = false;
         // Scroll last (a plain scrollTop set emits no transaction), once the new content's layout exists.
         if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop =
                 viewStateByIdRef.current.get(note.id)?.scrollTop ?? 0;
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- swap only when the body actually changes
-    }, [note.content]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
+    }, [sessionId, note.content]);
 
     // A rename/move re-keys the open note in place (id changes, body doesn't), so the swap effect
     // above doesn't run. Carry the saved view-state to the new id so a later switch-and-back restores it.
@@ -587,6 +615,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 <EditorBody
                     ref={bodyRef}
                     note={note}
+                    sessionId={sessionId}
                     preview={preview}
                     scrollContainerRef={paneRef}
                     onChange={onChange}

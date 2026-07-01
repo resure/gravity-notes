@@ -11,12 +11,18 @@
     padding-top: 8px;
 }
 
-/* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label in a row.
-   The selection toolbar portals to document.body, so this is NOT nested under .editor-pane. */
+/* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label + the
+   shortcut badge in a row. The selection toolbar portals to document.body, so this is NOT nested
+   under .editor-pane. */
 .g-md-toolbar-text-select__option {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Let the label take the slack so the keyboard-shortcut badge sits at the trailing edge. */
+.g-md-toolbar-text-select__option-label {
+    flex: 1 1 auto;
 }
 
 /* Comfortable reading rhythm: a relaxed line-height. Blank lines between paragraphs are real empty

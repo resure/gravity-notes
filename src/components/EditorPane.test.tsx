@@ -329,6 +329,33 @@ describe('EditorPane — change emission', () => {
 });
 
 describe('EditorPane — note switch', () => {
+    it('swaps content on a switch to a different note with an IDENTICAL body (keyed on the session, not the body string)', () => {
+        // Regression: the content-swap used to be keyed on `note.content` alone, so switching between
+        // two DIFFERENT notes whose bodies are byte-identical (two empty notes, a duplicate, a
+        // template) never ran — the incoming note kept the outgoing one's scroll + caret. Keying on
+        // `sessionId` (bumped on a real switch, never on a rename) fires the swap even when the body
+        // string is unchanged. We observe it via `replace()` being called for the incoming note.
+        editorState.value = '';
+        editorState.changeHandler = null;
+        const {rerender} = renderPane(); // a.md / 'hello'
+        fakeEditor.replace.mockClear(); // ignore the mount-time load
+
+        rerender(
+            <EditorPane
+                note={{id: 'b.md', title: 'b', content: 'hello', updatedAt: 2}} // SAME body, new id + session
+                autofocus={null}
+                sessionId={1}
+                onChange={() => {}}
+                onRename={() => {}}
+                onEscape={() => {}}
+                onUploadFile={async () => 'Attachments/x.png'}
+                wikiNotes={[]}
+                onOpenWikiLink={() => {}}
+            />,
+        );
+        expect(fakeEditor.replace).toHaveBeenCalledWith('hello');
+    });
+
     it('does not emit a change when switching notes, even though replace() round-trips the content', () => {
         // Regression: editor.replace() re-parses + re-serializes, so the 'change' it fires can carry a
         // value that differs from the on-disk content (trailing newline, &nbsp;, …). That load echo
