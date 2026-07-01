@@ -16,7 +16,7 @@
    ProseMirror node, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
    the two columns don't line up. */
 .note-preview__body {
-    padding: 8px calc(var(--editor-gutter, 16px) + 4px) 16px;
+    padding: 12px calc(var(--editor-gutter, 16px) + 8px) 16px calc(var(--editor-gutter, 16px) + 4px);
 }
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
