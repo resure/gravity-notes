@@ -99,6 +99,7 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
             onUploadFile={async () => 'Attachments/x.png'}
             wikiNotes={[]}
             onOpenWikiLink={() => {}}
+            onSetIcon={() => {}}
             {...props}
         />,
     );
@@ -417,6 +418,7 @@ describe('EditorPane — note switch', () => {
                 onUploadFile={async () => 'Attachments/x.png'}
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
+                onSetIcon={() => {}}
             />,
         );
         expect(onChange).not.toHaveBeenCalled();

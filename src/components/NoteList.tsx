@@ -32,6 +32,8 @@ import {escapeRegExp, tokenizeQuery} from '../search';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 
+import {IconPicker} from './IconPicker';
+
 import './NoteList.css';
 
 /**
@@ -95,6 +97,8 @@ export interface NoteListProps {
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
+    icons: Readonly<Record<string, string>>;
+    onSetIcon: (id: string, icon: string) => void;
     /** Whether the folder rail is shown (drives the toggle button state + ← behavior). */
     railOpen: boolean;
     /** Show / hide the folder rail. */
@@ -158,6 +162,8 @@ interface NoteRowProps {
     editInputRef: RefObject<HTMLInputElement>;
     /** Register/unregister this row's element in the parent's id→element map (stable). */
     registerRef: (id: string, el: HTMLDivElement | null) => void;
+    icon?: string;
+    onSetIcon: (id: string, icon: string) => void;
     onClickRow: (id: string) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
     onKeyDownRow: (event: ReactKeyboardEvent<HTMLDivElement>, id: string) => void;
@@ -185,6 +191,8 @@ const NoteRow = memo(function NoteRow({
     editValue,
     editInputRef,
     registerRef,
+    icon,
+    onSetIcon,
     onClickRow,
     onContextMenuRow,
     onKeyDownRow,
@@ -235,6 +243,12 @@ const NoteRow = memo(function NoteRow({
             ) : (
                 <>
                     <div className="note-list__row">
+                        <IconPicker
+                            className="note-list__icon"
+                            size="s"
+                            value={icon}
+                            onChange={(name) => onSetIcon(note.id, name)}
+                        />
                         {pinned ? (
                             <Icon className="note-list__pin" data={PinFill} size={14} aria-hidden />
                         ) : null}
@@ -320,6 +334,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSortChange,
         pinnedIds,
         onTogglePin,
+        icons,
+        onSetIcon,
         railOpen,
         onToggleRail,
         onFocusRail,
@@ -737,6 +753,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         editValue={note.id === editingId ? editValue : ''}
                                         editInputRef={editInputRef}
                                         registerRef={registerRef}
+                                        icon={icons[note.id]}
+                                        onSetIcon={onSetIcon}
                                         onClickRow={onClickRow}
                                         onContextMenuRow={onContextMenuRow}
                                         onKeyDownRow={onKeyDownRow}

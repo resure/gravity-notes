@@ -40,6 +40,8 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         onSortChange: vi.fn(),
         pinnedIds: [],
         onTogglePin: vi.fn(),
+        icons: {},
+        onSetIcon: vi.fn(),
         railOpen: false,
         onToggleRail: vi.fn(),
         onFocusRail: vi.fn(),
@@ -197,7 +199,7 @@ describe('NoteList — inline rename', () => {
     // Double-click no longer renames; the context-menu "Rename" item is the mouse path.
     async function openRename(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
         const row = screen.getByRole('option', {name});
-        await user.click(within(row).getByRole('button'));
+        await user.click(within(row).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
     }
 
@@ -278,7 +280,7 @@ describe('NoteList — delete', () => {
         const user = userEvent.setup();
         const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
         await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
@@ -288,7 +290,7 @@ describe('NoteList — delete', () => {
         const user = userEvent.setup();
         const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
         const dialog = await screen.findByRole('dialog');
         // Wait until the dialog has grabbed focus, else Enter races its focus trap.
@@ -410,7 +412,7 @@ describe('NoteList — pinning', () => {
         const user = userEvent.setup();
         const {props} = setup();
         const alpha = screen.getByRole('option', {name: /Alpha/});
-        await user.click(within(alpha).getByRole('button'));
+        await user.click(within(alpha).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Pin to top/}));
         expect(props.onTogglePin).toHaveBeenCalledWith('Alpha.md');
     });
@@ -419,7 +421,7 @@ describe('NoteList — pinning', () => {
         const user = userEvent.setup();
         const {props} = setup({pinnedIds: ['Alpha.md']});
         const alpha = screen.getByRole('option', {name: /Alpha/});
-        await user.click(within(alpha).getByRole('button'));
+        await user.click(within(alpha).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Unpin/}));
         expect(props.onTogglePin).toHaveBeenCalledWith('Alpha.md');
     });
@@ -430,7 +432,7 @@ describe('NoteList — move picker', () => {
         const user = userEvent.setup();
         const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
         expect(props.onRequestMove).toHaveBeenCalledWith('Beta.md');
     });
@@ -441,7 +443,7 @@ describe('NoteList — duplicate', () => {
         const user = userEvent.setup();
         const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Duplicate/}));
         expect(props.onDuplicate).toHaveBeenCalledWith('Beta.md');
     });
@@ -453,7 +455,7 @@ describe('NoteList — reveal in Finder', () => {
         const onReveal = vi.fn();
         setup({onReveal});
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Reveal in Finder/}));
         expect(onReveal).toHaveBeenCalledWith('Beta.md');
     });
@@ -462,7 +464,7 @@ describe('NoteList — reveal in Finder', () => {
         const user = userEvent.setup();
         setup();
         const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button'));
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         // The menu opened (Rename is present) but Reveal is not.
         expect(await screen.findByRole('menuitem', {name: /Rename/})).toBeInTheDocument();
         expect(screen.queryByRole('menuitem', {name: /Reveal in Finder/})).not.toBeInTheDocument();
@@ -515,6 +517,8 @@ describe('NoteList — row memoization (perf)', () => {
             onSortChange: vi.fn(),
             pinnedIds: [],
             onTogglePin: vi.fn(),
+            icons: {},
+            onSetIcon: vi.fn(),
             railOpen: false,
             onToggleRail: vi.fn(),
             onFocusRail: vi.fn(),

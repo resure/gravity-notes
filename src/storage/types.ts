@@ -82,6 +82,11 @@ export interface NotesMetadata {
     pinned: readonly string[];
     /** Note id → creation time (epoch ms), stamped on create. */
     created: Readonly<Record<string, number>>;
+    /**
+     * Note id → icon: a Gravity component name (e.g. `"Star"`) or a literal emoji character
+     * (e.g. `"⭐"`). Absent id = default File icon.
+     */
+    icons: Readonly<Record<string, string>>;
     /** The single open / last-open note id, or null when none is open. Restored on reload. */
     active: string | null;
     /**

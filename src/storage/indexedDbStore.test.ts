@@ -443,6 +443,7 @@ describe('IndexedDbNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
+                icons: {},
                 active: null,
                 trashed: [],
             });
@@ -454,6 +455,7 @@ describe('IndexedDbNoteStore', () => {
                 sort: 'title',
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
+                icons: {},
                 active: 'Ideas.md',
                 trashed: [],
             });

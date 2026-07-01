@@ -746,6 +746,7 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
+                icons: {},
                 active: null,
                 trashed: [],
             });
@@ -759,6 +760,7 @@ describe('FileSystemNoteStore', () => {
                 sort: 'title',
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
+                icons: {},
                 active: null,
                 trashed: [],
             });
@@ -776,6 +778,7 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
+                icons: {},
                 active: null,
                 trashed: [],
             });
@@ -788,6 +791,7 @@ describe('FileSystemNoteStore', () => {
                 sort: 'updated',
                 pinned: [],
                 created: {},
+                icons: {},
                 active: null,
                 trashed: [],
             });

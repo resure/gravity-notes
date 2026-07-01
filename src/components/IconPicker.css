@@ -1,0 +1,57 @@
+.icon-picker__button {
+    --_--padding: 0;
+    width: var(--_--height);
+}
+
+.icon-picker__button .g-button__text {
+    height: 100%; /* hack for align emoji with the button for Safari */
+}
+
+.icon-picker__popup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+}
+
+.icon-picker__grid {
+    min-width: 281px; /* 8 columns * 28px + 7 gaps */
+    max-height: 290px; /* ~8.5 rows */
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+/* Virtualized: sizer holds the full scroll height; rows are absolutely positioned into the window. */
+.icon-picker__grid-inner {
+    position: relative;
+    width: 100%;
+}
+
+.icon-picker__row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+}
+
+.icon-picker__item {
+    --_--padding: 0;
+}
+
+.icon-picker__emoji-container {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    height: 100%;
+}
+
+.icon-picker__emoji {
+    display: block;
+    font-size: 16px;
+    line-height: 1;
+    transform: translateY(0.8px); /* optical nudge — emoji glyphs sit high in the line box */
+}

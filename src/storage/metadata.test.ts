@@ -8,6 +8,7 @@ import {
     reconcile,
     withActive,
     withCreatedStamp,
+    withIcon,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -107,6 +108,7 @@ describe('immutable transforms', () => {
         sort: 'updated',
         pinned: ['A.md'],
         created: {'A.md': 1},
+        icons: {'A.md': 'Star'},
         active: 'A.md',
         trashed: [],
     } as const;
@@ -131,20 +133,48 @@ describe('immutable transforms', () => {
         expect(unchanged.created['B.md']).toBe(200);
     });
 
-    it('withRenamed migrates pin membership and the created entry', () => {
+    it('withRenamed migrates pin membership, the created entry, and the icon', () => {
         const next = withRenamed(base, 'A.md', 'A2.md');
         expect(next.pinned).toEqual(['A2.md']);
         expect(next.created).toEqual({'A2.md': 1});
+        expect(next.icons).toEqual({'A2.md': 'Star'});
     });
 
     it('withRenamed is a no-op when the id is unchanged', () => {
         expect(withRenamed(base, 'A.md', 'A.md')).toEqual(base);
     });
 
-    it('withRemoved drops the id from pinned and created', () => {
+    it('withRemoved drops the id from pinned, created, and icons', () => {
         const next = withRemoved(base, 'A.md');
         expect(next.pinned).toEqual([]);
         expect(next.created).toEqual({});
+        expect(next.icons).toEqual({});
+    });
+
+    it('withIcon sets, updates, and clears an icon', () => {
+        const withNone = {...base, icons: {}};
+        const set = withIcon(withNone, 'A.md', 'Star');
+        expect(set.icons).toEqual({'A.md': 'Star'});
+        const updated = withIcon(set, 'A.md', 'File');
+        expect(updated.icons).toEqual({'A.md': 'File'});
+        const cleared = withIcon(updated, 'A.md', '');
+        expect(cleared.icons).toEqual({});
+    });
+
+    it('withIcon stores an emoji character verbatim', () => {
+        const set = withIcon({...base, icons: {}}, 'A.md', '⭐');
+        expect(set.icons).toEqual({'A.md': '⭐'});
+        // Round-trips through parse (opaque string value, keyed by note id).
+        expect(parseMetadata({...set, version: 1}).icons).toEqual({'A.md': '⭐'});
+    });
+
+    it('withIcon is a no-op when clearing an unset id', () => {
+        const withNone = {...base, icons: {}};
+        expect(withIcon(withNone, 'Z.md', '')).toBe(withNone);
+    });
+
+    it('withIcon is a no-op when setting the same value', () => {
+        expect(withIcon(base, 'A.md', 'Star')).toBe(base);
     });
 });
 
@@ -154,6 +184,7 @@ describe('active transforms', () => {
         sort: 'updated',
         pinned: [],
         created: {},
+        icons: {},
         active: 'A.md',
         trashed: [],
     } as const;
@@ -192,6 +223,7 @@ describe('reconcile', () => {
             sort: 'updated',
             pinned: ['A.md', 'ghost.md'],
             created: {'A.md': 1, 'ghost.md': 2},
+            icons: {},
             active: 'ghost.md',
             trashed: [],
         } as const;
@@ -207,6 +239,7 @@ describe('reconcile', () => {
             sort: 'updated',
             pinned: [],
             created: {},
+            icons: {},
             active: 'A.md',
             trashed: [],
         } as const;
@@ -219,6 +252,7 @@ describe('reconcile', () => {
             sort: 'updated',
             pinned: ['Work/Roadmap.md', 'gone.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2},
+            icons: {},
             active: 'Work/Roadmap.md',
             trashed: [],
         } as const;
@@ -235,6 +269,7 @@ describe('reconcile', () => {
             sort: 'updated',
             pinned: ['Work/Roadmap.md', 'gone.md', 'Inbox.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2, 'Inbox.md': 3},
+            icons: {},
             active: 'Work/Roadmap.md',
             trashed: [],
         } as const;
@@ -244,6 +279,20 @@ describe('reconcile', () => {
         expect(next.pinned).toEqual(['Work/Roadmap.md', 'Inbox.md']);
         expect(next.created).toEqual({'Work/Roadmap.md': 1, 'Inbox.md': 3});
         expect(next.active).toBe('Work/Roadmap.md');
+    });
+
+    it('prunes dead icon entries', () => {
+        const meta = {
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            icons: {'A.md': 'Star', 'ghost.md': 'File'},
+            active: null,
+            trashed: [],
+        } as const;
+        const next = reconcile(meta, ['A.md']);
+        expect(next.icons).toEqual({'A.md': 'Star'});
     });
 });
 
