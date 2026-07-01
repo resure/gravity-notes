@@ -18,6 +18,7 @@ import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
 import {WikiLinkTooltip} from './editor/WikiLinkTooltip';
 import {attachmentImageExtension} from './editor/attachmentImageExtension';
 import {openLinkExtension} from './editor/openLinkExtension';
+import {fixedSelectionContext} from './editor/selectionContextFix';
 import {
     type WikiLinkSuggestState,
     type WikiLinkTooltipState,
@@ -260,16 +261,20 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                 },
             },
             wysiwygConfig: {
-                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation; and use a
-                // selection-toolbar config with the block-type "Text"/H1–H6 Select repaired (see
-                // SELECTION_MENU_CONFIG). `selectionContext` is read by the bundle preset.
+                // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation. The
+                // selection (floating) toolbar is OUR fixed copy (see selectionContextFix.ts —
+                // the stock plugin's mousedown-hide/mouseup-recheck race left it permanently
+                // hidden in production builds), so the bundle's own is disabled via the empty
+                // config; the real config (with the block-type Select repaired, see
+                // SELECTION_MENU_CONFIG) goes to fixedSelectionContext in `extensions` below.
                 extensionOptions: {
                     link: {linkKey: 'Mod-Shift-k'},
-                    selectionContext: {config: SELECTION_MENU_CONFIG},
+                    selectionContext: {config: []},
                 },
                 // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
                 // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
                 extensions: (builder) => {
+                    fixedSelectionContext(builder, {config: SELECTION_MENU_CONFIG});
                     attachmentImageExtension(builder);
                     openLinkExtension(builder);
                     wikiLinkExtension(builder, {
