@@ -155,6 +155,10 @@ interface EditorPaneProps {
     icon?: string;
     /** Called when the user picks or clears an icon from the title area. */
     onSetIcon: (name: string) => void;
+    /** Show the editor's formatting toolbar (Settings › Show editor toolbar). */
+    showToolbar?: boolean;
+    /** Show the note's title icon (Settings › Show note icons, experimental). */
+    showNoteIcons?: boolean;
 }
 
 /** Imperative surface the shell uses to drive the editor body. */
@@ -191,6 +195,8 @@ interface EditorBodyProps {
     onUploadFile: (file: File) => Promise<string>;
     wikiNotes: NoteMeta[];
     onOpenWikiLink: (target: string) => void;
+    /** Show the editor's formatting toolbar (else the surface is markdown-first with no toolbar). */
+    showToolbar?: boolean;
 }
 
 /**
@@ -215,6 +221,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         onUploadFile,
         wikiNotes,
         onOpenWikiLink,
+        showToolbar,
     },
     ref,
 ) {
@@ -484,7 +491,11 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
             {preview ? (
                 <NotePreview ref={previewRef} markup={editor.getValue()} />
             ) : (
-                <MarkdownEditorView settingsVisible={false} stickyToolbar={false} editor={editor} />
+                <MarkdownEditorView
+                    settingsVisible={false}
+                    stickyToolbar={Boolean(showToolbar)}
+                    editor={editor}
+                />
             )}
             <WikiLinkSuggest state={wikiSuggest} />
             <WikiLinkTooltip state={wikiTooltip} notes={wikiNotes} currentId={note.id} />
@@ -515,6 +526,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onOpenWikiLink,
         icon,
         onSetIcon,
+        showToolbar,
+        showNoteIcons,
     },
     ref,
 ) {
@@ -581,7 +594,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
             ref={paneRef}
-            className="editor-pane"
+            className={`editor-pane${showToolbar ? ' editor-pane_toolbar' : ''}`}
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
                 // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
@@ -594,6 +607,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 title={note.title}
                 icon={icon}
                 onSetIcon={onSetIcon}
+                showIcon={showNoteIcons}
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
                 onLeaveToBody={goToBody}
@@ -655,6 +669,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     onUploadFile={onUploadFile}
                     wikiNotes={wikiNotes}
                     onOpenWikiLink={onOpenWikiLink}
+                    showToolbar={showToolbar}
                 />
             </div>
         </div>

@@ -1,0 +1,29 @@
+.settings-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-dialog__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 4px;
+}
+
+.settings-dialog__row:not(:last-child) {
+    border-bottom: 1px solid var(--g-color-line-generic);
+}
+
+.settings-dialog__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.settings-dialog__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

@@ -12,6 +12,7 @@ export type ShortcutAction =
     | 'toggleEditorMode'
     | 'togglePreview'
     | 'openHelp'
+    | 'openSettings'
     | 'renameSelected'
     | 'moveSelected'
     | 'duplicateSelected'
@@ -210,6 +211,13 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Show this help',
         group: 'General',
         global: {trigger: 'mod', key: '/', action: 'openHelp'},
+    },
+    {
+        keys: 'mod+,',
+        description: 'Open settings',
+        group: 'General',
+        // Match by physical key: ⌘, has no Shift, but `code` is layout-independent and robust.
+        global: {trigger: 'mod', key: ',', code: 'Comma', action: 'openSettings'},
     },
 ];
 

@@ -1,13 +1,15 @@
-/* Markdown-first surface: hide the formatting toolbar strip + the settings gear.
+/* Markdown-first surface: hide the formatting toolbar strip + the settings gear — UNLESS the
+   "Show editor toolbar" setting is on (`.editor-pane_toolbar`, see EditorPane.tsx / useSettings).
    (Selectors target the shipped @gravity-ui/markdown-editor classes.) */
-.editor-pane .g-md-editor-sticky,
-.editor-pane .g-md-toolbar {
+.editor-pane:not(.editor-pane_toolbar) .g-md-editor-sticky,
+.editor-pane:not(.editor-pane_toolbar) .g-md-toolbar {
     display: none;
 }
 
-/* The editor keeps its "has toolbar" modifier (which pads the content 16px top/bottom)
-   even though we hid the toolbar — bring the top gap down to a small, comfortable value. */
-.editor-pane .g-md-wysiwyg-editor_toolbar .yfm-editor {
+/* With the toolbar hidden the editor keeps its "has toolbar" modifier (which pads the content 16px
+   top/bottom) — bring the top gap down to a small, comfortable value. When the toolbar is shown, leave
+   the editor's own padding so the content clears the sticky bar. */
+.editor-pane:not(.editor-pane_toolbar) .g-md-wysiwyg-editor_toolbar .yfm-editor {
     padding-top: 8px;
 }
 

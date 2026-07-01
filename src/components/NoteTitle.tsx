@@ -21,6 +21,8 @@ interface NoteTitleProps {
     icon?: string;
     /** Called when the user picks or clears an icon (empty string = clear). */
     onSetIcon?: (name: string) => void;
+    /** Show the note-icon picker beside the title (Settings › Show note icons). */
+    showIcon?: boolean;
     /** Read-only in preview mode. */
     readOnly?: boolean;
     /**
@@ -45,7 +47,17 @@ interface NoteTitleProps {
  * dirty draft is also committed on unmount.
  */
 export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function NoteTitle(
-    {title, icon, onSetIcon, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
+    {
+        title,
+        icon,
+        onSetIcon,
+        showIcon = false,
+        readOnly = false,
+        onCommit,
+        onLeaveToBody,
+        onEnter,
+        onEscape,
+    },
     ref,
 ) {
     const [draft, setDraft] = useState(title);
@@ -118,13 +130,15 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
 
     return (
         <div className="note-title-row">
-            <IconPicker
-                className="note-title__icon"
-                value={icon}
-                disabled={readOnly}
-                onChange={(name) => onSetIcon?.(name)}
-                size="l"
-            />
+            {showIcon ? (
+                <IconPicker
+                    className="note-title__icon"
+                    value={icon}
+                    disabled={readOnly}
+                    onChange={(name) => onSetIcon?.(name)}
+                    size="l"
+                />
+            ) : null}
             <input
                 ref={inputRef}
                 className="note-title"
