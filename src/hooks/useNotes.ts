@@ -803,8 +803,10 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             try {
                 const originalPath = dirname(id);
                 const title = titleFromFileName(id);
-                // Preserve the original creation stamp on the entry so restore can reinstate it.
+                // Preserve the original creation stamp + icon on the entry so restore can reinstate them
+                // (withTrashed → withRemoved drops both from the live metadata).
                 const created = metadataRef.current.created[id];
+                const icon = metadataRef.current.icons[id];
                 const trashId = await store.trash(id);
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
@@ -815,6 +817,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                         originalPath,
                         trashedAt: Date.now(),
                         created,
+                        icon,
                     }),
                 );
                 if (wasActive) {
@@ -842,14 +845,15 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             const entry = metadataRef.current.trashed.find((t) => t.id === trashId);
             try {
                 const meta = await store.restore(trashId, entry?.originalPath ?? '');
-                // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime).
-                await persistMetadata(
-                    withCreatedStamp(
-                        withoutTrashEntry(metadataRef.current, trashId),
-                        meta.id,
-                        entry?.created || meta.updatedAt || Date.now(),
-                    ),
+                // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime) and the
+                // icon — both keyed to `meta.id`, the (possibly deduped) id the note actually restored to.
+                let next = withCreatedStamp(
+                    withoutTrashEntry(metadataRef.current, trashId),
+                    meta.id,
+                    entry?.created || meta.updatedAt || Date.now(),
                 );
+                if (entry?.icon) next = withIcon(next, meta.id, entry.icon);
+                await persistMetadata(next);
                 setTrashedNotes((prev) => prev.filter((n) => n.id !== trashId));
                 await refresh();
                 return meta.id;

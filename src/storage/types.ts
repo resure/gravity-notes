@@ -70,6 +70,8 @@ export interface TrashEntry {
     trashedAt: number;
     /** The note's original creation stamp, preserved so a restore can reinstate it (undefined if none). */
     created?: number;
+    /** The note's icon (component name or emoji), preserved so a restore can reinstate it (undefined if none). */
+    icon?: string;
 }
 
 /** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
