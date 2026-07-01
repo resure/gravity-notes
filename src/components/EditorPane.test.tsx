@@ -366,6 +366,37 @@ describe('EditorPane — note switch', () => {
         expect(fakeEditor.replace).not.toHaveBeenCalled();
     });
 
+    it('does NOT fire the content swap on an in-place rename (id changes, session + body do not)', () => {
+        // A rename/move re-keys the open note WITHOUT bumping the session or touching the body, so the
+        // swap effect (keyed on [sessionId, note.content]) must stay dormant — no replace(), no history
+        // reset. (The re-key effect carries the saved view-state to the new id instead.) Firing the swap
+        // on a rename would wipe the undo stack every rename and re-emit the body as a load echo. The
+        // swap and re-key effects share `prevNoteIdRef`, so this also pins that they cooperate without
+        // a spurious swap on an id-only change.
+        editorState.value = 'hello';
+        editorState.changeHandler = null;
+        const {rerender} = renderPane(); // a.md / 'hello', sessionId 0
+        fakeEditor.replace.mockClear(); // ignore the mount-time load
+
+        rerender(
+            <EditorPane
+                note={
+                    {id: 'a-renamed.md', title: 'a-renamed', content: 'hello', updatedAt: 1} // rename: new id, SAME body + session
+                }
+                autofocus={null}
+                sessionId={0} // unchanged — that's what makes it a rename, not a switch
+                onChange={() => {}}
+                onRename={() => {}}
+                onEscape={() => {}}
+                onUploadFile={async () => 'Attachments/x.png'}
+                wikiNotes={[]}
+                onOpenWikiLink={() => {}}
+            />,
+        );
+        // No swap fired: the editor buffer is untouched (no replace) on a rename.
+        expect(fakeEditor.replace).not.toHaveBeenCalled();
+    });
+
     it('does not emit a change when switching notes, even though replace() round-trips the content', () => {
         // Regression: editor.replace() re-parses + re-serializes, so the 'change' it fires can carry a
         // value that differs from the on-disk content (trailing newline, &nbsp;, …). That load echo

@@ -18,6 +18,10 @@ body,
 :root {
     --gn-orange: #ea892b;
     --gn-orb-halo: rgba(238, 152, 46, 0.55);
+    /* RGB channels of the warmer accent the list-selection wash shares with the orb halo. Exposed as
+       channels (not a color) so the wash can keep its own per-theme alpha via rgba(var(--gn-accent-rgb), α),
+       and so the dev build's blue mark recolors the selection wash too (it overrides this below). */
+    --gn-accent-rgb: 238, 152, 46;
 }
 
 /* Dev build (Vite dev mode → `npm run tauri:dev`): recolor the app mark blue to match the blue
@@ -25,6 +29,7 @@ body,
 .gn-dev {
     --gn-orange: #1f81ff;
     --gn-orb-halo: rgba(31, 129, 255, 0.55);
+    --gn-accent-rgb: 31, 129, 255;
 }
 
 /* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
@@ -46,8 +51,8 @@ body,
     --g-color-text-link: #c2650f;
     --g-color-text-link-hover: #9e520c;
     --g-color-text-link-visited: #8a4a12;
-    --note-list-selected-bg: rgba(238, 152, 46, 0.1);
-    --note-list-focus-bg: rgba(238, 152, 46, 0.22);
+    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.1);
+    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.22);
 }
 
 .g-root_theme_dark {
@@ -62,8 +67,8 @@ body,
     --g-color-text-link: #e08a2b;
     --g-color-text-link-hover: #f0a050;
     --g-color-text-link-visited: #c2752a;
-    --note-list-selected-bg: rgba(238, 152, 46, 0.13);
-    --note-list-focus-bg: rgba(238, 152, 46, 0.26);
+    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.13);
+    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.26);
     /* A very subtle warm/orange cast on the dark base surfaces (a hint, not a tint you'd name).
        Tuned live. */
     --g-color-base-background: #211e1a;

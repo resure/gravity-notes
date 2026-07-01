@@ -347,8 +347,13 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         new Map(),
     );
     // The id of the note currently loaded in the (reused) editor — lags `note.id` so the swap effect
-    // can attribute the outgoing scroll/caret to the right note before the swap.
+    // can attribute the outgoing scroll/caret to the right note before the swap. Owned by the swap
+    // effect; the rename re-key effect below keeps it current on a rename.
     const prevNoteIdRef = useRef(note.id);
+    // The rename re-key effect's OWN previous-state tracker ({id, session}), separate from
+    // `prevNoteIdRef` so that effect's carry/no-carry decision doesn't depend on the swap effect
+    // having run first (i.e. on the two effects' declaration order).
+    const rekeyPrevRef = useRef<{id: string; session: number}>({id: note.id, session: sessionId});
 
     /** Snapshot a note's scroll position + caret before we swap its content out. */
     const saveViewState = (id: string) => {
@@ -369,7 +374,8 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     // (which a `[note.content]` key silently skipped for identical bodies, leaving the new note at the
     // old one's scroll); a rename is left to the re-key effect below. `editor.replace()` is gated on an
     // actual content change (no point rebuilding an identical doc), but the history HARD-RESET (so ⌘Z
-    // stays within this note — see the class comment) and the caret/scroll restore run on any switch.
+    // stays within this note — see the class comment) and the scroll restore run on any switch; the
+    // caret restore runs only on a REAL switch (a same-note reload would replay a now-stale caret).
     // `swappingRef` brackets the synchronous emits (replace + state reset + selection restore) so the
     // change handler treats them as a load echo, never a user edit (see handleChange).
     useEffect(() => {
@@ -386,7 +392,10 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         try {
             if (contentChanged) editor.replace(note.content);
             resetHistory(); // fresh undo stack; also resets the selection to doc start
-            restoreSelection(note.id); // restore the saved caret, else leave it at doc start
+            // Restore the saved caret only on a REAL switch — on a same-note disk reload the saved
+            // caret came from the pre-reload doc, so replaying it lands at a meaningless offset in the
+            // new content; leave the doc-start `resetHistory()` produced instead.
+            if (switched) restoreSelection(note.id);
         } finally {
             swappingRef.current = false;
         }
@@ -398,18 +407,25 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
     }, [sessionId, note.content]);
 
-    // A rename/move re-keys the open note in place (id changes, body doesn't), so the swap effect
-    // above doesn't run. Carry the saved view-state to the new id so a later switch-and-back restores it.
+    // A rename/move re-keys the open note in place (id changes, body + session don't), so the swap
+    // effect above (keyed on [sessionId, note.content]) doesn't run. Carry the saved view-state to the
+    // new id so a later switch-and-back restores it. This reads its OWN tracker (`rekeyPrevRef`), not
+    // the swap effect's `prevNoteIdRef`, so it stays correct regardless of the two effects' run order:
+    // a real switch bumps `sessionId` (the swap effect already snapshotted the old note + restored the
+    // new one) and is skipped; only a rename (id changed, session unchanged) carries. It still advances
+    // `prevNoteIdRef` on a rename so the swap effect's tracker stays current across the rename.
     useEffect(() => {
-        const prev = prevNoteIdRef.current;
-        if (prev === note.id) return;
-        const saved = viewStateByIdRef.current.get(prev);
+        const prev = rekeyPrevRef.current;
+        rekeyPrevRef.current = {id: note.id, session: sessionId};
+        if (prev.id === note.id) return; // no id change (initial mount / a content-only reload)
+        if (prev.session !== sessionId) return; // a real switch — the swap effect handled it
+        const saved = viewStateByIdRef.current.get(prev.id);
         if (saved) {
             viewStateByIdRef.current.set(note.id, saved);
-            viewStateByIdRef.current.delete(prev);
+            viewStateByIdRef.current.delete(prev.id);
         }
-        prevNoteIdRef.current = note.id;
-    }, [note.id]);
+        prevNoteIdRef.current = note.id; // keep the swap effect's tracker current (it skips renames)
+    }, [note.id, sessionId]);
 
     /** Drop the whole undo stack by re-creating the EditorState over the current doc + plugins. */
     function resetHistory() {
