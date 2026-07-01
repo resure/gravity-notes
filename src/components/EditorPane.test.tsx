@@ -329,16 +329,23 @@ describe('EditorPane — change emission', () => {
 });
 
 describe('EditorPane — note switch', () => {
-    it('swaps content on a switch to a different note with an IDENTICAL body (keyed on the session, not the body string)', () => {
+    it('re-homes scroll to the top on a switch to a different note with an IDENTICAL body', () => {
         // Regression: the content-swap used to be keyed on `note.content` alone, so switching between
         // two DIFFERENT notes whose bodies are byte-identical (two empty notes, a duplicate, a
-        // template) never ran — the incoming note kept the outgoing one's scroll + caret. Keying on
+        // template) never ran — the incoming note kept the OUTGOING one's scroll position. Keying on
         // `sessionId` (bumped on a real switch, never on a rename) fires the swap even when the body
-        // string is unchanged. We observe it via `replace()` being called for the incoming note.
+        // string is unchanged. We assert the real user-facing effect (scroll re-homed to the top of a
+        // first-time-opened note) AND that the byte-identical body is NOT needlessly re-`replace()`d.
         editorState.value = '';
         editorState.changeHandler = null;
-        const {rerender} = renderPane(); // a.md / 'hello'
-        fakeEditor.replace.mockClear(); // ignore the mount-time load
+        const {container, rerender} = renderPane(); // a.md / 'hello'
+        const pane = container.querySelector('.editor-pane') as HTMLElement;
+        pane.scrollTop = 120; // the user scrolled note A down
+        // Make the editor buffer byte-identical to the incoming note so this exercises the
+        // identical-content path (contentChanged === false → replace() is skipped), the exact case
+        // the old `[note.content]` key silently ignored.
+        editorState.value = 'hello';
+        fakeEditor.replace.mockClear();
 
         rerender(
             <EditorPane
@@ -353,7 +360,10 @@ describe('EditorPane — note switch', () => {
                 onOpenWikiLink={() => {}}
             />,
         );
-        expect(fakeEditor.replace).toHaveBeenCalledWith('hello');
+        // The swap fired on the session bump and re-homed the (first-time-opened) note to the top…
+        expect(pane.scrollTop).toBe(0);
+        // …without rebuilding an identical doc.
+        expect(fakeEditor.replace).not.toHaveBeenCalled();
     });
 
     it('does not emit a change when switching notes, even though replace() round-trips the content', () => {

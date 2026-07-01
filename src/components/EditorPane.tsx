@@ -381,10 +381,15 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         if (!switched && !contentChanged) return;
         saveViewState(prevId); // snapshot the outgoing note (or this note, before a reload)
         swappingRef.current = true;
-        if (contentChanged) editor.replace(note.content);
-        resetHistory(); // fresh undo stack; also resets the selection to doc start
-        restoreSelection(note.id); // restore the saved caret, else leave it at doc start
-        swappingRef.current = false;
+        // try/finally so a throw in replace()/resetHistory() can't wedge swappingRef true — which
+        // would make the change handler swallow every later edit, silently killing autosave.
+        try {
+            if (contentChanged) editor.replace(note.content);
+            resetHistory(); // fresh undo stack; also resets the selection to doc start
+            restoreSelection(note.id); // restore the saved caret, else leave it at doc start
+        } finally {
+            swappingRef.current = false;
+        }
         // Scroll last (a plain scrollTop set emits no transaction), once the new content's layout exists.
         if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop =
