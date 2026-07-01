@@ -11,6 +11,14 @@
     padding-top: 8px;
 }
 
+/* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label in a row.
+   The selection toolbar portals to document.body, so this is NOT nested under .editor-pane. */
+.g-md-toolbar-text-select__option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Comfortable reading rhythm: a relaxed line-height. Blank lines between paragraphs are real empty
    rows (preserveEmptyRows) that carry most of the gap, but a small paragraph bottom-margin gives
    adjacent paragraphs (no explicit blank line) a little air too. The content typography lives deep in

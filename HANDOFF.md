@@ -8,14 +8,14 @@ Author: Claude (Opus 4.8). All changes are on `various-fixes`.
 
 ## TL;DR status
 
-| #   | Fix                                 | Files                                                           | Verified                                                               |
-| --- | ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 1   | Release notes render as Markdown    | `UpdateDialog.tsx`, `UpdateDialog.css`                          | typecheck + logic (no live release to test against)                    |
-| 2   | No white flash on startup (dark)    | `index.html`, `src-tauri/src/lib.rs`                            | live (web): `<html>` paints `#211e1a` pre-React                        |
-| 3   | ⌘⇧M move scoped to the list         | `shortcuts.ts`                                                  | unit-test-safe + logic                                                 |
-| 4   | Selection toolbar: drop dead Select | `EditorPane.tsx` (+ 2 test mocks)                               | live (web): toolbar buttons + color dropdown work; Text Select removed |
-| 5   | Per-note scroll + caret on switch   | `EditorPane.tsx`                                                | live (web): new note→top, return→scroll restored                       |
-| 6   | About dialog w/ links + padding     | `AboutDialog.tsx/.css`, `Workspace.tsx`, `src-tauri/src/lib.rs` | live (web, forced-open): layout verified; Rust compiles                |
+| #   | Fix                                                      | Files                                                           | Verified                                                |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
+| 1   | Release notes render as Markdown                         | `UpdateDialog.tsx`, `UpdateDialog.css`                          | typecheck + logic (no live release to test against)     |
+| 2   | No white flash on startup (dark)                         | `index.html`, `src-tauri/src/lib.rs`                            | live (web): `<html>` paints `#211e1a` pre-React         |
+| 3   | ⌘⇧M move scoped to the list                              | `shortcuts.ts`                                                  | unit-test-safe + logic                                  |
+| 4   | Selection toolbar: heading Select repaired (not removed) | `EditorPane.tsx`, `EditorPane.css`                              | live (webkit): Select opens, picking H1 → `<h1>`        |
+| 5   | Per-note scroll + caret on switch                        | `EditorPane.tsx`                                                | live (web): new note→top, return→scroll restored        |
+| 6   | About dialog w/ links + padding                          | `AboutDialog.tsx/.css`, `Workspace.tsx`, `src-tauri/src/lib.rs` | live (web, forced-open): layout verified; Rust compiles |
 
 Checks: `npm run typecheck` ✓, `npm run lint` (0 errors; 45 pre-existing warnings) ✓,
 `npm run format:check` ✓, `npm test` 739/739 ✓, `cargo check` (rustup 1.96) ✓. (`search.stress.test.ts`
@@ -71,33 +71,39 @@ is focused — so ⌘⇧M only opens the move picker from the list; in the edito
 opt-out. Existing test `useShortcuts.test.tsx` still passes (jsdom `activeElement` is `body`, not a
 typing target).
 
-## 4. Selection formatting toolbar — the dead block-type "Text" Select, removed
+## 4. Selection formatting toolbar — block-type "Text"/H1–H6 Select repaired
 
-**History:** First pass concluded "already works" — the floating toolbar appears on selection and the
-inline-format buttons (Bold/Italic/Underline/Strike/Monospace/Marked/Inline code/**Text color** dropdown/
-Link) all work (verified live by clicking them, not just keyboard). But the user pointed out the **first
-control — a block-type "Text" Select (paragraph/H1–H6)** — doesn't open on click. Confirmed.
+**History:** The floating toolbar appears on selection and the inline-format buttons (Bold/Italic/
+Underline/Strike/Monospace/Marked/Inline code/**Text color** dropdown/Link) all work. But its first
+control — a block-type **"Text" Select (paragraph/H1–H6)** — didn't open on click. A first fix _removed_
+it; this one **repairs it instead**, per the user's request.
 
-**Root cause:** That control is a Gravity `<Select>` (`ToolbarSelect` → `WToolbarTextSelect`, rendered
-as the `textContextItemData` ReactComponent in `wSelectionMenuConfigByPreset`). Its `onOpenChange`
-calls `view.focus()` to keep the editor focused; inside the floating selection toolbar that immediately
-re-closes the just-opened menu. The toolbar itself portals to `document.body` (our
-`.editor-pane .g-md-toolbar{display:none}` does NOT hit it — that rule is for the in-pane sticky
-toolbar; the selection toolbar's `Toolbar` div has class `g-md-toolbar` + `data-qa="g-md-toolbar-selection"`
-but lives at body level). Tried in Playwright WebKit: preventing the editor blur, and portaling the
-Select (`disablePortal:false`) — **neither** makes it open. The sibling **color** dropdown is a
-ButtonPopup (not a Select) and opens fine.
+**Root cause:** The control is a Gravity `<Select>` rendered by `ToolbarSelect` (`WToolbarTextSelect`,
+the `textContextItemData` ReactComponent in `wSelectionMenuConfigByPreset.full`). `ToolbarSelect` wires
+the Select's `onOpenChange` to the editor `focus()` — so the instant the dropdown opens it synchronously
+refocuses the editor contenteditable, blurring the Select trigger and snapping the menu shut. Preventing
+the blur and toggling `disablePortal` don't help — the `focus()` call itself is the killer. (The sibling
+**color** dropdown is a `ButtonPopup`, not a Select, and doesn't wire `onOpenChange` to focus, so it
+opens fine.) The toolbar portals to `document.body`, so our `.editor-pane .g-md-toolbar{display:none}`
+rule (the in-pane sticky toolbar) does not affect it; the selection toolbar carries `data-qa="g-md-toolbar-selection"`.
 
-**Change:** `EditorPane.tsx` passes a custom `wysiwygConfig.extensionOptions.selectionContext.config`
-(`SELECTION_MENU_CONFIG`) = the `full` preset selection menu with the `id:'text'` item filtered out
-(and any emptied group dropped). Result: a clean popup, every control works, no dead button. Block-type
-conversion stays reachable via Markdown (`# `) and the `/` slash menu. Two test files mock
-`@gravity-ui/markdown-editor`, so the mocks gained `wSelectionMenuConfigByPreset: {full: []}`.
+**Why the dropdown then stays open without that wiring:** opening the Select fires no ProseMirror
+transaction, so `SelectionContext.update()`'s `if (!view.hasFocus()) hide` check never runs; and the
+tooltip's `scheduleTooltipHiding` (30 ms focus check) only triggers on the _toolbar_ popup's own
+open/close, not on the nested Select opening. So simply not stealing focus is enough.
 
-**Review notes:** If you'd rather keep an in-toolbar heading picker, the supported path is the same
-config — but the Gravity Select-in-floating-toolbar focus bug would need an upstream fix or a custom
-non-Select control. Verified live: toolbar shows 9 working controls, clicking Italic bolds/italicizes,
-the color dropdown opens.
+**Change:** `EditorPane.tsx` rebuilds the `full` preset selection menu (`SELECTION_MENU_CONFIG`) and
+swaps in a local `SelectionHeadingSelect` component for the one `id:'text'` item (narrowed via
+`'component' in item` so the rest of the toolbar — its show/hide `condition`, the folding toggle beside
+it — is untouched). `SelectionHeadingSelect` renders the same heading Select (options from
+`wHeadingListConfig.data`) but leaves `onOpenChange` alone; `focus()` is called only in `onUpdate`,
+after the chosen heading's `exec` runs — exactly like the inline buttons. `EditorPane.css` adds one
+top-level rule (the option row) — top-level because the toolbar lives at `document.body`, not under
+`.editor-pane`.
+
+**Verified live (Playwright WebKit, the desktop's engine):** with text selected the toolbar shows the
+Text/H1–H6 Select; clicking it sets `aria-expanded=true` and renders all 7 options (Text, Heading 1–6);
+clicking **Heading 1** converts the block to `<h1>`. No longer removed.
 
 ## 5. Preserve per-note scroll + caret on switch
 
@@ -159,13 +165,14 @@ cd src-tauri && PATH="$HOME/.cargo/bin:$PATH" cargo check   # rustup 1.96; Homeb
 npm run tauri:dev                                            # exercise #2/#4/#5/#6 in the real shell
 ```
 
-Desktop spot-checks: launch in dark mode (no white flash), select body text (toolbar appears),
-scroll a long note then switch away and back (scroll restored), open the menu's **About Gravity
-Notes** (custom dialog with working links).
+Desktop spot-checks: launch in dark mode (no white flash), select body text (toolbar appears and the
+**Text/heading Select opens → pick a heading**), scroll a long note then switch away and back (scroll
+restored), open the menu's **About Gravity Notes** (custom dialog with working links).
 
 ## Caveats / things a reviewer should double-check
 
-- **#4 is "works for me"** — confirm on real macOS WKWebView, not just trust this doc.
+- **#4 verified in Playwright WebKit** (Select opens → Heading 1 → `<h1>`), but WebKit only
+  approximates the system WKWebView — re-confirm the heading Select opens on the real desktop.
 - **#2 / native bg** runs in `setup()`, after the window may already be visible; the `index.html`
   layer is the primary fix. If a faint flash remains pre-content, consider `"visible": false` + a
   ready-signal (not done; user accepted dark).

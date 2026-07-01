@@ -3,8 +3,10 @@ import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} f
 import {
     MarkdownEditorView,
     useMarkdownEditor,
+    wHeadingListConfig,
     wSelectionMenuConfigByPreset,
 } from '@gravity-ui/markdown-editor';
+import {Icon, Select} from '@gravity-ui/uikit';
 import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
@@ -27,16 +29,85 @@ import {isCaretOnFirstLine} from './editorCaret';
 
 import './EditorPane.css';
 
-// The selection (text-format) toolbar's first control is a block-type "Text" Select. It does NOT open
-// inside our floating selection toolbar: the Gravity Select's `onOpenChange` refocuses the editor,
-// which immediately closes the just-opened menu (portaling it / preventing the blur don't help). The
-// inline-format buttons (bold/italic/…) all work, so drop the dead Select (id 'text') and keep the
-// rest — block type stays reachable via Markdown ('# ') and the '/' slash menu. Rebuilt from the 'full'
-// preset, our editor's default `preset`; an emptied group (just the heading-folding button, itself
-// disabled for plain text) is dropped so no blank group shows.
-const SELECTION_MENU_CONFIG = wSelectionMenuConfigByPreset.full
-    .map((group) => group.filter((item) => item.id !== 'text'))
-    .filter((group) => group.length > 0);
+// The selection (text-format) toolbar's first control is a block-type "Text"/H1–H6 Select. The
+// bundle's WToolbarTextSelect renders it via ToolbarSelect, which wires the editor `focus()` to the
+// Gravity Select's `onOpenChange` — so opening the dropdown synchronously refocuses the editor
+// contenteditable, blurring the Select and snapping its menu shut before it ever shows (portaling the
+// dropdown / preventing the blur don't help — the focus() call is the killer). Rather than drop the
+// control, we swap in SelectionHeadingSelect below: the same heading Select minus that wiring. The
+// dropdown then stays open (no focus steal); focus returns to the editor only once a heading is
+// chosen, exactly like the inline Bold/Italic buttons. Rebuilt from the 'full' preset (our editor's
+// default `preset`), swapping just the one item so its show/hide `condition` and the rest of the
+// toolbar are untouched.
+const SELECTION_MENU_CONFIG = wSelectionMenuConfigByPreset.full.map((group) =>
+    group.map((item) => {
+        // The text/heading Select is a ReactComponent item; narrow to it so we can replace `component`
+        // without disturbing the rest of the toolbar (its `condition`, the folding toggle beside it, …).
+        if (item.id === 'text' && 'component' in item) {
+            return {...item, component: SelectionHeadingSelect};
+        }
+        return item;
+    }),
+);
+
+type HeadingSelectItem = (typeof wHeadingListConfig)['data'][number];
+
+/**
+ * Block-type "Text"/H1–H6 Select for the floating selection toolbar — a local re-render of the
+ * bundle's `WToolbarTextSelect` that does NOT wire the Gravity Select's `onOpenChange` to the
+ * editor `focus()` (see SELECTION_MENU_CONFIG for why that wiring made the dropdown unopenable).
+ * Rendered by the toolbar, which passes `editor`/`focus`/`onClick` plus the item's `props`
+ * (`disablePortal`); `focus()` is invoked only after a heading is chosen, returning focus to the
+ * editor so the command lands.
+ */
+function SelectionHeadingSelect({
+    editor,
+    focus,
+    onClick,
+    className,
+    disablePortal,
+}: {
+    editor: Parameters<HeadingSelectItem['isActive']>[0];
+    focus: () => void;
+    onClick?: (id: string) => void;
+    className?: string;
+    disablePortal?: boolean;
+}) {
+    const items = wHeadingListConfig.data;
+    const active = items.find((item) => item.isActive(editor));
+    return (
+        <Select
+            qa="g-md-toolbar-text-select"
+            size="m"
+            view="clear"
+            className={className}
+            disablePortal={disablePortal}
+            value={active ? [active.id] : undefined}
+            options={items.map((item) => ({
+                value: item.id,
+                text: typeof item.title === 'function' ? item.title() : item.title,
+                data: item,
+            }))}
+            renderOption={(option) => (
+                <span className="g-md-toolbar-text-select__option">
+                    {option.data?.icon ? (
+                        <Icon
+                            data={option.data.icon.data}
+                            size={Number(option.data.icon.size ?? 16) + 2}
+                        />
+                    ) : null}
+                    <span>{option.text}</span>
+                </span>
+            )}
+            onUpdate={(ids) => {
+                const id = ids[0];
+                items.find((item) => item.id === id)?.exec(editor);
+                onClick?.(id);
+                focus();
+            }}
+        />
+    );
+}
 
 export interface EditorPaneHandle {
     /** Flip between the WYSIWYG and Markup editing modes. */
@@ -159,7 +230,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
             },
             wysiwygConfig: {
                 // Move insert-link off ⌘K to ⇧⌘K so ⌘K is free for global note navigation; and use a
-                // selection-toolbar config with the non-opening block-type "Text" Select removed (see
+                // selection-toolbar config with the block-type "Text"/H1–H6 Select repaired (see
                 // SELECTION_MENU_CONFIG). `selectionContext` is read by the bundle preset.
                 extensionOptions: {
                     link: {linkKey: 'Mod-Shift-k'},
