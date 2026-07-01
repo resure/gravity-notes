@@ -10,11 +10,6 @@ export function isCaretOnFirstLine(container: HTMLElement): boolean {
     const sel = win?.getSelection();
     if (!sel || sel.rangeCount === 0) return false;
 
-    const caret = sel.getRangeAt(0).cloneRange();
-    caret.collapse(true);
-    const caretTop = rangeTop(caret);
-    if (caretTop === null) return false;
-
     // The first line's top = the first block child's top, measured off the *element* rect — not a
     // range collapsed at the content start, which WebKit gives a bogus (0,0) rect (that made this
     // always false: the caret was never recognized as the first line). Measuring against the real
@@ -23,6 +18,19 @@ export function isCaretOnFirstLine(container: HTMLElement): boolean {
     // line-height drives the tolerance.
     const editable = container.querySelector<HTMLElement>('[contenteditable="true"]') ?? container;
     const firstBlock = editable.firstElementChild ?? editable;
+
+    const caret = sel.getRangeAt(0).cloneRange();
+    caret.collapse(true);
+    const caretTop = rangeTop(caret);
+    if (caretTop === null) {
+        // An empty line gives WebKit no caret rect at all (getClientRects() empty, bounding rect
+        // all-zero). Can't measure — fall back to structure: the caret is on the first line iff its
+        // anchor node lives in (or is) the first block. Without this, ArrowUp off an empty first line
+        // (e.g. a blank note, or a note that opens with a blank row) never hands off to the title.
+        // (`contains(null)` is false, so a missing anchor safely returns false.)
+        return firstBlock.contains(sel.anchorNode);
+    }
+
     const firstTop = firstBlock.getBoundingClientRect().top;
 
     const lineHeight = parseFloat(win ? win.getComputedStyle(editable).lineHeight : '') || 20;

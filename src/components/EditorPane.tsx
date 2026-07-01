@@ -418,6 +418,16 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
     }, [sessionId, note.content]);
 
+    // Preview mode renders the editor's live buffer, but `editor.getValue()` is a snapshot and the swap
+    // effect ABOVE replaces the buffer in an effect (after render) WITHOUT re-rendering — so reading it
+    // inline left the preview stuck on the previous note after a switch (title changed, body didn't).
+    // Read it into state here instead: this effect is declared after the swap, so on a switch it runs
+    // once the new content is in place, keyed on the same triggers (+ `preview`, to capture on toggle).
+    const [previewMarkup, setPreviewMarkup] = useState(() => editor.getValue());
+    useEffect(() => {
+        if (preview) setPreviewMarkup(editor.getValue());
+    }, [preview, sessionId, note.content, editor]);
+
     // A rename/move re-keys the open note in place (id changes, body + session don't), so the swap
     // effect above (keyed on [sessionId, note.content]) doesn't run. Carry the saved view-state to the
     // new id so a later switch-and-back restores it. This reads its OWN tracker (`rekeyPrevRef`), not
@@ -489,7 +499,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     return (
         <>
             {preview ? (
-                <NotePreview ref={previewRef} markup={editor.getValue()} />
+                <NotePreview ref={previewRef} markup={previewMarkup} />
             ) : (
                 <MarkdownEditorView
                     settingsVisible={false}
@@ -649,7 +659,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     // do nothing.
                     if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
                         return;
-                    if ((event.target as HTMLElement).closest('.g-md-editor')) return;
+                    // Ignore clicks on the editor content AND on the formatting toolbar (shown via
+                    // Settings): the toolbar lives in this wrapper but isn't `.g-md-editor`, so without
+                    // this a toolbar-button click would fall through to moveCursorEnd() and yank the
+                    // caret to the end of the document.
+                    if ((event.target as HTMLElement).closest('.g-md-editor, .g-md-editor-sticky'))
+                        return;
                     event.preventDefault();
                     bodyRef.current?.moveCursorEnd();
                     bodyRef.current?.focus();
