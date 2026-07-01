@@ -29,6 +29,12 @@
     padding-left: var(--editor-gutter, 16px);
 }
 
+/* Once the note is scrolled the toolbar is stuck to the top with content sliding under it — a hairline
+   separates the two (box-shadow, not border, so toggling it adds no 1px layout shift). */
+.editor-pane_toolbar.editor-pane_scrolled .g-md-editor-sticky {
+    box-shadow: 0 1px 0 0 var(--g-color-line-generic);
+}
+
 /* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label + the
    shortcut badge in a row. The selection toolbar portals to document.body, so this is NOT nested
    under .editor-pane. */

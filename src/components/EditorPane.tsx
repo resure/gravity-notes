@@ -541,6 +541,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
 
+    // Only relevant with the toolbar shown: give the (sticky) toolbar a hairline once the pane scrolls,
+    // so a stuck bar reads as separate from the content under it. `setScrolled(bool)` re-renders only
+    // when the boolean flips (React bails on an equal value), not on every scroll event.
+    const [scrolled, setScrolled] = useState(false);
+    useEffect(() => {
+        const pane = paneRef.current;
+        if (!pane || !showToolbar) {
+            setScrolled(false);
+            return undefined;
+        }
+        const onScroll = () => setScrolled(pane.scrollTop > 0);
+        onScroll();
+        pane.addEventListener('scroll', onScroll, {passive: true});
+        return () => pane.removeEventListener('scroll', onScroll);
+    }, [showToolbar]);
+
     useImperativeHandle(
         ref,
         () => ({
@@ -594,7 +610,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the wrapper captures Escape that bubbles out of the richtext editor; the editor itself is the interactive element
         <div
             ref={paneRef}
-            className={`editor-pane${showToolbar ? ' editor-pane_toolbar' : ''}`}
+            className={`editor-pane${showToolbar ? ' editor-pane_toolbar' : ''}${
+                scrolled ? ' editor-pane_scrolled' : ''
+            }`}
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
                 // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
