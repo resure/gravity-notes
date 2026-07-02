@@ -177,6 +177,7 @@ Key modules:
 - Drop standalone web version support?
 - Versioning / snapshots (with manual snapshopts?)
 
+- Metadata storage approach review
 - Cmd+z for undoing deleting of notes and moves between folders?
 - Backend sync — add an `ApiStore` implementing `NoteStore`
 - Mobile view
