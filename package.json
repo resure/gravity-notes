@@ -31,7 +31,7 @@
     "@emoji-mart/data": "^1.2.1",
     "@gravity-ui/components": "^4.20.2",
     "@gravity-ui/icons": "^2.18.0",
-    "@gravity-ui/markdown-editor": "^15.40.0",
+    "@gravity-ui/markdown-editor": "15.41.0",
     "@gravity-ui/uikit": "^7.41.0",
     "@tanstack/react-virtual": "^3.14.4",
     "@tauri-apps/api": "^2.11.1",

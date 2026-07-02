@@ -90,18 +90,34 @@ re-evaluate on mouseup without the stale mousedown snapshot. Stock plugin disabl
 `SELECTION_MENU_CONFIG`. Verified in the real packaged app: `mousedown → mouseup → SHOW`,
 zero errors; typecheck/lint clean; 748/748 tests pass.
 
+**Post-review hardening (2026-07-02, max-effort review of this branch):** the vendored file now
+carries a **third** fix (the mouseup gate arms on the LEFT button only + a `dragstart` un-gate —
+a macOS right-click or a native drag never delivers the document mouseup, wedging
+`_isMousePressed` until the next completed click) and registers at **`Priority.High`** (user
+extensions land after the preset, whose Search keymap consumes Escape unconditionally — without
+the priority the toolbar could never be dismissed with Esc; stock sat earlier in BehaviorPreset).
+The Escape handler is back to stock's modifier-strict `keydownHandler` and `hasParentNode` is
+imported (both via the public `pm/*` re-exports) instead of hand-rolled, `ContextConfig` comes
+from the main entry as `SelectionContextConfig`, `@gravity-ui/markdown-editor` is pinned exact
+(`15.41.0`) while the vendor exists, and `selectionContextFix.test.tsx` pins the load-bearing
+assumptions: the stock plugin's empty-config skip, the `hide-selection-menu` meta key, the
+High-priority registration, and both original fixes (flag re-arm; snapshot-free mouseup).
+
 ## 4. Repo / release state as of this handoff
 
 - `origin/main` = `62af71e` (`release: v0.4.0`) — what's shipped.
 - **This branch** carries `f354511` (the toolbar fix) + this handoff + the upstream bug report.
 - **Pending decisions (user said "hold" for now):** push the fix to `main`; cut **v0.4.1**
   (patch) so the shipped 0.4.0 gets the fix via auto-update. The installed 0.4.0 HAS the bug.
-- The local `src-tauri/target/release/bundle/macos/Gravity Notes.app` is currently the
-  **selftest build** (identifier `com.gravitynotes.desktop.selftest`) — NOT the released
-  artifact. Any future `/release` rebuilds it from scratch; nothing to clean.
-- Leftovers, harmless, outside the repo: `/tmp/gn-selftest/` (report), `/tmp/gn-logger.js`,
-  `/tmp/gn-selftest.conf.json`, WKWebView data for the selftest identifier under
-  `~/Library/WebKit/`. `playwright` was installed with `--no-save` (package.json/lock untouched).
+- The local `src-tauri/target/release/bundle/macos/Gravity Notes.app` is a **stale ordinary
+  build** (identifier `com.gravitynotes.desktop`, version 0.1.0, mtime Jun 29 — predating this
+  session), NOT the released artifact and NOT the selftest bundle (an earlier draft of this
+  handoff claimed otherwise — corrected after checking `Info.plist`). Any future `/release`
+  rebuilds it from scratch; nothing to clean.
+- The selftest leftovers are already gone (verified 2026-07-02): no `/tmp/gn-selftest/`,
+  `/tmp/gn-logger.js`, or `/tmp/gn-selftest.conf.json`, and `playwright` is no longer under
+  `node_modules` (it was installed `--no-save`; package.json/lock were never touched). Possible
+  remnant: WKWebView data for the selftest identifier under `~/Library/WebKit/` — harmless.
 
 ## 5. Follow-ups
 
@@ -109,10 +125,13 @@ zero errors; typecheck/lint clean; 748/748 tests pass.
    `gravity-ui/markdown-editor`; when the editor is next bumped, check whether upstream re-arms
    the flags and drop the vendored copy if so (memory note:
    `selection-toolbar-plugin-view-teardown`).
-2. **Google Fonts CSP block (packaged app):** `index.html` links
-   `fonts.googleapis.com/css2?family=Inter…`, but the app CSP's `style-src` doesn't allow that
-   origin — Inter silently never loads in the desktop app (system-font fallback). Either add the
-   origins to the CSP, self-host the font, or drop the link.
+2. **Google Fonts CSP block (packaged app):** the Inter fetch comes from
+   `@gravity-ui/uikit/styles/fonts.css` — an `@import url("https://fonts.googleapis.com/css2?family=Inter…")`
+   that Vite bundles into our production CSS asset (NOT an `index.html` link; an earlier draft of
+   this handoff misattributed it). The app CSP (`style-src`/`font-src 'self'`) blocks the fetch,
+   so the desktop app silently falls back to system fonts. Either self-host Inter, allow the
+   `fonts.googleapis.com`/`fonts.gstatic.com` origins in the CSP, or stop importing uikit's
+   `fonts.css`.
 3. The review backlog in §1 (F2 misroute, per-row IconPicker perf/lifecycle, a11y items,
    picker-search debounce, small dedups).
 4. v0.4.1 patch release once the fix is approved for `main`.
