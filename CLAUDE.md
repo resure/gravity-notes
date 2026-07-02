@@ -178,11 +178,16 @@ Key modules:
   list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut),
   `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
   `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
-  switch — the reused editor would otherwise carry the previous note's scrollTop; passes a custom
-  `selectionContext` config that swaps the block-type "Text"/H1–H6 Select for a local
-  `SelectionHeadingSelect` — the bundle's `ToolbarSelect` wires `onOpenChange` to the editor `focus()`,
-  which re-closes the dropdown the instant it opens inside the floating toolbar; the local version omits
-  that wiring so the menu opens (see `SELECTION_MENU_CONFIG`)) with `NoteTitle` and
+  switch — the reused editor would otherwise carry the previous note's scrollTop; the floating
+  **selection toolbar is a vendored fixed copy** (`editor/selectionContextFix.ts` — the stock plugin
+  never re-arms its flags after the plugin-view recreation every note switch triggers, going
+  permanently dead; the bundle's own is disabled via `selectionContext: {config: []}` and the fixed
+  one registered at High priority so Escape still reaches it — drop the file when upstream fixes it,
+  and keep `@gravity-ui/markdown-editor` pinned exact meanwhile). Its `SELECTION_MENU_CONFIG` swaps
+  the block-type "Text"/H1–H6 Select for a local `SelectionHeadingSelect` — the bundle's
+  `ToolbarSelect` wires `onOpenChange` to the editor `focus()`, which re-closes the dropdown the
+  instant it opens inside the floating toolbar; the local version omits that wiring so the menu
+  opens) with `NoteTitle` and
   `NotePreview`, `AttachmentsDialog` (manage attachments — list/usage/sort/
   delete + full-size view; virtualized list), `Lightbox` (shared full-size image overlay with
   pinch/scroll zoom + drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
