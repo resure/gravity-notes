@@ -800,7 +800,11 @@ export function Workspace({
         openSettings: () => setSettingsOpen(true),
         renameSelected: () => {
             // F2 fires even while typing. Context-aware: a focused folder row → rename the folder;
-            // the in-editor title handles F2 itself; otherwise rename the selected note.
+            // the whole in-editor title row (the title input handles F2 itself; its icon-picker
+            // button is a sibling of the input) and any floating layer — every uikit popup renders
+            // `.g-popup` (menus, the icon pickers) and every uikit modal `[role="dialog"]` — are
+            // no-ops: a list rename from there would yank focus out from under the open layer
+            // (and even commit on blur behind a modal); otherwise rename the selected note.
             const el = document.activeElement;
             if (el instanceof HTMLElement) {
                 const folderRow = el.closest('.folder-rail__row[data-path]');
@@ -808,7 +812,7 @@ export function Workspace({
                     railRef.current?.startRename(folderRow.getAttribute('data-path') ?? '');
                     return;
                 }
-                if (el.closest('.note-title')) return;
+                if (el.closest('.note-title-row, .g-popup, [role="dialog"]')) return;
             }
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },

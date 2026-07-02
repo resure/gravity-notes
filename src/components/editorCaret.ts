@@ -23,12 +23,34 @@ export function isCaretOnFirstLine(container: HTMLElement): boolean {
     caret.collapse(true);
     const caretTop = rangeTop(caret);
     if (caretTop === null) {
-        // An empty line gives WebKit no caret rect at all (getClientRects() empty, bounding rect
-        // all-zero). Can't measure — fall back to structure: the caret is on the first line iff its
-        // anchor node lives in (or is) the first block. Without this, ArrowUp off an empty first line
-        // (e.g. a blank note, or a note that opens with a blank row) never hands off to the title.
-        // (`contains(null)` is false, so a missing anchor safely returns false.)
-        return firstBlock.contains(sel.anchorNode);
+        // An empty line gives the caret no rect at all (getClientRects() empty, bounding rect
+        // all-zero — WebKit and Chromium both). Can't measure — fall back to structure. Without
+        // this, ArrowUp off an empty first line (e.g. a blank note, or a note that opens with a
+        // blank row) never hands off to the title. Containment is tested on the collapsed range
+        // start — like the measured path above — not sel.anchorNode, which sits at the far end
+        // of a backward selection (Shift+ArrowUp from a lower block onto the first line).
+        if (!firstBlock.contains(caret.startContainer)) return false;
+        // Inside the first block, "no rect" can also mean an empty line further down: the empty
+        // continuation line after a hard break (`<p>text<br>|</p>`, the Shift+Enter shape), or
+        // an empty paragraph/item deeper in a compound first block (a leading list/blockquote —
+        // block boundaries break lines without any <br>). Handing off from those would steal
+        // ArrowUp from moving up within the block. First line ⇔ nothing renders a line break
+        // between the block start and the caret; comparePoint((node, 0)) < 0 ⇔ the node starts
+        // strictly before the caret.
+        for (const br of firstBlock.querySelectorAll('br')) {
+            // Each block's trailing placeholder marks the END of the caret's own line, never an
+            // earlier one: a caret can only sit past it at the same ProseMirror position
+            // (`<p><br>|</p>`, still line 1), while a placeholder of an earlier line always
+            // comes with its block closing before the caret — caught by the block scan below.
+            if (br.classList.contains('ProseMirror-trailingBreak')) continue;
+            if (caret.comparePoint(br, 0) < 0) return false;
+        }
+        for (const el of firstBlock.querySelectorAll(LINE_BREAKING_BLOCKS)) {
+            // A block that closed before the caret (starts before it, doesn't contain it) ends a
+            // visual line at its boundary.
+            if (caret.comparePoint(el, 0) < 0 && !el.contains(caret.startContainer)) return false;
+        }
+        return true;
     }
 
     const firstTop = firstBlock.getBoundingClientRect().top;
@@ -37,6 +59,13 @@ export function isCaretOnFirstLine(container: HTMLElement): boolean {
     // On the first line when the caret is within half a line of that first line's top.
     return caretTop - firstTop < lineHeight * 0.5;
 }
+
+/**
+ * Elements whose closing edge ends a visual line, unlike inline marks (em/strong/a/code spans).
+ * Table cells are absent on purpose — cells sit side by side on one line; the row breaks it.
+ */
+const LINE_BREAKING_BLOCKS =
+    'p, h1, h2, h3, h4, h5, h6, li, ul, ol, blockquote, pre, div, table, thead, tbody, tr, figure, hr';
 
 /** Top of a collapsed range's caret rect, or null when it carries no usable layout info. */
 function rangeTop(range: Range): number | null {

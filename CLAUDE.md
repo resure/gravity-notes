@@ -174,7 +174,9 @@ Key modules:
   save-status dot), `FolderRail` (collapsible nested-folder tree left of the list — select/scope,
   drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
   sort; **virtualized** via `@tanstack/react-virtual`, with a `rangeExtractor` that keeps the
-  keyboard-focused row mounted), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
+  keyboard-focused row and any open row popover's anchor row (⋯ menu / icon picker) mounted; rows
+  render only an `IconPickerButton` glyph and share ONE `IconPickerPopup` — like the one shared row
+  menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
   list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut),
   `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
   `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on

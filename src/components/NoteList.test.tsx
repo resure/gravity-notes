@@ -4,6 +4,7 @@ import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {loadEmojis, loadIconCatalog} from '../icons';
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
 
@@ -544,4 +545,108 @@ describe('NoteList — row memoization (perf)', () => {
         rerender(<NoteList {...props} />);
         expect(noteRowRenders.count).toBe(0);
     });
+});
+
+describe('NoteList — note icons (one shared picker)', () => {
+    it('renders a glyph button per row; the stored emoji shows right in the button', () => {
+        setup({showIcons: true, icons: {'Alpha.md': '🔥'}});
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        expect(within(alpha).getByRole('button', {name: 'Change note icon'})).toHaveTextContent(
+            '🔥',
+        );
+        // A row without an icon gets the default affordance…
+        const beta = screen.getByRole('option', {name: /Beta/});
+        expect(within(beta).getByRole('button', {name: 'Set note icon'})).toBeInTheDocument();
+        // …and no picker popup exists until a button is clicked (it used to mount per row).
+        expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull();
+    });
+
+    it('clicking a row button opens the shared popup; a pick goes to that row’s note', async () => {
+        // Preload both catalogs (memoized module-level): they otherwise resolve in two async
+        // steps after the popup opens, and the second one prepends entries — remounting every
+        // option out from under a just-located element mid-click.
+        await Promise.all([loadEmojis(), loadIconCatalog()]);
+        const user = userEvent.setup();
+        const onSetIcon = vi.fn();
+        setup({showIcons: true, onSetIcon});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Set note icon'}));
+        const grid = await screen.findByRole('listbox', {name: 'Pick an icon'});
+        const options = await within(grid).findAllByRole('option');
+        expect(options.length).toBeGreaterThan(0);
+        await user.click(options[0]);
+        expect(onSetIcon).toHaveBeenCalledTimes(1);
+        const [id, value] = onSetIcon.mock.calls[0] as [string, string];
+        expect(id).toBe('Beta.md');
+        expect(value.length).toBeGreaterThan(0);
+        // Picking closes the popup.
+        await waitFor(() =>
+            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
+        );
+    });
+
+    it('does not browse the row when its icon button is clicked', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({showIcons: true});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Set note icon'}));
+        expect(props.onBrowse).not.toHaveBeenCalled();
+    });
+
+    it('a second click on the same button toggles the picker closed', async () => {
+        const user = userEvent.setup();
+        setup({showIcons: true});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        const button = within(beta).getByRole('button', {name: 'Set note icon'});
+        await user.click(button);
+        await screen.findByRole('listbox', {name: 'Pick an icon'});
+        await user.click(button);
+        await waitFor(() =>
+            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
+        );
+    });
+
+    it('opening the shared picker re-renders no rows (memo parity)', async () => {
+        const user = userEvent.setup();
+        setup({showIcons: true});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        const button = within(beta).getByRole('button', {name: 'Set note icon'});
+        noteRowRenders.count = 0;
+        await user.click(button);
+        await screen.findByRole('listbox', {name: 'Pick an icon'});
+        expect(noteRowRenders.count).toBe(0);
+    });
+
+    it('Enter on a focused row icon button opens the picker, not the note', async () => {
+        // The row's keydown handler used to preventDefault bare Enter unconditionally, cancelling
+        // the button's click synthesis and opening the note — Enter was dead on row buttons.
+        const user = userEvent.setup();
+        const {props} = setup({showIcons: true});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        const button = within(beta).getByRole('button', {name: 'Set note icon'});
+        button.focus();
+        await user.keyboard('{Enter}');
+        await screen.findByRole('listbox', {name: 'Pick an icon'});
+        expect(props.onCommit).not.toHaveBeenCalled();
+    });
+
+    it('the shared popup starts clean on reopen (tab choice does not leak across notes)', async () => {
+        await Promise.all([loadEmojis(), loadIconCatalog()]);
+        const user = userEvent.setup();
+        setup({showIcons: true});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        const betaButton = within(beta).getByRole('button', {name: 'Set note icon'});
+        await user.click(betaButton);
+        await screen.findByRole('listbox', {name: 'Pick an icon'});
+        await user.click(screen.getByRole('radio', {name: 'Emoji'}));
+        // Close via the same button (the toggle path), then open another row's picker.
+        await user.click(betaButton);
+        await waitFor(() =>
+            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
+        );
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        await user.click(within(alpha).getByRole('button', {name: /note icon/i}));
+        await screen.findByRole('listbox', {name: 'Pick an icon'});
+        expect(screen.getByRole('radio', {name: 'All'})).toBeChecked();
+    }, 15_000);
 });
