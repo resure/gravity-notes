@@ -32,7 +32,7 @@ import {escapeRegExp, tokenizeQuery} from '../search';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 
-import {IconPicker} from './IconPicker';
+import {IconPickerButton, IconPickerPopup} from './IconPicker';
 
 import './NoteList.css';
 
@@ -165,7 +165,8 @@ interface NoteRowProps {
     /** Register/unregister this row's element in the parent's id→element map (stable). */
     registerRef: (id: string, el: HTMLDivElement | null) => void;
     icon?: string;
-    onSetIcon: (id: string, icon: string) => void;
+    /** Toggle the list's one shared icon-picker popup, anchored to this row's glyph button. */
+    onOpenIconPicker: (id: string, anchor: HTMLElement) => void;
     showIcons: boolean;
     onClickRow: (id: string) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
@@ -195,7 +196,7 @@ const NoteRow = memo(function NoteRow({
     editInputRef,
     registerRef,
     icon,
-    onSetIcon,
+    onOpenIconPicker,
     showIcons,
     onClickRow,
     onContextMenuRow,
@@ -248,11 +249,16 @@ const NoteRow = memo(function NoteRow({
                 <>
                     <div className="note-list__row">
                         {showIcons ? (
-                            <IconPicker
+                            <IconPickerButton
                                 className="note-list__icon"
                                 size="s"
                                 value={icon}
-                                onChange={(name) => onSetIcon(note.id, name)}
+                                onClick={(e) => {
+                                    // Like the ⋯ button: don't browse the row; toggle the one
+                                    // shared picker popup anchored to this button.
+                                    e.stopPropagation();
+                                    onOpenIconPicker(note.id, e.currentTarget);
+                                }}
                             />
                         ) : null}
                         {pinned ? (
@@ -360,6 +366,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         note: NoteMeta;
         anchor: {getBoundingClientRect: () => DOMRect};
     } | null>(null);
+    // The note + anchor for the one open icon picker (null = closed) — the same shared-instance
+    // pattern as the action menu above: a whole IconPicker (popup + its own virtualizer) per row
+    // was a large per-row render cost, and an open per-row popup died with its row when it left
+    // the virtual window. Rows render only the glyph button; this popup serves them all.
+    const [iconPicker, setIconPicker] = useState<{noteId: string; anchor: HTMLElement} | null>(
+        null,
+    );
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -372,6 +385,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const focusableId =
         selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
     const focusableIndex = focusableId ? noteIds.indexOf(focusableId) : -1;
+    // The open row popovers' anchor rows (kept mounted below, so a scroll can't tear an anchor out
+    // from under its popup); -1 = closed, or the note has left the list.
+    const menuIndex = menu ? noteIds.indexOf(menu.note.id) : -1;
+    const iconPickerIndex = iconPicker ? noteIds.indexOf(iconPicker.noteId) : -1;
+
+    // Close an open row popover when its note leaves the list (deleted, filtered out by a new
+    // search, or renamed to a new id) — its anchor row is then no longer kept mounted, and a popup
+    // on a dead anchor just floats stale. Membership is read off the indexes derived above.
+    useEffect(() => {
+        if (menu && menuIndex === -1) setMenu(null);
+        if (iconPicker && iconPickerIndex === -1) setIconPicker(null);
+    }, [menu, menuIndex, iconPicker, iconPickerIndex]);
 
     // Live snapshot read by the stable row callbacks below — so those callbacks never close over a
     // stale value yet keep a constant identity (the key to NoteRow's memo bailing out for untouched
@@ -381,22 +406,26 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         editingId,
         editValue,
         railOpen,
+        iconPicker,
         onBrowse,
         onCommit,
         onEscapeList,
         onFocusRail,
         onRename,
+        onSetIcon,
     });
     live.current = {
         noteIds,
         editingId,
         editValue,
         railOpen,
+        iconPicker,
         onBrowse,
         onCommit,
         onEscapeList,
         onFocusRail,
         onRename,
+        onSetIcon,
     };
 
     // Virtualize the rows: a folder can hold thousands of notes, and mounting every row (each a few
@@ -412,14 +441,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         getItemKey: (index) => notes[index].id,
         // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
         // so the list always has a keyboard-focusable element and focusing it never needs an async
-        // scroll-then-mount. A fresh closure per render keeps the forced index current.
+        // scroll-then-mount — plus any open row popover's anchor row (⋯ menu / icon picker), so
+        // scrolling can't unmount the popup's anchor from under it. A fresh closure per render keeps
+        // the forced indexes current; the window is a few dozen sorted indexes, so the sort is free.
         rangeExtractor: (range) => {
             const indexes = defaultRangeExtractor(range);
-            if (focusableIndex >= 0 && !indexes.includes(focusableIndex)) {
-                indexes.push(focusableIndex);
-                indexes.sort((a, b) => a - b);
+            for (const forced of [focusableIndex, menuIndex, iconPickerIndex]) {
+                if (forced >= 0 && !indexes.includes(forced)) indexes.push(forced);
             }
-            return indexes;
+            return indexes.sort((a, b) => a - b);
         },
     });
 
@@ -552,6 +582,23 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         setMenu((open) => (open?.note.id === note.id ? null : {note, anchor}));
     }, []);
 
+    const onOpenIconPicker = useCallback((noteId: string, anchor: HTMLElement) => {
+        setIconPicker((open) => (open?.noteId === noteId ? null : {noteId, anchor}));
+    }, []);
+
+    // Route a pick to the note whose glyph opened the popup. Skipped — deliberately, instead of
+    // writing icon metadata for a dead id — if that note just left the list (e.g. a blur-committed
+    // title rename landed between open and pick); the close effect above retires the popup a tick
+    // later. Stable identity so the memoized popup skips scroll-driven list re-renders.
+    const onPickIcon = useCallback((name: string) => {
+        const {iconPicker: open, noteIds: ids, onSetIcon: setIcon} = live.current;
+        if (open && ids.includes(open.noteId)) setIcon(open.noteId, name);
+    }, []);
+
+    const onIconPickerOpenChange = useCallback((next: boolean) => {
+        if (!next) setIconPicker(null);
+    }, []);
+
     const moveSelection = useCallback(
         (fromId: string, delta: number) => {
             const {noteIds: ids} = live.current;
@@ -596,6 +643,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     break;
                 case 'Enter':
                     if (!bare) break; // ⌘/Ctrl+Enter is the global new-note shortcut — let it bubble
+                    // From a focused row-level button (icon glyph, ⋯ actions), Enter must activate
+                    // the button — preventDefault on the bubbled keydown would cancel the button's
+                    // click synthesis and open the note instead.
+                    if (event.target instanceof Element && event.target.closest('button')) break;
                     event.preventDefault();
                     commit(id);
                     break;
@@ -761,7 +812,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         editInputRef={editInputRef}
                                         registerRef={registerRef}
                                         icon={icons[note.id]}
-                                        onSetIcon={onSetIcon}
+                                        onOpenIconPicker={onOpenIconPicker}
                                         showIcons={showIcons}
                                         onClickRow={onClickRow}
                                         onContextMenuRow={onContextMenuRow}
@@ -814,6 +865,16 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 renderSwitcher={() => <span hidden />}
                 popupProps={{anchorElement: menu?.anchor}}
                 items={menu ? noteMenuItems(menu.note) : []}
+            />
+
+            {/* The one shared icon picker — controlled, anchored to whichever row's glyph button
+                opened it (see the `iconPicker` state above for why it isn't per-row). Handlers are
+                stable and the popup memoized, so scroll-driven list re-renders skip it. */}
+            <IconPickerPopup
+                anchorElement={iconPicker?.anchor ?? null}
+                value={iconPicker ? icons[iconPicker.noteId] : undefined}
+                onChange={onPickIcon}
+                onOpenChange={onIconPickerOpenChange}
             />
         </div>
     );

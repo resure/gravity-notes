@@ -15,10 +15,10 @@ import type {EditorView} from 'prosemirror-view';
 /**
  * The floating selection toolbar (the bundle's `SelectionContext` behavior), vendored from
  * `@gravity-ui/markdown-editor` 15.41.0 — the version is pinned exact in package.json BECAUSE of
- * this file: on every editor bump, re-diff against the bundle's SelectionContext source, and DROP
- * the whole file once upstream re-arms the flags (upstream report: EDITOR_BUG_REPORT.md, to be
- * filed against gravity-ui/markdown-editor — link the issue URL here once it exists). The stock
- * plugin went PERMANENTLY dead after the first
+ * this file: on every editor bump, re-diff against the bundle's SelectionContext source.
+ * TODO: drop the whole file once the upstream fix — same three changes + regression tests,
+ * https://github.com/gravity-ui/markdown-editor/pull/1171 — lands in a released version. The
+ * stock plugin went PERMANENTLY dead after the first
  * note switch + click; three behavior fixes:
  *
  * 1. Our note-switch history reset (EditorPane's resetHistory) swaps in a fresh EditorState, whose

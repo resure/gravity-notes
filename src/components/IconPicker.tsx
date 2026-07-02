@@ -1,4 +1,5 @@
 import {
+    memo,
     useCallback,
     useEffect,
     useId,
@@ -7,7 +8,7 @@ import {
     useState,
     useSyncExternalStore,
 } from 'react';
-import type {KeyboardEvent as ReactKeyboardEvent} from 'react';
+import type {KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent} from 'react';
 
 import {Button, Icon, Popup, SegmentedRadioGroup, TextInput} from '@gravity-ui/uikit';
 import type {ButtonProps} from '@gravity-ui/uikit';
@@ -45,14 +46,6 @@ function useIcon(value?: string): ResolvedIcon {
     return resolveIcon(value);
 }
 
-interface IconPickerProps {
-    value?: string;
-    onChange: (name: string) => void;
-    size?: ButtonProps['size'];
-    disabled?: boolean;
-    className?: string;
-}
-
 type IconPickerType = 'all' | 'icons' | 'emoji';
 
 /** Grid geometry: 8 columns, each row a 28px item + 6px gap. Kept in sync with IconPicker.css. */
@@ -64,9 +57,79 @@ type Entry =
     | {kind: 'icon'; key: string; value: string; title: string}
     | {kind: 'emoji'; key: string; value: string; title: string; char: string};
 
-export function IconPicker({value, onChange, size = 'm', disabled, className}: IconPickerProps) {
-    const [open, setOpen] = useState(false);
-    const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+export interface IconPickerButtonProps {
+    /** The stored icon value this button displays (component name or emoji char). */
+    value?: string;
+    size?: ButtonProps['size'];
+    disabled?: boolean;
+    className?: string;
+    onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}
+
+/**
+ * The glyph half of the picker: a flat button showing the resolved icon (File placeholder until the
+ * catalog arrives). Standalone so a virtualized list can render one per row while sharing a single
+ * {@link IconPickerPopup} — mounting a whole picker (popup + its own virtualizer) per row was a large
+ * per-row render cost, and an open per-row popup died when its row left the virtual window.
+ */
+export function IconPickerButton({
+    value,
+    size = 'm',
+    disabled,
+    className,
+    onClick,
+}: IconPickerButtonProps) {
+    const resolved = useIcon(value);
+    const iconSize = size === 'l' ? 20 : size === 'm' ? 16 : 14;
+
+    return (
+        <Button
+            view="flat"
+            size={size}
+            disabled={disabled}
+            className={className ? `${className} icon-picker__button` : 'icon-picker__button'}
+            aria-label={value ? 'Change note icon' : 'Set note icon'}
+            onClick={onClick}
+        >
+            {/* Button.Icon makes the button square + centers the glyph (Gravity's own icon-only
+                sizing), so we don't reach into its private CSS vars. */}
+            <Button.Icon>
+                {resolved.kind === 'emoji' ? (
+                    <span className="icon-picker__emoji" style={{fontSize: iconSize}}>
+                        {resolved.char}
+                    </span>
+                ) : (
+                    <Icon size={iconSize} data={resolved.data} />
+                )}
+            </Button.Icon>
+        </Button>
+    );
+}
+
+export interface IconPickerPopupProps {
+    /** The element the popup attaches to (the glyph button that opened it); null = closed. */
+    anchorElement: HTMLElement | null;
+    /** The current value — highlights the matching option and offers "Remove icon". */
+    value?: string;
+    onChange: (name: string) => void;
+    /** Fired with `false` on every close path (pick, outside click, Escape). */
+    onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * The popup half of the picker — controlled, so one instance can serve many
+ * {@link IconPickerButton}s (the note list anchors it to whichever row's button opened it, the same
+ * shared-instance pattern as its row action menu). Memoized: the note list re-renders on every
+ * scroll of the virtual window, and with stable handlers the closed popup then costs nothing.
+ */
+export const IconPickerPopup = memo(function IconPickerPopup({
+    anchorElement,
+    value,
+    onChange,
+    onOpenChange,
+}: IconPickerPopupProps) {
+    // Open is the anchor's presence — one prop, so no caller can render an anchorless open popup.
+    const open = anchorElement !== null;
     const [query, setQuery] = useState('');
     const [type, setType] = useState<IconPickerType>('all');
     const [emojis, setEmojis] = useState<EmojiItem[] | null>(null);
@@ -100,8 +163,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
     }, [open, emojis, icons]);
 
     const entries = useMemo<Entry[]>(() => {
-        // Only the open picker's grid is built — a closed picker (e.g. one per note-list row) shouldn't
-        // pay to assemble the ~1500-icon list.
+        // Only an open picker builds its grid — while closed this shared instance costs nothing.
         if (!open) return [];
         const out: Entry[] = [];
         // In the "All" view, emoji come first, then the Gravity symbols.
@@ -153,9 +215,24 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         return () => cancelAnimationFrame(id);
     }, [open, rowVirtualizer]);
 
+    // Plain scrollTop (not scrollTo) — jsdom implements only the property, and instant is wanted.
     useEffect(() => {
-        scrollRef.current?.scrollTo({top: 0});
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }, [type]);
+
+    // Reset the transient state on ANY close (outside click, Escape, pick, anchor-button toggle) so
+    // the next open starts clean — one shared instance serves every note-list row, so a leftover
+    // query, tab, grid scroll, or highlight would leak one note's picker state into another's. An
+    // effect on `open` — not the change handler — so no close path (e.g. the anchor toggle, which
+    // floating-ui excludes from outside-click dismissal) can skip it.
+    useEffect(() => {
+        if (!open) {
+            setQuery('');
+            setType('all');
+            setActiveIndex(-1);
+            if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        }
+    }, [open]);
 
     // Drop the highlight whenever the result set changes (new query/tab/catalog), so the index can't
     // dangle past the new `entries`.
@@ -163,13 +240,11 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         setActiveIndex(-1);
     }, [entries]);
 
-    const handleOpenChange = useCallback((next: boolean) => {
-        setOpen(next);
-        if (!next) {
-            setQuery('');
-            setActiveIndex(-1);
-        }
-    }, []);
+    /** Commit a value (or '' = remove) and close — every pick path funnels through here. */
+    const pick = (next: string) => {
+        onChange(next);
+        onOpenChange(false);
+    };
 
     // Grid keyboard navigation, handled on the popup so it works while the search box keeps DOM focus.
     // Left/Right/Up stay as normal text editing until the user steps into the grid with ↓; from then on
@@ -199,8 +274,7 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
             case 'Enter':
                 if (activeIndex >= 0 && entries[activeIndex]) {
                     event.preventDefault();
-                    onChange(entries[activeIndex].value);
-                    handleOpenChange(false);
+                    pick(entries[activeIndex].value);
                 }
                 break;
             default:
@@ -208,158 +282,145 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
         }
     };
 
-    const iconSize = useMemo(() => {
-        switch (size) {
-            case 'l':
-                return 20;
-            case 'm':
-                return 16;
-            default:
-                return 14;
-        }
-    }, [size]);
+    return (
+        <Popup
+            open={open}
+            anchorElement={anchorElement}
+            placement="bottom-start"
+            onOpenChange={onOpenChange}
+            initialFocus={searchRef}
+        >
+            <div
+                className="icon-picker__popup"
+                role="presentation"
+                onClick={(e) => e.stopPropagation()}
+                // Grid navigation catches keys bubbling up from the focused search box (a combobox).
+                onKeyDown={onKeyDown}
+            >
+                {/* Combobox pattern: focus stays in the search box, which owns the roving
+                    aria-activedescendant over the listbox below. */}
+                <TextInput
+                    controlRef={searchRef}
+                    placeholder="Search icons…"
+                    value={query}
+                    onUpdate={setQuery}
+                    size="s"
+                    controlProps={{
+                        role: 'combobox',
+                        'aria-expanded': true,
+                        'aria-controls': listId,
+                        'aria-activedescendant':
+                            activeIndex >= 0 ? optionId(activeIndex) : undefined,
+                        'aria-autocomplete': 'list',
+                    }}
+                />
+                <SegmentedRadioGroup
+                    className="icon-picker__types"
+                    value={type}
+                    size="s"
+                    onUpdate={(t: IconPickerType) => setType(t)}
+                >
+                    <SegmentedRadioGroup.Option value="all">All</SegmentedRadioGroup.Option>
+                    <SegmentedRadioGroup.Option value="icons">Icons</SegmentedRadioGroup.Option>
+                    <SegmentedRadioGroup.Option value="emoji">Emoji</SegmentedRadioGroup.Option>
+                </SegmentedRadioGroup>
+                <div
+                    ref={scrollRef}
+                    id={listId}
+                    className="icon-picker__grid virtual-scroll"
+                    role="listbox"
+                    aria-label="Pick an icon"
+                >
+                    <div
+                        className="icon-picker__grid-inner"
+                        style={{height: rowVirtualizer.getTotalSize()}}
+                    >
+                        {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+                            <div
+                                key={virtualRow.key}
+                                className="icon-picker__row"
+                                style={{transform: `translateY(${virtualRow.start}px)`}}
+                            >
+                                {rows[virtualRow.index].map((entry, colIndex) => {
+                                    const index = virtualRow.index * COLUMNS + colIndex;
+                                    return (
+                                        <Button
+                                            key={entry.key}
+                                            id={optionId(index)}
+                                            view={value === entry.value ? 'normal' : 'flat'}
+                                            size="m"
+                                            role="option"
+                                            aria-selected={value === entry.value}
+                                            title={entry.title}
+                                            className={`icon-picker__item${index === activeIndex ? ' icon-picker__item_active' : ''}`}
+                                            onClick={() => pick(entry.value)}
+                                        >
+                                            <Button.Icon>
+                                                {entry.kind === 'emoji' ? (
+                                                    <span className="icon-picker__emoji">
+                                                        {entry.char}
+                                                    </span>
+                                                ) : (
+                                                    <Icon
+                                                        data={iconByName(entry.value)}
+                                                        size={16}
+                                                    />
+                                                )}
+                                            </Button.Icon>
+                                        </Button>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                {value ? (
+                    <Button view="flat" size="s" width="max" onClick={() => pick('')}>
+                        Remove icon
+                    </Button>
+                ) : null}
+            </div>
+        </Popup>
+    );
+});
 
-    const resolved = useIcon(value);
+interface IconPickerProps {
+    value?: string;
+    onChange: (name: string) => void;
+    size?: ButtonProps['size'];
+    disabled?: boolean;
+    className?: string;
+}
 
+/** The self-contained picker (button + its own popup) — for one-off spots like the note title. */
+export function IconPicker({value, onChange, size = 'm', disabled, className}: IconPickerProps) {
+    // The open popup's anchor (the glyph button, captured from the click event); null = closed.
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    const onOpenChange = useCallback((next: boolean) => {
+        if (!next) setAnchor(null);
+    }, []);
     return (
         <>
-            <Button
-                ref={setAnchor}
-                view="flat"
+            <IconPickerButton
+                value={value}
                 size={size}
                 disabled={disabled}
-                className={className ? `${className} icon-picker__button` : 'icon-picker__button'}
-                aria-label={value ? 'Change note icon' : 'Set note icon'}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    // Toggle through handleOpenChange (not setOpen) so closing via the button also
-                    // resets the query/highlight — floating-ui excludes the anchor from outside-click
-                    // dismissal, so onOpenChange doesn't fire on this path and the search would persist.
-                    handleOpenChange(!open);
+                className={className}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    // Toggle here because floating-ui excludes the anchor from outside-click
+                    // dismissal — a click on the open picker's own button reaches this handler
+                    // instead of onOpenChange. The popup resets its query/highlight on close.
+                    const button = event.currentTarget;
+                    setAnchor((current) => (current ? null : button));
                 }}
-            >
-                {/* Button.Icon makes the button square + centers the glyph (Gravity's own icon-only
-                    sizing), so we don't reach into its private CSS vars. */}
-                <Button.Icon>
-                    {resolved.kind === 'emoji' ? (
-                        <span className="icon-picker__emoji" style={{fontSize: iconSize}}>
-                            {resolved.char}
-                        </span>
-                    ) : (
-                        <Icon size={iconSize} data={resolved.data} />
-                    )}
-                </Button.Icon>
-            </Button>
-
-            <Popup
-                open={open}
+            />
+            <IconPickerPopup
                 anchorElement={anchor}
-                placement="bottom-start"
-                onOpenChange={handleOpenChange}
-                initialFocus={searchRef}
-            >
-                <div
-                    className="icon-picker__popup"
-                    role="presentation"
-                    onClick={(e) => e.stopPropagation()}
-                    // Grid navigation catches keys bubbling up from the focused search box (a combobox).
-                    onKeyDown={onKeyDown}
-                >
-                    {/* Combobox pattern: focus stays in the search box, which owns the roving
-                        aria-activedescendant over the listbox below. */}
-                    <TextInput
-                        controlRef={searchRef}
-                        placeholder="Search icons…"
-                        value={query}
-                        onUpdate={setQuery}
-                        size="s"
-                        controlProps={{
-                            role: 'combobox',
-                            'aria-expanded': true,
-                            'aria-controls': listId,
-                            'aria-activedescendant':
-                                activeIndex >= 0 ? optionId(activeIndex) : undefined,
-                            'aria-autocomplete': 'list',
-                        }}
-                    />
-                    <SegmentedRadioGroup
-                        className="icon-picker__types"
-                        value={type}
-                        size="s"
-                        onUpdate={(t: IconPickerType) => setType(t)}
-                    >
-                        <SegmentedRadioGroup.Option value="all">All</SegmentedRadioGroup.Option>
-                        <SegmentedRadioGroup.Option value="icons">Icons</SegmentedRadioGroup.Option>
-                        <SegmentedRadioGroup.Option value="emoji">Emoji</SegmentedRadioGroup.Option>
-                    </SegmentedRadioGroup>
-                    <div
-                        ref={scrollRef}
-                        id={listId}
-                        className="icon-picker__grid"
-                        role="listbox"
-                        aria-label="Pick an icon"
-                    >
-                        <div
-                            className="icon-picker__grid-inner"
-                            style={{height: rowVirtualizer.getTotalSize()}}
-                        >
-                            {rowVirtualizer.getVirtualItems().map((virtualRow) => (
-                                <div
-                                    key={virtualRow.key}
-                                    className="icon-picker__row"
-                                    style={{transform: `translateY(${virtualRow.start}px)`}}
-                                >
-                                    {rows[virtualRow.index].map((entry, colIndex) => {
-                                        const index = virtualRow.index * COLUMNS + colIndex;
-                                        return (
-                                            <Button
-                                                key={entry.key}
-                                                id={optionId(index)}
-                                                view={value === entry.value ? 'normal' : 'flat'}
-                                                size="m"
-                                                role="option"
-                                                aria-selected={value === entry.value}
-                                                title={entry.title}
-                                                className={`icon-picker__item${index === activeIndex ? ' icon-picker__item_active' : ''}`}
-                                                onClick={() => {
-                                                    onChange(entry.value);
-                                                    handleOpenChange(false);
-                                                }}
-                                            >
-                                                <Button.Icon>
-                                                    {entry.kind === 'emoji' ? (
-                                                        <span className="icon-picker__emoji">
-                                                            {entry.char}
-                                                        </span>
-                                                    ) : (
-                                                        <Icon
-                                                            data={iconByName(entry.value)}
-                                                            size={16}
-                                                        />
-                                                    )}
-                                                </Button.Icon>
-                                            </Button>
-                                        );
-                                    })}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    {value ? (
-                        <Button
-                            view="flat"
-                            size="s"
-                            width="max"
-                            onClick={() => {
-                                onChange('');
-                                handleOpenChange(false);
-                            }}
-                        >
-                            Remove icon
-                        </Button>
-                    ) : null}
-                </div>
-            </Popup>
+                value={value}
+                onChange={onChange}
+                onOpenChange={onOpenChange}
+            />
         </>
     );
 }

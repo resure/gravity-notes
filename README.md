@@ -22,6 +22,8 @@ Markdown files, and they are yours.
   preserved both ways, including deliberately-empty folders (kept alive by a `.gnkeep` marker)
 - Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
   (updated, created, title A→Z / Z→A)
+- **Note icons** (opt-in via Settings, `⌘,`): tag a note with a Gravity icon or an emoji from a
+  searchable picker — on the note title and on every list row
 - **Trash**: deleting a note moves it to a Trash (a hidden `.trash/` folder, so it leaves your notes
   but isn't erased) you can **restore** from — back to its original folder — or **empty**. Open it from
   the storage menu (the `⋯` orb)
@@ -161,6 +163,10 @@ Key modules:
   `TODO.md`.
 - **Auto-update (desktop) starts from the release that introduced it.** A build without the updater
   (≤ 0.2.0) has to be updated by hand once; from there the macOS app updates itself in place. arm64 only.
+- **The desktop app silently falls back to system fonts.** `@gravity-ui/uikit/styles/fonts.css`
+  (imported by `src/main.tsx`) `@import`s Inter from `fonts.googleapis.com`, which the app CSP
+  (`style-src`/`font-src 'self'` in `src-tauri/tauri.conf.json`) blocks. Fix options: self-host
+  Inter, allow the Google Fonts origins in the CSP, or drop the uikit `fonts.css` import.
 
 ### Backlog
 
@@ -183,3 +189,6 @@ Key modules:
 - Mobile view
 - Mobile app
 - Mac App Store?
+
+- Icon picker polish: `aria-activedescendant` can point at a virtualized-out option; the title
+  picker can still set an icon in preview mode; no search debounce

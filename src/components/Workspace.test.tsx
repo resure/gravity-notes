@@ -55,9 +55,10 @@ async function toggleSidebarViaMenu(user: ReturnType<typeof userEvent.setup>) {
 
 describe('Workspace — nvALT navigation', () => {
     afterEach(() => {
-        // The sidebar-collapse tests persist to localStorage; clear it so no collapsed state
-        // leaks into the other tests (jsdom shares localStorage across a suite).
+        // Some tests persist to localStorage (sidebar collapse, settings); clear the keys so no
+        // state leaks into the other tests (jsdom shares localStorage across a suite).
         localStorage.removeItem('gravity-notes:sidebar-collapsed');
+        localStorage.removeItem('gravity-notes:settings');
     });
 
     // Collapse the sidebar, then fire ⌘' to peek it. Resolves once the peek class is present.
@@ -551,6 +552,50 @@ describe('Workspace — nvALT navigation', () => {
         await user.keyboard('{F2}');
         // The guard means the list does NOT open an inline rename input for the selected row.
         const list = screen.getByRole('listbox', {name: 'Notes'});
+        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
+    });
+
+    it('F2 does not start a list rename from the title icon picker (button or open popup)', async () => {
+        localStorage.setItem('gravity-notes:settings', JSON.stringify({showNoteIcons: true}));
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        const title = await screen.findByLabelText('Note title');
+        const row = title.closest('.note-title-row') as HTMLElement;
+        const iconButton = within(row).getByRole('button', {name: /note icon/i});
+        const list = screen.getByRole('listbox', {name: 'Notes'});
+
+        // The icon button is a sibling of the .note-title input — a `.note-title`-only
+        // guard misses it and F2 yanked focus to a sidebar rename.
+        iconButton.focus();
+        await user.keyboard('{F2}');
+        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
+
+        // …and the open picker popup is portaled out of the title row entirely (guarded as a
+        // floating layer via uikit's .g-popup).
+        await user.click(iconButton);
+        const search = await screen.findByPlaceholderText('Search icons…');
+        search.focus();
+        await user.keyboard('{F2}');
+        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
+    });
+
+    it('F2 while typing in a dialog does not start a list rename behind it', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        await user.click(screen.getByRole('option', {name: /Beta/}));
+        // Grab the list before the modal opens — the focus trap aria-hides the background.
+        const list = screen.getByRole('listbox', {name: 'Notes'});
+        // Open the Move-to dialog from the row menu; F2 in its filter input used to fall through
+        // to renameSelected, opening an inline rename behind the modal (committing on blur).
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Move to/}));
+        const filter = await screen.findByPlaceholderText('Filter folders…');
+        filter.focus();
+        await user.keyboard('{F2}');
         expect(within(list).queryByDisplayValue('Beta')).toBeNull();
     });
 
