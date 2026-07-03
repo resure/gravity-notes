@@ -22,7 +22,8 @@
     margin: 0;
     padding: 0 0 0 2px;
     color: var(--g-color-text-primary);
-    font-family: inherit;
+    /* Follow the editor-font setting (like the .yfm body), falling back to the inherited app font. */
+    font-family: var(--gn-editor-font, inherit);
     font-size: 1.6rem;
     font-weight: 500;
     line-height: 1.25;
