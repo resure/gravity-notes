@@ -15,17 +15,19 @@
 //! fs-plugin's scope allowlist. Times are returned as epoch-millisecond `f64`s to match
 //! the web backend's `file.lastModified`.
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
-// `Emitter` brings `app.emit` into scope for the menu-event handler (cross-platform).
+// `Emitter` brings `app.emit_to` into scope for the menu-event handler (cross-platform).
 use tauri::Emitter;
-// Only the macOS window/Dock handlers below call `Manager::get_webview_window`; elsewhere `App`'s
-// inherent `handle()` is used, so on non-macOS builds the trait import would be dead (-D warnings).
-#[cfg(target_os = "macos")]
+// `Manager` brings `get_webview_window`/`webview_windows`/`state` into scope for the window
+// handlers and the workspace-window commands.
 use tauri::Manager;
 
 /// Note files end in `.md` (matched case-insensitively, like the web backend).
@@ -692,6 +694,189 @@ fn open_external(url: String) -> Result<(), String> {
     }
 }
 
+/// Per-window workspace tracking.
+/// - `labels`: a live window's label → the workspace id it shows. Fed by the frontend
+///   (`set_window_workspace` on every workspace open) and by `open_workspace_window` (which assigns
+///   the workspace *before* the window's page loads); drained by the `Destroyed` window event.
+/// - `pending`: workspace ids whose window is currently being built. During the build gap the
+///   window isn't yet resolvable via `get_webview_window`, so without this marker a second
+///   `open_workspace_window` for the same workspace would treat the label as dead, prune it, and
+///   spawn a duplicate window.
+///
+/// Powers focus-if-open, so the same workspace never casually ends up in two windows.
+#[derive(Default)]
+struct WindowState {
+    labels: HashMap<String, String>,
+    pending: HashSet<String>,
+}
+
+#[derive(Default)]
+struct WindowWorkspaces(Mutex<WindowState>);
+
+/// Monotonic suffix for `ws-N` window labels. Uniqueness only matters within one app run —
+/// nothing restores workspace windows across launches.
+static NEXT_WS_WINDOW: AtomicU32 = AtomicU32::new(1);
+
+/// The label of a window showing `ws_id`, excluding `exclude` (a window never "finds itself"
+/// when asking where else its target workspace is open).
+fn window_label_for_workspace(
+    map: &HashMap<String, String>,
+    ws_id: &str,
+    exclude: Option<&str>,
+) -> Option<String> {
+    map.iter()
+        .find(|(label, ws)| ws.as_str() == ws_id && Some(label.as_str()) != exclude)
+        .map(|(label, _)| label.clone())
+}
+
+/// This window's assigned workspace id, if any. A window created by `open_workspace_window` is
+/// assigned before its page loads; the main window has no assignment at launch (the frontend
+/// falls back to the last-active workspace).
+#[tauri::command]
+fn window_workspace(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+) -> Option<String> {
+    state.0.lock().unwrap().labels.get(window.label()).cloned()
+}
+
+/// Record which workspace this window is showing (the frontend calls this on every workspace
+/// open, including in-place switches), keeping focus-if-open accurate.
+#[tauri::command]
+fn set_window_workspace(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+    ws_id: String,
+) {
+    state
+        .0
+        .lock()
+        .unwrap()
+        .labels
+        .insert(window.label().to_string(), ws_id);
+}
+
+/// Focus another window already showing `ws_id` — never the calling one. Returns whether a window
+/// was focused (false tells the caller to switch in place). Map entries whose window is gone
+/// (e.g. a crash skipped the `Destroyed` cleanup) are pruned along the way.
+#[tauri::command]
+fn focus_workspace_window(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+    ws_id: String,
+) -> bool {
+    let mut st = state.0.lock().unwrap();
+    // A window for this workspace is mid-creation elsewhere — treat it as "already opening"
+    // rather than switching in place (which would then race the appearing window into a duplicate).
+    if st.pending.contains(&ws_id) {
+        return true;
+    }
+    while let Some(label) = window_label_for_workspace(&st.labels, &ws_id, Some(window.label())) {
+        if let Some(target) = app.get_webview_window(&label) {
+            // Don't hold the lock across window ops — they may hop to the main thread.
+            drop(st);
+            let _ = target.show();
+            let _ = target.set_focus();
+            return true;
+        }
+        st.labels.remove(&label);
+    }
+    false
+}
+
+/// Open a workspace in its own window: focus the window already showing it (including the
+/// caller's), or create a fresh `ws-N` window assigned to it. Returns whether an existing window
+/// was focused rather than a new one created.
+///
+/// Async on purpose: sync commands run on the main thread, where `WebviewWindowBuilder::build`
+/// is documented to deadlock on some platforms; from the async runtime it safely proxies window
+/// creation to the event loop.
+#[tauri::command]
+async fn open_workspace_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, WindowWorkspaces>,
+    ws_id: String,
+    title: String,
+) -> Result<bool, String> {
+    let label = {
+        let mut st = state.0.lock().unwrap();
+        // A window for this workspace is already being built (another open in flight) — don't
+        // spawn a second. The in-flight call will show its window when its build completes.
+        if st.pending.contains(&ws_id) {
+            return Ok(true);
+        }
+        // Focus an existing live window; prune only genuinely-dead labels. Because no build is in
+        // flight for this workspace (pending checked above), a label whose window is missing is
+        // truly gone, not still-building — so pruning here can't destroy a pending window.
+        loop {
+            let Some(existing) = window_label_for_workspace(&st.labels, &ws_id, None) else {
+                break;
+            };
+            if let Some(target) = app.get_webview_window(&existing) {
+                drop(st);
+                let _ = target.show();
+                let _ = target.set_focus();
+                return Ok(true);
+            }
+            st.labels.remove(&existing);
+        }
+        let label = format!("ws-{}", NEXT_WS_WINDOW.fetch_add(1, Ordering::SeqCst));
+        // Assign the workspace BEFORE the window exists (so the page's first `window_workspace`
+        // ask can't race it), and mark it pending so a concurrent open during the build gap —
+        // when `get_webview_window` still returns None — sees `pending` and bails instead of
+        // pruning this label and creating a duplicate.
+        st.labels.insert(label.clone(), ws_id.clone());
+        st.pending.insert(ws_id.clone());
+        label
+    };
+    // Clone the main window's config so the new window inherits every option (Overlay title bar,
+    // sizes, dragDropEnabled — and the dev config's differences) without hand-mirroring them.
+    let mut config = app.config().app.windows[0].clone();
+    config.label = label.clone();
+    config.title = title;
+    let built = tauri::WebviewWindowBuilder::from_config(&app, &config)
+        .and_then(|builder| builder.build());
+    // Clear the pending marker regardless of outcome; on a build failure the page never loaded,
+    // so drop the pre-assigned label too (nothing else will ever release it).
+    {
+        let mut st = state.0.lock().unwrap();
+        st.pending.remove(&ws_id);
+        if built.is_err() {
+            st.labels.remove(&label);
+        }
+    }
+    let window = built.map_err(stringify)?;
+    apply_macos_chrome(&window);
+    Ok(false)
+}
+
+/// macOS window chrome shared by the main window (at setup) and each workspace window: center the
+/// traffic lights in the taller custom title bar (titleBarStyle "Overlay"), and paint the webview
+/// backdrop in the resolved theme so a fresh window doesn't flash white before the page background
+/// loads (the index.html anti-flash style covers the content paint; this covers the empty frame
+/// before it).
+fn apply_macos_chrome(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_decorum::WebviewWindowExt;
+        // Nudge the traffic lights down + right to center them in our bar; decorum re-applies the
+        // inset on resize/fullscreen. (x = right, y = down.)
+        let _ = window.set_traffic_lights_inset(16.0, 20.0);
+        // Colors mirror Gravity's base background (dark tuned in index.css). Default to dark if
+        // the theme can't be read — "better dark than white" (the requested fallback).
+        let dark = window.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true);
+        let bg = if dark {
+            tauri::window::Color(33, 30, 26, 255)
+        } else {
+            tauri::window::Color(255, 255, 255, 255)
+        };
+        let _ = window.set_background_color(Some(bg));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 /// Build the application menu. On macOS the app submenu's "About <App>" is a *custom* item (id
 /// `about`) that emits `menu:about` to the frontend (opening our own about dialog with clickable
 /// links); the rest mirrors Tauri's default menu so Edit (copy/paste/undo), View and Window keep
@@ -773,8 +958,26 @@ pub fn run() {
         .menu(build_menu)
         .on_menu_event(|app, event| {
             if event.id() == "about" {
-                // The frontend (Workspace) listens for this and opens <AboutDialog>.
-                let _ = app.emit("menu:about", ());
+                // The frontend (Workspace) listens for this and opens <AboutDialog>. Target one
+                // window — a broadcast would pop the dialog in every open workspace window at once.
+                // Prefer the focused window; if none is focused (the app is backgrounded, or main
+                // was hidden with ⌘W), fall back to any VISIBLE window before re-showing the hidden
+                // main — otherwise picking About while a ws-N window is visible-but-unfocused would
+                // yank the hidden main forward and open About on the wrong window.
+                let windows = app.webview_windows();
+                let target = windows
+                    .values()
+                    .find(|window| window.is_focused().unwrap_or(false))
+                    .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
+                if let Some(window) = target {
+                    let _ = window.set_focus();
+                    let _ = app.emit_to(window.label(), "menu:about", ());
+                } else if let Some(main) = app.get_webview_window("main") {
+                    // Nothing visible at all — re-show main and tell it.
+                    let _ = main.show();
+                    let _ = main.set_focus();
+                    let _ = app.emit_to("main", "menu:about", ());
+                }
             }
         })
         .plugin(tauri_plugin_dialog::init())
@@ -783,6 +986,7 @@ pub fn run() {
         // signed `.app.tar.gz` against the pubkey in tauri.conf.json; `process` provides relaunch().
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(WindowWorkspaces::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -791,41 +995,29 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            // The custom title bar (titleBarStyle "Overlay") is taller than the standard macOS one,
-            // so the traffic lights sit too high/left by default. Nudge them down + right to center
-            // them in our bar; decorum re-applies the inset on resize/fullscreen. (x = right, y = down.)
-            #[cfg(target_os = "macos")]
-            {
-                use tauri_plugin_decorum::WebviewWindowExt;
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_traffic_lights_inset(16.0, 20.0);
-                    // Paint the webview backdrop in the resolved theme so launch doesn't flash white
-                    // before the page background loads. The index.html anti-flash style covers the
-                    // content paint; this covers the empty frame before it. Colors mirror Gravity's
-                    // base background (dark tuned in index.css). Default to dark if the theme can't be
-                    // read — "better dark than white" (the requested fallback).
-                    let dark = window.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true);
-                    let bg = if dark {
-                        tauri::window::Color(33, 30, 26, 255)
-                    } else {
-                        tauri::window::Color(255, 255, 255, 255)
-                    };
-                    let _ = window.set_background_color(Some(bg));
-                }
+            if let Some(window) = app.get_webview_window("main") {
+                apply_macos_chrome(&window);
             }
             Ok(())
         })
         .on_window_event(|window, event| {
-            // macOS convention: the red close button / ⌘W hides the window and leaves the app
-            // running in the Dock + menu bar, rather than quitting. ⌘Q still quits (ExitRequested).
-            #[cfg(target_os = "macos")]
-            if let tauri::WindowEvent::CloseRequested {api, ..} = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                // macOS convention: the red close button / ⌘W on the MAIN window hides it and
+                // leaves the app running in the Dock + menu bar, rather than quitting. Workspace
+                // (`ws-N`) windows really close — the frontend flushes pending edits in its
+                // close-requested listener, then lets the close proceed. ⌘Q still quits.
+                #[cfg(target_os = "macos")]
+                tauri::WindowEvent::CloseRequested {api, ..} if window.label() == "main" => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                // A closed window's workspace assignment must not keep answering focus-if-open.
+                tauri::WindowEvent::Destroyed => {
+                    let state = window.state::<WindowWorkspaces>();
+                    state.0.lock().unwrap().labels.remove(window.label());
+                }
+                _ => {}
             }
-            // The handler is macOS-only; consume the args elsewhere so the build stays warning-free.
-            #[cfg(not(target_os = "macos"))]
-            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             notes_list,
@@ -848,16 +1040,26 @@ pub fn run() {
             notes_remove_dir_all,
             notes_move_dir,
             notes_list_folders,
+            window_workspace,
+            set_window_workspace,
+            focus_workspace_window,
+            open_workspace_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // macOS: clicking the Dock icon (Reopen) re-shows the hidden window.
+            // macOS: clicking the Dock icon (Reopen) re-shows the hidden main window — but only
+            // when nothing is visible, so it doesn't yank main above an open workspace window.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {..} = event {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows, ..
+            } = event
+            {
+                if !has_visible_windows {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
                 }
             }
             // The handler is macOS-only; consume the args elsewhere so the build stays warning-free.
@@ -1268,5 +1470,30 @@ mod tests {
         assert!(notes_read_opt(s(&dir), "Latin1.md".into()).is_err());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn window_map_lookup_excludes_the_caller_and_respects_removal() {
+        let mut map = HashMap::new();
+        map.insert("main".to_string(), "tauri:/a".to_string());
+        map.insert("ws-1".to_string(), "tauri:/b".to_string());
+
+        // Found by workspace id…
+        assert_eq!(
+            window_label_for_workspace(&map, "tauri:/b", None),
+            Some("ws-1".to_string())
+        );
+        // …but never the asking window itself (a switch must not "focus" its own window).
+        assert_eq!(window_label_for_workspace(&map, "tauri:/b", Some("ws-1")), None);
+        assert_eq!(
+            window_label_for_workspace(&map, "tauri:/a", Some("ws-1")),
+            Some("main".to_string())
+        );
+        // Unknown workspace → none.
+        assert_eq!(window_label_for_workspace(&map, "tauri:/c", None), None);
+
+        // A destroyed window's entry stops answering once removed (the Destroyed handler's job).
+        map.remove("ws-1");
+        assert_eq!(window_label_for_workspace(&map, "tauri:/b", None), None);
     }
 }

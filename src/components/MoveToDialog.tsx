@@ -1,13 +1,15 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
-import type {KeyboardEvent as ReactKeyboardEvent, ReactNode} from 'react';
 
 import {ChevronDown, ChevronRight, Folder, House} from '@gravity-ui/icons';
 import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
 import {useHeldValue} from '../hooks/useHeldValue';
+import {useListboxNav} from '../hooks/useListboxNav';
 import {dirname} from '../storage/noteText';
 import type {NoteMeta, NotesMetadata} from '../storage/types';
 import {type MoveTargetRow, buildMoveTargets} from '../tree';
+
+import {highlightMatch} from './highlightMatch';
 
 import './MoveToDialog.css';
 
@@ -39,20 +41,6 @@ function indentFor(depth: number): number {
     return 12 + depth * 16;
 }
 
-/** Wrap the first case-insensitive occurrence of `q` in `name` with a highlight `<mark>`. */
-function highlight(name: string, q: string): ReactNode {
-    if (!q) return name;
-    const idx = name.toLowerCase().indexOf(q.toLowerCase());
-    if (idx === -1) return name;
-    return (
-        <>
-            {name.slice(0, idx)}
-            <mark className="move-to__match">{name.slice(idx, idx + q.length)}</mark>
-            {name.slice(idx + q.length)}
-        </>
-    );
-}
-
 export function MoveToDialog({
     open,
     note,
@@ -70,9 +58,7 @@ export function MoveToDialog({
     const [query, setQuery] = useState('');
     // The picker keeps its own collapse state — opening it must not touch the rail's.
     const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-    const [activeIndex, setActiveIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
-    const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
     const q = query.trim();
     const ql = q.toLowerCase();
@@ -101,6 +87,23 @@ export function MoveToDialog({
         return rootShown ? [root, ...tail] : tail;
     }, [folderRows, currentFolder, ql]);
 
+    const commit = (entry: Entry | undefined) => {
+        if (!entry || entry.disabled) return;
+        onMove(entry.path);
+    };
+
+    // Shared filter-list keyboard model (↑/↓ skip-disabled, ↵ commit, Esc close) on a document
+    // listener — see useListboxNav for why it can't be input-scoped (Gravity's Dialog can park
+    // focus off the input, silencing an onKeyDown handler).
+    const {activeIndex, setActiveIndex, registerRow} = useListboxNav<Entry>({
+        open,
+        items: entries,
+        getKey: (entry) => entry.key,
+        isDisabled: (entry) => entry.disabled,
+        onEnter: (index) => commit(entries[index]),
+        onClose,
+    });
+
     // Reset everything when the dialog opens (or the target note changes).
     useEffect(() => {
         if (open) {
@@ -121,14 +124,7 @@ export function MoveToDialog({
         const firstMatched = entries.findIndex((e) => e.matched && !e.disabled);
         const firstSelectable = entries.findIndex((e) => !e.disabled);
         setActiveIndex(firstMatched >= 0 ? firstMatched : firstSelectable);
-    }, [entries, open, ql]);
-
-    // Keep the active row in view as it moves.
-    useEffect(() => {
-        if (!open) return;
-        const active = entries[activeIndex];
-        if (active) rowRefs.current.get(active.key)?.scrollIntoView?.({block: 'nearest'});
-    }, [activeIndex, entries, open]);
+    }, [entries, open, ql, setActiveIndex]);
 
     // Focus the filter field on open, so you can type-to-narrow immediately.
     useEffect(() => {
@@ -144,49 +140,6 @@ export function MoveToDialog({
         });
     };
 
-    // Step the highlight to the next selectable row in `delta` direction (clamped, skips disabled).
-    // From "nothing highlighted" (-1), ArrowDown lands on the first selectable row, ArrowUp the last.
-    const firstSelectable = () => entries.findIndex((e) => !e.disabled);
-    const lastSelectable = () => {
-        for (let i = entries.length - 1; i >= 0; i--) if (!entries[i].disabled) return i;
-        return -1;
-    };
-    const moveActive = (delta: number) => {
-        setActiveIndex((cur) => {
-            if (cur < 0) return delta > 0 ? firstSelectable() : lastSelectable();
-            for (let i = cur + delta; i >= 0 && i < entries.length; i += delta) {
-                if (!entries[i].disabled) return i;
-            }
-            return cur;
-        });
-    };
-
-    const commit = (entry: Entry | undefined) => {
-        if (!entry || entry.disabled) return;
-        onMove(entry.path);
-    };
-
-    const onInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-        switch (event.key) {
-            case 'ArrowDown':
-                event.preventDefault();
-                moveActive(1);
-                break;
-            case 'ArrowUp':
-                event.preventDefault();
-                moveActive(-1);
-                break;
-            case 'Enter':
-                event.preventDefault();
-                commit(entries[activeIndex]);
-                break;
-            case 'Escape':
-                event.preventDefault();
-                onClose();
-                break;
-        }
-    };
-
     const activeKey = entries[activeIndex]?.key;
 
     const renderEntry = (entry: Entry, index: number) => {
@@ -198,10 +151,7 @@ export function MoveToDialog({
             <div
                 key={entry.key}
                 id={`move-to-opt-${entry.key}`}
-                ref={(el) => {
-                    if (el) rowRefs.current.set(entry.key, el);
-                    else rowRefs.current.delete(entry.key);
-                }}
+                ref={(el) => registerRow(entry.key, el)}
                 className={
                     'move-to__row' +
                     (active ? ' move-to__row_active' : '') +
@@ -239,7 +189,7 @@ export function MoveToDialog({
                     aria-hidden
                 />
                 <Text className="move-to__name" ellipsis>
-                    {highlight(entry.name, ql)}
+                    {highlightMatch(entry.name, ql, 'move-to__match')}
                 </Text>
                 {entry.disabled ? <span className="move-to__hint">current</span> : null}
             </div>
@@ -247,7 +197,16 @@ export function MoveToDialog({
     };
 
     return (
-        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock>
+        // initialFocus hands the filter input to the Dialog's focus manager; otherwise it focuses
+        // the dialog container, where the document-level key handler (useListboxNav) still works
+        // but type-to-filter wouldn't land in the input.
+        <Dialog
+            open={open}
+            onClose={onClose}
+            size="s"
+            disableBodyScrollLock
+            initialFocus={inputRef}
+        >
             <Dialog.Header caption={noteView ? `Move “${noteView.title}” to…` : 'Move'} />
             <Dialog.Body>
                 <TextInput
@@ -256,7 +215,6 @@ export function MoveToDialog({
                     placeholder="Filter folders…"
                     value={query}
                     onUpdate={setQuery}
-                    onKeyDown={onInputKeyDown}
                     controlProps={{
                         role: 'combobox',
                         'aria-expanded': true,

@@ -1,0 +1,113 @@
+/* ⌃R workspace switcher: a filter field over the recents list. Rows mirror the Move-to picker
+   (icon + name + quiet hints), so the two pickers read as the same control. */
+.ws-switch__list {
+    margin-top: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: var(--g-border-radius-m, 6px);
+    padding: 4px 0;
+}
+
+.ws-switch__empty {
+    padding: 16px 8px;
+    text-align: center;
+}
+
+/* One workspace row: icon + name/path stack (+ a "current" hint or hover-revealed remove). */
+.ws-switch__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 3px 10px 3px 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* The keyboard-highlighted (and hover-tracked) row. */
+.ws-switch__row_active {
+    background-color: var(--note-list-focus-bg);
+}
+
+/* This window's current workspace: shown for orientation, not pickable. */
+.ws-switch__row_disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.ws-switch__icon {
+    flex-shrink: 0;
+    color: var(--g-color-text-secondary);
+}
+
+.ws-switch__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.ws-switch__name {
+    min-width: 0;
+}
+
+.ws-switch__path {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+/* Quiet "current" tag on the disabled row. */
+.ws-switch__hint {
+    flex-shrink: 0;
+    color: var(--g-color-text-hint);
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* Remove-from-recents ✕, revealed on row hover/highlight (⌘⌫ is the keyboard path). */
+.ws-switch__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--g-color-text-hint);
+    opacity: 0;
+}
+
+.ws-switch__row:hover .ws-switch__remove,
+.ws-switch__row_active .ws-switch__remove {
+    opacity: 1;
+}
+
+.ws-switch__remove:hover {
+    color: var(--g-color-text-primary);
+    background-color: var(--g-color-base-generic-hover);
+}
+
+.ws-switch__match {
+    background-color: var(--g-color-base-warning-medium, rgba(255, 219, 77, 0.45));
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+/* The pinned "Open Folder…" action, set off from the recents above it. */
+.ws-switch__row_open-folder {
+    margin-top: 4px;
+    border-top: 1px solid var(--g-color-line-generic);
+}
+
+/* The keyboard cheat-line under the list. */
+.ws-switch__keys {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+}
