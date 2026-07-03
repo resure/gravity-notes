@@ -1,7 +1,9 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 
-import '@gravity-ui/uikit/styles/fonts.css';
+// No web font: the UI uses the native system font (San Francisco on macOS), set via
+// `--g-font-family-sans` in index.css. Gravity's `fonts.css` (a Google-Fonts Inter `@import`) is
+// intentionally NOT imported — nothing to fetch or bundle, works offline, feels native.
 import '@gravity-ui/uikit/styles/styles.css';
 
 // Markdown-editor / YFM content styles. The concatenated bundle isn't exported,
