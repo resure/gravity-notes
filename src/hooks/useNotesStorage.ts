@@ -2,26 +2,28 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 
 import {isTauri} from '../isTauri';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
-import {
-    type StorageBackend,
-    clearStorageChoice,
-    loadBackend,
-    loadDirHandle,
-    loadFolderPath,
-    queryPermission,
-    requestPermission,
-    saveBackend,
-    saveDirHandle,
-    saveFolderPath,
-} from '../storage/handlePersistence';
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
 import {TauriNoteStore} from '../storage/tauriStore';
 import type {NoteStore} from '../storage/types';
+import {
+    type StorageBackend,
+    type WorkspaceEntry,
+    clearLastActive,
+    findFsaEntry,
+    folderNameFromPath,
+    loadLastActiveId,
+    loadWorkspaces,
+    queryPermission,
+    removeWorkspace as removeWorkspaceEntry,
+    requestPermission,
+    touchWorkspace,
+    workspaceIdForPath,
+} from '../storage/workspaceRegistry';
 import {TimeoutError, withTimeout} from '../timeout';
 
 export type StorageState =
-    | 'loading' // checking for a previously-chosen backend
-    | 'choosing' // no backend chosen yet — show the first-run choice
+    | 'loading' // checking for a previously-chosen workspace
+    | 'choosing' // no workspace chosen yet — show the first-run choice
     | 'needs-permission' // a folder was remembered, but permission must be re-granted
     | 'ready';
 
@@ -32,17 +34,60 @@ const supportsFolders = isTauri || supportsFileSystem;
 
 const BROWSER_LABEL = isTauri ? 'In this app' : 'In this browser';
 
-/** Display label for a folder path: its last segment (e.g. `/Users/me/Notes` → `Notes`). */
-function folderName(path: string): string {
-    const parts = path.split(/[/\\]/).filter(Boolean);
-    return parts[parts.length - 1] ?? path;
+/** The registry entry's display name (the in-browser workspace gets a context-aware label). */
+function displayName(entry: WorkspaceEntry): string {
+    return entry.backend === 'indexeddb' ? BROWSER_LABEL : entry.name;
+}
+
+/** A workspace as exposed to the UI: the registry entry sans handle, with a display-ready name. */
+export interface WorkspaceInfo {
+    id: string;
+    backend: StorageBackend;
+    name: string;
+    /** The folder path (`tauri-fs` only), for disambiguating captions. */
+    path?: string;
+}
+
+function toInfo(entry: WorkspaceEntry): WorkspaceInfo {
+    return {id: entry.id, backend: entry.backend, name: displayName(entry), path: entry.path};
+}
+
+/** The registry entry for the in-browser/in-app workspace (created on first use). */
+function browserEntry(): WorkspaceEntry {
+    return {
+        id: 'indexeddb',
+        backend: 'indexeddb',
+        name: 'Browser storage',
+        lastOpenedAt: Date.now(),
+    };
 }
 
 /**
- * How long the startup folder probe may run before we give up and route back to the picker. The
- *  underlying walk can't be cancelled (a Tauri `invoke`), so it keeps running, but the UI moves on.
+ * How long the folder probe may run before we give up. The underlying walk can't be cancelled (a
+ * Tauri `invoke`), so it keeps running, but the UI moves on.
  */
 const PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * How an entry is being opened: `seq` is the supersession ticket; `isBootstrap` distinguishes the
+ * launch restore (errors land on the choice screen; no permission prompts — there's no user
+ * gesture yet) from a user-initiated switch (failures leave the current workspace mounted).
+ */
+interface OpenOpts {
+    seq: number;
+    isBootstrap?: boolean;
+}
+
+/** The user-facing message for a failed folder probe. */
+function probeFailureMessage(err: unknown, timedOut: boolean): string {
+    if (timedOut) {
+        return (
+            'That folder took too long to open — it may be very large or on a disconnected ' +
+            'drive. Choose a different folder.'
+        );
+    }
+    return err instanceof Error ? err.message : 'Your notes folder is no longer available.';
+}
 
 export interface NotesStorage {
     state: StorageState;
@@ -51,6 +96,10 @@ export interface NotesStorage {
     backend: StorageBackend | null;
     /** Human label for the active storage (folder name, or "In this browser"). */
     storageLabel: string | null;
+    /** The active workspace's registry id, or null until `ready`. */
+    activeWorkspaceId: string | null;
+    /** Known workspaces, most recently opened first (includes the active one). */
+    workspaces: WorkspaceInfo[];
     error: string | null;
     /** Running inside the desktop app (native folder access) rather than a plain browser. */
     isTauri: boolean;
@@ -64,106 +113,251 @@ export interface NotesStorage {
     useBrowserStorage(): Promise<void>;
     /** Re-request permission for the remembered folder (user gesture). */
     grantPermission(): Promise<void>;
-    /** Forget the chosen backend and return to the choice screen. */
+    /** Return to the choice screen (the workspace registry is kept). */
     reset(): Promise<void>;
+    /**
+     * Switch this window to a known workspace. On desktop, a workspace already shown in another
+     * window is focused there instead. Resolves false when the workspace could not be opened (the
+     * current one stays mounted).
+     */
+    openWorkspace(id: string): Promise<boolean>;
+    /** Desktop only: open a workspace in its own window (focused if already open somewhere). */
+    openInNewWindow(id: string): Promise<void>;
+    /** Drop a workspace from the registry (its notes on disk are untouched). */
+    removeWorkspace(id: string): Promise<void>;
+    /** Re-read the registry (e.g. before showing a recents list — other windows may have written). */
+    refreshWorkspaces(): Promise<void>;
 }
 
 /**
- * Folder picking, in-browser storage, and the permission lifecycle, as a backend-agnostic state
- * machine that hands `Workspace` a ready {@link NoteStore}. The chosen backend is remembered in
- * IndexedDB so reloads restore it without re-asking.
+ * The workspace lifecycle: bootstrap (restore this window's workspace, or the last active one),
+ * switching, opening in new desktop windows, and the FSA permission dance — as a backend-agnostic
+ * state machine that hands `Workspace` a ready {@link NoteStore}. Every opened workspace is
+ * remembered in the registry (IndexedDB), which feeds the recents UI.
  */
 export function useNotesStorage(): NotesStorage {
     const [state, setState] = useState<StorageState>('loading');
     const [store, setStore] = useState<NoteStore | null>(null);
     const [backend, setBackend] = useState<StorageBackend | null>(null);
     const [storageLabel, setStorageLabel] = useState<string | null>(null);
+    const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+    const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
     const [error, setError] = useState<string | null>(null);
-    // Set once the user takes a storage action. The bootstrap effect bails if this is set, so a slow
-    // IndexedDB read can't clobber a state the user just chose.
-    const interactedRef = useRef(false);
+    // Full registry entries (with handles) backing the exposed WorkspaceInfo list.
+    const entriesRef = useRef<WorkspaceEntry[]>([]);
+    // The entry awaiting a permission re-grant while in `needs-permission`.
+    const pendingRef = useRef<WorkspaceEntry | null>(null);
+    // Mirrors activeWorkspaceId for callbacks that must not go stale.
+    const activeIdRef = useRef<string | null>(null);
+    // Supersession counter: every storage action (and the bootstrap) claims a sequence number, and
+    // async continuations bail once a newer action has claimed a higher one — so a slow bootstrap
+    // read can't clobber a choice the user just made, and rapid switches can't interleave.
+    const opSeqRef = useRef(0);
 
-    // On load, restore the previously-chosen backend.
+    const beginOp = useCallback(() => ++opSeqRef.current, []);
+    const isStale = useCallback((seq: number) => opSeqRef.current !== seq, []);
+
+    const refreshWorkspaces = useCallback(async () => {
+        try {
+            const entries = await loadWorkspaces();
+            entriesRef.current = entries;
+            setWorkspaces(entries.map(toInfo));
+        } catch {
+            // Registry unavailable (e.g. private mode) — keep whatever list we had.
+        }
+    }, []);
+
+    /**
+     * Post-activation bookkeeping, best-effort: recency, and the desktop shell's window state.
+     * Guarded by the activation's `seq`: a newer activation supersedes this one, and its detached
+     * writes (last-active pointer, `set_window_workspace`) must not land for a workspace we've
+     * already left — otherwise a rapid A→B switch could restore A next launch or register A for a
+     * window showing B. Re-checked before each awaited write since supersession can happen mid-way.
+     */
+    const finalizeActivation = useCallback(
+        async (entry: WorkspaceEntry, seq: number) => {
+            if (isStale(seq)) return;
+            try {
+                await touchWorkspace(entry);
+            } catch {
+                // Recency is best-effort; the workspace itself is already open.
+            }
+            if (isStale(seq)) return;
+            await refreshWorkspaces();
+            if (!isTauri || isStale(seq)) return;
+            try {
+                const {invoke} = await import('@tauri-apps/api/core');
+                if (isStale(seq)) return;
+                await invoke('set_window_workspace', {wsId: entry.id});
+            } catch {
+                // Without the registration this window just won't be focus-if-open targetable.
+            }
+            if (isStale(seq)) return;
+            try {
+                const {getCurrentWindow} = await import('@tauri-apps/api/window');
+                if (isStale(seq)) return;
+                await getCurrentWindow().setTitle(`${displayName(entry)} — Gravity Notes`);
+            } catch {
+                // Title stays generic.
+            }
+        },
+        [isStale, refreshWorkspaces],
+    );
+
+    const activate = useCallback(
+        (entry: WorkspaceEntry, noteStore: NoteStore, seq: number) => {
+            pendingRef.current = null;
+            activeIdRef.current = entry.id;
+            setStore(noteStore);
+            setBackend(entry.backend);
+            setStorageLabel(displayName(entry));
+            setActiveWorkspaceId(entry.id);
+            setError(null);
+            setState('ready');
+            void finalizeActivation(entry, seq);
+        },
+        [finalizeActivation],
+    );
+
+    const openTauriEntry = useCallback(
+        async (entry: WorkspaceEntry, opts: OpenOpts): Promise<boolean> => {
+            const {seq, isBootstrap = false} = opts;
+            if (!entry.path) return false;
+            const tauriStore = new TauriNoteStore(entry.path);
+            // Probe that the folder still exists/reads before landing in the workspace: if it
+            // was moved/deleted/unmounted, every fs call there would fail. A failed probe on
+            // bootstrap surfaces the error and routes to the choice screen so the user can
+            // re-pick, rather than stranding them on a broken workspace. The probe is
+            // time-bounded: a huge/strange folder (home dir, a network mount) makes the
+            // recursive walk hang instead of throw, which would otherwise leave the app stuck
+            // on the loading spinner — where the choice buttons are disabled — forever.
+            try {
+                await withTimeout(tauriStore.list(), PROBE_TIMEOUT_MS, 'Folder probe');
+            } catch (err) {
+                if (isStale(seq)) return false;
+                const timedOut = err instanceof TimeoutError;
+                // A bootstrap timeout means the folder is effectively unusable (too large /
+                // too slow), so forget the launch pointer — otherwise the next launch re-hangs
+                // on the same path. The registry entry itself is kept (removable in the UI).
+                if (timedOut && isBootstrap) await clearLastActive().catch(() => {});
+                if (isStale(seq)) return false;
+                // Surface the error either way: on bootstrap it also routes to the choice screen;
+                // on a switch it stays on the current workspace but the message must still show
+                // (the FolderGate recents list reads `error` and has no toaster of its own, so
+                // without this a click on a gone folder would silently do nothing).
+                setError(probeFailureMessage(err, timedOut));
+                if (isBootstrap) setState('choosing');
+                return false;
+            }
+            if (isStale(seq)) return false;
+            activate(entry, tauriStore, seq);
+            return true;
+        },
+        [activate, isStale],
+    );
+
+    const openFsaEntry = useCallback(
+        async (entry: WorkspaceEntry, opts: OpenOpts): Promise<boolean> => {
+            const {seq, isBootstrap = false} = opts;
+            if (!entry.handle) return false;
+            let permission: PermissionState;
+            try {
+                permission = await queryPermission(entry.handle);
+            } catch {
+                // A dead/detached handle can throw rather than report 'prompt'; treat it as
+                // not-granted so we fall through to the re-grant path instead of letting the
+                // rejection escape as an unhandled promise (the caller chain is unguarded).
+                permission = 'prompt';
+            }
+            if (isStale(seq)) return false;
+            if (permission === 'granted') {
+                activate(entry, new FileSystemNoteStore(entry.handle), seq);
+                return true;
+            }
+            if (!isBootstrap) {
+                // A switch runs off a click/keypress, so try the permission prompt inline before
+                // falling back to the grant screen.
+                try {
+                    if (await requestPermission(entry.handle)) {
+                        if (isStale(seq)) return false;
+                        activate(entry, new FileSystemNoteStore(entry.handle), seq);
+                        return true;
+                    }
+                } catch {
+                    // Denied/expired activation — the grant screen below handles it.
+                }
+                if (isStale(seq)) return false;
+            }
+            pendingRef.current = entry;
+            // Set the label so the grant screen can name the folder it's asking about.
+            setStorageLabel(entry.name);
+            setState('needs-permission');
+            return true;
+        },
+        [activate, isStale],
+    );
+
+    /**
+     * Open a registry entry in this window. Returns true when handled (ready, or routed to the
+     * permission gate) and false when it failed — on a bootstrap that lands on the choice screen
+     * with an error; on a switch the current workspace stays mounted untouched.
+     */
+    const openEntry = useCallback(
+        async (entry: WorkspaceEntry, opts: OpenOpts): Promise<boolean> => {
+            if (entry.backend === 'indexeddb') {
+                if (isStale(opts.seq)) return false;
+                activate(entry, new IndexedDbNoteStore(), opts.seq);
+                return true;
+            }
+            if (entry.backend === 'tauri-fs') return openTauriEntry(entry, opts);
+            return openFsaEntry(entry, opts);
+        },
+        [activate, isStale, openTauriEntry, openFsaEntry],
+    );
+
+    // On load, restore this window's assigned workspace (desktop ws-windows), else the last active.
     useEffect(() => {
         let cancelled = false;
+        const seq = beginOp();
+        const bail = () => cancelled || isStale(seq);
         (async () => {
             try {
-                const [chosen, savedHandle] = await Promise.all([loadBackend(), loadDirHandle()]);
-                if (cancelled || interactedRef.current) return;
-                // Back-compat: a stored handle with no backend flag is an old file-system user.
-                const kind = chosen ?? (savedHandle ? 'filesystem' : undefined);
-                if (kind === 'indexeddb') {
-                    setStore(new IndexedDbNoteStore());
-                    setBackend('indexeddb');
-                    setStorageLabel(BROWSER_LABEL);
-                    setState('ready');
-                    return;
-                }
-                if (kind === 'tauri-fs') {
-                    // Native desktop folder: access is governed by the OS, not a per-session browser
-                    // grant, so the remembered path opens straight to ready (no needs-permission).
-                    const path = await loadFolderPath();
-                    if (cancelled || interactedRef.current) return;
-                    if (!path) {
-                        setState('choosing');
-                        return;
-                    }
-                    const tauriStore = new TauriNoteStore(path);
-                    // Probe that the remembered folder still exists/reads before landing in the
-                    // workspace: if it was moved/deleted/unmounted, every fs call there would fail.
-                    // A failed probe surfaces the error and routes back to the choice screen so the
-                    // user can re-pick, rather than stranding them on a broken workspace. The probe
-                    // is time-bounded: a huge/strange folder (home dir, a network mount) makes the
-                    // recursive walk hang instead of throw, which would otherwise leave the app stuck
-                    // on the loading spinner — where the choice buttons are disabled — forever.
+                const entries = await loadWorkspaces();
+                if (bail()) return;
+                entriesRef.current = entries;
+                setWorkspaces(entries.map(toInfo));
+                // A desktop window created via "open in new window" was assigned its workspace
+                // before its page loaded; the main window has no assignment at launch.
+                let targetId: string | undefined;
+                if (isTauri) {
                     try {
-                        await withTimeout(tauriStore.list(), PROBE_TIMEOUT_MS, 'Folder probe');
-                    } catch (err) {
-                        if (cancelled || interactedRef.current) return;
-                        const timedOut = err instanceof TimeoutError;
-                        // A timeout means the folder is effectively unusable (too large / too slow),
-                        // so forget it — otherwise the next launch re-hangs on the same path. A plain
-                        // read error may be transient (an unplugged drive that comes back), so keep
-                        // the choice and only route back to the picker.
-                        if (timedOut) await clearStorageChoice().catch(() => {});
-                        if (cancelled || interactedRef.current) return;
-                        setError(
-                            timedOut
-                                ? 'That folder took too long to open — it may be very large or on a ' +
-                                      'disconnected drive. Choose a different folder.'
-                                : err instanceof Error
-                                  ? err.message
-                                  : 'Your notes folder is no longer available.',
-                        );
-                        setState('choosing');
-                        return;
+                        const {invoke} = await import('@tauri-apps/api/core');
+                        targetId = (await invoke<string | null>('window_workspace')) ?? undefined;
+                    } catch {
+                        targetId = undefined;
                     }
-                    if (cancelled || interactedRef.current) return;
-                    setStore(tauriStore);
-                    setBackend('tauri-fs');
-                    setStorageLabel(folderName(path));
-                    setState('ready');
+                    if (bail()) return;
+                }
+                if (!targetId) {
+                    targetId = await loadLastActiveId();
+                    if (bail()) return;
+                }
+                const entry = targetId
+                    ? entries.find((candidate) => candidate.id === targetId)
+                    : undefined;
+                if (!entry) {
+                    setState('choosing');
                     return;
                 }
-                if (kind === 'filesystem' && savedHandle) {
-                    const permission = await queryPermission(savedHandle);
-                    if (cancelled || interactedRef.current) return;
-                    // Set the label only after the post-await guard, so a cancelled/interacted
-                    // bootstrap never writes state the user just superseded.
-                    setStorageLabel(savedHandle.name);
-                    if (permission === 'granted') {
-                        setStore(new FileSystemNoteStore(savedHandle));
-                        setBackend('filesystem');
-                        setState('ready');
-                    } else {
-                        setState('needs-permission');
-                    }
-                    return;
-                }
-                setState('choosing');
+                const opened = await openEntry(entry, {seq, isBootstrap: true});
+                if (bail()) return;
+                // A restored entry that couldn't be opened but set no state itself (e.g. a
+                // malformed entry missing its path/handle) must not strand the app on the
+                // 'loading' spinner — fall through to the choice screen.
+                if (!opened) setState('choosing');
             } catch (err) {
                 // IndexedDB blocked (e.g. private mode) — don't hang on the spinner.
-                if (cancelled || interactedRef.current) return;
+                if (bail()) return;
                 setError(err instanceof Error ? err.message : 'Could not restore your storage.');
                 setState('choosing');
             }
@@ -171,10 +365,10 @@ export function useNotesStorage(): NotesStorage {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [beginOp, isStale, openEntry]);
 
     const pickFolder = useCallback(async () => {
-        interactedRef.current = true;
+        const seq = beginOp();
         setError(null);
         if (isTauri) {
             try {
@@ -186,12 +380,18 @@ export function useNotesStorage(): NotesStorage {
                     title: 'Choose your notes folder',
                 });
                 if (typeof selected !== 'string') return; // dismissed
-                await saveFolderPath(selected);
-                await saveBackend('tauri-fs');
-                setStore(new TauriNoteStore(selected));
-                setBackend('tauri-fs');
-                setStorageLabel(folderName(selected));
-                setState('ready');
+                if (isStale(seq)) return;
+                activate(
+                    {
+                        id: workspaceIdForPath(selected),
+                        backend: 'tauri-fs',
+                        name: folderNameFromPath(selected),
+                        lastOpenedAt: Date.now(),
+                        path: selected,
+                    },
+                    new TauriNoteStore(selected),
+                    seq,
+                );
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Could not open the folder.');
             }
@@ -206,75 +406,148 @@ export function useNotesStorage(): NotesStorage {
                 setError('Permission to access the folder was denied.');
                 return;
             }
-            await saveDirHandle(handle);
-            await saveBackend('filesystem');
-            setStore(new FileSystemNoteStore(handle));
-            setBackend('filesystem');
-            setStorageLabel(handle.name);
-            setState('ready');
+            if (isStale(seq)) return;
+            // Re-picking a known folder must not spawn a duplicate entry — handles aren't
+            // comparable by value, so ask the registry (freshly read; other windows may write).
+            const existing = await findFsaEntry(handle, await loadWorkspaces());
+            if (isStale(seq)) return;
+            const entry: WorkspaceEntry = existing
+                ? {...existing, handle, name: handle.name}
+                : {
+                      id: `fsa:${crypto.randomUUID()}`,
+                      backend: 'filesystem',
+                      name: handle.name,
+                      lastOpenedAt: Date.now(),
+                      handle,
+                  };
+            activate(entry, new FileSystemNoteStore(handle), seq);
         } catch (err) {
             // The user dismissing the picker throws AbortError — not an error to show.
             if (err instanceof DOMException && err.name === 'AbortError') return;
             setError(err instanceof Error ? err.message : 'Could not open the folder.');
         }
-    }, []);
+    }, [activate, beginOp, isStale]);
 
     const useBrowserStorage = useCallback(async () => {
-        interactedRef.current = true;
+        const seq = beginOp();
         setError(null);
         try {
-            await saveBackend('indexeddb');
-            setStore(new IndexedDbNoteStore());
-            setBackend('indexeddb');
-            setStorageLabel(BROWSER_LABEL);
-            setState('ready');
+            activate(browserEntry(), new IndexedDbNoteStore(), seq);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not set up in-browser storage.');
         }
-    }, []);
+    }, [activate, beginOp]);
 
     const grantPermission = useCallback(async () => {
-        interactedRef.current = true;
+        const seq = beginOp();
         setError(null);
         try {
-            const savedHandle = await loadDirHandle();
-            if (!savedHandle) {
+            const entry = pendingRef.current;
+            if (!entry?.handle) {
                 setState('choosing');
                 return;
             }
-            if (await requestPermission(savedHandle)) {
-                await saveBackend('filesystem');
-                setStore(new FileSystemNoteStore(savedHandle));
-                setBackend('filesystem');
-                setStorageLabel(savedHandle.name);
-                setState('ready');
+            if (await requestPermission(entry.handle)) {
+                if (isStale(seq)) return;
+                activate(entry, new FileSystemNoteStore(entry.handle), seq);
             } else {
                 setError('Permission to access the folder was denied.');
             }
         } catch (err) {
-            // Without this, a thrown requestPermission/loadDirHandle became a swallowed unhandled
-            // rejection, stranding the user on the permission gate. The user dismissing the prompt
-            // throws AbortError — not an error to show (mirrors pickFolder).
+            // Without this, a thrown requestPermission became a swallowed unhandled rejection,
+            // stranding the user on the permission gate. The user dismissing the prompt throws
+            // AbortError — not an error to show (mirrors pickFolder).
             if (err instanceof DOMException && err.name === 'AbortError') return;
             setError(err instanceof Error ? err.message : 'Could not grant access.');
         }
-    }, []);
+    }, [activate, beginOp, isStale]);
 
     const reset = useCallback(async () => {
-        interactedRef.current = true;
-        await clearStorageChoice();
+        beginOp();
+        pendingRef.current = null;
+        activeIdRef.current = null;
         setStore(null);
         setBackend(null);
         setStorageLabel(null);
+        setActiveWorkspaceId(null);
         setError(null);
         setState('choosing');
+        // "Choose different storage" must actually stick: forget the launch pointer so the next
+        // relaunch lands on the choice screen instead of re-restoring (and re-gating) the folder
+        // the user just stepped away from. The registry (recents) itself is kept.
+        await clearLastActive().catch(() => {});
+        // The choice screen lists recents — make sure they're fresh.
+        await refreshWorkspaces();
+    }, [beginOp, refreshWorkspaces]);
+
+    const openWorkspace = useCallback(
+        async (id: string): Promise<boolean> => {
+            if (id === activeIdRef.current) return true;
+            const seq = beginOp();
+            setError(null);
+            if (isTauri) {
+                // Another window already showing this workspace gets focused instead of a
+                // second view of the same files.
+                try {
+                    const {invoke} = await import('@tauri-apps/api/core');
+                    if (await invoke<boolean>('focus_workspace_window', {wsId: id})) {
+                        // Focusing another window is still "using" that workspace — bump its
+                        // recency so the recents/switcher ordering reflects it (this window,
+                        // which stays put, is the only place that can record the visit).
+                        if (isStale(seq)) return true;
+                        const focused = entriesRef.current.find((e) => e.id === id);
+                        if (focused) {
+                            await touchWorkspace(focused).catch(() => {});
+                            await refreshWorkspaces();
+                        }
+                        return true;
+                    }
+                } catch {
+                    // The shell couldn't answer — in-place switching still works without it.
+                }
+                if (isStale(seq)) return false;
+            }
+            let entry = entriesRef.current.find((candidate) => candidate.id === id);
+            if (!entry) {
+                await refreshWorkspaces();
+                if (isStale(seq)) return false;
+                entry = entriesRef.current.find((candidate) => candidate.id === id);
+            }
+            // The in-browser workspace is offered in the switcher even before it exists in the
+            // registry — first open creates it.
+            if (!entry && id === 'indexeddb') entry = browserEntry();
+            if (!entry) return false;
+            return openEntry(entry, {seq});
+        },
+        [beginOp, isStale, openEntry, refreshWorkspaces],
+    );
+
+    const openInNewWindow = useCallback(async (id: string) => {
+        if (!isTauri) return;
+        const entry = entriesRef.current.find((candidate) => candidate.id === id);
+        if (!entry) return;
+        const {invoke} = await import('@tauri-apps/api/core');
+        await invoke('open_workspace_window', {
+            wsId: id,
+            title: `${displayName(entry)} — Gravity Notes`,
+        });
     }, []);
+
+    const removeWorkspace = useCallback(
+        async (id: string) => {
+            await removeWorkspaceEntry(id);
+            await refreshWorkspaces();
+        },
+        [refreshWorkspaces],
+    );
 
     return {
         state,
         store,
         backend,
         storageLabel,
+        activeWorkspaceId,
+        workspaces,
         error,
         isTauri,
         supportsFileSystem,
@@ -283,5 +556,9 @@ export function useNotesStorage(): NotesStorage {
         useBrowserStorage,
         grantPermission,
         reset,
+        openWorkspace,
+        openInNewWindow,
+        removeWorkspace,
+        refreshWorkspaces,
     };
 }

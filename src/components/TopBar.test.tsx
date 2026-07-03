@@ -4,6 +4,7 @@ import {fireEvent, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
+import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
 
@@ -14,12 +15,25 @@ const NOTES: NoteMeta[] = [
     {id: 'Beta.md', title: 'Beta', updatedAt: 2},
 ];
 
+const WORKSPACES: WorkspaceInfo[] = [
+    {id: 'tauri:/Users/me/notes', backend: 'tauri-fs', name: 'notes', path: '/Users/me/notes'},
+    {id: 'tauri:/Users/me/work', backend: 'tauri-fs', name: 'work', path: '/Users/me/work'},
+];
+
 const SEARCH = 'Search or create a note…';
 
 function setup(overrides: Record<string, unknown> = {}) {
     const props = {
         storageLabel: 'notes',
-        onChangeStorage: vi.fn(),
+        workspaces: WORKSPACES,
+        activeWorkspaceId: 'tauri:/Users/me/notes',
+        isDesktop: true,
+        supportsFolders: true,
+        onOpenWorkspace: vi.fn(),
+        onOpenWorkspaceInNewWindow: vi.fn(),
+        onOpenFolder: vi.fn(),
+        onOpenSwitcher: vi.fn(),
+        onMenuOpen: vi.fn(),
         onExport: vi.fn(),
         onImport: vi.fn(),
         onManageAttachments: vi.fn(),
@@ -166,7 +180,14 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
     return (
         <TopBar
             storageLabel="notes"
-            onChangeStorage={noop}
+            workspaces={[]}
+            activeWorkspaceId={null}
+            isDesktop={false}
+            supportsFolders
+            onOpenWorkspace={noop}
+            onOpenWorkspaceInNewWindow={noop}
+            onOpenFolder={noop}
+            onOpenSwitcher={noop}
             onExport={noop}
             onImport={noop}
             onManageAttachments={noop}
@@ -243,10 +264,11 @@ describe('TopBar — inline autocomplete', () => {
 });
 
 describe('TopBar — orb menu', () => {
-    it('exposes export / import / change-storage in the orb menu', async () => {
+    it('exposes export / import / open-folder in the orb menu (and reports the open)', async () => {
         const user = userEvent.setup();
         const {props} = setup({storageLabel: 'my-notes'});
         await user.click(screen.getByRole('button', {name: 'Menu'}));
+        expect(props.onMenuOpen).toHaveBeenCalledTimes(1);
         await user.click(await screen.findByRole('menuitem', {name: /Export all notes/}));
         expect(props.onExport).toHaveBeenCalledTimes(1);
 
@@ -255,8 +277,61 @@ describe('TopBar — orb menu', () => {
         expect(props.onImport).toHaveBeenCalledTimes(1);
 
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
-        expect(props.onChangeStorage).toHaveBeenCalledTimes(1);
+        await user.click(await screen.findByRole('menuitem', {name: /Open Folder/}));
+        expect(props.onOpenFolder).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides "Open Folder…" when folder storage is unavailable', async () => {
+        const user = userEvent.setup();
+        setup({supportsFolders: false});
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await screen.findByRole('menuitem', {name: /Export all notes/});
+        expect(screen.queryByRole('menuitem', {name: /Open Folder/})).not.toBeInTheDocument();
+    });
+
+    it('switches to a recent workspace from the Open Recent submenu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        // Hover opens the submenu (deterministic in jsdom; click would toggle it).
+        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
+        await user.click(await screen.findByRole('menuitem', {name: 'work'}));
+        expect(props.onOpenWorkspace).toHaveBeenCalledWith('tauri:/Users/me/work');
+        expect(props.onOpenWorkspaceInNewWindow).not.toHaveBeenCalled();
+    });
+
+    it('⌘-clicking a recent opens it in a new window on desktop', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
+        fireEvent.click(await screen.findByRole('menuitem', {name: 'work'}), {metaKey: true});
+        expect(props.onOpenWorkspaceInNewWindow).toHaveBeenCalledWith('tauri:/Users/me/work');
+        expect(props.onOpenWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('clicking the current workspace in Open Recent is a no-op', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
+        // Two menu items are named "notes": the disabled storage-label line and the current
+        // recent — the recent is the enabled one.
+        const items = await screen.findAllByRole('menuitem', {name: 'notes'});
+        const recent = items.find((el) => el.getAttribute('aria-disabled') !== 'true');
+        expect(recent).toBeDefined();
+        await user.click(recent!);
+        expect(props.onOpenWorkspace).not.toHaveBeenCalled();
+        expect(props.onOpenWorkspaceInNewWindow).not.toHaveBeenCalled();
+    });
+
+    it('opens the workspace switcher from the Open Recent submenu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
+        await user.click(await screen.findByRole('menuitem', {name: /Workspaces…/}));
+        expect(props.onOpenSwitcher).toHaveBeenCalledTimes(1);
     });
 
     it('toggles the sidebar from the orb menu', async () => {

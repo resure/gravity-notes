@@ -15,6 +15,8 @@ function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
         store: null,
         backend: null,
         storageLabel: null,
+        activeWorkspaceId: null,
+        workspaces: [],
         error: null,
         isTauri,
         supportsFileSystem,
@@ -24,6 +26,10 @@ function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
         useBrowserStorage: vi.fn(async () => {}),
         grantPermission: vi.fn(async () => {}),
         reset: vi.fn(async () => {}),
+        openWorkspace: vi.fn(async () => true),
+        openInNewWindow: vi.fn(async () => {}),
+        removeWorkspace: vi.fn(async () => {}),
+        refreshWorkspaces: vi.fn(async () => {}),
         ...over,
     };
 }
@@ -52,16 +58,18 @@ describe('FolderGate', () => {
         expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
     });
 
-    it('offers a native folder option inside the desktop app (no Chromium caption)', async () => {
+    it('offers ONLY the native folder option inside the desktop app (folder-first)', async () => {
         const user = userEvent.setup();
-        // In the Tauri shell the FS API is absent, but native folders are available.
+        // In the Tauri shell the FS API is absent, but native folders are available — and they
+        // are the only choice: the desktop app doesn't offer in-app (IndexedDB) storage.
         const storage = makeStorage({isTauri: true, supportsFileSystem: false});
         renderWithProviders(<FolderGate storage={storage} />);
 
         expect(screen.getByRole('button', {name: /Open a folder/})).toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Store in/})).not.toBeInTheDocument();
         expect(screen.queryByText(/needs a Chromium browser/)).not.toBeInTheDocument();
-        await user.click(screen.getByRole('button', {name: 'Store inside the app'}));
-        expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
+        await user.click(screen.getByRole('button', {name: /Open a folder/}));
+        expect(storage.pickFolder).toHaveBeenCalledTimes(1);
     });
 
     it('shows the re-grant prompt with the folder name and wires its actions', async () => {
@@ -85,5 +93,32 @@ describe('FolderGate', () => {
             <FolderGate storage={makeStorage({error: 'Could not open the folder.'})} />,
         );
         expect(screen.getByText('Could not open the folder.')).toBeInTheDocument();
+    });
+
+    it('lists recent workspaces on the choice screen and opens one on click', async () => {
+        const user = userEvent.setup();
+        const storage = makeStorage({
+            workspaces: [
+                {id: 'tauri:/Users/me/Vault', backend: 'tauri-fs', name: 'Vault'},
+                {id: 'indexeddb', backend: 'indexeddb', name: 'In this browser'},
+            ],
+        });
+        renderWithProviders(<FolderGate storage={storage} />);
+
+        expect(screen.getByText(/reopen a recent workspace/)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', {name: /Vault/}));
+        expect(storage.openWorkspace).toHaveBeenCalledWith('tauri:/Users/me/Vault');
+    });
+
+    it('hides the recents list while loading (a click would race the restore)', () => {
+        renderWithProviders(
+            <FolderGate
+                storage={makeStorage({
+                    state: 'loading',
+                    workspaces: [{id: 'tauri:/A', backend: 'tauri-fs', name: 'A'}],
+                })}
+            />,
+        );
+        expect(screen.queryByText(/reopen a recent workspace/)).not.toBeInTheDocument();
     });
 });

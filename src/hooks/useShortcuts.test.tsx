@@ -22,6 +22,7 @@ function makeActions(): ShortcutActions {
         moveSelected: vi.fn(),
         duplicateSelected: vi.fn(),
         deleteSelected: vi.fn(),
+        openWorkspaces: vi.fn(),
     };
 }
 
@@ -42,6 +43,20 @@ describe('useShortcuts', () => {
         press({key: 'j', ctrlKey: true});
         expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
         expect(actions.createNote).not.toHaveBeenCalled();
+    });
+
+    it('does not fire global chords while a modal dialog is open', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        // A Gravity modal (role="dialog") is open — it owns the keyboard; ⌘N must not create a
+        // note behind it (nor ⌘⇧⌫ delete one, etc.).
+        const dialog = document.createElement('div');
+        dialog.setAttribute('role', 'dialog');
+        document.body.appendChild(dialog);
+        press({key: 'n', ctrlKey: true});
+        press({key: 'Backspace', ctrlKey: true, shiftKey: true});
+        expect(actions.createNote).not.toHaveBeenCalled();
+        expect(actions.deleteSelected).not.toHaveBeenCalled();
     });
 
     it('selects the previous note on ctrl+k', () => {
@@ -274,5 +289,32 @@ describe('useShortcuts', () => {
         renderHook(() => useShortcuts(actions));
         press({key: '\\', ctrlKey: true});
         expect(actions.peekSidebar).not.toHaveBeenCalled();
+    });
+
+    it('opens the workspace switcher on ⌃R (the Control key specifically)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const event = press({key: 'r', code: 'KeyR', ctrlKey: true});
+        expect(actions.openWorkspaces).toHaveBeenCalledTimes(1);
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('does NOT open the switcher on ⌘R — a ctrl binding rejects the command key', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'r', code: 'KeyR', metaKey: true});
+        // ⌘⌃R is a different chord too — the trigger means Control alone.
+        press({key: 'r', code: 'KeyR', metaKey: true, ctrlKey: true});
+        expect(actions.openWorkspaces).not.toHaveBeenCalled();
+    });
+
+    it('still opens the switcher on ⌃R while typing in an input (VS Code-style)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        press({key: 'r', code: 'KeyR', ctrlKey: true});
+        expect(actions.openWorkspaces).toHaveBeenCalledTimes(1);
     });
 });

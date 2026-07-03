@@ -11,9 +11,10 @@ import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
+import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {useSettings} from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
-import {isTauri} from '../isTauri';
+import {isMainWindow, isTauri} from '../isTauri';
 import {orderNotes} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
@@ -34,17 +35,33 @@ import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
 import {TrashDialog} from './TrashDialog';
 import {UpdateDialog} from './UpdateDialog';
+import {WorkspaceSwitcherDialog} from './WorkspaceSwitcherDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
 
 interface WorkspaceProps {
     store: NoteStore;
+    /** The active workspace's registry id (App remounts this component keyed on it). */
+    workspaceId: string;
     /** Label for the active storage (folder name, or "In this browser"). */
     storageLabel: string | null;
+    /** Known workspaces, most recently opened first — feeds the recents menu + ⌃R switcher. */
+    workspaces: WorkspaceInfo[];
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    onChangeStorage: () => void;
+    /** Switch this window to a workspace; false = it could not be opened (we stay put). */
+    onOpenWorkspace: (id: string) => Promise<boolean>;
+    /** Desktop only: open a workspace in its own window. */
+    onOpenWorkspaceInNewWindow: (id: string) => Promise<void>;
+    /** Drop a workspace from the recents registry. */
+    onRemoveWorkspace: (id: string) => Promise<void>;
+    /** Re-read the registry (other windows may have opened workspaces since). */
+    onRefreshWorkspaces: () => Promise<void>;
+    /** Open the folder picker (adds/opens a workspace in this window). */
+    onOpenFolder: () => void;
+    /** Whether folder-on-disk workspaces are available (native app, or FSA in the browser). */
+    supportsFolders: boolean;
 }
 
 /**
@@ -56,18 +73,36 @@ interface WorkspaceProps {
 const SEARCH_DEBOUNCE_THRESHOLD = 500;
 const SEARCH_DEBOUNCE_MS = 120;
 
-const SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
-// Folders the user has explicitly expanded in the rail. The tree is collapsed by default, so this
-// tracks the *exceptions* (empty = every folder collapsed) — the inverse of the old collapsed-set.
-const EXPANDED_FOLDERS_KEY = 'gravity-notes:expanded-folders';
+// Per-workspace UI state (layout + rail selection) lives under workspace-namespaced keys, so each
+// workspace keeps its own sidebar/rail arrangement across switches and windows.
+const nsKey = (workspaceId: string, suffix: string) => `gravity-notes:${workspaceId}:${suffix}`;
+
+// The pre-workspace (un-namespaced) UI-state keys. Consumed once — as the defaults for the first
+// workspace opened after the upgrade (the migrated one) — then deleted, so a later "set back to
+// default" in that workspace can't fall through to a stale global value.
+const LEGACY_SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
+const LEGACY_EXPANDED_FOLDERS_KEY = 'gravity-notes:expanded-folders';
+const LEGACY_SELECTED_FOLDER_KEY = 'gravity-notes:selected-folder';
+const LEGACY_RAIL_OPEN_KEY = 'gravity-notes:rail-open';
 // The pre-inversion key (a *collapsed* set, expanded-by-default). Its meaning flipped, so the old
 // value can't be reused; clear it once on load so it doesn't linger as dead localStorage.
 const LEGACY_COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
-const SELECTED_FOLDER_KEY = 'gravity-notes:selected-folder';
-const RAIL_OPEN_KEY = 'gravity-notes:rail-open';
 
-function loadSelectedFolder(): string | null {
-    return localStorage.getItem(SELECTED_FOLDER_KEY);
+/**
+ * Read a per-workspace UI key, adopting (and consuming) the pre-workspace global value the first
+ * time nothing namespaced exists. Runs in state initializers — the write is idempotent, so a
+ * StrictMode double-init is harmless.
+ */
+function readWorkspaceKey(workspaceId: string, suffix: string, legacyKey: string): string | null {
+    const key = nsKey(workspaceId, suffix);
+    const value = localStorage.getItem(key);
+    if (value !== null) return value;
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy !== null) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(legacyKey);
+    }
+    return legacy;
 }
 
 /** Re-prefix a folder path (or note id) when its `from` ancestor folder moves/renames to `to`. */
@@ -75,9 +110,11 @@ function reprefixPath(path: string, from: string, to: string): string {
     return path === from || path.startsWith(`${from}/`) ? to + path.slice(from.length) : path;
 }
 
-function loadExpandedFolders(): Set<string> {
+function loadExpandedFolders(workspaceId: string): Set<string> {
     try {
-        const raw = JSON.parse(localStorage.getItem(EXPANDED_FOLDERS_KEY) ?? '[]');
+        const raw = JSON.parse(
+            readWorkspaceKey(workspaceId, 'expanded-folders', LEGACY_EXPANDED_FOLDERS_KEY) ?? '[]',
+        );
         return new Set(
             Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [],
         );
@@ -94,10 +131,17 @@ let toastSeq = 0;
 
 export function Workspace({
     store,
+    workspaceId,
     storageLabel,
+    workspaces,
     themePref,
     onChangeThemePref,
-    onChangeStorage,
+    onOpenWorkspace,
+    onOpenWorkspaceInNewWindow,
+    onRemoveWorkspace,
+    onRefreshWorkspaces,
+    onOpenFolder,
+    supportsFolders,
 }: WorkspaceProps) {
     const {add} = useToaster();
 
@@ -190,10 +234,15 @@ export function Workspace({
 
     // The tree is collapsed by default; this persists the folders the user has explicitly expanded
     // (the exceptions). A toggle rebuilds the set immutably.
-    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(loadExpandedFolders);
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() =>
+        loadExpandedFolders(workspaceId),
+    );
     useEffect(() => {
-        localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify([...expandedFolders]));
-    }, [expandedFolders]);
+        localStorage.setItem(
+            nsKey(workspaceId, 'expanded-folders'),
+            JSON.stringify([...expandedFolders]),
+        );
+    }, [workspaceId, expandedFolders]);
     // One-time cleanup of the orphaned pre-inversion key (its semantics flipped, so it's unusable).
     useEffect(() => localStorage.removeItem(LEGACY_COLLAPSED_FOLDERS_KEY), []);
     const toggleCollapse = useCallback((path: string) => {
@@ -206,11 +255,13 @@ export function Workspace({
     }, []);
 
     // The folder selected in the rail (null = All Notes), persisted across reloads.
-    const [selectedFolder, setSelectedFolder] = useState<string | null>(loadSelectedFolder);
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(() =>
+        readWorkspaceKey(workspaceId, 'selected-folder', LEGACY_SELECTED_FOLDER_KEY),
+    );
     useEffect(() => {
-        if (selectedFolder === null) localStorage.removeItem(SELECTED_FOLDER_KEY);
-        else localStorage.setItem(SELECTED_FOLDER_KEY, selectedFolder);
-    }, [selectedFolder]);
+        if (selectedFolder === null) localStorage.removeItem(nsKey(workspaceId, 'selected-folder'));
+        else localStorage.setItem(nsKey(workspaceId, 'selected-folder'), selectedFolder);
+    }, [workspaceId, selectedFolder]);
     // A selected folder that no longer exists (deleted, or renamed elsewhere) falls back to All Notes.
     useEffect(() => {
         if (selectedFolder !== null && !notes.folders.includes(selectedFolder)) {
@@ -220,10 +271,12 @@ export function Workspace({
 
     // Whether the folder rail is shown. Off by default, so the app stays a 2-pane nvALT view
     // until you reach for folders; persisted across reloads.
-    const [railOpen, setRailOpen] = useState(() => localStorage.getItem(RAIL_OPEN_KEY) === 'true');
+    const [railOpen, setRailOpen] = useState(
+        () => readWorkspaceKey(workspaceId, 'rail-open', LEGACY_RAIL_OPEN_KEY) === 'true',
+    );
     useEffect(() => {
-        localStorage.setItem(RAIL_OPEN_KEY, String(railOpen));
-    }, [railOpen]);
+        localStorage.setItem(nsKey(workspaceId, 'rail-open'), String(railOpen));
+    }, [workspaceId, railOpen]);
     const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
 
     // Drive list MODE (ranked search vs folder scope) off the debounced query, so the list flips in
@@ -275,17 +328,21 @@ export function Workspace({
     const [trashOpen, setTrashOpen] = useState(false);
 
     // Open the About dialog when the native "About Gravity Notes" menu item fires (the Rust menu
-    // handler emits `menu:about`). Desktop only; the event API is dynamically imported so it never
-    // enters the web bundle (mirrors the close-request listener in useNotes).
+    // handler emits `menu:about` to the FOCUSED window). Listen on the current window — a plain
+    // `listen()` registers the any-target scope, which also receives events aimed at other windows,
+    // so every window would open the dialog at once. Desktop only; the API is dynamically imported
+    // so it never enters the web bundle (mirrors the close-request listener in useNotes).
     useEffect(() => {
         if (!isTauri) return undefined;
         let unlisten: (() => void) | undefined;
         let disposed = false;
-        void import('@tauri-apps/api/event').then(({listen}) =>
-            listen('menu:about', () => setAboutOpen(true)).then((fn) => {
-                if (disposed) fn();
-                else unlisten = fn;
-            }),
+        void import('@tauri-apps/api/webviewWindow').then(({getCurrentWebviewWindow}) =>
+            getCurrentWebviewWindow()
+                .listen('menu:about', () => setAboutOpen(true))
+                .then((fn) => {
+                    if (disposed) fn();
+                    else unlisten = fn;
+                }),
         );
         return () => {
             disposed = true;
@@ -299,7 +356,9 @@ export function Workspace({
     const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
     useEffect(() => {
         // Production-only so `tauri dev` doesn't prompt; manual checks still work in any build.
-        if (!updater.supported || !import.meta.env.PROD) return;
+        // Main-window-only so a workspace window doesn't fire a second concurrent check (each
+        // window is its own JS context — the updater's in-flight guard can't see across them).
+        if (!updater.supported || !import.meta.env.PROD || !isMainWindow()) return;
         void (async () => {
             const found = await updater.check({silent: true});
             if (!found) return;
@@ -361,10 +420,12 @@ export function Workspace({
         window.addEventListener('scroll', onScroll, true);
         return () => window.removeEventListener('scroll', onScroll, true);
     }, []);
-    const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === 'true');
+    const [collapsed, setCollapsed] = useState(
+        () => readWorkspaceKey(workspaceId, 'sidebar-collapsed', LEGACY_SIDEBAR_KEY) === 'true',
+    );
     useEffect(() => {
-        localStorage.setItem(SIDEBAR_KEY, String(collapsed));
-    }, [collapsed]);
+        localStorage.setItem(nsKey(workspaceId, 'sidebar-collapsed'), String(collapsed));
+    }, [workspaceId, collapsed]);
     const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
     // Transient overlay reveal of the collapsed sidebar (⌘⇧'); not persisted. Only meaningful
@@ -466,27 +527,84 @@ export function Workspace({
         [add],
     );
 
-    // Change storage only after flushing any pending edit, so a keystroke inside the 500 ms
-    // autosave window isn't lost when the workspace unmounts.
-    const handleChangeStorage = useCallback(() => {
+    // Leave the current workspace only after flushing any pending edit, so a keystroke inside the
+    // 500 ms autosave window isn't lost when this component unmounts. If the flush couldn't land
+    // (an unresolved conflict still holds the edit), switching would silently discard that
+    // content — mirror the rename/move/trash conflict guards and make the user confirm the loss
+    // first. Uses flush()'s return value, not the `notes.conflict` state, which is stale in this
+    // closure right after the await (it would miss a conflict first surfaced BY this very flush).
+    const confirmLeaveSafe = useCallback(async () => {
+        const unresolvedConflict = await notes.flushPending();
+        return (
+            !unresolvedConflict ||
+            window.confirm(
+                'This note has an unresolved conflict with unsaved changes that will be lost if you switch workspaces. Continue?',
+            )
+        );
+    }, [notes]);
+
+    // Switch this window to another workspace (from the recents menu, the ⌃R switcher, or the
+    // choice-screen recents). Flush-guarded; a failed open leaves the current workspace mounted.
+    const handleOpenWorkspace = useCallback(
+        (id: string) => {
+            void (async () => {
+                if (!(await confirmLeaveSafe())) return;
+                // Guard the whole open: a false result means "couldn't open" (folder gone), and a
+                // rejection (e.g. a dead permission handle) must surface a toast rather than become
+                // an unhandled promise rejection.
+                try {
+                    const opened = await onOpenWorkspace(id);
+                    if (!opened) {
+                        onError(
+                            'Could not open that workspace — its folder may have moved or be unavailable.',
+                        );
+                    }
+                } catch (err) {
+                    onError(err instanceof Error ? err.message : 'Could not open that workspace.');
+                }
+            })();
+        },
+        [confirmLeaveSafe, onOpenWorkspace, onError],
+    );
+
+    // Opening in a NEW window leaves this one untouched — no flush needed.
+    const handleOpenWorkspaceInNewWindow = useCallback(
+        (id: string) => {
+            onOpenWorkspaceInNewWindow(id).catch((err) =>
+                onError(err instanceof Error ? err.message : 'Could not open a new window'),
+            );
+        },
+        [onOpenWorkspaceInNewWindow, onError],
+    );
+
+    const handleRemoveWorkspace = useCallback(
+        (id: string) => {
+            onRemoveWorkspace(id).catch((err) =>
+                onError(err instanceof Error ? err.message : 'Could not update recent workspaces'),
+            );
+        },
+        [onRemoveWorkspace, onError],
+    );
+
+    // "Open Folder…" replaces THIS window's workspace with the picked folder, so it takes the same
+    // flush guard as a switch.
+    const handleOpenFolder = useCallback(() => {
         void (async () => {
-            // If the flush couldn't land (an unresolved conflict still holds the edit), switching
-            // stores would silently discard that content — mirror the rename/move/trash conflict
-            // guards and make the user confirm the loss first. Use flush()'s return value, not the
-            // `notes.conflict` state, which is stale in this closure right after the await (it would
-            // miss a conflict first surfaced BY this very flush).
-            const unresolvedConflict = await notes.flushPending();
-            if (
-                unresolvedConflict &&
-                !window.confirm(
-                    'This note has an unresolved conflict with unsaved changes that will be lost if you switch storage. Continue?',
-                )
-            ) {
-                return;
-            }
-            onChangeStorage();
+            if (!(await confirmLeaveSafe())) return;
+            onOpenFolder();
         })();
-    }, [notes, onChangeStorage]);
+    }, [confirmLeaveSafe, onOpenFolder]);
+
+    // The ⌃R switcher. Refresh the registry BEFORE opening, so recents written by other windows are
+    // already in the list when the dialog seeds its pre-highlight — otherwise a late refresh could
+    // reorder the rows under a highlight the user already saw (opening the wrong workspace on ↵).
+    const [switcherOpen, setSwitcherOpen] = useState(false);
+    const openSwitcher = useCallback(() => {
+        void (async () => {
+            await onRefreshWorkspaces();
+            setSwitcherOpen(true);
+        })();
+    }, [onRefreshWorkspaces]);
 
     const handleExport = useCallback(() => {
         void (async () => {
@@ -825,6 +943,7 @@ export function Workspace({
         deleteSelected: () => {
             if (nav.selectedId) listRef.current?.requestDelete(nav.selectedId);
         },
+        openWorkspaces: openSwitcher,
     });
 
     return (
@@ -843,7 +962,15 @@ export function Workspace({
                 />
                 <TopBar
                     storageLabel={storageLabel}
-                    onChangeStorage={handleChangeStorage}
+                    workspaces={workspaces}
+                    activeWorkspaceId={workspaceId}
+                    isDesktop={isTauri}
+                    supportsFolders={supportsFolders}
+                    onOpenWorkspace={handleOpenWorkspace}
+                    onOpenWorkspaceInNewWindow={handleOpenWorkspaceInNewWindow}
+                    onOpenFolder={handleOpenFolder}
+                    onOpenSwitcher={openSwitcher}
+                    onMenuOpen={() => void onRefreshWorkspaces()}
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={handleManageAttachments}
@@ -1058,6 +1185,28 @@ export function Workspace({
                     metadata={notes.metadata}
                     onMove={handleMoveTo}
                     onClose={() => setMovingNoteId(null)}
+                />
+
+                <WorkspaceSwitcherDialog
+                    open={switcherOpen}
+                    workspaces={workspaces}
+                    currentId={workspaceId}
+                    isDesktop={isTauri}
+                    supportsFolders={supportsFolders}
+                    onOpen={(id) => {
+                        setSwitcherOpen(false);
+                        handleOpenWorkspace(id);
+                    }}
+                    onOpenInNewWindow={(id) => {
+                        setSwitcherOpen(false);
+                        handleOpenWorkspaceInNewWindow(id);
+                    }}
+                    onOpenFolder={() => {
+                        setSwitcherOpen(false);
+                        handleOpenFolder();
+                    }}
+                    onRemove={handleRemoveWorkspace}
+                    onClose={() => setSwitcherOpen(false)}
                 />
             </div>
         </AttachmentsContext.Provider>

@@ -1,5 +1,9 @@
 import {useLayoutEffect, useState} from 'react';
-import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
+import type {
+    KeyboardEvent as ReactKeyboardEvent,
+    MouseEvent as ReactMouseEvent,
+    RefObject,
+} from 'react';
 
 import {
     ArrowDownToLine,
@@ -7,7 +11,10 @@ import {
     ArrowsRotateRight,
     CircleArrowUp,
     CircleQuestion,
+    ClockArrowRotateLeft,
+    Database,
     Folder,
+    FolderOpen,
     Gear,
     LayoutSideContent,
     Picture,
@@ -16,17 +23,36 @@ import {
 import {DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 
 import type {SaveState} from '../hooks/useNotes';
+import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import type {NoteMeta} from '../storage/types';
 
 import {THEME_OPTIONS, type ThemePref} from './theme';
 
 import './TopBar.css';
 
+/** How many recents the "Open Recent" submenu shows; the ⌃R switcher lists them all. */
+const MAX_RECENT_MENU = 8;
+
 export interface TopBarProps {
     /** Active storage label (folder name, or "In this browser"); shown in the menu. */
     storageLabel: string | null;
-    /** Switch backend (returns to the choice screen). */
-    onChangeStorage: () => void;
+    /** Known workspaces, most recently opened first — feeds the "Open Recent" submenu. */
+    workspaces: WorkspaceInfo[];
+    activeWorkspaceId: string | null;
+    /** Desktop shell: ⌘-click on a recent opens it in a new window. */
+    isDesktop: boolean;
+    /** Whether folder-on-disk workspaces are available (shows "Open Folder…"). */
+    supportsFolders: boolean;
+    /** Switch this window to a recent workspace. */
+    onOpenWorkspace: (id: string) => void;
+    /** Desktop only: open a recent workspace in its own window (⌘-click). */
+    onOpenWorkspaceInNewWindow: (id: string) => void;
+    /** Open the folder picker (adds/opens a workspace in this window). */
+    onOpenFolder: () => void;
+    /** Open the ⌃R workspace switcher dialog. */
+    onOpenSwitcher: () => void;
+    /** The orb menu just opened — a chance to refresh the recents it shows. */
+    onMenuOpen?: () => void;
     /** Export all notes as a .md zip. */
     onExport: () => void;
     /** Import .md files / a zip into the current store. */
@@ -95,7 +121,15 @@ const STATUS_TEXT: Record<SaveState, string> = {
  */
 export function TopBar({
     storageLabel,
-    onChangeStorage,
+    workspaces,
+    activeWorkspaceId,
+    isDesktop,
+    supportsFolders,
+    onOpenWorkspace,
+    onOpenWorkspaceInNewWindow,
+    onOpenFolder,
+    onOpenSwitcher,
+    onMenuOpen,
     onExport,
     onImport,
     onManageAttachments,
@@ -259,10 +293,41 @@ export function TopBar({
                 action: onOpenTrash,
             },
             {
-                text: 'Change storage…',
-                iconStart: <Icon data={Folder} />,
-                action: onChangeStorage,
+                text: 'Open Recent',
+                iconStart: <Icon data={ClockArrowRotateLeft} />,
+                items: [
+                    // Recents (most recent first, the current one check-marked). Plain click
+                    // switches this window; ⌘-click (desktop) opens a new window.
+                    workspaces.slice(0, MAX_RECENT_MENU).map((ws) => ({
+                        text: ws.name,
+                        iconStart: <Icon data={ws.backend === 'indexeddb' ? Database : Folder} />,
+                        selected: ws.id === activeWorkspaceId,
+                        // The uikit action gets a React mouse event on click but a NATIVE
+                        // KeyboardEvent on Enter — both carry metaKey, which is all we need.
+                        action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
+                            if (ws.id === activeWorkspaceId) return;
+                            if (isDesktop && event.metaKey) onOpenWorkspaceInNewWindow(ws.id);
+                            else onOpenWorkspace(ws.id);
+                        },
+                    })),
+                    [
+                        {
+                            text: 'Workspaces…',
+                            iconEnd: <span className="topbar__menu-kbd">⌃R</span>,
+                            action: onOpenSwitcher,
+                        },
+                    ],
+                ],
             },
+            ...(supportsFolders
+                ? [
+                      {
+                          text: 'Open Folder…',
+                          iconStart: <Icon data={FolderOpen} />,
+                          action: onOpenFolder,
+                      },
+                  ]
+                : []),
         ],
         [
             {
@@ -314,6 +379,9 @@ export function TopBar({
         <header className="topbar" data-tauri-drag-region>
             <DropdownMenu
                 switcherWrapperClassName="topbar__menu-anchor"
+                onOpenToggle={(open) => {
+                    if (open) onMenuOpen?.();
+                }}
                 renderSwitcher={(props) => (
                     <button
                         {...props}

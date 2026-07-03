@@ -65,11 +65,22 @@ export function App() {
                     <ErrorBoundary>
                         {storage.state === 'ready' && storage.store ? (
                             <Workspace
+                                // Keyed by workspace: switching remounts the whole tree, so every
+                                // per-workspace piece (list cursor, rail state, editor session,
+                                // corpus) starts clean instead of reconciling across workspaces.
+                                key={storage.activeWorkspaceId ?? 'workspace'}
                                 store={storage.store}
+                                workspaceId={storage.activeWorkspaceId ?? 'workspace'}
                                 storageLabel={storage.storageLabel}
+                                workspaces={storage.workspaces}
                                 themePref={themePref}
                                 onChangeThemePref={setThemePref}
-                                onChangeStorage={() => void storage.reset()}
+                                onOpenWorkspace={storage.openWorkspace}
+                                onOpenWorkspaceInNewWindow={storage.openInNewWindow}
+                                onRemoveWorkspace={storage.removeWorkspace}
+                                onRefreshWorkspaces={storage.refreshWorkspaces}
+                                onOpenFolder={() => void storage.pickFolder()}
+                                supportsFolders={storage.supportsFolders}
                             />
                         ) : (
                             <FolderGate storage={storage} />

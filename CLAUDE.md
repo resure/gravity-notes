@@ -23,11 +23,23 @@ Notes live in **nested folders** — real subdirectories on disk; a note's id is
 root `Attachments/` folder, referenced root-relatively, resolved to `blob:` URLs only at display
 time). Both work across all three backends.
 
+Every opened folder/store is a **workspace**: an IndexedDB registry (`src/storage/workspaceRegistry.ts`)
+remembers them all with recency, feeding the orb menu's "Open Recent" submenu, the **⌃R switcher
+dialog**, and — desktop only — **one native window per workspace** (several at once; ⌘-click a recent
+or ⌘↵ in the switcher). Per-workspace UI layout (sidebar/rail/selected folder) lives under
+workspace-namespaced localStorage keys; the sidecar metadata is per-folder anyway.
+
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
-commands, the folder ops, and `reveal_path`; it also registers the **updater** + **process** plugins,
-sets a theme-aware native window background (anti-flash), and builds a **custom app menu** whose macOS
-"About" item emits `menu:about` so the frontend can open its own `AboutDialog`).
+commands, the folder ops, `reveal_path`, and the **workspace-window commands** — a label→workspace map
+powering `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window`
+(`ws-N` windows cloned from the main window's config); it also registers the **updater** + **process**
+plugins, sets a theme-aware native window background (anti-flash, factored as `apply_macos_chrome` and
+applied to every window), and builds a **custom app menu** whose macOS "About" item emits `menu:about`
+to the FOCUSED window so the frontend can open its own `AboutDialog`). **Close flow:** the main window
+hides on ⌘W (Rust-side, macOS convention) while `ws-N` windows really close — `useNotes`'s
+`onCloseRequested` handler flushes pending edits then calls `preventDefault()` ONLY for `main`; the JS
+wrapper's `destroy()` needs the `core:window:allow-destroy` capability, so those two must stay in sync.
 
 The desktop app ships **in-app auto-update** via the official Tauri 2 updater, delivered through GitHub
 Releases (`src/hooks/useAppUpdater.ts`; cut a release with the `/release` runbook in `.claude/skills/release`).
@@ -122,10 +134,14 @@ Key modules:
   backend; the way to get plain files out of in-browser storage and migrate between backends.
   Preserves folder structure (incl. deliberately-empty folders, via a `.gnkeep` marker) and bundles
   `Attachments/` bytes both ways.
-- `src/storage/handlePersistence.ts` — remembers the chosen backend in IndexedDB so reloads restore
-  it: a `FileSystemDirectoryHandle` (web, per-session permission re-grant) or a plain folder-path
-  string (`tauri-fs`, no re-grant — the OS governs access). Each `tx()` closes the connection on
-  complete / error / abort.
+- `src/storage/workspaceRegistry.ts` — the workspace registry (IndexedDB `gravity-notes` v2): every
+  opened workspace as a `WorkspaceEntry` (`indexeddb` | `tauri:<path>` | `fsa:<uuid>`; a
+  `FileSystemDirectoryHandle` structured-clones inside the entry, `tauri-fs` keeps a path string) plus
+  a last-active pointer for launch restore. Lazily migrates the v1 single-choice keys into a
+  deterministic entry (`fsa:legacy`) so a StrictMode/two-window double-run is idempotent. ⚠️ This must
+  stay the ONLY module opening that database — a second module opening v1 would throw `VersionError`
+  after the upgrade. Each `tx()` closes the connection on complete / error / abort (short-lived
+  connections are also why cross-window v1→v2 upgrades can't block).
 - `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
   `orderNotes` (pins first, then the active sort). The `pinned` set holds both note ids and folder
@@ -136,13 +152,23 @@ Key modules:
   visible image's URL (subscribed entries are never evicted) and get notified if it's re-seeded; `peek`
   is pure (no LRU touch), `resolve` touches. The stored Markdown always keeps the root-relative ref,
   never a blob URL.
-- `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle (state machine:
-  `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore`. Detects the Tauri
-  shell (`__TAURI_INTERNALS__`): there `pickFolder()` uses the native dialog and the `tauri-fs`
-  bootstrap goes straight to `ready` (no `needs-permission`). `supportsFolders` (= native app OR
-  browser FSA) drives whether the folder option is offered. Bootstrap is `try/catch`-guarded and bails
-  (via `interactedRef`) once the user chooses, so a slow IndexedDB read can't clobber it. Back-compat:
-  a stored folder handle with no backend flag is treated as filesystem.
+- `src/hooks/useNotesStorage.ts` — the workspace lifecycle (state machine:
+  `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore` plus the recents list.
+  Bootstrap order: the shell's per-window assignment (`invoke('window_workspace')`, set before a
+  `ws-N` window's page loads) → the last-active pointer → `choosing`. `openWorkspace(id)` switches in
+  place (probe-guarded; desktop first asks `focus_workspace_window` so a workspace already shown
+  elsewhere is focused, not duplicated; a failed switch leaves the current workspace mounted);
+  `openInNewWindow(id)` invokes `open_workspace_window`; activation touches the registry, registers
+  the window's workspace, and sets the native title. Detects the Tauri shell (`__TAURI_INTERNALS__`):
+  there `pickFolder()` uses the native dialog and `tauri-fs` opens go straight to `ready` (no
+  `needs-permission`; an FSA _switch_ tries `requestPermission` inline — it runs off a gesture —
+  before falling back to the grant gate). `supportsFolders` (= native app OR browser FSA) drives
+  whether the folder option is offered. Every async action claims an `opSeq` ticket and bails once
+  superseded (including the detached post-activation writes — recency, `set_window_workspace`, native
+  title — so a rapid A→B switch can't restore A next launch or register A for a window showing B), so a
+  slow bootstrap read can't clobber a user choice and rapid switches can't interleave. `reset()`
+  returns to the gate but DOES `clearLastActive()` (so "choose different storage" sticks across a
+  relaunch) while keeping the registry.
 - `src/hooks/useNotes.ts` — note list, selection, **debounced autosave** (500 ms), and **conflict
   detection**. Editing is deliberately decoupled from React state: keystrokes flow into a ref + timer,
   not `setState`, so the markdown editor instance is never re-created mid-typing. Pending edits are
@@ -161,23 +187,45 @@ Key modules:
   open note's backlinks (invert once via `useCorpus.linksById`, then snippet + sort lazily per open
   note); and the global keyboard shortcuts (driven by the `SHORTCUTS` descriptor in `src/shortcuts.ts`,
   which the help dialog also renders from). Punctuation chords match by `event.code` (e.g. `⌘⇧;` →
-  `Semicolon`), since the shifted `event.key` differs. `useDebouncedValue` debounces the query (120 ms)
-  only above a 500-note vault (wired in `Workspace`).
+  `Semicolon`), since the shifted `event.key` differs. `useShortcuts` skips ALL global chords while a
+  `[role="dialog"]` modal is open (the dialog owns the keyboard — so ⌘N can't create a note behind the
+  ⌃R switcher). `useDebouncedValue` debounces the query (120 ms) only above a 500-note vault (wired in
+  `Workspace`).
+- `src/hooks/useListboxNav.ts` — the shared filter-over-listbox keyboard model for the ⌃R workspace
+  switcher AND the ⌘⇧M move-to picker: a DOCUMENT-level keydown listener while open (↑/↓ skip-disabled,
+  ↵ commit, ⌘⌫ remove, Esc close), a range/disabled clamp on list change, and scroll-into-view. It's
+  document-level (not input-scoped `onKeyDown`) + paired with `initialFocus={inputRef}` because
+  Gravity's `Dialog` focus-manager can park focus on the dialog container, where an input handler goes
+  silent. Callers own filtering + rendering + pre-highlight seeding; `highlightMatch` (shared) marks
+  the filter match.
 - `src/hooks/useAppUpdater.ts` — in-app auto-update (macOS desktop) over the Tauri updater/process
   plugins: a small state machine (check → available → downloading → installed / restart-required /
   error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
   out of the web bundle. `Workspace` runs a silent check on launch (production only) → toast; `TopBar`
   adds a manual "Check for Updates…" item; `UpdateDialog` renders the flow.
-- `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate), `Workspace`
-  (top bar + layout + nav wiring; takes the `NoteStore`, owns export/import), `TopBar` (nvALT search
-  box + storage menu [export / import / manage attachments / change storage] + theme/help controls +
-  save-status dot), `FolderRail` (collapsible nested-folder tree left of the list — select/scope,
+- `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate + a recents
+  list so a failed probe is never a dead end; **desktop is folder-first** — in-browser storage is
+  offered on the web only), `Workspace` (top bar + layout + nav wiring; takes the
+  `NoteStore` and a `workspaceId` — App remounts it `key`ed per workspace, so switches start clean;
+  owns export/import and the flush-then-confirm guard before any workspace switch; per-workspace UI
+  layout persists under `gravity-notes:<wsId>:*` localStorage keys, adopting the legacy un-namespaced
+  value once), `TopBar` (nvALT search box + orb menu [export / import / manage attachments / trash /
+  **Open Recent submenu** (click = switch in place, ⌘-click = new window on desktop; "Workspaces…"
+  opens the ⌃R switcher) / **Open Folder…**] + theme/help controls + save-status dot),
+  `WorkspaceSwitcherDialog` (the ⌃R recents switcher; shares the keyboard model with MoveToDialog via
+  `useListboxNav`: filter + ↑/↓ + ↵ open / ⌘↵ new window / ⌘⌫ remove; OTHER workspaces lead by recency
+  with the current one parked last, and the top row is pre-highlighted, so ⌃R↵ ⌃R↵ ping-pongs between
+  the two most recent workspaces; a pinned "Open Folder…" action row sits outside the filter; the
+  in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
+  strands), `FolderRail` (collapsible
+  nested-folder tree left of the list — select/scope,
   drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
   sort; **virtualized** via `@tanstack/react-virtual`, with a `rangeExtractor` that keeps the
   keyboard-focused row and any open row popover's anchor row (⋯ menu / icon picker) mounted; rows
   render only an `IconPickerButton` glyph and share ONE `IconPickerPopup` — like the one shared row
   menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
-  list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut),
+  list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut; shares
+  `useListboxNav` with the workspace switcher),
   `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
   `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
   switch — the reused editor would otherwise carry the previous note's scrollTop; the floating

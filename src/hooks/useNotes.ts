@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-import {isTauri} from '../isTauri';
+import {isMainWindow, isTauri} from '../isTauri';
 import {
     DEFAULT_METADATA,
     reconcile,
@@ -1104,9 +1104,14 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         let disposed = false;
         void import('@tauri-apps/api/window').then(({getCurrentWindow}) => {
             void getCurrentWindow()
-                .onCloseRequested(async () => {
+                .onCloseRequested(async (event) => {
                     await flushMetadata();
                     await flush();
+                    // The MAIN window is never destroyed — the Rust shell hides it on close (macOS
+                    // convention), so stop the JS wrapper from destroying it after this handler.
+                    // Workspace (ws-N) windows fall through: the wrapper destroys them once the
+                    // flush above has landed — exactly the flush-then-close ordering we want.
+                    if (isMainWindow()) event.preventDefault();
                 })
                 .then((fn) => {
                     if (disposed) fn();

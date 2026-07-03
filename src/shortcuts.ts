@@ -16,12 +16,16 @@ export type ShortcutAction =
     | 'renameSelected'
     | 'moveSelected'
     | 'duplicateSelected'
-    | 'deleteSelected';
+    | 'deleteSelected'
+    | 'openWorkspaces';
 
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
-    /** 'mod' = ⌘/Ctrl combo; 'bare' = the key alone. */
-    trigger: 'mod' | 'bare';
+    /**
+     * 'mod' = ⌘/Ctrl combo; 'ctrl' = the Control key specifically (⌘ absent — VS Code-style ⌃
+     * chords, distinct from ⌘ on macOS); 'bare' = the key alone.
+     */
+    trigger: 'mod' | 'ctrl' | 'bare';
     /** `event.key` to match. For the 'mod' trigger the comparison is case-insensitive. */
     key: string;
     /**
@@ -32,9 +36,9 @@ export interface GlobalBinding {
     code?: string;
     /** Which action to fire. */
     action: ShortcutAction;
-    /** For a 'mod' binding, also require Shift (default: Shift must be absent). */
+    /** For a 'mod'/'ctrl' binding, also require Shift (default: Shift must be absent). */
     shift?: boolean;
-    /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod→true, bare→false. */
+    /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod/ctrl→true, bare→false. */
     inTyping?: boolean;
     /**
      * Handle in the capture phase and `stopPropagation`, so the key never reaches the editor. Needed
@@ -139,6 +143,15 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Peek the sidebar / focus the list (again to close)',
         group: 'Navigation',
         global: {trigger: 'mod', key: "'", action: 'peekSidebar'},
+    },
+    {
+        keys: 'ctrl+r',
+        description: 'Switch workspace (recent folders)',
+        group: 'Navigation',
+        // The Control key specifically — VS Code's "Open Recent" chord on macOS. ⌘R stays free
+        // (it's browser reload in the web build). On Windows/Linux web this shadows the reload
+        // shortcut, exactly as VS Code-web does. Match the physical key (layout-independent).
+        global: {trigger: 'ctrl', key: 'r', code: 'KeyR', action: 'openWorkspaces', inTyping: true},
     },
     {
         keys: 'mod+shift+enter',

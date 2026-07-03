@@ -5,3 +5,32 @@
  * every feature-detect agrees. The `typeof window` guard keeps it safe under Node (tests).
  */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/**
+ * The label of the app's primary window. THE single source of truth for the "main vs workspace
+ * window" distinction, which is load-bearing across three places that must agree: the Rust shell
+ * hides (not closes) this label on ⌘W (`src-tauri/src/lib.rs`, macOS convention), `useNotes`'s
+ * close handler only `preventDefault()`s for it (so ws-N windows flush-then-close), and the
+ * `core:window:allow-destroy` capability lets ws-N windows actually close. Keep the Rust literal
+ * `"main"` and this constant in sync.
+ */
+export const MAIN_WINDOW_LABEL = 'main';
+
+/**
+ * The current Tauri window's label, synchronously — the same field `getCurrentWindow()` reads,
+ * without pulling `@tauri-apps/api` into the caller (or the web bundle). Workspace windows are
+ * `ws-1`, `ws-2`, …. Outside the shell (web build, tests) this returns {@link MAIN_WINDOW_LABEL},
+ * so main-window-gated behavior stays on in the browser.
+ */
+export function currentWindowLabel(): string {
+    if (!isTauri) return MAIN_WINDOW_LABEL;
+    const internals = (
+        window as {__TAURI_INTERNALS__?: {metadata?: {currentWindow?: {label?: string}}}}
+    ).__TAURI_INTERNALS__;
+    return internals?.metadata?.currentWindow?.label ?? MAIN_WINDOW_LABEL;
+}
+
+/** Whether this is the app's primary window (see {@link MAIN_WINDOW_LABEL}); true on web/tests. */
+export function isMainWindow(): boolean {
+    return currentWindowLabel() === MAIN_WINDOW_LABEL;
+}
