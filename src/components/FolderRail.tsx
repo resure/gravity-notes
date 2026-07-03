@@ -80,9 +80,10 @@ export interface FolderRailProps {
     onFocusList: () => void;
 }
 
-/** Left padding (px) for a row at the given tree depth. */
+/** Left padding (px) for a row at the given tree depth. The 8px base keeps top-level carets off
+ *  the window edge (matching the row's 8px trailing padding); each level adds a 14px step. */
 function indentFor(depth: number): number {
-    return 2 + depth * 14;
+    return 8 + depth * 14;
 }
 
 /** Whether dropping the dragged folder onto `target` (`''` = root) is forbidden (self / descendant). */
