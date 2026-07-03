@@ -299,6 +299,25 @@ describe('EditorPane — empty-area click', () => {
             portalState.enabled = false;
         }
     });
+
+    it('leaves a mousedown on the editor content to the editor (no caret yank)', () => {
+        // Regression: the guard matched only the stale `.g-md-editor` class, so it missed the
+        // current `.g-md-editor-component` wrapper (both WYSIWYG and CodeMirror markup live under
+        // it). A mousedown on Markup mode's `.cm-content` fell through to moveCursorEnd() + a
+        // preventDefault, which killed click-to-place-caret and double-click word-select there.
+        const {container} = renderPane();
+        const body = container.querySelector('.editor-pane__body');
+        if (!body) throw new Error('body not rendered');
+        const editor = document.createElement('div');
+        editor.className = 'g-md-editor-component';
+        const content = document.createElement('div');
+        content.className = 'cm-content';
+        editor.appendChild(content);
+        body.appendChild(editor);
+        moveCursor.mockClear();
+        fireEvent.mouseDown(content);
+        expect(moveCursor).not.toHaveBeenCalled();
+    });
 });
 
 describe('EditorPane — change emission', () => {
