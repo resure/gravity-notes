@@ -84,3 +84,19 @@ body,
 .g-root_theme_dark .note-preview .yfm pre {
     color: var(--g-color-text-primary);
 }
+
+/* Use the native system font (San Francisco on macOS) rather than Gravity's Inter default: nothing to
+   bundle or fetch from Google, works offline, feels native. Set on `.g-root` to out-specify Gravity's
+   own `--g-font-family-sans` declaration on that element. */
+.g-root {
+    --g-font-family-sans:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* The editor body + read-only preview are YFM content, which uses its OWN `--yfm-font-family-sans`
+   (a Segoe-UI default the markdown editor never remaps — so the editing surface rendered in Arial
+   while the chrome used the app font). Point it at the app sans (higher specificity than YFM's own
+   `.yfm` declaration) so both surfaces render in the same system font. */
+.g-root .yfm {
+    --yfm-font-family-sans: var(--g-font-family-sans);
+}
