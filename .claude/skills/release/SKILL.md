@@ -1,15 +1,15 @@
 ---
 name: release
-description: Cut a new signed + notarized macOS release of Gravity Notes. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, tags, and publishes a GitHub release with the DMG + auto-update artifacts (.app.tar.gz + latest.json) attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
+description: Cut a new signed + notarized macOS release of Gravity Notes. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, launches the built production app for hands-on verification + changelog approval, then tags and publishes a GitHub release with the DMG + auto-update artifacts (.app.tar.gz + latest.json) attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
 ---
 
 # Release runbook (signed + notarized macOS build)
 
 This skill ships a distributable build of **Gravity Notes**: bump → changelog →
-build/sign/notarize → tag → GitHub release with the DMG attached. Follow the steps
-**in order**. The order is deliberate: nothing public (commit, tag, release) is created
-until the artifact exists and passes Gatekeeper, so a failed/aborted build leaves only
-throwaway uncommitted edits.
+build/sign/notarize → **verify the built app** → tag → GitHub release with the DMG attached. Follow
+the steps **in order**. The order is deliberate: the production app is built and **launched for
+hands-on verification _before_ anything public** (commit, tag, release) is created — so a failed
+build, or a "this looks wrong" after actually trying the app, leaves only throwaway uncommitted edits.
 
 ## Argument — the bump
 
@@ -76,8 +76,10 @@ lockstep (leave them **uncommitted** for now). Capture `$NEW` — every later st
    `# Changelog` title + the "format follows Keep a Changelog / SemVer" blurb, then the
    section.
 
-5. **Show the user the proposed `## [X.Y.Z]` section and the bump, and get an explicit
-   go-ahead** before building/publishing — this text becomes the public release notes.
+5. Prepare the notes only — **do not ask for approval yet.** The changelog is baked into
+   `latest.json` during the build (`make-latest-json.mjs` reads the top CHANGELOG.md section), so it
+   must exist before Step 3. Approval + hands-on verification happen in **Step 4**, after the build,
+   so the user can run the actual production app before anything is published.
 
 ## Step 3 — Build, sign, notarize (the slow step)
 
@@ -108,7 +110,31 @@ spctl -a -vvv "$APP"                 # → "accepted", source=Notarized Develope
 the file has no spaces; the `.app` path still does, so keep both quoted. `aarch64` =
 the arm64 build.)
 
-## Step 4 — Commit the release
+## Step 4 — Verify the built app, then get the go-ahead (the gate before anything public)
+
+Nothing public exists yet — this is the approval gate. **Launch the freshly built production app so
+the user can verify the changes hands-on** (not a dev build — the real signed/notarized artifact):
+
+```bash
+osascript -e 'quit app "Gravity Notes"' 2>/dev/null; sleep 1; open "$APP"
+```
+
+Then present the proposed `## [X.Y.Z]` changelog section (the public release notes) **and** the
+version bump, and **get an explicit go-ahead**. This is the point of no return before
+commit/tag/publish.
+
+- If the user wants **changelog wording changes**: edit `CHANGELOG.md`, then regenerate the manifest
+  so `latest.json`'s in-app "what's new" still matches — no full rebuild needed for text tweaks:
+  ```bash
+  node scripts/make-latest-json.mjs "$NEW" "$TARBALL.sig" \
+    "https://github.com/resure/gravity-notes/releases/download/v${NEW}/Gravity_Notes_${NEW}_aarch64.app.tar.gz" \
+    "$LATEST"
+  ```
+- If the app reveals a **bug / needs code changes**: abort — discard the version edits
+  (`git checkout -- package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml`), fix it, and restart
+  from Step 0. Nothing is committed/tagged/published yet, so there's nothing to unwind.
+
+## Step 5 — Commit the release
 
 Stage only the release files (the bump touched these; the build refreshed `Cargo.lock`):
 
@@ -117,7 +143,7 @@ git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Ca
 git commit -m "release: v$NEW" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
-## Step 5 — Tag and push
+## Step 6 — Tag and push
 
 ```bash
 git tag -a "v$NEW" -m "Gravity Notes v$NEW"
@@ -125,7 +151,7 @@ git push origin main
 git push origin "v$NEW"
 ```
 
-## Step 6 — Publish the GitHub release with the DMG
+## Step 7 — Publish the GitHub release with the DMG
 
 Write the changelog section you wrote in Step 2 to a notes file and attach the DMG (it
 contains the `.app`):
@@ -143,7 +169,7 @@ swaps in), and `$LATEST` (`latest.json`, the manifest the updater fetches from t
 `latest/download/` URL). The updater only sees **published, non-draft, non-prerelease** releases —
 if you `--draft` first to eyeball it, the auto-update path stays dark until you publish.
 
-## Step 7 — Report
+## Step 8 — Report
 
 Print the release URL (`gh release view "v$NEW" --json url -q .url`), the version, and
 confirm **all three** assets uploaded — the DMG, the `.app.tar.gz`, and `latest.json`
@@ -152,8 +178,9 @@ silently breaks auto-update for everyone on the previous version.
 
 ## Notes & failure handling
 
-- **Why this order:** the build/notarize step is the only one that can fail slowly or
-  need Apple. Doing it _before_ commit/tag/release means an abort leaves nothing but
+- **Why this order:** the build/notarize step is the only one that can fail slowly or need Apple, and
+  the user verifies the real app right after it — both _before_ commit/tag/release. So aborting at any
+  point (a build failure, or a "this looks wrong" after actually trying the app) leaves nothing but
   uncommitted file edits — no orphan tag or half-published release to clean up.
 - **Idempotency:** if a run dies after the tag/push, don't re-bump — re-run from the
   failed step using the same `$NEW` (e.g. delete a bad tag with
