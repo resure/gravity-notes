@@ -161,7 +161,7 @@ Key modules:
   `openInNewWindow(id)` invokes `open_workspace_window`; activation touches the registry, registers
   the window's workspace, and sets the native title. Detects the Tauri shell (`__TAURI_INTERNALS__`):
   there `pickFolder()` uses the native dialog and `tauri-fs` opens go straight to `ready` (no
-  `needs-permission`; an FSA *switch* tries `requestPermission` inline — it runs off a gesture —
+  `needs-permission`; an FSA _switch_ tries `requestPermission` inline — it runs off a gesture —
   before falling back to the grant gate). `supportsFolders` (= native app OR browser FSA) drives
   whether the folder option is offered. Every async action claims an `opSeq` ticket and bails once
   superseded (including the detached post-activation writes — recency, `set_window_workspace`, native

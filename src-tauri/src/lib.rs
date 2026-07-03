@@ -809,10 +809,7 @@ async fn open_workspace_window(
         // Focus an existing live window; prune only genuinely-dead labels. Because no build is in
         // flight for this workspace (pending checked above), a label whose window is missing is
         // truly gone, not still-building — so pruning here can't destroy a pending window.
-        loop {
-            let Some(existing) = window_label_for_workspace(&st.labels, &ws_id, None) else {
-                break;
-            };
+        while let Some(existing) = window_label_for_workspace(&st.labels, &ws_id, None) {
             if let Some(target) = app.get_webview_window(&existing) {
                 drop(st);
                 let _ = target.show();
