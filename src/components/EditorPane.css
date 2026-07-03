@@ -30,8 +30,28 @@
     padding-top: 4px;
     padding-bottom: 4px;
 }
+/* Constrain the whole toolbar (buttons + the trailing "…" overflow) to the note's text column,
+   centered like the title/body, so it aligns with the content instead of spanning the full pane.
+   Applied to the outer `.g-md-flex-toolbar` (holds both) so the overflow comes along and the
+   centering context matches the content scroller. The sticky wrapper's background/hairline stay
+   full-width. width:100% keeps the flex child from collapsing under margin:auto. The `padding-inline`
+   here is visually absorbed by the inner container (which fills the border box), but it still shrinks
+   the width Gravity measures for collapsing — so the buttons fold into the "…" overflow a bit sooner
+   as the window narrows. */
+.editor-pane_toolbar .g-md-flex-toolbar {
+    width: 100%;
+    max-width: var(--gn-text-width, none);
+    margin-inline: auto;
+    box-sizing: border-box;
+    padding-inline: var(--editor-gutter, 16px);
+}
+
+/* Inset the actual button row so the FIRST icon lines up with the note text. The title/body sit at
+   the editor's own ~20px content padding and each toolbar glyph is inset ~6px in its button, so
+   ~14px here lands the first icon on the text edge. (Padding on `.g-md-flex-toolbar` above is
+   absorbed by its container, so it can't do this — the inset has to live on the button row.) */
 .editor-pane_toolbar .g-md-toolbar {
-    padding-left: var(--editor-gutter, 16px);
+    padding-left: 14px;
 }
 
 /* Once the note is scrolled the toolbar is stuck to the top with content sliding under it — a hairline
@@ -67,7 +87,9 @@
 .editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.35;
+    /* Per-font body leading (set per data-editor-font in index.css); the fallback is the sans value.
+       Preview mirrors this same var, so the two modes stay in lockstep per font. */
+    line-height: var(--gn-editor-line-height, 1.35);
 }
 
 /* A touch of margin between paragraphs. */
@@ -122,12 +144,76 @@
    put. They also share the --editor-gutter horizontal padding (set on .workspace__editor) so
    their left edges align. */
 .editor-pane {
+    position: relative; /* anchors the absolutely-positioned "Note appearance" ⋯ trigger */
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain; /* keep scroll momentum inside the editor (no chaining to the shell) */
+}
+
+/* The ⋯ trigger sits in a column-width band centered to the note's text measure (same max-width as
+   the content), so it aligns with the note's RIGHT edge — not the viewport's. The band is a
+   zero-height positioning layer that ignores pointer events; only the button takes them. */
+.editor-pane__note-actions {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: var(--gn-text-width, none);
+    height: 0;
+    margin-inline: auto;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* A quiet chip at the top-right of the note, aligned with the title's first line (it scrolls away
+   with the header). Hover-revealed — hidden until the TITLE AREA or the button is hovered, the button
+   is keyboard-focused, or the popover is open — so it never competes with the text. Themed via
+   Gravity vars so it reads in light + dark. */
+.note-appearance-trigger {
+    position: absolute;
+    /* Vertically centered on the title's first line: the 32px button over the title row's
+       12px top padding + ~32px line (center ≈ 28px) → top 12px. */
+    top: 12px;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--g-color-text-secondary);
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0;
+    transition:
+        opacity 120ms ease,
+        color 120ms ease,
+        background-color 120ms ease;
+}
+
+.note-title-row:hover ~ .editor-pane__note-actions .note-appearance-trigger,
+.note-appearance-trigger:hover,
+.note-appearance-trigger:focus-visible,
+.note-appearance-trigger_open {
+    opacity: 1;
+}
+
+.note-appearance-trigger:hover {
+    color: var(--g-color-text-primary);
+    background: var(--g-color-base-generic-hover);
+}
+
+.note-appearance-trigger:focus-visible {
+    outline: 2px solid var(--g-color-line-focus);
+    outline-offset: 2px;
 }
 
 .editor-pane__body {

@@ -13,6 +13,7 @@ export type ShortcutAction =
     | 'togglePreview'
     | 'openHelp'
     | 'openSettings'
+    | 'openNoteAppearance'
     | 'renameSelected'
     | 'moveSelected'
     | 'duplicateSelected'
@@ -186,6 +187,13 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Toggle read-only preview',
         group: 'Editing',
         global: {trigger: 'mod', key: 'p', action: 'togglePreview', shift: true},
+    },
+    {
+        keys: 'mod+shift+i',
+        description: 'Note appearance (font, accent, width)',
+        group: 'Editing',
+        // 'i' is a letter, so the shifted event.key ('I') matches case-insensitively — no code needed.
+        global: {trigger: 'mod', key: 'i', action: 'openNoteAppearance', shift: true},
     },
     {keys: 'mod+shift+k', description: 'Insert link (in the editor)', group: 'Editing'},
     {
