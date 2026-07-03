@@ -665,10 +665,18 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     if (!(event.currentTarget as HTMLElement).contains(event.target as Node))
                         return;
                     // Ignore clicks on the editor content AND on the formatting toolbar (shown via
-                    // Settings): the toolbar lives in this wrapper but isn't `.g-md-editor`, so without
-                    // this a toolbar-button click would fall through to moveCursorEnd() and yank the
-                    // caret to the end of the document.
-                    if ((event.target as HTMLElement).closest('.g-md-editor, .g-md-editor-sticky'))
+                    // Settings): both live inside the editor but aren't the empty padding, so without
+                    // this a click there would fall through to moveCursorEnd() and yank the caret to
+                    // the end. The markdown editor wraps BOTH modes (WYSIWYG + CodeMirror markup) in
+                    // `.g-md-editor-component`; matching only the old `.g-md-editor` name missed markup
+                    // entirely, so every mousedown on `.cm-content` got preventDefault'd — killing
+                    // click-to-place-caret and double-click word-select in Markup mode (ProseMirror
+                    // sets its selection programmatically, so WYSIWYG masked the bug).
+                    if (
+                        (event.target as HTMLElement).closest(
+                            '.g-md-editor-component, .g-md-editor-sticky',
+                        )
+                    )
                         return;
                     event.preventDefault();
                     bodyRef.current?.moveCursorEnd();
