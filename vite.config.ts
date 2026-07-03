@@ -26,6 +26,11 @@ export default defineConfig(({mode}) => ({
                     name: 'dom',
                     environment: 'jsdom',
                     include: ['src/**/*.test.tsx'],
+                    // Rendering real Gravity components in jsdom (esp. the icon-picker popup, which
+                    // mounts the full emoji/icon catalog) runs 2-5s per test locally and ~2.5x that
+                    // under CI's loaded runner — past Vitest's 5s default. Give the whole DOM suite
+                    // headroom so boundary-slow tests don't flake on CI.
+                    testTimeout: 15_000,
                     setupFiles: ['./src/test/setup.ts'],
                     server: {
                         deps: {

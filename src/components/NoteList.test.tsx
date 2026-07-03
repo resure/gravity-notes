@@ -583,7 +583,7 @@ describe('NoteList — note icons (one shared picker)', () => {
         await waitFor(() =>
             expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
         );
-    }, 15_000);
+    });
 
     it('does not browse the row when its icon button is clicked', async () => {
         const user = userEvent.setup();
@@ -591,7 +591,7 @@ describe('NoteList — note icons (one shared picker)', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button', {name: 'Set note icon'}));
         expect(props.onBrowse).not.toHaveBeenCalled();
-    }, 15_000);
+    });
 
     it('a second click on the same button toggles the picker closed', async () => {
         const user = userEvent.setup();
@@ -604,7 +604,7 @@ describe('NoteList — note icons (one shared picker)', () => {
         await waitFor(() =>
             expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
         );
-    }, 15_000);
+    });
 
     it('opening the shared picker re-renders no rows (memo parity)', async () => {
         const user = userEvent.setup();
@@ -615,7 +615,7 @@ describe('NoteList — note icons (one shared picker)', () => {
         await user.click(button);
         await screen.findByRole('listbox', {name: 'Pick an icon'});
         expect(noteRowRenders.count).toBe(0);
-    }, 15_000);
+    });
 
     it('Enter on a focused row icon button opens the picker, not the note', async () => {
         // The row's keydown handler used to preventDefault bare Enter unconditionally, cancelling
@@ -628,7 +628,7 @@ describe('NoteList — note icons (one shared picker)', () => {
         await user.keyboard('{Enter}');
         await screen.findByRole('listbox', {name: 'Pick an icon'});
         expect(props.onCommit).not.toHaveBeenCalled();
-    }, 15_000);
+    });
 
     it('the shared popup starts clean on reopen (tab choice does not leak across notes)', async () => {
         await Promise.all([loadEmojis(), loadIconCatalog()]);
