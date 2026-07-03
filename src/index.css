@@ -20,16 +20,8 @@ body,
     --gn-orb-halo: rgba(238, 152, 46, 0.55);
     /* RGB channels of the warmer accent the list-selection wash shares with the orb halo. Exposed as
        channels (not a color) so the wash can keep its own per-theme alpha via rgba(var(--gn-accent-rgb), α),
-       and so the dev build's blue mark recolors the selection wash too (it overrides this below). */
+       and so the accent-color setting can recolor the wash too (it overrides these below). */
     --gn-accent-rgb: 238, 152, 46;
-}
-
-/* Dev build (Vite dev mode → `npm run tauri:dev`): recolor the app mark blue to match the blue
-   "supernova" dev icon, so the running build is unmistakable. Web prod / released app stay orange. */
-.gn-dev {
-    --gn-orange: #1f81ff;
-    --gn-orb-halo: rgba(31, 129, 255, 0.55);
-    --gn-accent-rgb: 31, 129, 255;
 }
 
 /* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
@@ -93,37 +85,39 @@ body,
         -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* The editor body + read-only preview are YFM content, which uses its OWN `--yfm-font-family-sans`
-   (a Segoe-UI default the markdown editor never remaps — so the editing surface rendered in Arial
-   while the chrome used the app font). Point it at the app sans (higher specificity than YFM's own
-   `.yfm` declaration) so both surfaces render in the same system font. This is also the `sans`
-   default for the editor-font setting below. */
-.g-root .yfm {
-    --yfm-font-family-sans: var(--g-font-family-sans);
-}
-
 /* ── Editor-font setting ────────────────────────────────────────────────────────────────────────
-   Swaps only the CONTENT font (WYSIWYG editor + read-only preview — both `.yfm`), by overriding the
-   same `--yfm-font-family-sans` var the base `.g-root .yfm` rule sets. The raw Markup editor
-   (`.cm-editor`, not `.yfm`) and the app chrome (`--g-font-family-sans`) are untouched. The active
-   choice is stamped on <html> as `data-editor-font` (by `Workspace`); `sans` needs no rule — it is
-   the base above — so only serif/mono override (their specificity out-ranks `.g-root .yfm`).
-   Code blocks keep `--yfm-font-family-monospace`, so they stay mono in every mode. */
-:root[data-editor-font='serif'] .yfm {
-    --yfm-font-family-sans: ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
+   `--gn-editor-font` is the single source for the note-CONTENT font: the WYSIWYG editor + read-only
+   preview (both `.yfm`) AND the note title above the editor (NoteTitle.css). `sans` (the default) is
+   the app system font; the active choice is stamped on <html> as `data-editor-font` (by `Workspace`),
+   and serif/mono override the var for the whole `.g-root` subtree (specificity out-ranks the base).
+   Deliberately NOT applied to the app chrome (`--g-font-family-sans`) or the raw Markup editor
+   (`.cm-editor`, which isn't `.yfm` and doesn't read this var). Set on `.g-root` so it can reference
+   `--g-font-family-sans`, which lives there. */
+.g-root {
+    --gn-editor-font: var(--g-font-family-sans);
 }
 
-:root[data-editor-font='mono'] .yfm {
-    --yfm-font-family-sans:
-        ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+:root[data-editor-font='serif'] .g-root {
+    --gn-editor-font: ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
+}
+
+:root[data-editor-font='mono'] .g-root {
+    --gn-editor-font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* The editor body + read-only preview are YFM content, which reads its OWN `--yfm-font-family-sans`
+   (a Segoe-UI default the markdown editor never remaps — so the surface rendered in Arial while the
+   chrome used the app font). Point it at `--gn-editor-font` (higher specificity than YFM's own `.yfm`
+   declaration). Code blocks keep `--yfm-font-family-monospace`, so they stay mono in every mode. */
+.g-root .yfm {
+    --yfm-font-family-sans: var(--gn-editor-font);
 }
 
 /* ── Accent-color setting ───────────────────────────────────────────────────────────────────────
    Swaps the accent trio the orb / saving dot / list-selection wash read (see `--gn-orange` etc.
-   above). `amber` is the `:root` default (and the dev build's blue override lives on `:root.gn-dev`),
-   so `Workspace` stamps `data-accent` on <html> only for blue/gray — leaving amber off lets the
-   default (and the dev-blue indicator) show through. `:root[data-accent]` out-ranks both `:root` and
-   `.gn-dev` on specificity, so an explicit choice always wins. Keep these hexes in sync with the
+   above). `amber` is the `:root` default, so `Workspace` stamps `data-accent` on <html> only for
+   blue/gray — leaving amber off falls through to that default. `:root[data-accent]` out-ranks the
+   base `:root` on specificity, so an explicit choice always wins. Keep these hexes in sync with the
    swatch dots in SettingsDialog.css. */
 :root[data-accent='blue'] {
     --gn-orange: #1f81ff;

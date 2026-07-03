@@ -326,11 +326,11 @@ export function Workspace({
     const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
 
     // Apply the effective appearance (a workspace override, else the app-wide value) to <html> as
-    // data-attributes that index.css reads: `data-editor-font` swaps the editor/preview font,
+    // data-attributes that index.css reads: `data-editor-font` swaps the editor/preview/title font,
     // `data-accent` the accent trio. useLayoutEffect (not useEffect) so the swap lands before paint —
     // on a workspace switch the tree remounts (keyed in App), so this runs synchronously with the
-    // unmount cleanup, avoiding a one-frame flash to the default appearance. Amber is the CSS default
-    // (and carries the dev-blue indicator), so it clears the attribute rather than stamping it.
+    // unmount cleanup, avoiding a one-frame flash to the default appearance. Amber is the CSS default,
+    // so it clears the attribute rather than stamping it.
     useLayoutEffect(() => {
         const {editorFont, accentColor} = effectiveAppearance(settings, workspaceSettings);
         const root = document.documentElement;

@@ -1,21 +1,22 @@
 .settings-dialog {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 22px;
     /* The Dialog.Body has no bottom padding of its own, so give the content some breathing room. */
-    padding-bottom: 20px;
+    padding-bottom: 8px;
 }
 
 .settings-dialog__section {
     display: flex;
     flex-direction: column;
+    gap: 2px;
 }
 
 .settings-dialog__section-head {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 0 4px 6px;
+    margin-bottom: 6px;
 }
 
 .settings-dialog__row {
@@ -23,31 +24,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 12px 4px;
+    min-height: 32px;
+    padding: 4px 0;
 }
 
-/* Divider between rows within a section; the last row of a section has none. */
-.settings-dialog__row:not(:last-child) {
-    border-bottom: 1px solid var(--g-color-line-generic);
-}
-
-/* Picker rows stack the label above a full-width segmented control instead of sitting beside it. */
-.settings-dialog__row_stacked {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-}
-
-.settings-dialog__text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.settings-dialog__title {
+.settings-dialog__label {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
 }
 
 /* Accent-color option: a colored dot beside the label, so the picker reads as a color picker.

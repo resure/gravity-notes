@@ -27,7 +27,7 @@ interface SettingsDialogProps {
     workspaceLabel: string | null;
 }
 
-/** A colored dot + label for the accent-color options, so the picker reads as a color picker. */
+/** A colored dot + label for the accent options, so the picker reads as a color picker. */
 function accentContent(color: AccentColor, label: string): ReactNode {
     return (
         <span className="settings-accent">
@@ -50,7 +50,7 @@ const ACCENT_OPTIONS: {value: AccentColor; content: ReactNode}[] = [
 ];
 
 // The per-workspace pickers add a leading "Default" (inherit the app value) to the same options.
-const FONT_OPTIONS_WS: {value: EditorFontPref; content: string}[] = [
+const FONT_OPTIONS_WS: {value: EditorFontPref; content: ReactNode}[] = [
     {value: 'default', content: 'Default'},
     ...FONT_OPTIONS,
 ];
@@ -70,39 +70,38 @@ export function SettingsDialog({
     setWorkspaceSetting,
     workspaceLabel,
 }: SettingsDialogProps) {
-    const workspaceDescription = `Override the appearance for ${
+    const workspaceDescription = `Override the app appearance for ${
         workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
-    } only. “Default” follows the app setting above.`;
+    }. “Default” inherits it.`;
     return (
         // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
-        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock contentOverflow="auto">
+        <Dialog open={open} onClose={onClose} size="m" disableBodyScrollLock contentOverflow="auto">
             <Dialog.Header caption="Settings" />
             <Dialog.Body>
                 <div className="settings-dialog">
                     <Section title="General">
-                        <SettingRow
+                        <ToggleRow
                             title="Show editor toolbar"
-                            description="Show the formatting toolbar above the note editor."
                             checked={settings.showEditorToolbar}
                             onUpdate={(value) => setSetting('showEditorToolbar', value)}
                         />
-                        <SettingRow
+                        <ToggleRow
                             title="Show note icons"
                             experimental
-                            description="Show a custom icon for each note in the list and its title."
                             checked={settings.showNoteIcons}
                             onUpdate={(value) => setSetting('showNoteIcons', value)}
                         />
+                    </Section>
+
+                    <Section title="Appearance">
                         <ChoiceRow
                             title="Editor font"
-                            description="Font for the editor and preview — not the app or raw Markdown."
                             options={FONT_OPTIONS}
                             value={settings.editorFont}
                             onUpdate={(value) => setSetting('editorFont', value)}
                         />
                         <ChoiceRow
                             title="Accent color"
-                            description="The app's highlight color (menu orb, save dot, selection)."
                             options={ACCENT_OPTIONS}
                             value={settings.accentColor}
                             onUpdate={(value) => setSetting('accentColor', value)}
@@ -137,7 +136,7 @@ interface SectionProps {
 
 function Section({title, description, children}: SectionProps) {
     return (
-        <div className="settings-dialog__section">
+        <section className="settings-dialog__section">
             <div className="settings-dialog__section-head">
                 <Text variant="subheader-2">{title}</Text>
                 {description ? (
@@ -147,34 +146,28 @@ function Section({title, description, children}: SectionProps) {
                 ) : null}
             </div>
             {children}
-        </div>
+        </section>
     );
 }
 
-interface SettingRowProps {
+interface ToggleRowProps {
     title: string;
-    description: string;
     experimental?: boolean;
     checked: boolean;
     onUpdate: (value: boolean) => void;
 }
 
-function SettingRow({title, description, experimental, checked, onUpdate}: SettingRowProps) {
+function ToggleRow({title, experimental, checked, onUpdate}: ToggleRowProps) {
     return (
         <div className="settings-dialog__row">
-            <div className="settings-dialog__text">
-                <div className="settings-dialog__title">
-                    <Text variant="subheader-1">{title}</Text>
-                    {experimental ? (
-                        <Label theme="info" size="xs">
-                            Experimental
-                        </Label>
-                    ) : null}
-                </div>
-                <Text color="secondary" variant="body-1">
-                    {description}
-                </Text>
-            </div>
+            <span className="settings-dialog__label">
+                <Text variant="body-1">{title}</Text>
+                {experimental ? (
+                    <Label theme="info" size="xs">
+                        Experimental
+                    </Label>
+                ) : null}
+            </span>
             {/* The Switch is itself a <label>; its visible title lives beside it, so name it via aria. */}
             <Switch checked={checked} onUpdate={onUpdate} controlProps={{'aria-label': title}} />
         </div>
@@ -183,33 +176,20 @@ function SettingRow({title, description, experimental, checked, onUpdate}: Setti
 
 interface ChoiceRowProps<T extends string> {
     title: string;
-    description?: string;
     options: {value: T; content: ReactNode}[];
     value: T;
     onUpdate: (value: T) => void;
 }
 
-/** A stacked settings row: title/description above a full-width segmented picker. */
-function ChoiceRow<T extends string>({
-    title,
-    description,
-    options,
-    value,
-    onUpdate,
-}: ChoiceRowProps<T>) {
+/** An inline settings row: a label on the left, a segmented picker on the right. */
+function ChoiceRow<T extends string>({title, options, value, onUpdate}: ChoiceRowProps<T>) {
     return (
-        <div className="settings-dialog__row settings-dialog__row_stacked">
-            <div className="settings-dialog__text">
-                <Text variant="subheader-1">{title}</Text>
-                {description ? (
-                    <Text color="secondary" variant="body-1">
-                        {description}
-                    </Text>
-                ) : null}
-            </div>
+        <div className="settings-dialog__row">
+            <span className="settings-dialog__label">
+                <Text variant="body-1">{title}</Text>
+            </span>
             <SegmentedRadioGroup
                 size="s"
-                width="max"
                 options={options}
                 value={value}
                 onUpdate={onUpdate}
