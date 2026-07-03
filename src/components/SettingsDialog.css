@@ -1,9 +1,21 @@
 .settings-dialog {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 20px;
     /* The Dialog.Body has no bottom padding of its own, so give the content some breathing room. */
     padding-bottom: 20px;
+}
+
+.settings-dialog__section {
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-dialog__section-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 4px 6px;
 }
 
 .settings-dialog__row {
@@ -14,8 +26,16 @@
     padding: 12px 4px;
 }
 
+/* Divider between rows within a section; the last row of a section has none. */
 .settings-dialog__row:not(:last-child) {
     border-bottom: 1px solid var(--g-color-line-generic);
+}
+
+/* Picker rows stack the label above a full-width segmented control instead of sitting beside it. */
+.settings-dialog__row_stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
 }
 
 .settings-dialog__text {
@@ -28,4 +48,31 @@
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Accent-color option: a colored dot beside the label, so the picker reads as a color picker.
+   The dot hues mirror the accent CSS variables in index.css (kept in sync by hand). */
+.settings-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.settings-accent__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.settings-accent__dot_amber {
+    background: #ea892b;
+}
+
+.settings-accent__dot_blue {
+    background: #1f81ff;
+}
+
+.settings-accent__dot_gray {
+    background: #8a8a8a;
 }
