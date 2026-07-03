@@ -4,6 +4,21 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-07-03
+
+### Added
+
+- **Multiple workspaces** — open several note folders and move between them freely. An **Open
+  Recent** submenu lists every folder you've opened; a **⌃R quick-switcher** filters them (↵ to
+  open, ⌘↵ to open in a new window, ⌘⌫ to forget one); and on the desktop app each workspace can
+  live in its **own window**, several at once. Relaunch reopens your last workspace.
+
+### Fixed
+
+- The floating **selection toolbar** no longer goes unresponsive after switching notes.
+- **Folder rail** polish — dropped the accent bar on the focused row, and nudged top-level folders
+  in from the window edge so their expand arrows aren't flush against it.
+
 ## [0.4.0] - 2026-07-02
 
 ### Added
