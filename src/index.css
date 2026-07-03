@@ -96,7 +96,43 @@ body,
 /* The editor body + read-only preview are YFM content, which uses its OWN `--yfm-font-family-sans`
    (a Segoe-UI default the markdown editor never remaps — so the editing surface rendered in Arial
    while the chrome used the app font). Point it at the app sans (higher specificity than YFM's own
-   `.yfm` declaration) so both surfaces render in the same system font. */
+   `.yfm` declaration) so both surfaces render in the same system font. This is also the `sans`
+   default for the editor-font setting below. */
 .g-root .yfm {
     --yfm-font-family-sans: var(--g-font-family-sans);
+}
+
+/* ── Editor-font setting ────────────────────────────────────────────────────────────────────────
+   Swaps only the CONTENT font (WYSIWYG editor + read-only preview — both `.yfm`), by overriding the
+   same `--yfm-font-family-sans` var the base `.g-root .yfm` rule sets. The raw Markup editor
+   (`.cm-editor`, not `.yfm`) and the app chrome (`--g-font-family-sans`) are untouched. The active
+   choice is stamped on <html> as `data-editor-font` (by `Workspace`); `sans` needs no rule — it is
+   the base above — so only serif/mono override (their specificity out-ranks `.g-root .yfm`).
+   Code blocks keep `--yfm-font-family-monospace`, so they stay mono in every mode. */
+:root[data-editor-font='serif'] .yfm {
+    --yfm-font-family-sans: ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
+}
+
+:root[data-editor-font='mono'] .yfm {
+    --yfm-font-family-sans:
+        ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ── Accent-color setting ───────────────────────────────────────────────────────────────────────
+   Swaps the accent trio the orb / saving dot / list-selection wash read (see `--gn-orange` etc.
+   above). `amber` is the `:root` default (and the dev build's blue override lives on `:root.gn-dev`),
+   so `Workspace` stamps `data-accent` on <html> only for blue/gray — leaving amber off lets the
+   default (and the dev-blue indicator) show through. `:root[data-accent]` out-ranks both `:root` and
+   `.gn-dev` on specificity, so an explicit choice always wins. Keep these hexes in sync with the
+   swatch dots in SettingsDialog.css. */
+:root[data-accent='blue'] {
+    --gn-orange: #1f81ff;
+    --gn-orb-halo: rgba(31, 129, 255, 0.55);
+    --gn-accent-rgb: 31, 129, 255;
+}
+
+:root[data-accent='gray'] {
+    --gn-orange: #8a8a8a;
+    --gn-orb-halo: rgba(138, 138, 138, 0.5);
+    --gn-accent-rgb: 138, 138, 138;
 }
