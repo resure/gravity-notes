@@ -20,7 +20,11 @@
     outline: none;
     background: transparent;
     margin: 0;
-    padding: 0 0 0 2px;
+    /* Left padding matches the body's inner inset so the title shares the first line's left edge:
+       body text sits at --editor-gutter + 4px (the ProseMirror root's own 4px padding) and the
+       title-row already applies --editor-gutter, so the input adds the same 4px. (Preview mode lines
+       both up at gutter + 4px too — see NotePreview.css.) */
+    padding: 0 0 0 4px;
     color: var(--g-color-text-primary);
     /* Follow the editor-font setting (like the .yfm body), falling back to the inherited app font. */
     font-family: var(--gn-editor-font, inherit);

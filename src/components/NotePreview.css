@@ -34,10 +34,12 @@
 /* Mirror the editor's Apple-Notes rhythm (see EditorPane.css) onto the diplodoc-rendered preview
    HTML so read-only preview looks like the WYSIWYG surface. Both are `.yfm` content; the editor
    overrides live on its ProseMirror node, so the same rules are duplicated here for the static
-   HTML. KEEP THESE VALUES IDENTICAL to the matching block in EditorPane.css — they are the same
-   typographic rhythm, just re-scoped from the ProseMirror node to the static preview container.
-   The doubled `.note-preview__body.yfm` outranks the base `.yfm` typography without !important;
-   `:where(...)` keeps element specificity at zero so these win. */
+   HTML. KEEP THE MARGIN VALUES IDENTICAL to the matching block in EditorPane.css — they are the same
+   typographic rhythm, just re-scoped from the ProseMirror node to the static preview container. (The
+   body line-height is NOT hand-mirrored: both blocks read the per-font `--gn-editor-line-height` var
+   from index.css, so it stays in sync per font automatically.) The doubled `.note-preview__body.yfm`
+   outranks the base `.yfm` typography without !important; `:where(...)` keeps element specificity at
+   zero so these win. */
 .note-preview__body.yfm {
     line-height: 1.2;
 }
@@ -45,7 +47,9 @@
 .note-preview__body.yfm :where(p, li) {
     margin-top: 0;
     margin-bottom: 1px;
-    line-height: 1.35;
+    /* Same per-font leading var the editor uses (index.css), so both modes track each font together;
+       fallback is the sans value. */
+    line-height: var(--gn-editor-line-height, 1.35);
 }
 
 /* YFM's own base rule `.yfm li:first-child, .yfm li + li { margin-block: 0.33em 0 }` carries element

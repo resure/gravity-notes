@@ -1,0 +1,27 @@
+/* Accent-color option: a colored dot beside the label, so the picker reads as a color picker. Shared
+   by the Settings dialog and the per-note appearance popover. The dot hues mirror the accent CSS
+   variables in index.css (kept in sync by hand). */
+.appearance-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.appearance-accent__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.appearance-accent__dot_amber {
+    background: #ea892b;
+}
+
+.appearance-accent__dot_blue {
+    background: #1f81ff;
+}
+
+.appearance-accent__dot_gray {
+    background: #8a8a8a;
+}

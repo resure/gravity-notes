@@ -12,7 +12,12 @@ import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
-import {effectiveAppearance, useSettings, useWorkspaceSettings} from '../hooks/useSettings';
+import {
+    effectiveAppearance,
+    useNoteSettings,
+    useSettings,
+    useWorkspaceSettings,
+} from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {isMainWindow, isTauri} from '../isTauri';
 import {orderNotes} from '../storage/metadata';
@@ -324,24 +329,36 @@ export function Workspace({
     const [settingsOpen, setSettingsOpen] = useState(false);
     const {settings, setSetting} = useSettings();
     const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
+    // Per-note overrides for the OPEN note (the innermost appearance layer). Null id when no note is
+    // open — the hook then holds all-inherit defaults, so the effective appearance is app+workspace.
+    const {noteAppearance, setNoteSetting, resetNoteAppearance, isOverridden} = useNoteSettings(
+        workspaceId,
+        notes.note?.id ?? null,
+    );
 
-    // Apply the effective appearance (a workspace override, else the app-wide value) to <html> as
-    // data-attributes that index.css reads: `data-editor-font` swaps the editor/preview/title font,
-    // `data-accent` the accent trio. useLayoutEffect (not useEffect) so the swap lands before paint —
-    // on a workspace switch the tree remounts (keyed in App), so this runs synchronously with the
-    // unmount cleanup, avoiding a one-frame flash to the default appearance. Amber is the CSS default,
-    // so it clears the attribute rather than stamping it.
+    // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
+    // that index.css reads: `data-editor-font` swaps the editor/preview/title font, `data-accent` the
+    // accent trio, `data-text-width` the content column width. useLayoutEffect (not useEffect) so the
+    // swap lands before paint — on a workspace switch the tree remounts (keyed in App), so this runs
+    // synchronously with the unmount cleanup, avoiding a one-frame flash to the default appearance.
+    // Amber is the CSS default, so it clears the attribute rather than stamping it.
     useLayoutEffect(() => {
-        const {editorFont, accentColor} = effectiveAppearance(settings, workspaceSettings);
+        const {editorFont, accentColor, textWidth} = effectiveAppearance(
+            settings,
+            workspaceSettings,
+            noteAppearance,
+        );
         const root = document.documentElement;
         root.setAttribute('data-editor-font', editorFont);
+        root.setAttribute('data-text-width', textWidth);
         if (accentColor === 'amber') root.removeAttribute('data-accent');
         else root.setAttribute('data-accent', accentColor);
         return () => {
             root.removeAttribute('data-editor-font');
             root.removeAttribute('data-accent');
+            root.removeAttribute('data-text-width');
         };
-    }, [settings, workspaceSettings]);
+    }, [settings, workspaceSettings, noteAppearance]);
 
     const [aboutOpen, setAboutOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
@@ -933,6 +950,7 @@ export function Workspace({
             }
         },
         toggleEditorMode: () => editorRef.current?.toggleMode(),
+        openNoteAppearance: () => editorRef.current?.toggleAppearance(),
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
         openSettings: () => setSettingsOpen(true),
@@ -1138,6 +1156,11 @@ export function Workspace({
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
+                                        noteAppearance={noteAppearance}
+                                        onSetNoteAppearance={setNoteSetting}
+                                        onResetNoteAppearance={resetNoteAppearance}
+                                        noteAppearanceOverridden={isOverridden}
+                                        workspaceLabel={storageLabel}
                                     />
                                 </div>
                                 <BacklinksPanel

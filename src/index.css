@@ -85,32 +85,72 @@ body,
         -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* ── Editor-font setting ────────────────────────────────────────────────────────────────────────
-   `--gn-editor-font` is the single source for the note-CONTENT font: the WYSIWYG editor + read-only
-   preview (both `.yfm`) AND the note title above the editor (NoteTitle.css). `sans` (the default) is
-   the app system font; the active choice is stamped on <html> as `data-editor-font` (by `Workspace`),
-   and serif/mono override the var for the whole `.g-root` subtree (specificity out-ranks the base).
-   Deliberately NOT applied to the app chrome (`--g-font-family-sans`) or the raw Markup editor
-   (`.cm-editor`, which isn't `.yfm` and doesn't read this var). Set on `.g-root` so it can reference
-   `--g-font-family-sans`, which lives there. */
+/* ── Editor-font setting + per-font typography ──────────────────────────────────────────────────
+   Each font variation owns its note-CONTENT typography in a SELF-CONTAINED block below: the family
+   (`--gn-editor-font`), the base reading size (`--gn-editor-font-size`), and the body line-height
+   (`--gn-editor-line-height`). Keeping them separate per font is deliberate — tuning sans's leading
+   must not move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…)
+   inside these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
+   <html> as `data-editor-font` (by `Workspace`), and serif/mono override for the whole `.g-root`
+   subtree (specificity out-ranks the base). These feed the note CONTENT only — the WYSIWYG editor +
+   read-only preview (both `.yfm`, via `.g-root .yfm` below) and the note title (NoteTitle.css) —
+   never the app chrome (`--g-font-family-sans`) or the raw Markup editor (`.cm-editor`, not `.yfm`).
+   Set on `.g-root` so the family can reference `--g-font-family-sans`, which lives there. */
 .g-root {
+    /* Sans — the native system font (default). 15px matches YFM's own base size. */
     --gn-editor-font: var(--g-font-family-sans);
+    --gn-editor-font-size: 15px;
+    --gn-editor-line-height: 1.35;
 }
 
 :root[data-editor-font='serif'] .g-root {
-    --gn-editor-font: ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
+    /* PT Serif is bundled (self-hosted via @fontsource, imported in main.tsx); the rest is a graceful
+       fallback if it ever fails to load, and covers scripts we don't ship a PT Serif subset for. Its
+       smaller x-height reads small at 15px, so bump the size up and give it a touch more leading
+       (1.4 vs sans/mono's 1.35). */
+    --gn-editor-font: 'PT Serif', ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
+    --gn-editor-font-size: 16px;
+    --gn-editor-line-height: 1.4;
 }
 
 :root[data-editor-font='mono'] .g-root {
     --gn-editor-font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --gn-editor-font-size: 15px;
+    --gn-editor-line-height: 1.35;
 }
 
-/* The editor body + read-only preview are YFM content, which reads its OWN `--yfm-font-family-sans`
-   (a Segoe-UI default the markdown editor never remaps — so the surface rendered in Arial while the
-   chrome used the app font). Point it at `--gn-editor-font` (higher specificity than YFM's own `.yfm`
-   declaration). Code blocks keep `--yfm-font-family-monospace`, so they stay mono in every mode. */
+/* The editor body + read-only preview are YFM content, which reads its OWN `--yfm-font-*` vars (a
+   Segoe-UI/15px default the markdown editor never remaps — so the surface rendered in Arial at the
+   wrong size while the chrome used the app font). Point family + size at the active per-font values
+   above (higher specificity than YFM's own `.yfm` declarations). The body line-height is applied by
+   the reading-rhythm rules (EditorPane.css / NotePreview.css), not here. Headings keep their own
+   absolute `--yfm-font-size-h*` vars, so `--yfm-font-size` grows only the body copy. Code blocks keep
+   `--yfm-font-family-monospace`, so they stay mono in every mode. */
 .g-root .yfm {
     --yfm-font-family-sans: var(--gn-editor-font);
+    --yfm-font-size: var(--gn-editor-font-size);
+}
+
+/* ── Code highlighting (dark theme) ─────────────────────────────────────────────────────────────
+   YFM's syntax colors (@diplodoc/transform) are a light-theme highlight.js palette with NO dark
+   variant, so on the near-black code background several tokens are barely legible — worst is the
+   #880000 red shared by strings/numbers/types AND titles, but the dark-green built-ins (#397300) and
+   muted-red variables (#bc6060) suffer too. Re-map the PUBLIC `--yfm-color-hljs-*` vars (every token
+   rule reads `var(--yfm-color-hljs-X, …-private)`, so setting the public var wins) to a readable dark
+   palette, for the editor + preview `.yfm` alike. Strings/numbers stay in the red family (just made
+   legible); the rest lift to conventional, cohesive hues. Light theme is untouched — its private
+   defaults still apply. (Targets `g-root_theme_dark`; the app doesn't expose the high-contrast dark.) */
+.g-root_theme_dark .yfm {
+    /* `.hljs-subst` spans (e.g. template-literal substitutions) otherwise fall back to #444 here: the
+       existing dark code-foreground rule near the top of this file colors only the code/pre element,
+       not these child spans. Point them at the theme text color so they stay readable. */
+    --yfm-color-hljs-subst: var(--g-color-text-primary);
+    --yfm-color-hljs-deletion: #e06c75; /* strings, numbers, types — the red, now readable */
+    --yfm-color-hljs-section: #e5c07b; /* titles: function / class names */
+    --yfm-color-hljs-pseudo: #56b6c2; /* variables, symbols, regexp, links */
+    --yfm-color-hljs-literal: #d19a66; /* literals: true / false / null */
+    --yfm-color-hljs-addition: #61afef; /* built-ins (print), bullets, inline code */
+    --yfm-color-hljs-meta: #c678dd; /* decorators / meta */
 }
 
 /* ── Accent-color setting ───────────────────────────────────────────────────────────────────────
@@ -129,4 +169,39 @@ body,
     --gn-orange: #8a8a8a;
     --gn-orb-halo: rgba(138, 138, 138, 0.5);
     --gn-accent-rgb: 138, 138, 138;
+}
+
+/* ── Text-width setting ─────────────────────────────────────────────────────────────────────────
+   `--gn-text-width` caps the measure of the note-content column and centers it in the pane. Stamped
+   on <html> as `data-text-width` by `Workspace` (effective across app → workspace → note). Applied to
+   the WYSIWYG editor content, the read-only preview body, and the note title — all inset by the same
+   `--editor-gutter`, so their left edges stay aligned when centered. `unlimited` = no cap (fills the
+   pane, today's behavior). NOT applied to the raw Markup editor (parity with the editor-font scoping).
+   Values are first guesses — tune later. */
+:root {
+    --gn-text-width: 52rem;
+}
+:root[data-text-width='narrow'] {
+    --gn-text-width: 42rem;
+}
+:root[data-text-width='normal'] {
+    --gn-text-width: 52rem;
+}
+:root[data-text-width='wide'] {
+    --gn-text-width: 72rem;
+}
+:root[data-text-width='unlimited'] {
+    --gn-text-width: none;
+}
+
+.editor-pane .note-title-row,
+.editor-pane .g-md-wysiwyg-editor__editor,
+.editor-pane .note-preview__body {
+    /* width:100% gives these (flex) items a definite basis so `margin-inline:auto` centers them
+       instead of collapsing them to content width. box-sizing keeps the --editor-gutter padding
+       inside the cap, so the title and body share a left edge. */
+    width: 100%;
+    max-width: var(--gn-text-width, none);
+    margin-inline: auto;
+    box-sizing: border-box;
 }

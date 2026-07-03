@@ -1,0 +1,58 @@
+.note-appearance {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    /* Wide enough for the 5-segment Text width control (Default · Narrow · Normal · Wide · No limit)
+       to render without truncating — a bit wider than the 3-option prototype. */
+    width: 342px;
+    box-sizing: border-box;
+    padding: 16px 16px 18px;
+}
+
+.note-appearance__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.note-appearance__titles {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.note-appearance__subtext {
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+/* Reset link — a text button, so it reads as a link (Gravity link color, dark = warm orange). */
+.note-appearance__reset {
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--g-color-text-link);
+    cursor: pointer;
+}
+
+.note-appearance__reset:hover {
+    color: var(--g-color-text-link-hover);
+}
+
+.note-appearance__group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.note-appearance__label {
+    font-size: 12px;
+    font-weight: 500;
+}

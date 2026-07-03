@@ -1,5 +1,6 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
+import {Ellipsis} from '@gravity-ui/icons';
 import {
     MarkdownEditorView,
     useMarkdownEditor,
@@ -10,8 +11,10 @@ import {Hotkey, Icon, Select} from '@gravity-ui/uikit';
 import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
+import type {NoteAppearance} from '../hooks/useSettings';
 import type {Note, NoteMeta} from '../storage/types';
 
+import {NoteAppearancePopover} from './NoteAppearancePopover';
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
@@ -120,6 +123,8 @@ export interface EditorPaneHandle {
     toggleMode(): void;
     /** Move keyboard focus into the editor body. */
     focus(): void;
+    /** Open/close the ⋯ "Note appearance" popover (the ⌘⇧I shortcut). */
+    toggleAppearance(): void;
 }
 
 interface EditorPaneProps {
@@ -160,6 +165,14 @@ interface EditorPaneProps {
     showToolbar?: boolean;
     /** Show the note's title icon (Settings › Show note icons, experimental). */
     showNoteIcons?: boolean;
+    /** Per-note appearance overrides for the open note (drives the ⋯ "Note appearance" popover). */
+    noteAppearance: NoteAppearance;
+    onSetNoteAppearance: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
+    onResetNoteAppearance: () => void;
+    /** True when the open note overrides at least one appearance field — shows the popover's Reset. */
+    noteAppearanceOverridden: boolean;
+    /** Active workspace label, for the popover's "Overrides …" subtext. */
+    workspaceLabel: string | null;
 }
 
 /** Imperative surface the shell uses to drive the editor body. */
@@ -543,6 +556,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onSetIcon,
         showToolbar,
         showNoteIcons,
+        noteAppearance,
+        onSetNoteAppearance,
+        onResetNoteAppearance,
+        noteAppearanceOverridden,
+        workspaceLabel,
     },
     ref,
 ) {
@@ -555,6 +573,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     // Read the latest autofocus inside the session-driven focus effect without re-running it per change.
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
+
+    // The ⋯ "Note appearance" popover: open state + the trigger element it anchors to. Closed on a
+    // note switch (a sessionId bump) so it never lingers over a different note than it was opened for.
+    const [appearanceOpen, setAppearanceOpen] = useState(false);
+    const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
+    useEffect(() => setAppearanceOpen(false), [sessionId]);
 
     // Only relevant with the toolbar shown: give the (sticky) toolbar a hairline once the pane scrolls,
     // so a stuck bar reads as separate from the content under it. `setScrolled(bool)` re-renders only
@@ -580,6 +604,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             },
             focus() {
                 bodyRef.current?.focus();
+            },
+            toggleAppearance() {
+                setAppearanceOpen((wasOpen) => !wasOpen);
             },
         }),
         [],
@@ -646,6 +673,34 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 onLeaveToBody={goToBody}
                 onEnter={enterToBody}
                 onEscape={onEscape}
+            />
+            {/* The ⋯ trigger lives in a column-width band (centered to the note's text measure) so it
+                aligns with the note's right edge, not the viewport's. Placed AFTER the title so the
+                CSS `.note-title-row:hover ~ …` reveal (hover the title area) can reach it. */}
+            <div className="editor-pane__note-actions">
+                <button
+                    type="button"
+                    ref={setAppearanceAnchor}
+                    className={`note-appearance-trigger${
+                        appearanceOpen ? ' note-appearance-trigger_open' : ''
+                    }`}
+                    aria-label="Note appearance"
+                    aria-haspopup="dialog"
+                    aria-expanded={appearanceOpen}
+                    onClick={() => setAppearanceOpen((wasOpen) => !wasOpen)}
+                >
+                    <Icon data={Ellipsis} size={16} />
+                </button>
+            </div>
+            <NoteAppearancePopover
+                open={appearanceOpen}
+                anchor={appearanceAnchor}
+                onClose={() => setAppearanceOpen(false)}
+                noteAppearance={noteAppearance}
+                onSet={onSetNoteAppearance}
+                onReset={onResetNoteAppearance}
+                overridden={noteAppearanceOverridden}
+                workspaceLabel={workspaceLabel}
             />
             {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- captures ArrowUp/Backspace handoffs and empty-area clicks; the editor inside is the interactive element */}
             <div

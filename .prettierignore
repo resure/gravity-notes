@@ -6,3 +6,6 @@ src-tauri/gen
 
 # Local, machine-specific Claude Code settings (gitignored) — not part of the codebase to format.
 .claude/settings.local.json
+
+# Design handoff bundles (HTML prototypes, notes) — reference artifacts, not source to format.
+handoffs

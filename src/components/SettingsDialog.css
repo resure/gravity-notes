@@ -1,63 +1,69 @@
+/* Cap the modal width: Gravity's size="m" is 720px, wider than these rows need. --g-dialog-width is
+   the public override the Dialog's `width` reads (falls back to the size preset). */
+.settings-dialog-modal {
+    --g-dialog-width: 600px;
+}
+
 .settings-dialog {
     display: flex;
     flex-direction: column;
-    gap: 22px;
-    /* The Dialog.Body has no bottom padding of its own, so give the content some breathing room. */
-    padding-bottom: 8px;
+    gap: 14px;
+    /* Dialog.Body supplies the horizontal padding; add bottom room so the last card breathes. */
+    padding-bottom: 28px;
 }
 
+/* Each section is a subtle card. Sections are separated only by the flex gap above — there are
+   deliberately NO divider lines between rows. The card border auto-themes; the faint fill is
+   theme-mirrored below (no single Gravity token matches a ~3% overlay). */
 .settings-dialog__section {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: 12px;
+    padding: 6px 18px;
+}
+
+.g-root_theme_dark .settings-dialog__section {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.g-root_theme_light .settings-dialog__section {
+    background: rgba(0, 0, 0, 0.02);
 }
 
 .settings-dialog__section-head {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-bottom: 6px;
+    gap: 5px;
+    padding: 14px 0 10px;
 }
 
+.settings-dialog__section-title {
+    letter-spacing: -0.01em;
+}
+
+/* Rows are a two-column grid, so the control sits at a fixed spot near its label rather than
+   floating to the far edge. Toggle rows keep the Switch at the right (platform convention). */
 .settings-dialog__row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    min-height: 32px;
-    padding: 4px 0;
+    column-gap: 16px;
+    padding: 13px 0;
+}
+
+/* Picker rows: a fixed label column with the segmented control pulled left, hugging the label. */
+.settings-dialog__row_choice {
+    grid-template-columns: 150px 1fr;
+    column-gap: 20px;
+    padding: 11px 0;
+}
+
+.settings-dialog__picker {
+    justify-self: start;
 }
 
 .settings-dialog__label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     min-width: 0;
-}
-
-/* Accent-color option: a colored dot beside the label, so the picker reads as a color picker.
-   The dot hues mirror the accent CSS variables in index.css (kept in sync by hand). */
-.settings-accent {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.settings-accent__dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex: none;
-}
-
-.settings-accent__dot_amber {
-    background: #ea892b;
-}
-
-.settings-accent__dot_blue {
-    background: #1f81ff;
-}
-
-.settings-accent__dot_gray {
-    background: #8a8a8a;
 }
