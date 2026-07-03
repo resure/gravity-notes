@@ -126,19 +126,20 @@ Access API), `TauriNoteStore` (`src/storage/tauriStore.ts`, the same `.md` folde
 commands in the desktop app), and `IndexedDbNoteStore` (`src/storage/indexedDbStore.ts`, in-browser).
 All share the same `<Title>.md` ids, canonical body shape, and `updatedAt`-based conflict semantics
 (`src/storage/noteText.ts`), so everything above the seam is backend-agnostic. Per-folder/-store
-metadata — sort mode, pins, created stamps, the open note — lives in `metadata.ts`. The chosen
-backend (and any folder handle or path) is remembered in IndexedDB (`src/storage/handlePersistence.ts`).
-The desktop shell is `src-tauri/` (Tauri 2); its only app code is the `notes_*` filesystem commands in
-`src-tauri/src/lib.rs`.
+metadata — sort mode, pins, created stamps, the open note — lives in `metadata.ts`. Every opened
+folder/store is a **workspace** in an IndexedDB registry (`src/storage/workspaceRegistry.ts`) that
+feeds the recents UI: the orb menu's "Open Recent" submenu, the ⌃R switcher, and (desktop) one native
+window per workspace. The desktop shell is `src-tauri/` (Tauri 2); its app code is the `notes_*`
+filesystem commands plus the workspace-window commands in `src-tauri/src/lib.rs`.
 
 Key modules:
 
 - `src/storage/` — `types.ts` (the `NoteStore` seam), `fileSystemStore.ts` + `tauriStore.ts` +
   `indexedDbStore.ts` (the three backends), `noteText.ts` (shared id/body helpers), `metadata.ts`
-  (sort/pins sidecar), `transfer.ts` (`.md` zip export/import), `handlePersistence.ts` (remembered
-  backend + handle/path)
-- `src/hooks/useNotesStorage.ts` — first-run storage choice + permission lifecycle; yields a ready
-  `NoteStore`
+  (sort/pins sidecar), `transfer.ts` (`.md` zip export/import), `workspaceRegistry.ts` (the
+  workspace registry: known folders/stores + recency + last-active)
+- `src/hooks/useNotesStorage.ts` — workspace lifecycle (first-run choice, restore, switching,
+  new-window opens) + FSA permission lifecycle; yields a ready `NoteStore`
 - `src/hooks/useNotes.ts` — note list, selection, debounced autosave, and conflict detection
 - `src/hooks/useNoteNavigation.ts`, `useNoteSearch.ts`, `useBacklinks.ts`, `useShortcuts.ts` —
   cursor/focus flow, full-text search-or-create and backlinks (both scoring a shared in-memory corpus
@@ -172,8 +173,7 @@ Key modules:
 
 - Search index update on external file updates (+ reload workspace menu item?)
 - Notion-like font, width and density setting for each note? And ability to set default for all notes
-- Multi-window native app (with different workspaces)
-- Recent workspaces menu item (with cmd+r shortcut)
+- Restore all workspace windows on relaunch (today only the last-active one comes back)
 
 - Easter egg in top bar (to the right of the search bar) ?
 

@@ -30,20 +30,29 @@ beforeEach(() => {
     Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'visible'});
 });
 
+/** The non-store Workspace props (workspace identity + switching callbacks), all inert. */
+function workspaceProps() {
+    return {
+        workspaceId: 'test-ws',
+        storageLabel: 'notes',
+        workspaces: [],
+        themePref: 'light' as const,
+        onChangeThemePref: vi.fn(),
+        onOpenWorkspace: vi.fn(async () => true),
+        onOpenWorkspaceInNewWindow: vi.fn(async () => {}),
+        onRemoveWorkspace: vi.fn(async () => {}),
+        onRefreshWorkspaces: vi.fn(async () => {}),
+        onOpenFolder: vi.fn(),
+        supportsFolders: true,
+    };
+}
+
 function renderWorkspace() {
     const dir = new FakeDirectoryHandle();
     dir.seedFile('Alpha.md', 'a', 100);
     dir.seedFile('Beta.md', 'b', 200);
     const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-    renderWithProviders(
-        <Workspace
-            store={store}
-            storageLabel="notes"
-            themePref="light"
-            onChangeThemePref={vi.fn()}
-            onChangeStorage={vi.fn()}
-        />,
-    );
+    renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
     return {dir, store};
 }
 
@@ -55,10 +64,10 @@ async function toggleSidebarViaMenu(user: ReturnType<typeof userEvent.setup>) {
 
 describe('Workspace — nvALT navigation', () => {
     afterEach(() => {
-        // Some tests persist to localStorage (sidebar collapse, settings); clear the keys so no
-        // state leaks into the other tests (jsdom shares localStorage across a suite).
-        localStorage.removeItem('gravity-notes:sidebar-collapsed');
-        localStorage.removeItem('gravity-notes:settings');
+        // Some tests persist to localStorage (sidebar collapse, settings); the layout keys are now
+        // namespaced per workspace id, so clear everything rather than chase key shapes (jsdom
+        // shares localStorage across a suite).
+        localStorage.clear();
     });
 
     // Collapse the sidebar, then fire ⌘' to peek it. Resolves once the peek class is present.
@@ -417,12 +426,13 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
-        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('true');
+        // Layout state persists under the workspace-namespaced key.
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('true');
         await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
         );
-        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBe('false');
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('false');
     });
 
     it('toggles the sidebar with ⌘\\', async () => {
@@ -435,11 +445,15 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('restores the collapsed sidebar from localStorage', async () => {
+    it('restores the collapsed sidebar from the pre-workspace key and adopts it', async () => {
+        // An upgrade scenario: only the legacy (un-namespaced) key exists. The first workspace
+        // opened inherits it — and consumes it, so "back to default" can't fall through later.
         localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('true');
+        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBeNull();
     });
 
     it("⌘' peeks the collapsed sidebar", async () => {
@@ -605,15 +619,7 @@ describe('Workspace — nvALT navigation', () => {
         dir.seedFile('Recipes.md', 'pancakes need buttermilk', 100);
         dir.seedFile('Travel.md', 'flights to tokyo', 200);
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        renderWithProviders(
-            <Workspace
-                store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={vi.fn()}
-            />,
-        );
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
         await screen.findByRole('option', {name: /Recipes/});
         await user.type(screen.getByPlaceholderText(/Search/), 'buttermilk');
         // "buttermilk" lives only in Recipes' body — it surfaces once the corpus loads...
@@ -636,15 +642,7 @@ describe('Workspace — nvALT navigation', () => {
         const preamble = 'lorem ipsum dolor sit amet '.repeat(10); // ~270 chars, no "kubernetes"
         dir.seedFile('Journal.md', `${preamble} then we discussed kubernetes at length`, 100);
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        renderWithProviders(
-            <Workspace
-                store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={vi.fn()}
-            />,
-        );
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
         await screen.findByRole('option', {name: /Journal/});
         await user.type(screen.getByPlaceholderText(/Search/), 'kubernetes');
         await waitFor(() =>
@@ -683,15 +681,7 @@ describe('Workspace — move picker', () => {
         dir.seedFile('Beta.md', 'b', 200);
         dir.seedFile('Work/Existing.md', 'x', 50); // makes the "Work" folder exist
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        renderWithProviders(
-            <Workspace
-                store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={vi.fn()}
-            />,
-        );
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
         return {store};
     }
 
@@ -757,15 +747,7 @@ describe('Workspace — folder auto-preview', () => {
         dir.seedFile('Root.md', 'r', 100);
         dir.seedFile('Work/Inside.md', 'i', 50);
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        renderWithProviders(
-            <Workspace
-                store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={vi.fn()}
-            />,
-        );
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
         await screen.findByRole('option', {name: /Root/});
         // Open the folder rail, then select the Work folder.
         fireEvent.keyDown(document, {key: '\\', code: 'Backslash', metaKey: true, shiftKey: true});
@@ -790,19 +772,21 @@ describe('Workspace — storage menu', () => {
         expect(await screen.findByText('Attachments')).toBeInTheDocument();
     });
 
-    it('confirms before changing storage while an unresolved conflict holds unsaved edits', async () => {
+    it('confirms before switching workspaces while an unresolved conflict holds unsaved edits', async () => {
         const user = userEvent.setup();
         const dir = new FakeDirectoryHandle();
         dir.seedFile('Note.md', 'disk v1', 100);
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        const onChangeStorage = vi.fn();
+        const props = workspaceProps();
+        const onOpenWorkspace = props.onOpenWorkspace;
         renderWithProviders(
             <Workspace
                 store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={onChangeStorage}
+                {...props}
+                workspaces={[
+                    {id: 'test-ws', backend: 'filesystem', name: 'notes'},
+                    {id: 'tauri:/other', backend: 'tauri-fs', name: 'other'},
+                ]}
             />,
         );
         // Open the note, then create an external conflict (bump its mtime past the baseline).
@@ -813,18 +797,22 @@ describe('Workspace — storage menu', () => {
         // Wait for the conflict banner so we know an unresolved conflict is holding the note.
         await screen.findByText('Changed on disk');
 
-        // Decline the confirm: storage must NOT change.
-        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-        await user.click(screen.getByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
-        await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
-        expect(onChangeStorage).not.toHaveBeenCalled();
+        const switchToOther = async () => {
+            await user.click(screen.getByRole('button', {name: 'Menu'}));
+            fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
+            await user.click(await screen.findByRole('menuitem', {name: 'other'}));
+        };
 
-        // Accept the confirm: storage changes through.
+        // Decline the confirm: the workspace must NOT switch.
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        await switchToOther();
+        await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+        expect(onOpenWorkspace).not.toHaveBeenCalled();
+
+        // Accept the confirm: the switch goes through.
         confirmSpy.mockReturnValue(true);
-        await user.click(screen.getByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Change storage/}));
-        await waitFor(() => expect(onChangeStorage).toHaveBeenCalled());
+        await switchToOther();
+        await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith('tauri:/other'));
         confirmSpy.mockRestore();
     });
 });
@@ -836,15 +824,7 @@ describe('Workspace — folder move', () => {
         dir.seedFile('Work/Note.md', 'w', 100);
         dir.seedFile('Archive/Other.md', 'a', 50); // makes "Archive" already exist → rename collides
         const store = new FileSystemNoteStore(asDirectoryHandle(dir));
-        renderWithProviders(
-            <Workspace
-                store={store}
-                storageLabel="notes"
-                themePref="light"
-                onChangeThemePref={vi.fn()}
-                onChangeStorage={vi.fn()}
-            />,
-        );
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
         await screen.findByRole('option', {name: /Note/});
         fireEvent.keyDown(document, {key: '\\', code: 'Backslash', metaKey: true, shiftKey: true});
         const work = await screen.findByRole('treeitem', {name: /Work/});
@@ -895,13 +875,7 @@ describe('Workspace — attachments survive StrictMode', () => {
         const user = userEvent.setup();
         renderWithProviders(
             <StrictMode>
-                <Workspace
-                    store={store}
-                    storageLabel="notes"
-                    themePref="light"
-                    onChangeThemePref={vi.fn()}
-                    onChangeStorage={vi.fn()}
-                />
+                <Workspace store={store} {...workspaceProps()} />
             </StrictMode>,
         );
 
