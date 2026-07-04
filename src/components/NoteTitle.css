@@ -16,7 +16,7 @@
    center, so a vertically-centered icon reads a touch high — this optically aligns it with the title.
    `transform` keeps it purely visual (no layout shift in the centered row). */
 .note-title__icon {
-    transform: translateY(2px);
+    transform: translateY(0px);
 }
 
 .note-title {

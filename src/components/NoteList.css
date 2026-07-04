@@ -139,14 +139,18 @@
 }
 
 /* The soft rounded icon tile — a neutral fill idle, accent-tinted when the row is selected (mirrors
-   the selection wash). Theme-aware: a faint dark tint in light, a faint light tint in dark. */
+   the selection wash). Theme-aware: a faint dark tint in light, a faint light tint in dark.
+   Its size + radius are shared vars (below), so the picker button that fills it stays exactly matched
+   even if the tile is resized — otherwise the button's own hover/press fill drifts out of alignment. */
 .note-list__icon-tile {
+    --gn-icon-tile-size: 32px;
+    --gn-icon-tile-radius: 8px;
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
+    width: var(--gn-icon-tile-size);
+    height: var(--gn-icon-tile-size);
+    border-radius: var(--gn-icon-tile-radius);
     background: rgba(0, 0, 0, 0.05);
 }
 .g-root_theme_dark .note-list__icon-tile {
@@ -157,12 +161,32 @@
 }
 
 /* The picker button fills the tile and is visually transparent — the tile is the surface, and the
-   whole tile is the click target. (`.icon-picker__button` is added by IconPickerButton itself.) */
+   whole tile is the click target. (`.icon-picker__button` is added by IconPickerButton itself.)
+
+   Size it through Gravity's own --g-button-height rather than width/height:100%. An icon-only Gravity
+   button locks its WIDTH to its height via `width: var(--g-button-height)` at a specificity that beats
+   a plain width:100%, so a bare width:100% is silently ignored and the button stays at the size-m
+   height (28px) — leaving a gap inside a larger tile. Feeding --g-button-height the tile size sets
+   both width and height with no specificity fight. --g-button-border-radius matches the tile's radius
+   too, so Gravity's hover/press ::before fill lines up with the tile: no inner box, no gap. */
 .note-list__icon.icon-picker__button {
-    width: 100%;
-    height: 100%;
+    --g-button-height: var(--gn-icon-tile-size);
+    --g-button-border-radius: var(--gn-icon-tile-radius);
     min-width: 0;
     background: transparent;
+}
+
+/* Don't shrink-on-press: Gravity's :active scale(0.96) pulls the fill inward, leaving a visible gap
+   inside the tile (the fill no longer reaches the tile's edge). Keep it flush — the tile is the
+   surface, so the press feedback should fill it, not float inside it. */
+.note-list__icon.icon-picker__button:active {
+    transform: none;
+}
+
+/* Optically center the glyph in its tile: most icons/emoji sit a hair high, so nudge the glyph down
+   1px. Purely visual (transform, no layout shift); the tile itself stays put. */
+.note-list__icon .g-button__icon {
+    transform: translateY(0px);
 }
 
 .note-list__pin {
