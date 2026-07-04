@@ -247,8 +247,11 @@ const NoteRow = memo(function NoteRow({
                 />
             ) : (
                 <>
-                    <div className="note-list__row">
-                        {showIcons ? (
+                    {/* The icon glyph in a soft rounded tile, centered against the whole two-line
+                        cell. The tile IS the picker target (the button fills it). Only when the
+                        Show-note-icons setting is on; otherwise the text column goes flush-left. */}
+                    {showIcons ? (
+                        <span className="note-list__icon-tile">
                             <IconPickerButton
                                 className="note-list__icon"
                                 size="s"
@@ -260,64 +263,75 @@ const NoteRow = memo(function NoteRow({
                                     onOpenIconPicker(note.id, e.currentTarget);
                                 }}
                             />
-                        ) : null}
-                        {pinned ? (
-                            <Icon className="note-list__pin" data={PinFill} size={14} aria-hidden />
-                        ) : null}
-                        <Text className="note-list__title" ellipsis>
-                            {highlightTerms(note.title, terms)}
-                        </Text>
-                        <div className="note-list__actions">
-                            <Button
-                                view="flat"
-                                size="s"
-                                aria-label="Note actions"
-                                onClick={(e) => {
-                                    // Don't browse the row; open the one shared menu anchored to
-                                    // this button (the parent toggles it off if it's already this row's).
-                                    e.stopPropagation();
-                                    onOpenMenu(note, e.currentTarget);
-                                }}
-                            >
-                                <Icon data={Ellipsis} />
-                            </Button>
-                        </div>
-                    </div>
-                    <div className="note-list__meta">
-                        <Text variant="caption-2" color="secondary" className="note-list__date">
-                            {formatNoteDate(note.updatedAt)}
-                        </Text>
-                        {previewText ? (
-                            <Text
-                                variant="caption-2"
-                                color="secondary"
-                                className="note-list__preview"
-                                ellipsis
-                            >
-                                {highlightTerms(previewText, terms)}
-                            </Text>
-                        ) : null}
-                    </div>
-                    {crumb ? (
-                        // Apple-Notes-style folder chip: which folder this note lives in, shown
-                        // when the list spans folders (All Notes / search). Its own line below.
-                        <div className="note-list__folder">
-                            <Icon
-                                data={Folder}
-                                size={12}
-                                className="note-list__folder-icon"
-                                aria-hidden
-                            />
-                            <Text
-                                variant="caption-2"
-                                color="secondary"
-                                className="note-list__folder-name"
-                                ellipsis
-                            >
-                                {crumb}
-                            </Text>
-                        </div>
+                        </span>
                     ) : null}
+                    <div className="note-list__text">
+                        <div className="note-list__row">
+                            {pinned ? (
+                                <Icon
+                                    className="note-list__pin"
+                                    data={PinFill}
+                                    size={14}
+                                    aria-hidden
+                                />
+                            ) : null}
+                            <Text className="note-list__title" ellipsis>
+                                {highlightTerms(note.title, terms)}
+                            </Text>
+                            {/* The ⋯ actions button, revealed on hover / focus / selection. */}
+                            <div className="note-list__actions">
+                                <Button
+                                    view="flat"
+                                    size="s"
+                                    aria-label="Note actions"
+                                    onClick={(e) => {
+                                        // Don't browse the row; open the one shared menu anchored to
+                                        // this button (parent toggles it off if already this row's).
+                                        e.stopPropagation();
+                                        onOpenMenu(note, e.currentTarget);
+                                    }}
+                                >
+                                    <Icon data={Ellipsis} />
+                                </Button>
+                            </div>
+                        </div>
+                        {/* Second line: the date, then the preview snippet (date back on this line). */}
+                        <div className="note-list__meta">
+                            <Text variant="caption-2" color="secondary" className="note-list__date">
+                                {formatNoteDate(note.updatedAt)}
+                            </Text>
+                            {previewText ? (
+                                <Text
+                                    variant="caption-2"
+                                    color="secondary"
+                                    className="note-list__preview"
+                                    ellipsis
+                                >
+                                    {highlightTerms(previewText, terms)}
+                                </Text>
+                            ) : null}
+                        </div>
+                        {crumb ? (
+                            // Apple-Notes-style folder chip: which folder this note lives in, shown
+                            // when the list spans folders (All Notes / search). Its own line below.
+                            <div className="note-list__folder">
+                                <Icon
+                                    data={Folder}
+                                    size={12}
+                                    className="note-list__folder-icon"
+                                    aria-hidden
+                                />
+                                <Text
+                                    variant="caption-2"
+                                    color="secondary"
+                                    className="note-list__folder-name"
+                                    ellipsis
+                                >
+                                    {crumb}
+                                </Text>
+                            </div>
+                        ) : null}
+                    </div>
                 </>
             )}
         </div>

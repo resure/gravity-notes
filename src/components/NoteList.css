@@ -38,31 +38,69 @@
     text-align: center;
 }
 
-/* Apple-Notes-style two-line cell: title row + a meta row (date · snippet). Full-width,
-   flat (no inset/radius); horizontal padding keeps text aligned with the toolbar above. */
+/* "Ledger" cell: an icon tile + a two-line text column (title line, then date · preview). Full-width,
+   flat; a faint divider separates rows. */
 .note-list__item {
     display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 5px 16px;
+    align-items: center;
+    gap: 11px;
+    padding: 6px 16px;
     cursor: pointer;
+    /* A very faint divider — fainter than --g-color-line-generic, so the rows read as a quiet ledger
+       rather than a hard-ruled table. Theme-aware (light default; dark override below). */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.045);
+}
+.g-root_theme_dark .note-list__item {
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+/* The text column (right of the icon tile): title line, meta line (date · preview), folder chip. */
+.note-list__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
 }
 
 .note-list__row {
     display: flex;
     align-items: center;
-    gap: 4px;
 }
 
+.note-list__title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 450;
+}
+
+/* The ⋯ actions button sits at the title's right edge, revealed on hover / keyboard focus / selection
+   (kept in the DOM at opacity 0 so it stays focusable + clickable, and the shared menu can anchor to
+   it even on an idle row). */
+.note-list__actions {
+    flex-shrink: 0;
+    opacity: 0;
+}
+.note-list__item:hover .note-list__actions,
+.note-list__item:focus-within .note-list__actions,
+.note-list__item_selected .note-list__actions {
+    opacity: 1;
+}
+
+/* Second line: the date, then a preview snippet, on a shared baseline. The text column's gap is 0, so
+   the only space left between this line and the title is the two line boxes' leading — a small
+   negative top margin trims a little of it to sit the two lines closer (safely inside that leading). */
 .note-list__meta {
     display: flex;
     align-items: baseline;
     gap: 8px;
     min-width: 0;
+    margin-top: -2px;
 }
 
 .note-list__date {
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .note-list__preview {
@@ -77,23 +115,6 @@
 .note-list__item_selected,
 .note-list__item_selected:hover {
     background-color: var(--note-list-selected-bg);
-}
-
-.note-list__title {
-    flex: 1;
-    min-width: 0;
-}
-
-.note-list__actions {
-    flex-shrink: 0;
-    opacity: 0;
-}
-
-.note-list__item:hover .note-list__actions,
-.note-list__item_selected .note-list__actions,
-/* Reveal on keyboard focus too, so the row menu is reachable without a pointer hover. */
-.note-list__item:focus-within .note-list__actions {
-    opacity: 1;
 }
 
 /* Mark the focused (cursor) row with a stronger fill instead of an outline border — a step stronger
@@ -117,8 +138,31 @@
     padding: 0 1px;
 }
 
-.note-list__icon {
+/* The soft rounded icon tile — a neutral fill idle, accent-tinted when the row is selected (mirrors
+   the selection wash). Theme-aware: a faint dark tint in light, a faint light tint in dark. */
+.note-list__icon-tile {
     flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.05);
+}
+.g-root_theme_dark .note-list__icon-tile {
+    background: rgba(255, 255, 255, 0.06);
+}
+.note-list__item_selected .note-list__icon-tile {
+    background: rgba(var(--gn-accent-rgb), 0.18);
+}
+
+/* The picker button fills the tile and is visually transparent — the tile is the surface, and the
+   whole tile is the click target. (`.icon-picker__button` is added by IconPickerButton itself.) */
+.note-list__icon.icon-picker__button {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    background: transparent;
 }
 
 .note-list__pin {
@@ -133,7 +177,7 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    margin-top: 1px;
+    /* Spacing above comes from the text column's own row gap now (chip lives inside .note-list__text). */
     opacity: 0.75;
 }
 

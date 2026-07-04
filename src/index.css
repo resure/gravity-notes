@@ -40,9 +40,12 @@ body,
     --g-color-text-brand: var(--g-color-private-black-900-solid);
     --g-color-text-brand-heavy: var(--g-color-private-black-1000-solid);
     --g-color-text-brand-contrast: var(--g-color-private-white-1000-solid);
-    --g-color-text-link: #c2650f;
-    --g-color-text-link-hover: #9e520c;
-    --g-color-text-link-visited: #8a4a12;
+    /* Links follow the accent (--gn-orange, swapped by data-accent): darkened off the accent hue for
+       contrast on the light surface. color-mix keeps one source of truth, so a new accent needs no
+       link tuning. Amber (the default) lands close to the previous hand-picked #c2650f. */
+    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #000 20%);
+    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #000 38%);
+    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 48%);
     --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.1);
     --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.22);
 }
@@ -56,9 +59,11 @@ body,
     --g-color-text-brand: var(--g-color-private-white-1000-solid);
     --g-color-text-brand-heavy: var(--g-color-private-white-1000-solid);
     --g-color-text-brand-contrast: var(--g-color-private-black-1000-solid);
-    --g-color-text-link: #e08a2b;
-    --g-color-text-link-hover: #f0a050;
-    --g-color-text-link-visited: #c2752a;
+    /* Links follow the accent (--gn-orange): lifted off the accent hue for legibility on the dark
+       surface, hover brighter, visited slightly dimmed. See the light block for the rationale. */
+    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #fff 12%);
+    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #fff 30%);
+    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 12%);
     --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.13);
     --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.26);
     /* A very subtle warm/orange cast on the dark base surfaces (a hint, not a tint you'd name).
@@ -87,10 +92,12 @@ body,
 
 /* ── Editor-font setting + per-font typography ──────────────────────────────────────────────────
    Each font variation owns its note-CONTENT typography in a SELF-CONTAINED block below: the family
-   (`--gn-editor-font`), the base reading size (`--gn-editor-font-size`), and the body line-height
-   (`--gn-editor-line-height`). Keeping them separate per font is deliberate — tuning sans's leading
-   must not move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…)
-   inside these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
+   (`--gn-editor-font`), the base reading size (`--gn-editor-font-size`), the body line-height
+   (`--gn-editor-line-height`), and the list rhythm (`--gn-editor-list-line-height` +
+   `--gn-editor-list-gap`, the leading and inter-item gap for `<li>`, consumed in EditorPane.css /
+   NotePreview.css). Keeping them separate per font is deliberate — tuning sans's leading must not
+   move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…) inside
+   these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
    <html> as `data-editor-font` (by `Workspace`), and serif/mono override for the whole `.g-root`
    subtree (specificity out-ranks the base). These feed the note CONTENT only — the WYSIWYG editor +
    read-only preview (both `.yfm`, via `.g-root .yfm` below) and the note title (NoteTitle.css) —
@@ -101,6 +108,10 @@ body,
     --gn-editor-font: var(--g-font-family-sans);
     --gn-editor-font-size: 15px;
     --gn-editor-line-height: 1.35;
+    /* Lists get a little more air than body copy — sans's tight default made bullet/numbered lists
+       feel cramped. serif/mono keep their body rhythm (set in their own blocks below). */
+    --gn-editor-list-line-height: 1.45;
+    --gn-editor-list-gap: 4px;
 }
 
 :root[data-editor-font='serif'] .g-root {
@@ -111,12 +122,18 @@ body,
     --gn-editor-font: 'PT Serif', ui-serif, 'New York', Georgia, Cambria, 'Times New Roman', serif;
     --gn-editor-font-size: 16px;
     --gn-editor-line-height: 1.4;
+    /* serif's leading already reads roomy, so lists keep the body rhythm (no extra loosening). */
+    --gn-editor-list-line-height: 1.4;
+    --gn-editor-list-gap: 1px;
 }
 
 :root[data-editor-font='mono'] .g-root {
     --gn-editor-font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --gn-editor-font-size: 15px;
     --gn-editor-line-height: 1.35;
+    /* Mono lists keep the body rhythm. */
+    --gn-editor-list-line-height: 1.35;
+    --gn-editor-list-gap: 1px;
 }
 
 /* The editor body + read-only preview are YFM content, which reads its OWN `--yfm-font-*` vars (a

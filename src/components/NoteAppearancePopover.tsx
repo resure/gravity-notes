@@ -10,8 +10,12 @@ import './NoteAppearancePopover.css';
 
 interface NoteAppearancePopoverProps {
     open: boolean;
-    /** The `⋯` trigger button the popover anchors to (null before it mounts). */
+    /** The invisible sticky point the popover pins to (null before it mounts) — NOT the ⋯ button,
+     *  which scrolls away with the title, so anchoring here keeps the popover on-screen. */
     anchor: HTMLElement | null;
+    /** The ⋯ trigger button. A press on it reaches Gravity as an outside-press (the trigger isn't the
+     *  anchor), so we ignore that here and let the button's own onClick own the open/close toggle. */
+    trigger: HTMLElement | null;
     onClose: () => void;
     noteAppearance: NoteAppearance;
     onSet: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
@@ -23,13 +27,16 @@ interface NoteAppearancePopoverProps {
 }
 
 /**
- * The per-note "Note appearance" popover: three segmented pickers (editor font, accent, text width),
- * each `Default`-first (inherit the workspace/app value), plus a Reset that clears all overrides.
- * Anchored to the `⋯` trigger in the editor header; Esc / outside-click close it (Gravity `Popup`).
+ * The per-note "Note appearance" popover: two segmented pickers (editor font, text width), each
+ * `Default`-first (inherit the workspace/app value), plus a Reset that clears all overrides. Pinned
+ * to a sticky point at the note's top-right (so it stays on-screen even when the ⋯ button has
+ * scrolled away); no arrow, since there's no on-screen button to point at. Esc / outside-click
+ * close it (Gravity `Popup`).
  */
 export function NoteAppearancePopover({
     open,
     anchor,
+    trigger,
     onClose,
     noteAppearance,
     onSet,
@@ -42,9 +49,15 @@ export function NoteAppearancePopover({
             open={open}
             anchorElement={anchor}
             placement="bottom-end"
-            hasArrow
-            onOpenChange={(isOpen) => {
-                if (!isOpen) onClose();
+            floatingClassName="note-appearance-popup"
+            onOpenChange={(isOpen, event) => {
+                if (isOpen) return;
+                // A click on the ⋯ trigger reaches Gravity as an outside-press (the trigger isn't the
+                // anchor — the sticky point is). Ignore it, so we don't close on the mousedown only for
+                // the trigger's own onClick to reopen on the click; let onClick own the toggle.
+                const target = event?.target;
+                if (target instanceof Node && trigger?.contains(target)) return;
+                onClose();
             }}
         >
             <div className="note-appearance">

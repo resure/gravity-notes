@@ -574,27 +574,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
     const autofocusRef = useRef(autofocus);
     autofocusRef.current = autofocus;
 
-    // The ⋯ "Note appearance" popover: open state + the trigger element it anchors to. Closed on a
+    // The ⋯ "Note appearance" popover: open state, the sticky point it anchors to (for position), and
+    // the trigger button (so its own outside-press is ignored — see NoteAppearancePopover). Closed on a
     // note switch (a sessionId bump) so it never lingers over a different note than it was opened for.
     const [appearanceOpen, setAppearanceOpen] = useState(false);
     const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
+    const [appearanceTrigger, setAppearanceTrigger] = useState<HTMLElement | null>(null);
     useEffect(() => setAppearanceOpen(false), [sessionId]);
 
-    // Only relevant with the toolbar shown: give the (sticky) toolbar a hairline once the pane scrolls,
-    // so a stuck bar reads as separate from the content under it. `setScrolled(bool)` re-renders only
-    // when the boolean flips (React bails on an equal value), not on every scroll event.
+    // Tracks whether the pane has scrolled at all. Two consumers: with the toolbar shown it gives the
+    // (sticky) toolbar a hairline so a stuck bar reads as separate from the content under it; and it
+    // lifts the appearance popover toward the top bar once the ⋯ button has scrolled out of view (see
+    // EditorPane.css). `setScrolled(bool)` re-renders only when the boolean flips (React bails on an
+    // equal value), not on every scroll event.
     const [scrolled, setScrolled] = useState(false);
     useEffect(() => {
         const pane = paneRef.current;
-        if (!pane || !showToolbar) {
-            setScrolled(false);
-            return undefined;
-        }
+        if (!pane) return undefined;
         const onScroll = () => setScrolled(pane.scrollTop > 0);
         onScroll();
         pane.addEventListener('scroll', onScroll, {passive: true});
         return () => pane.removeEventListener('scroll', onScroll);
-    }, [showToolbar]);
+    }, []);
 
     useImperativeHandle(
         ref,
@@ -661,6 +662,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 onEscape();
             }}
         >
+            {/* The appearance popover pins here, NOT to the ⋯ button below: that button lives in the
+                scrolling header and slides out of view, so opening the popover via ⌘⇧I while scrolled
+                down would throw it off-screen. This zero-size point is `sticky` to the pane's top, so
+                the popover hangs off the note's top-right through any scroll; at scroll-top it sits
+                right under the ⋯ button (same column-capped position). */}
+            <div className="editor-pane__appearance-anchor" aria-hidden>
+                <span ref={setAppearanceAnchor} className="editor-pane__appearance-anchor-point" />
+            </div>
             <NoteTitle
                 ref={titleRef}
                 key={sessionId}
@@ -680,13 +689,17 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             <div className="editor-pane__note-actions">
                 <button
                     type="button"
-                    ref={setAppearanceAnchor}
+                    ref={setAppearanceTrigger}
                     className={`note-appearance-trigger${
                         appearanceOpen ? ' note-appearance-trigger_open' : ''
                     }`}
                     aria-label="Note appearance"
                     aria-haspopup="dialog"
                     aria-expanded={appearanceOpen}
+                    // Don't take focus on click: otherwise (in Chromium — WebKit doesn't focus buttons
+                    // on click) the popover's focus-out dismiss fires as focus leaves it, closing on
+                    // mousedown just so onClick reopens on the click. Keyboard focus is unaffected.
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => setAppearanceOpen((wasOpen) => !wasOpen)}
                 >
                     <Icon data={Ellipsis} size={16} />
@@ -695,6 +708,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             <NoteAppearancePopover
                 open={appearanceOpen}
                 anchor={appearanceAnchor}
+                trigger={appearanceTrigger}
                 onClose={() => setAppearanceOpen(false)}
                 noteAppearance={noteAppearance}
                 onSet={onSetNoteAppearance}
