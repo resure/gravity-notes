@@ -747,6 +747,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 icons: {},
+                appearances: {},
                 active: null,
                 trashed: [],
             });
@@ -761,6 +762,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: ['Ideas.md'],
                 created: {'Ideas.md': 123},
                 icons: {},
+                appearances: {},
                 active: null,
                 trashed: [],
             });
@@ -779,6 +781,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 icons: {},
+                appearances: {},
                 active: null,
                 trashed: [],
             });
@@ -792,6 +795,7 @@ describe('FileSystemNoteStore', () => {
                 pinned: [],
                 created: {},
                 icons: {},
+                appearances: {},
                 active: null,
                 trashed: [],
             });

@@ -13,8 +13,13 @@ import {useNoteSearch} from '../hooks/useNoteSearch';
 import {useNotes} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {
+    type NoteAppearance,
+    clearLegacyNoteAppearances,
     effectiveAppearance,
-    useNoteSettings,
+    isNoteAppearanceOverridden,
+    noteAppearanceOf,
+    noteAppearanceToOverride,
+    readLegacyNoteAppearances,
     useSettings,
     useWorkspaceSettings,
 } from '../hooks/useSettings';
@@ -329,12 +334,51 @@ export function Workspace({
     const [settingsOpen, setSettingsOpen] = useState(false);
     const {settings, setSetting} = useSettings();
     const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
-    // Per-note overrides for the OPEN note (the innermost appearance layer). Null id when no note is
-    // open — the hook then holds all-inherit defaults, so the effective appearance is app+workspace.
-    const {noteAppearance, setNoteSetting, resetNoteAppearance, isOverridden} = useNoteSettings(
-        workspaceId,
-        notes.note?.id ?? null,
+    // Per-note overrides for the OPEN note (the innermost appearance layer), read from the metadata
+    // sidecar — stored like icons, so a rename/move re-keys them and they travel with the folder.
+    // With no note open the override is undefined, so the effective appearance is app+workspace.
+    const openNoteId = notes.note?.id ?? null;
+    const noteAppearance = useMemo(
+        () =>
+            noteAppearanceOf(
+                openNoteId === null ? undefined : notes.metadata.appearances[openNoteId],
+            ),
+        [notes.metadata.appearances, openNoteId],
     );
+    const isOverridden = isNoteAppearanceOverridden(noteAppearance);
+    const setNoteSetting = useCallback(
+        <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => {
+            if (openNoteId === null) return;
+            notes.setNoteAppearance(
+                openNoteId,
+                noteAppearanceToOverride({...noteAppearance, [key]: value}),
+            );
+        },
+        [openNoteId, noteAppearance, notes.setNoteAppearance],
+    );
+    const resetNoteAppearance = useCallback(() => {
+        if (openNoteId !== null) notes.setNoteAppearance(openNoteId, {});
+    }, [openNoteId, notes.setNoteAppearance]);
+
+    // One-time migration of the legacy localStorage per-note overrides into the sidecar (they used to
+    // strand on every rename/move). Gated on `ready` so it can't race the sidecar's initial load, and
+    // scoped to ids that still exist — stranded leftovers are dropped. Keys are cleared only after the
+    // adoption has landed, so a crash mid-way just retries next launch (adoption is idempotent: an
+    // existing sidecar entry wins).
+    const appearanceMigrationRef = useRef(false);
+    useEffect(() => {
+        if (!notes.ready || appearanceMigrationRef.current) return;
+        appearanceMigrationRef.current = true;
+        const legacy = readLegacyNoteAppearances(workspaceId);
+        const liveIds = new Set(notes.notes.map((n) => n.id));
+        const overrides = Object.fromEntries(
+            Object.entries(legacy).filter(([id]) => liveIds.has(id)),
+        );
+        void notes.adoptNoteAppearances(overrides).then(() => {
+            clearLegacyNoteAppearances(workspaceId);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot: reads notes.notes at ready-time only
+    }, [notes.ready, workspaceId]);
     // The note-appearance popover's open state lives here (its ⋯ trigger is in the TopBar) so the ⌘⇧I
     // shortcut can toggle it too. Closed whenever the open note changes, so it never lingers over a
     // different note than it was opened for.

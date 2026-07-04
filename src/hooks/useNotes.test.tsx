@@ -376,6 +376,7 @@ class DeferredSaveStore implements NoteStore {
         pinned: [],
         created: {},
         icons: {},
+        appearances: {},
         active: null,
         trashed: [],
     };
@@ -706,6 +707,7 @@ class ControllableStore implements NoteStore {
         pinned: [],
         created: {},
         icons: {},
+        appearances: {},
         active: null,
         trashed: [],
     };
@@ -1295,6 +1297,63 @@ describe('useNotes — trash', () => {
         // …and restore reinstates it on the restored id.
         expect(restoredId).toBe('Work/A.md');
         expect(hook.result.current.metadata.icons['Work/A.md']).toBe('Star');
+    });
+
+    it('preserves a per-note appearance override across trash → restore', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        act(() => {
+            hook.result.current.setNoteAppearance('Work/A.md', {editorFont: 'serif'});
+        });
+        expect(hook.result.current.metadata.appearances['Work/A.md']).toEqual({
+            editorFont: 'serif',
+        });
+
+        await act(async () => {
+            await hook.result.current.trash('Work/A.md');
+        });
+        // Trashing drops the override from the LIVE metadata (the note is no longer a live id)…
+        expect(hook.result.current.metadata.appearances['Work/A.md']).toBeUndefined();
+
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+        const trashId = hook.result.current.trashedNotes[0].id;
+        await act(async () => {
+            await hook.result.current.restoreFromTrash(trashId);
+        });
+
+        // …and restore reinstates it on the restored id.
+        expect(hook.result.current.metadata.appearances['Work/A.md']).toEqual({
+            editorFont: 'serif',
+        });
+    });
+
+    it('adoptNoteAppearances folds legacy overrides in without clobbering sidecar entries', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'a');
+        store.seed('B.md', 'b');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        act(() => {
+            hook.result.current.setNoteAppearance('A.md', {editorFont: 'mono'});
+        });
+
+        await act(async () => {
+            await hook.result.current.adoptNoteAppearances({
+                'A.md': {editorFont: 'serif'}, // already in the sidecar — must NOT win
+                'B.md': {textWidth: 'wide'}, // new — adopted
+            });
+        });
+
+        expect(hook.result.current.metadata.appearances).toEqual({
+            'A.md': {editorFont: 'mono'},
+            'B.md': {textWidth: 'wide'},
+        });
     });
 
     it('purges one trashed note and empties the rest', async () => {

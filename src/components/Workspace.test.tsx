@@ -895,3 +895,32 @@ describe('Workspace — attachments survive StrictMode', () => {
         expect(screen.getByText(/Used by 1 note/)).toBeInTheDocument();
     });
 });
+
+describe('Workspace — legacy note-appearance migration', () => {
+    afterEach(() => {
+        localStorage.clear();
+    });
+
+    it('folds legacy localStorage overrides into the sidecar and clears the keys', async () => {
+        // The pre-sidecar layer: one override for a live note, one stranded by a long-ago rename.
+        localStorage.setItem(
+            'gravity-notes:test-ws:note:Alpha.md:appearance',
+            JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
+        );
+        localStorage.setItem(
+            'gravity-notes:test-ws:note:Gone.md:appearance',
+            JSON.stringify({editorFont: 'mono', accentColor: 'default', textWidth: 'default'}),
+        );
+        const {store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+
+        // The live note's override lands in the sidecar; the stranded one is dropped, not adopted.
+        await waitFor(async () => {
+            const meta = await store.readMetadata();
+            expect(meta.appearances).toEqual({'Alpha.md': {editorFont: 'serif'}});
+        });
+        // Both legacy keys are gone (the stranded one was the leak this migration also cleans up).
+        expect(localStorage.getItem('gravity-notes:test-ws:note:Alpha.md:appearance')).toBeNull();
+        expect(localStorage.getItem('gravity-notes:test-ws:note:Gone.md:appearance')).toBeNull();
+    });
+});

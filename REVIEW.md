@@ -15,14 +15,14 @@ feature is well-built, but it has one genuine data-loss gap.
 `src/hooks/useNotes.ts:660` (also `:674`, `:611`)
 
 The override lives in localStorage keyed by note id
-(`gravity-notes:<wsId>:note:<noteId>:appearance`), and a note id *is* its POSIX rel-path.
+(`gravity-notes:<wsId>:note:<noteId>:appearance`), and a note id _is_ its POSIX rel-path.
 `rename` migrates the metadata sidecar (`withRenamed`) and re-keys the in-memory row (`rekeyNote`)
 but never migrates the appearance key; `move` / `moveFolder` (`withReprefixed`) don't either.
 
 **Failure:** Open `Work/Plan.md`, set its font to Serif via the ⋯ popover, then rename it to
 `Roadmap.md` (or move it, or move its folder). The note reverts to the inherited font and the
 override is stranded under the old key forever (localStorage leak). Notably, per-note **icons**
-*do* migrate because they live in the sidecar — so this is an inconsistency, not just a miss.
+_do_ migrate because they live in the sidecar — so this is an inconsistency, not just a miss.
 
 **Deeper fix:** store per-note appearance in the metadata sidecar (an `appearances` map alongside
 `icons`), threaded through `withRenamed` / `withReprefixed` / `withRemoved` / `reconcile`, so it
@@ -37,7 +37,7 @@ The button was rewritten as a static `aria-label="Folders"` outlined button; `se
 
 **Failure:** Whether the rail is open or closed, the button looks and reads identically. A
 screen-reader user gets no state info, and a sighted user gets no feedback that pressing it again
-will *close* the rail. (The test confirms this is deliberate, but no compensating state signaling
+will _close_ the rail. (The test confirms this is deliberate, but no compensating state signaling
 was added.)
 
 ### 3. `NoteAppearance.accentColor` is vestigial, yet `effectiveAppearance` honors it while `isOverridden` ignores it
@@ -140,3 +140,36 @@ verbatim for `.editor-pane_toolbar .g-md-flex-toolbar`, duplicating the grouped 
 The editor content swap is itself a `useEffect` (keyed on `[sessionId, note.content]`) in the same
 passive-effect flush as the appearance reload, and the `useLayoutEffect` that stamps `<html>` runs
 before paint, so no painted frame shows note B's content under note A's attributes.
+
+---
+
+## Resolution (2026-07-05)
+
+- **1 (appearance lost on rename/move) — FIXED** via the deeper option: per-note appearance moved
+  into the metadata sidecar as an `appearances` map alongside `icons`, so
+  `withRenamed`/`withReprefixed`/`withRemoved`/`reconcile` handle it for free; it also survives
+  trash → restore (carried on the `TrashEntry`) and travels with the folder. Legacy localStorage
+  keys are migrated once per workspace on first ready load (live notes adopted, stranded keys
+  cleaned up), then removed.
+- **3 (vestigial `accentColor`) — FIXED** by dropping the field from `NoteAppearance`; accent now
+  resolves across app → workspace only.
+- **7 (`useNoteSettings` ref-dance) — GONE** as a consequence of 1: the hook was deleted; the open
+  note's appearance is derived from `useNotes().metadata.appearances`.
+- **2 (rail toggle a11y) — FIXED** with `selected={railOpen}` (Gravity renders it as `aria-pressed`
+  plus the pressed look; a raw `aria-pressed` prop would be clobbered).
+- **4 (pulse stuck under reduced motion) — FIXED** with a matchMedia check in the stop path (drop
+  the class immediately; no iteration boundary will ever arrive).
+- **8 (pulse machinery "over-engineered") — REJECTED**: autosaves finish in ~100 ms against a 1.8 s
+  cycle, so binding the class to `saveState` directly would render a quick save invisible; the
+  boundary-hold is what guarantees one full visible breath.
+- **5 (PT Serif bundling) — FIXED differently**: a lazy `import()` cannot help (`viteSingleFile`
+  forces `inlineDynamicImports`). Instead the 8 @fontsource CSS imports were replaced with local
+  woff2-only `@font-face` rules over the same font files (`src/fonts/pt-serif.css`) — ~150 KB of
+  base64 (the `.woff` fallbacks) dropped from the single-file build, byte-identical rendering on
+  our woff2-capable targets.
+- **6 (`ControlGroup`/`ChoiceRow` duplication) — FIXED**: one shared `AppearanceChoiceRow`
+  (`appearanceControls.tsx`) with `row`/`stack` layouts.
+- **9 (folder chip flush) — FIXED**: `margin-top: 2px` restored, misleading comment corrected.
+- **10 (missing `size="s"`) — FIXED** (comes with the shared control in 6).
+- **11 (toolbar centering duplication) — FIXED**: folded into the grouped `index.css` rule; only the
+  toolbar-specific `padding-inline` stays in `EditorPane.css`.

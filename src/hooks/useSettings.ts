@@ -1,4 +1,6 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
+
+import type {NoteAppearanceOverride} from '../storage/types';
 
 /**
  * Font family for note CONTENT — the WYSIWYG editor + read-only preview (both `.yfm`) and the note
@@ -56,27 +58,23 @@ const WORKSPACE_DEFAULTS: WorkspaceSettings = {
 
 /**
  * Per-note overrides — the innermost layer; wins over both workspace and app. `'default'` inherits.
- * `accentColor` is kept for a uniform override shape but is NOT exposed per-note (accent is
- * app/workspace only), so it stays `'default'` in practice.
+ * Accent is deliberately NOT overridable per-note (it's app/workspace only) — the app mark shouldn't
+ * recolor as you browse notes. Persisted in the metadata sidecar (like icons), NOT in localStorage,
+ * so it survives rename/move and travels with the folder; see {@link noteAppearanceOf}.
  */
 export interface NoteAppearance {
     editorFont: EditorFontPref;
-    accentColor: AccentColorPref;
     textWidth: TextWidthPref;
 }
 
 const NOTE_DEFAULTS: NoteAppearance = {
     editorFont: 'default',
-    accentColor: 'default',
     textWidth: 'default',
 };
 
 const SETTINGS_KEY = 'gravity-notes:settings';
 /** Namespaced like the other per-workspace layout keys in `Workspace` (`gravity-notes:<wsId>:*`). */
 const workspaceSettingsKey = (workspaceId: string) => `gravity-notes:${workspaceId}:settings`;
-/** Per-note override key, nested under the workspace (a note id is only unique within its workspace). */
-const noteSettingsKey = (workspaceId: string, noteId: string) =>
-    `gravity-notes:${workspaceId}:note:${noteId}:appearance`;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
     return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -108,17 +106,17 @@ function loadSettings(): Settings {
     }
 }
 
-/** Generic loader for an override layer (workspace / note): every field is a `'default'`-able pref. */
-function loadOverrides<T extends WorkspaceSettings | NoteAppearance>(key: string, fallback: T): T {
+/** Read the persisted per-workspace overrides: every field is a `'default'`-able pref. */
+function loadWorkspaceOverrides(key: string): WorkspaceSettings {
     try {
-        const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<T>;
+        const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<WorkspaceSettings>;
         return {
-            editorFont: oneOf(raw.editorFont, FONT_PREFS, fallback.editorFont),
-            accentColor: oneOf(raw.accentColor, ACCENT_PREFS, fallback.accentColor),
-            textWidth: oneOf(raw.textWidth, WIDTH_PREFS, fallback.textWidth),
-        } as T;
+            editorFont: oneOf(raw.editorFont, FONT_PREFS, 'default'),
+            accentColor: oneOf(raw.accentColor, ACCENT_PREFS, 'default'),
+            textWidth: oneOf(raw.textWidth, WIDTH_PREFS, 'default'),
+        };
     } catch {
-        return fallback;
+        return WORKSPACE_DEFAULTS;
     }
 }
 
@@ -157,7 +155,7 @@ export interface UseWorkspaceSettings {
  */
 export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings {
     const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>(() =>
-        loadOverrides(workspaceSettingsKey(workspaceId), WORKSPACE_DEFAULTS),
+        loadWorkspaceOverrides(workspaceSettingsKey(workspaceId)),
     );
 
     useEffect(() => {
@@ -174,61 +172,77 @@ export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings 
     return {workspaceSettings, setWorkspaceSetting};
 }
 
-export interface UseNoteSettings {
-    noteAppearance: NoteAppearance;
-    setNoteSetting: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
-    resetNoteAppearance: () => void;
-    /** True when at least one field overrides its inherited value (drives the "Reset" affordance). */
-    isOverridden: boolean;
+/**
+ * Resolve a note's sidecar override (raw strings, absent field = inherit) to a validated
+ * {@link NoteAppearance}. Unknown/absent values degrade to `'default'`, so a sidecar written by a
+ * newer build can't inject an unsupported font/width. Pass `undefined` for "no override" / no note.
+ */
+export function noteAppearanceOf(override: NoteAppearanceOverride | undefined): NoteAppearance {
+    return {
+        editorFont: oneOf<EditorFontPref>(override?.editorFont, EDITOR_FONTS, 'default'),
+        textWidth: oneOf<TextWidthPref>(override?.textWidth, TEXT_WIDTHS, 'default'),
+    };
+}
+
+/** The sidecar form of a per-note appearance: only overridden fields, `'default'` becomes absent. */
+export function noteAppearanceToOverride(appearance: NoteAppearance): NoteAppearanceOverride {
+    const override: NoteAppearanceOverride = {};
+    if (appearance.editorFont !== 'default') override.editorFont = appearance.editorFont;
+    if (appearance.textWidth !== 'default') override.textWidth = appearance.textWidth;
+    return override;
+}
+
+/** True when at least one field overrides its inherited value (drives the "Reset" affordance). */
+export function isNoteAppearanceOverridden(appearance: NoteAppearance): boolean {
+    return appearance.editorFont !== 'default' || appearance.textWidth !== 'default';
 }
 
 /**
- * Per-note appearance overrides for the OPEN note. Unlike the workspace hook, the note id changes
- * within a mounted `Workspace` (opening another note doesn't remount this), so it reloads on a
- * `noteId` change and persists imperatively in the setters — a persist-effect would clobber the new
- * note's key with the old note's value during the switch. `noteId` is null when no note is open.
+ * Legacy migration: per-note appearance used to live in localStorage under
+ * `gravity-notes:<wsId>:note:<noteId>:appearance`, which silently stranded the override whenever a
+ * rename/move changed the note's id (the id IS its rel-path). It now lives in the metadata sidecar;
+ * `Workspace` folds any leftover keys in once per workspace, then clears them.
  */
-export function useNoteSettings(workspaceId: string, noteId: string | null): UseNoteSettings {
-    const [noteAppearance, setNoteAppearance] = useState<NoteAppearance>(() =>
-        noteId ? loadOverrides(noteSettingsKey(workspaceId, noteId), NOTE_DEFAULTS) : NOTE_DEFAULTS,
-    );
+const legacyNoteKeyPrefix = (workspaceId: string) => `gravity-notes:${workspaceId}:note:`;
+const LEGACY_NOTE_KEY_SUFFIX = ':appearance';
 
-    // Reload when the open note changes (no remount happens for a note switch).
-    useEffect(() => {
-        setNoteAppearance(
-            noteId
-                ? loadOverrides(noteSettingsKey(workspaceId, noteId), NOTE_DEFAULTS)
-                : NOTE_DEFAULTS,
-        );
-    }, [workspaceId, noteId]);
+function legacyNoteAppearanceKeys(workspaceId: string): Map<string, string> {
+    const prefix = legacyNoteKeyPrefix(workspaceId);
+    const byId = new Map<string, string>();
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(prefix) || !key.endsWith(LEGACY_NOTE_KEY_SUFFIX)) continue;
+        const id = key.slice(prefix.length, -LEGACY_NOTE_KEY_SUFFIX.length);
+        if (id) byId.set(id, key);
+    }
+    return byId;
+}
 
-    // Read latest via a ref so the setters can persist imperatively without a persist-effect (which
-    // would fire on the reload above and write the wrong note's key mid-switch).
-    const currentRef = useRef(noteAppearance);
-    currentRef.current = noteAppearance;
+/** Read every legacy per-note override left for this workspace, in sidecar (override) form. */
+export function readLegacyNoteAppearances(
+    workspaceId: string,
+): Record<string, NoteAppearanceOverride> {
+    const overrides: Record<string, NoteAppearanceOverride> = {};
+    for (const [id, key] of legacyNoteAppearanceKeys(workspaceId)) {
+        try {
+            const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+            const override = noteAppearanceToOverride({
+                editorFont: oneOf<EditorFontPref>(raw.editorFont, EDITOR_FONTS, 'default'),
+                textWidth: oneOf<TextWidthPref>(raw.textWidth, TEXT_WIDTHS, 'default'),
+            });
+            if (override.editorFont || override.textWidth) overrides[id] = override;
+        } catch {
+            // Corrupt value — nothing to migrate; the key still goes with the clear pass.
+        }
+    }
+    return overrides;
+}
 
-    const setNoteSetting = useCallback(
-        <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => {
-            if (!noteId || currentRef.current[key] === value) return;
-            const next = {...currentRef.current, [key]: value};
-            localStorage.setItem(noteSettingsKey(workspaceId, noteId), JSON.stringify(next));
-            setNoteAppearance(next);
-        },
-        [workspaceId, noteId],
-    );
-
-    const resetNoteAppearance = useCallback(() => {
-        if (!noteId) return;
-        localStorage.removeItem(noteSettingsKey(workspaceId, noteId));
-        setNoteAppearance(NOTE_DEFAULTS);
-    }, [workspaceId, noteId]);
-
-    // Accent is intentionally NOT exposed per-note (only app/workspace), so it never counts here even
-    // though the field stays in the model to keep the override layers a uniform shape.
-    const isOverridden =
-        noteAppearance.editorFont !== 'default' || noteAppearance.textWidth !== 'default';
-
-    return {noteAppearance, setNoteSetting, resetNoteAppearance, isOverridden};
+/** Drop every legacy per-note override key for this workspace (after a successful migration). */
+export function clearLegacyNoteAppearances(workspaceId: string): void {
+    for (const key of legacyNoteAppearanceKeys(workspaceId).values()) {
+        localStorage.removeItem(key);
+    }
 }
 
 export interface EffectiveAppearance {
@@ -247,6 +261,7 @@ function resolve<T extends string>(app: T, workspace: 'default' | T, note: 'defa
 /**
  * Resolve the appearance actually in effect across app → workspace → note. A note override wins over
  * a workspace override, which wins over the app value; `'default'` at any layer inherits outward.
+ * Accent has no note layer (it's app/workspace only), so it resolves across the outer two.
  */
 export function effectiveAppearance(
     app: Settings,
@@ -255,7 +270,7 @@ export function effectiveAppearance(
 ): EffectiveAppearance {
     return {
         editorFont: resolve(app.editorFont, workspace.editorFont, note.editorFont),
-        accentColor: resolve(app.accentColor, workspace.accentColor, note.accentColor),
+        accentColor: resolve<AccentColor>(app.accentColor, workspace.accentColor, 'default'),
         textWidth: resolve(app.textWidth, workspace.textWidth, note.textWidth),
     };
 }

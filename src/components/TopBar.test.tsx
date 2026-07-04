@@ -61,14 +61,14 @@ function setup(overrides: Record<string, unknown> = {}) {
         appearanceOpen: false,
         onToggleAppearance: vi.fn(),
         onCloseAppearance: vi.fn(),
-        noteAppearance: {editorFont: 'default', accentColor: 'default', textWidth: 'default'},
+        noteAppearance: {editorFont: 'default', textWidth: 'default'},
         onSetNoteAppearance: vi.fn(),
         onResetNoteAppearance: vi.fn(),
         noteAppearanceOverridden: false,
         ...overrides,
     };
-    renderWithProviders(<TopBar {...(props as TopBarProps)} />);
-    return {props};
+    const view = renderWithProviders(<TopBar {...(props as TopBarProps)} />);
+    return {props, view};
 }
 
 describe('TopBar — search keyboard model', () => {
@@ -223,7 +223,7 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             appearanceOpen={false}
             onToggleAppearance={noop}
             onCloseAppearance={noop}
-            noteAppearance={{editorFont: 'default', accentColor: 'default', textWidth: 'default'}}
+            noteAppearance={{editorFont: 'default', textWidth: 'default'}}
             onSetNoteAppearance={noop}
             onResetNoteAppearance={noop}
             noteAppearanceOverridden={false}
@@ -384,5 +384,36 @@ describe('TopBar — orb menu', () => {
         expect(orb).toHaveAttribute('title', 'Saving…');
         await user.click(orb);
         expect(await screen.findByRole('menuitem', {name: /Saving…/})).toBeInTheDocument();
+    });
+});
+
+describe('TopBar — orb save-pulse', () => {
+    // The normal stop path (hold the class until the next animation-cycle boundary) is NOT covered
+    // here: React's onAnimationIteration never fires from fireEvent.animationIteration under jsdom
+    // (verified with a minimal repro), so only the reduced-motion early-stop is testable.
+    it('keeps breathing right after saving ends (the stop waits for a cycle boundary)', () => {
+        const {props, view} = setup({saveState: 'saving'});
+        const orb = screen.getByRole('button', {name: 'Menu'});
+        expect(orb).toHaveClass('topbar__menu-orb_pulsing');
+        view.rerender(<TopBar {...({...props, saveState: 'saved'} as TopBarProps)} />);
+        // Still breathing — the class is only dropped at the next animation-cycle boundary.
+        expect(orb).toHaveClass('topbar__menu-orb_pulsing');
+    });
+
+    it('stops immediately under prefers-reduced-motion (no iteration will ever arrive)', () => {
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            ...original(query),
+            matches: query.includes('prefers-reduced-motion'),
+        })) as typeof window.matchMedia;
+        try {
+            const {props, view} = setup({saveState: 'saving'});
+            const orb = screen.getByRole('button', {name: 'Menu'});
+            expect(orb).toHaveClass('topbar__menu-orb_pulsing');
+            view.rerender(<TopBar {...({...props, saveState: 'saved'} as TopBarProps)} />);
+            expect(orb).not.toHaveClass('topbar__menu-orb_pulsing');
+        } finally {
+            window.matchMedia = original;
+        }
     });
 });

@@ -377,11 +377,22 @@ describe('NoteList — toolbar', () => {
         expect(props.onToggleRail).toHaveBeenCalledTimes(1);
     });
 
-    it('labels the rail toggle statically, even when the rail is open', () => {
+    it('reflects the rail state on the toggle via aria-pressed (the label stays "Folders")', () => {
+        // Constant label + aria-pressed is the toggle-button pattern; Gravity's `selected` prop
+        // renders both the aria state and the pressed look.
         setup({railOpen: true});
-        // Static label regardless of state — the button no longer reflects whether the rail is open
-        // (it's a plain "Folders" button now, not a pressed/unpressed toggle).
-        expect(screen.getByRole('button', {name: 'Folders'})).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: 'Folders'})).toHaveAttribute(
+            'aria-pressed',
+            'true',
+        );
+    });
+
+    it('reads unpressed while the rail is closed', () => {
+        setup({railOpen: false});
+        expect(screen.getByRole('button', {name: 'Folders'})).toHaveAttribute(
+            'aria-pressed',
+            'false',
+        );
     });
 });
 

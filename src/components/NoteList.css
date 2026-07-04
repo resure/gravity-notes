@@ -198,7 +198,8 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    /* Spacing above comes from the text column's own row gap now (chip lives inside .note-list__text). */
+    /* The text column's row gap is 0, so the chip supplies its own breathing room above. */
+    margin-top: 2px;
     opacity: 0.75;
 }
 

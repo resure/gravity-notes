@@ -145,7 +145,12 @@ Key modules:
 - `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
   `orderNotes` (pins first, then the active sort). The `pinned` set holds both note ids and folder
-  paths — folders are pinnable too.
+  paths — folders are pinnable too. Per-note `icons` and `appearances` (the ⋯ popover's font/width
+  overrides) also live here, keyed by note id — a note id is its rel-path, so keeping them in the
+  sidecar is what lets `withRenamed`/`withReprefixed` re-key them on rename/move (and lets them
+  travel with the folder + survive trash → restore via the `TrashEntry`). Per-note appearance is
+  deliberately NOT in localStorage; `Workspace` one-shot migrates any legacy
+  `gravity-notes:<wsId>:note:<id>:appearance` keys into the sidecar on first ready load.
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
   change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a

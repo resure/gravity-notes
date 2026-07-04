@@ -174,7 +174,7 @@ Key modules:
 ### Backlog
 
 - Search index update on external file updates (+ reload workspace menu item?)
-- Notion-like font, width and density setting for each note? And ability to set default for all notes
+- Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
 - Easter egg in top bar (to the right of the search bar) ?
