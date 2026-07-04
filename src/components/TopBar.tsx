@@ -36,10 +36,6 @@ import './TopBar.css';
 /** How many recents the "Open Recent" submenu shows; the ⌃R switcher lists them all. */
 const MAX_RECENT_MENU = 8;
 
-/** The orb save-pulse's animation period (keep in sync with `topbar-orb-blink` in TopBar.css). The
- *  pulse is held to a whole multiple of this after saving ends, so it always plays a full breath. */
-const PULSE_CYCLE_MS = 1800;
-
 export interface TopBarProps {
     /** Active storage label (folder name, or "In this browser"); shown in the menu. */
     storageLabel: string | null;
@@ -188,38 +184,22 @@ export function TopBar({
     // The ⋯ "Note appearance" button (right edge) that the popover anchors to; null until it mounts.
     const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
 
-    // The orb's save-pulse, driven by a `_pulsing` class decoupled from `saveState`. The point of the
-    // decoupling: a save often finishes in a few frames, and dropping the pulse the instant saving ends
-    // would flash it (or cut it mid-breath). Instead, when saving ends we HOLD the pulse to the next
-    // animation-cycle boundary — a whole multiple of PULSE_CYCLE_MS from its start, where the keyframe's
-    // opacity is back at 1 — so it always plays a full, clean breath and stops with no snap.
+    // The orb's save-pulse: a `_pulsing` class (see TopBar.css) applied while saving, and — so a quick
+    // save doesn't cut the breath off mid-dip — held until the pulse reaches a cycle boundary after
+    // saving ends. We ride the CSS `animationiteration` event for that boundary instead of timing it by
+    // hand: saving-ended arms `pendingStop`, and the next iteration (opacity back at 1) drops the class.
+    // (Under prefers-reduced-motion the animation is `none`, so no iteration fires and the class lingers
+    // harmlessly — there's no pulse to stop, and `_pulsing` has no other effect.)
     const [orbPulsing, setOrbPulsing] = useState(false);
-    const orbPulsingRef = useRef(false);
-    const pulseStartRef = useRef(0);
-    const pulseStopRef = useRef<ReturnType<typeof setTimeout>>();
+    const pulsePendingStopRef = useRef(false);
     useEffect(() => {
         if (saveState === 'saving') {
-            clearTimeout(pulseStopRef.current); // a fresh save cancels any pending stop
-            if (!orbPulsingRef.current) {
-                orbPulsingRef.current = true;
-                pulseStartRef.current = Date.now();
-                setOrbPulsing(true);
-            }
-            return undefined;
+            pulsePendingStopRef.current = false; // a fresh save cancels any pending stop
+            setOrbPulsing(true);
+        } else {
+            pulsePendingStopRef.current = true; // let the breath finish, then stop (see the orb below)
         }
-        if (!orbPulsingRef.current) return undefined;
-        // Saving ended — let the current breath finish: stop at the next whole cycle from the start.
-        const elapsed = Date.now() - pulseStartRef.current;
-        const remaining = PULSE_CYCLE_MS - (elapsed % PULSE_CYCLE_MS);
-        clearTimeout(pulseStopRef.current);
-        pulseStopRef.current = setTimeout(() => {
-            orbPulsingRef.current = false;
-            setOrbPulsing(false);
-        }, remaining);
-        return undefined;
     }, [saveState]);
-    // Cancel a pending pulse-stop on unmount.
-    useEffect(() => () => clearTimeout(pulseStopRef.current), []);
 
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
@@ -457,6 +437,13 @@ export function TopBar({
                         aria-label="Menu"
                         aria-haspopup="true"
                         title={STATUS_TEXT[saveState]}
+                        // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
+                        onAnimationIteration={() => {
+                            if (pulsePendingStopRef.current) {
+                                pulsePendingStopRef.current = false;
+                                setOrbPulsing(false);
+                            }
+                        }}
                     />
                 )}
                 items={menuItems}
@@ -477,7 +464,7 @@ export function TopBar({
             {noteOpen ? (
                 <>
                     <Button
-                        ref={(el: HTMLButtonElement | null) => setAppearanceAnchor(el)}
+                        ref={setAppearanceAnchor}
                         view="flat"
                         size="m"
                         className="topbar__note-actions"

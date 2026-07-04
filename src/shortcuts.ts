@@ -190,7 +190,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+shift+i',
-        description: 'Note appearance (font, accent, width)',
+        description: 'Note appearance (font, width)',
         group: 'Editing',
         // 'i' is a letter, so the shifted event.key ('I') matches case-insensitively — no code needed.
         global: {trigger: 'mod', key: 'i', action: 'openNoteAppearance', shift: true},
