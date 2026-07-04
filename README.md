@@ -176,6 +176,8 @@ Key modules:
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
 - Easter egg in top bar (to the right of the search bar) ?
+- Resizable left panel
+- Page title backgrounds
 
 - Preserve cmd+z between notes
 - Auto-empty the Trash and clean unused attachments (after 30 days?)

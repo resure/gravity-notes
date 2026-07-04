@@ -335,6 +335,11 @@ export function Workspace({
         workspaceId,
         notes.note?.id ?? null,
     );
+    // The note-appearance popover's open state lives here (its ⋯ trigger is in the TopBar) so the ⌘⇧I
+    // shortcut can toggle it too. Closed whenever the open note changes, so it never lingers over a
+    // different note than it was opened for.
+    const [appearanceOpen, setAppearanceOpen] = useState(false);
+    useEffect(() => setAppearanceOpen(false), [notes.note?.id]);
 
     // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
     // that index.css reads: `data-editor-font` swaps the editor/preview/title font, `data-accent` the
@@ -950,7 +955,10 @@ export function Workspace({
             }
         },
         toggleEditorMode: () => editorRef.current?.toggleMode(),
-        openNoteAppearance: () => editorRef.current?.toggleAppearance(),
+        openNoteAppearance: () => {
+            // Toggle the TopBar's ⋯ appearance popover — only meaningful with a note open.
+            if (notes.note) setAppearanceOpen((open) => !open);
+        },
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
         openSettings: () => setSettingsOpen(true),
@@ -1050,6 +1058,14 @@ export function Workspace({
                     onClose={nav.closeFromSearch}
                     onEnterList={enterList}
                     onFocusList={() => listRef.current?.focusSelected()}
+                    noteOpen={notes.note !== null}
+                    appearanceOpen={appearanceOpen}
+                    onToggleAppearance={() => setAppearanceOpen((open) => !open)}
+                    onCloseAppearance={() => setAppearanceOpen(false)}
+                    noteAppearance={noteAppearance}
+                    onSetNoteAppearance={setNoteSetting}
+                    onResetNoteAppearance={resetNoteAppearance}
+                    noteAppearanceOverridden={isOverridden}
                 />
 
                 <div
@@ -1156,11 +1172,6 @@ export function Workspace({
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
-                                        noteAppearance={noteAppearance}
-                                        onSetNoteAppearance={setNoteSetting}
-                                        onResetNoteAppearance={resetNoteAppearance}
-                                        noteAppearanceOverridden={isOverridden}
-                                        workspaceLabel={storageLabel}
                                     />
                                 </div>
                                 <BacklinksPanel

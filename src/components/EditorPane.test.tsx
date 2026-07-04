@@ -87,19 +87,6 @@ import {EditorPane, type EditorPaneHandle} from './EditorPane';
 
 const NOTE = {id: 'a.md', title: 'a', content: 'hello', updatedAt: 1};
 
-// Per-note appearance props (the ⋯ popover); inert defaults for tests that don't exercise it.
-const APPEARANCE_PROPS = {
-    noteAppearance: {
-        editorFont: 'default',
-        accentColor: 'default',
-        textWidth: 'default',
-    },
-    onSetNoteAppearance: () => {},
-    onResetNoteAppearance: () => {},
-    noteAppearanceOverridden: false,
-    workspaceLabel: null,
-} as const;
-
 function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {}) {
     return render(
         <EditorPane
@@ -113,7 +100,6 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
             wikiNotes={[]}
             onOpenWikiLink={() => {}}
             onSetIcon={() => {}}
-            {...APPEARANCE_PROPS}
             {...props}
         />,
     );
@@ -393,7 +379,6 @@ describe('EditorPane — note switch', () => {
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
                 onSetIcon={() => {}}
-                {...APPEARANCE_PROPS}
             />,
         );
         // The swap fired on the session bump and re-homed the (first-time-opened) note to the top…
@@ -428,7 +413,6 @@ describe('EditorPane — note switch', () => {
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
                 onSetIcon={() => {}}
-                {...APPEARANCE_PROPS}
             />,
         );
         // No swap fired: the editor buffer is untouched (no replace) on a rename.
@@ -456,7 +440,6 @@ describe('EditorPane — note switch', () => {
                 wikiNotes={[]}
                 onOpenWikiLink={() => {}}
                 onSetIcon={() => {}}
-                {...APPEARANCE_PROPS}
             />,
         );
         expect(onChange).not.toHaveBeenCalled();
