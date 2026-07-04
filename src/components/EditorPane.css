@@ -30,19 +30,14 @@
     padding-top: 4px;
     padding-bottom: 4px;
 }
-/* Constrain the whole toolbar (buttons + the trailing "…" overflow) to the note's text column,
-   centered like the title/body, so it aligns with the content instead of spanning the full pane.
-   Applied to the outer `.g-md-flex-toolbar` (holds both) so the overflow comes along and the
-   centering context matches the content scroller. The sticky wrapper's background/hairline stay
-   full-width. width:100% keeps the flex child from collapsing under margin:auto. The `padding-inline`
-   here is visually absorbed by the inner container (which fills the border box), but it still shrinks
-   the width Gravity measures for collapsing — so the buttons fold into the "…" overflow a bit sooner
-   as the window narrows. */
+/* The whole toolbar (buttons + the trailing "…" overflow) is constrained to the note's text column
+   by the grouped centering rule in index.css — applied to the outer `.g-md-flex-toolbar` (holds
+   both) so the overflow comes along and the centering context matches the content scroller; the
+   sticky wrapper's background/hairline stay full-width. The `padding-inline` here is visually
+   absorbed by the inner container (which fills the border box), but it still shrinks the width
+   Gravity measures for collapsing — so the buttons fold into the "…" overflow a bit sooner as the
+   window narrows. */
 .editor-pane_toolbar .g-md-flex-toolbar {
-    width: 100%;
-    max-width: var(--gn-text-width, none);
-    margin-inline: auto;
-    box-sizing: border-box;
     padding-inline: var(--editor-gutter, 16px);
 }
 

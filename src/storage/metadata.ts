@@ -1,4 +1,4 @@
-import type {NoteMeta, NotesMetadata, SortMode, TrashEntry} from './types';
+import type {NoteAppearanceOverride, NoteMeta, NotesMetadata, SortMode, TrashEntry} from './types';
 
 /** Sidecar file holding the folder's notes metadata. Not a `.md` file, so `list()` ignores it. */
 export const METADATA_FILENAME = '.gravity-notes.json';
@@ -10,6 +10,7 @@ export const DEFAULT_METADATA: NotesMetadata = {
     pinned: [],
     created: {},
     icons: {},
+    appearances: {},
     active: null,
     trashed: [],
 };
@@ -30,21 +31,33 @@ export function parseMetadata(raw: unknown): NotesMetadata {
     const pinned = Array.isArray(obj.pinned)
         ? obj.pinned.filter((x): x is string => typeof x === 'string')
         : [];
-    const created: Record<string, number> = {};
-    if (typeof obj.created === 'object' && obj.created !== null) {
-        for (const [id, value] of Object.entries(obj.created as Record<string, unknown>)) {
-            if (typeof value === 'number') created[id] = value;
-        }
-    }
-    const icons: Record<string, string> = {};
-    if (typeof obj.icons === 'object' && obj.icons !== null) {
-        for (const [id, value] of Object.entries(obj.icons as Record<string, unknown>)) {
-            if (typeof value === 'string') icons[id] = value;
-        }
-    }
+    const created = parseIdRecord(obj.created, (v) => (typeof v === 'number' ? v : null));
+    const icons = parseIdRecord(obj.icons, (v) => (typeof v === 'string' ? v : null));
+    const appearances = parseIdRecord(obj.appearances, parseAppearanceOverride);
     const active = typeof obj.active === 'string' ? obj.active : null;
     const trashed = Array.isArray(obj.trashed) ? obj.trashed.flatMap(parseTrashEntry) : [];
-    return {version: 1, sort, pinned, created, icons, active, trashed};
+    return {version: 1, sort, pinned, created, icons, appearances, active, trashed};
+}
+
+/** Coerce one id-keyed map, keeping only entries whose value survives `parse` (null = drop). */
+function parseIdRecord<T>(raw: unknown, parse: (value: unknown) => T | null): Record<string, T> {
+    const out: Record<string, T> = {};
+    if (typeof raw !== 'object' || raw === null) return out;
+    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+        const parsed = parse(value);
+        if (parsed !== null) out[id] = parsed;
+    }
+    return out;
+}
+
+/** Coerce one raw appearance override to well-formed string fields; null when nothing survives. */
+function parseAppearanceOverride(raw: unknown): NoteAppearanceOverride | null {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const obj = raw as Record<string, unknown>;
+    const entry: NoteAppearanceOverride = {};
+    if (typeof obj.editorFont === 'string' && obj.editorFont) entry.editorFont = obj.editorFont;
+    if (typeof obj.textWidth === 'string' && obj.textWidth) entry.textWidth = obj.textWidth;
+    return entry.editorFont || entry.textWidth ? entry : null;
 }
 
 /** Coerce one raw trash entry to a well-formed {@link TrashEntry}; drop it (empty array) if junk. */
@@ -52,6 +65,7 @@ function parseTrashEntry(raw: unknown): TrashEntry[] {
     if (typeof raw !== 'object' || raw === null) return [];
     const obj = raw as Record<string, unknown>;
     if (typeof obj.id !== 'string' || obj.id === '') return [];
+    const appearance = parseAppearanceOverride(obj.appearance);
     return [
         {
             id: obj.id,
@@ -60,6 +74,7 @@ function parseTrashEntry(raw: unknown): TrashEntry[] {
             trashedAt: typeof obj.trashedAt === 'number' ? obj.trashedAt : 0,
             ...(typeof obj.created === 'number' ? {created: obj.created} : {}),
             ...(typeof obj.icon === 'string' ? {icon: obj.icon} : {}),
+            ...(appearance ? {appearance} : {}),
         },
     ];
 }
@@ -71,6 +86,7 @@ function cloneDefault(): NotesMetadata {
         pinned: [],
         created: {},
         icons: {},
+        appearances: {},
         active: null,
         trashed: [],
     };
@@ -109,6 +125,31 @@ export function withIcon(meta: NotesMetadata, id: string, icon: string): NotesMe
     return {...meta, icons: {...meta.icons, [id]: icon}};
 }
 
+/**
+ * Set a note's appearance override, keeping only its populated fields — an override with no fields
+ * left (everything back to inherit) drops the entry entirely, like clearing an icon.
+ */
+export function withNoteAppearance(
+    meta: NotesMetadata,
+    id: string,
+    appearance: NoteAppearanceOverride,
+): NotesMetadata {
+    const entry: NoteAppearanceOverride = {};
+    if (appearance.editorFont) entry.editorFont = appearance.editorFont;
+    if (appearance.textWidth) entry.textWidth = appearance.textWidth;
+    const prev = meta.appearances[id];
+    if (!entry.editorFont && !entry.textWidth) {
+        if (prev === undefined) return meta;
+        const appearances = {...meta.appearances};
+        delete appearances[id];
+        return {...meta, appearances};
+    }
+    if (prev && prev.editorFont === entry.editorFont && prev.textWidth === entry.textWidth) {
+        return meta;
+    }
+    return {...meta, appearances: {...meta.appearances, [id]: entry}};
+}
+
 export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): NotesMetadata {
     if (oldId === newId) return meta;
     const pinned = meta.pinned.map((p) => (p === oldId ? newId : p));
@@ -122,8 +163,13 @@ export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): 
         icons[newId] = icons[oldId];
         delete icons[oldId];
     }
+    const appearances = {...meta.appearances};
+    if (oldId in appearances) {
+        appearances[newId] = appearances[oldId];
+        delete appearances[oldId];
+    }
     const active = meta.active === oldId ? newId : meta.active;
-    return {...meta, pinned, created, icons, active};
+    return {...meta, pinned, created, icons, appearances, active};
 }
 
 /**
@@ -140,6 +186,8 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
     for (const [id, time] of Object.entries(meta.created)) created[remap(id)] = time;
     const icons: Record<string, string> = {};
     for (const [id, icon] of Object.entries(meta.icons)) icons[remap(id)] = icon;
+    const appearances: Record<string, NoteAppearanceOverride> = {};
+    for (const [id, entry] of Object.entries(meta.appearances)) appearances[remap(id)] = entry;
     // A trashed note's id lives under `.trash/` (untouched), but its recorded original folder shares
     // the moved prefix — remap it so a later restore still lands in the renamed folder.
     const trashed = meta.trashed.map((t) => ({...t, originalPath: remap(t.originalPath)}));
@@ -148,6 +196,7 @@ export function withReprefixed(meta: NotesMetadata, from: string, to: string): N
         pinned: meta.pinned.map(remap),
         created,
         icons,
+        appearances,
         active: meta.active ? remap(meta.active) : null,
         trashed,
     };
@@ -158,11 +207,14 @@ export function withRemoved(meta: NotesMetadata, id: string): NotesMetadata {
     delete created[id];
     const icons = {...meta.icons};
     delete icons[id];
+    const appearances = {...meta.appearances};
+    delete appearances[id];
     return {
         ...meta,
         pinned: meta.pinned.filter((p) => p !== id),
         created,
         icons,
+        appearances,
         active: meta.active === id ? null : meta.active,
     };
 }
@@ -220,8 +272,12 @@ export function reconcile(
     for (const [id, icon] of Object.entries(meta.icons)) {
         if (keep(id)) icons[id] = icon;
     }
+    const appearances: Record<string, NoteAppearanceOverride> = {};
+    for (const [id, entry] of Object.entries(meta.appearances)) {
+        if (keep(id)) appearances[id] = entry;
+    }
     const active = meta.active && keep(meta.active) ? meta.active : null;
-    return {...meta, pinned: meta.pinned.filter(keep), created, icons, active};
+    return {...meta, pinned: meta.pinned.filter(keep), created, icons, appearances, active};
 }
 
 /** Pure ordering: pinned notes first, each group sorted by the active sort. Does not mutate input. */

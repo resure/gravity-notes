@@ -1,12 +1,13 @@
 import type {ReactNode} from 'react';
 
-import {Dialog, Label, SegmentedRadioGroup, Switch, Text} from '@gravity-ui/uikit';
+import {Dialog, Label, Switch, Text} from '@gravity-ui/uikit';
 
 import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
 
 import {
     ACCENT_OPTIONS,
     ACCENT_OPTIONS_WS,
+    AppearanceChoiceRow,
     FONT_OPTIONS,
     FONT_OPTIONS_WS,
     WIDTH_OPTIONS,
@@ -71,20 +72,23 @@ export function SettingsDialog({
                     </Section>
 
                     <Section title="Appearance">
-                        <ChoiceRow
-                            title="Editor font"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Editor font"
                             options={FONT_OPTIONS}
                             value={settings.editorFont}
                             onUpdate={(value) => setSetting('editorFont', value)}
                         />
-                        <ChoiceRow
-                            title="Accent color"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Accent color"
                             options={ACCENT_OPTIONS}
                             value={settings.accentColor}
                             onUpdate={(value) => setSetting('accentColor', value)}
                         />
-                        <ChoiceRow
-                            title="Text width"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Text width"
                             options={WIDTH_OPTIONS}
                             value={settings.textWidth}
                             onUpdate={(value) => setSetting('textWidth', value)}
@@ -92,20 +96,23 @@ export function SettingsDialog({
                     </Section>
 
                     <Section title="This workspace" description={workspaceDescription}>
-                        <ChoiceRow
-                            title="Editor font"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Editor font"
                             options={FONT_OPTIONS_WS}
                             value={workspaceSettings.editorFont}
                             onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
                         />
-                        <ChoiceRow
-                            title="Accent color"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Accent color"
                             options={ACCENT_OPTIONS_WS}
                             value={workspaceSettings.accentColor}
                             onUpdate={(value) => setWorkspaceSetting('accentColor', value)}
                         />
-                        <ChoiceRow
-                            title="Text width"
+                        <AppearanceChoiceRow
+                            layout="row"
+                            label="Text width"
                             options={WIDTH_OPTIONS_WS}
                             value={workspaceSettings.textWidth}
                             onUpdate={(value) => setWorkspaceSetting('textWidth', value)}
@@ -166,31 +173,6 @@ function ToggleRow({title, experimental, checked, onUpdate}: ToggleRowProps) {
             </span>
             {/* The Switch is itself a <label>; its visible title lives beside it, so name it via aria. */}
             <Switch checked={checked} onUpdate={onUpdate} controlProps={{'aria-label': title}} />
-        </div>
-    );
-}
-
-interface ChoiceRowProps<T extends string> {
-    title: string;
-    options: {value: T; content: ReactNode}[];
-    value: T;
-    onUpdate: (value: T) => void;
-}
-
-/** A picker row: a fixed-width label column, the segmented control pulled left beside it. */
-function ChoiceRow<T extends string>({title, options, value, onUpdate}: ChoiceRowProps<T>) {
-    return (
-        <div className="settings-dialog__row settings-dialog__row_choice">
-            <span className="settings-dialog__label">
-                <Text variant="body-1">{title}</Text>
-            </span>
-            <SegmentedRadioGroup
-                className="settings-dialog__picker"
-                options={options}
-                value={value}
-                onUpdate={onUpdate}
-                aria-label={title}
-            />
         </div>
     );
 }

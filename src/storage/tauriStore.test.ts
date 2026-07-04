@@ -393,6 +393,7 @@ describe('TauriNoteStore', () => {
             pinned: [],
             created: {},
             icons: {},
+            appearances: {},
             active: null,
             trashed: [],
         });
@@ -423,6 +424,7 @@ describe('TauriNoteStore', () => {
             pinned: [],
             created: {},
             icons: {},
+            appearances: {},
             active: null,
             trashed: [],
         });
@@ -433,6 +435,7 @@ describe('TauriNoteStore', () => {
             pinned: ['A.md'],
             created: {'A.md': 5},
             icons: {},
+            appearances: {},
             active: 'A.md',
             trashed: [],
         });
@@ -447,6 +450,7 @@ describe('TauriNoteStore', () => {
             pinned: [],
             created: {},
             icons: {},
+            appearances: {},
             active: null,
             trashed: [],
         });

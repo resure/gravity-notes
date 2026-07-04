@@ -9,6 +9,7 @@ import {
     withActive,
     withCreatedStamp,
     withIcon,
+    withNoteAppearance,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -100,6 +101,35 @@ describe('parseMetadata', () => {
         expect(parsed.pinned).not.toBe(DEFAULT_METADATA.pinned);
         expect(parsed.created).not.toBe(DEFAULT_METADATA.created);
     });
+
+    it('keeps well-formed appearance overrides and drops junk fields/entries', () => {
+        const parsed = parseMetadata({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            appearances: {
+                'A.md': {editorFont: 'serif', textWidth: 'wide'},
+                'B.md': {editorFont: 'mono', bogus: true}, // unknown field → dropped
+                'C.md': {editorFont: 7}, // no valid field survives → entry dropped
+                'D.md': 'nope', // not an object → dropped
+            },
+        });
+        expect(parsed.appearances).toEqual({
+            'A.md': {editorFont: 'serif', textWidth: 'wide'},
+            'B.md': {editorFont: 'mono'},
+        });
+    });
+
+    it('defaults appearances to {} when absent or not an object', () => {
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}}).appearances,
+        ).toEqual({});
+        expect(
+            parseMetadata({version: 1, sort: 'updated', pinned: [], created: {}, appearances: 'x'})
+                .appearances,
+        ).toEqual({});
+    });
 });
 
 describe('immutable transforms', () => {
@@ -109,6 +139,7 @@ describe('immutable transforms', () => {
         pinned: ['A.md'],
         created: {'A.md': 1},
         icons: {'A.md': 'Star'},
+        appearances: {'A.md': {editorFont: 'serif'}},
         active: 'A.md',
         trashed: [],
     } as const;
@@ -133,22 +164,24 @@ describe('immutable transforms', () => {
         expect(unchanged.created['B.md']).toBe(200);
     });
 
-    it('withRenamed migrates pin membership, the created entry, and the icon', () => {
+    it('withRenamed migrates pin membership, the created entry, the icon, and the appearance', () => {
         const next = withRenamed(base, 'A.md', 'A2.md');
         expect(next.pinned).toEqual(['A2.md']);
         expect(next.created).toEqual({'A2.md': 1});
         expect(next.icons).toEqual({'A2.md': 'Star'});
+        expect(next.appearances).toEqual({'A2.md': {editorFont: 'serif'}});
     });
 
     it('withRenamed is a no-op when the id is unchanged', () => {
         expect(withRenamed(base, 'A.md', 'A.md')).toEqual(base);
     });
 
-    it('withRemoved drops the id from pinned, created, and icons', () => {
+    it('withRemoved drops the id from pinned, created, icons, and appearances', () => {
         const next = withRemoved(base, 'A.md');
         expect(next.pinned).toEqual([]);
         expect(next.created).toEqual({});
         expect(next.icons).toEqual({});
+        expect(next.appearances).toEqual({});
     });
 
     it('withIcon sets, updates, and clears an icon', () => {
@@ -176,6 +209,27 @@ describe('immutable transforms', () => {
     it('withIcon is a no-op when setting the same value', () => {
         expect(withIcon(base, 'A.md', 'Star')).toBe(base);
     });
+
+    it('withNoteAppearance sets, updates, and clears an override', () => {
+        const withNone = {...base, appearances: {}};
+        const set = withNoteAppearance(withNone, 'A.md', {editorFont: 'serif', textWidth: 'wide'});
+        expect(set.appearances).toEqual({'A.md': {editorFont: 'serif', textWidth: 'wide'}});
+        const updated = withNoteAppearance(set, 'A.md', {editorFont: 'mono'});
+        expect(updated.appearances).toEqual({'A.md': {editorFont: 'mono'}});
+        const cleared = withNoteAppearance(updated, 'A.md', {});
+        expect(cleared.appearances).toEqual({});
+    });
+
+    it('withNoteAppearance keeps only populated fields (an all-inherit override drops the entry)', () => {
+        const set = withNoteAppearance(base, 'A.md', {editorFont: '', textWidth: undefined});
+        expect(set.appearances).toEqual({});
+    });
+
+    it('withNoteAppearance is a no-op when clearing an unset id or setting the same value', () => {
+        const withNone = {...base, appearances: {}};
+        expect(withNoteAppearance(withNone, 'Z.md', {})).toBe(withNone);
+        expect(withNoteAppearance(base, 'A.md', {editorFont: 'serif'})).toBe(base);
+    });
 });
 
 describe('active transforms', () => {
@@ -185,6 +239,7 @@ describe('active transforms', () => {
         pinned: [],
         created: {},
         icons: {},
+        appearances: {},
         active: 'A.md',
         trashed: [],
     } as const;
@@ -224,6 +279,7 @@ describe('reconcile', () => {
             pinned: ['A.md', 'ghost.md'],
             created: {'A.md': 1, 'ghost.md': 2},
             icons: {},
+            appearances: {},
             active: 'ghost.md',
             trashed: [],
         } as const;
@@ -240,6 +296,7 @@ describe('reconcile', () => {
             pinned: [],
             created: {},
             icons: {},
+            appearances: {},
             active: 'A.md',
             trashed: [],
         } as const;
@@ -253,6 +310,7 @@ describe('reconcile', () => {
             pinned: ['Work/Roadmap.md', 'gone.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2},
             icons: {},
+            appearances: {},
             active: 'Work/Roadmap.md',
             trashed: [],
         } as const;
@@ -270,6 +328,7 @@ describe('reconcile', () => {
             pinned: ['Work/Roadmap.md', 'gone.md', 'Inbox.md'],
             created: {'Work/Roadmap.md': 1, 'gone.md': 2, 'Inbox.md': 3},
             icons: {},
+            appearances: {},
             active: 'Work/Roadmap.md',
             trashed: [],
         } as const;
@@ -281,18 +340,20 @@ describe('reconcile', () => {
         expect(next.active).toBe('Work/Roadmap.md');
     });
 
-    it('prunes dead icon entries', () => {
+    it('prunes dead icon and appearance entries', () => {
         const meta = {
             version: 1,
             sort: 'updated',
             pinned: [],
             created: {},
             icons: {'A.md': 'Star', 'ghost.md': 'File'},
+            appearances: {'A.md': {editorFont: 'serif'}, 'ghost.md': {textWidth: 'wide'}},
             active: null,
             trashed: [],
         } as const;
         const next = reconcile(meta, ['A.md']);
         expect(next.icons).toEqual({'A.md': 'Star'});
+        expect(next.appearances).toEqual({'A.md': {editorFont: 'serif'}});
     });
 });
 
@@ -339,16 +400,18 @@ describe('orderNotes', () => {
 });
 
 describe('withReprefixed', () => {
-    it('re-homes note pins, folder pins, created stamps, and active under the moved prefix', () => {
+    it('re-homes note pins, folder pins, created stamps, appearances, and active under the moved prefix', () => {
         const meta = {
             ...DEFAULT_METADATA,
             pinned: ['Work', 'Work/Plan.md', 'Other/Keep.md'],
             created: {'Work/Plan.md': 5, 'Other/Keep.md': 7},
+            appearances: {'Work/Plan.md': {editorFont: 'serif'}},
             active: 'Work/Plan.md',
         };
         const next = withReprefixed(meta, 'Work', 'Archive/Work');
         expect(next.pinned).toEqual(['Archive/Work', 'Archive/Work/Plan.md', 'Other/Keep.md']);
         expect(next.created).toEqual({'Archive/Work/Plan.md': 5, 'Other/Keep.md': 7});
+        expect(next.appearances).toEqual({'Archive/Work/Plan.md': {editorFont: 'serif'}});
         expect(next.active).toBe('Archive/Work/Plan.md');
     });
 
@@ -412,10 +475,10 @@ describe('trash registry', () => {
         ]);
     });
 
-    it('parseMetadata round-trips a trashed entry’s optional created + icon', () => {
-        // Regression: parseTrashEntry must read the icon (and created) a note carried into the Trash,
-        // else a trash → reload → restore silently loses the note’s icon (restoreFromTrash keys off
-        // entry.icon). Both are optional, so absent stays absent.
+    it('parseMetadata round-trips a trashed entry’s optional created + icon + appearance', () => {
+        // Regression: parseTrashEntry must read the icon/appearance (and created) a note carried into
+        // the Trash, else a trash → reload → restore silently loses them (restoreFromTrash keys off
+        // the entry). All are optional, so absent stays absent.
         const parsed = parseMetadata({
             version: 1,
             sort: 'updated',
@@ -429,6 +492,7 @@ describe('trash registry', () => {
                     trashedAt: 10,
                     created: 3,
                     icon: '⭐',
+                    appearance: {editorFont: 'serif'},
                 },
                 {id: '.trash/B.md', title: 'B', originalPath: '', trashedAt: 20},
             ],
@@ -441,6 +505,7 @@ describe('trash registry', () => {
                 trashedAt: 10,
                 created: 3,
                 icon: '⭐',
+                appearance: {editorFont: 'serif'},
             },
             {id: '.trash/B.md', title: 'B', originalPath: '', trashedAt: 20},
         ]);

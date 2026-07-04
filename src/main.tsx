@@ -19,19 +19,10 @@ import '@gravity-ui/markdown-editor/styles/yc-table-cell-bg.css';
 import '@gravity-ui/markdown-editor/styles/yfm-overrides.css';
 import '@gravity-ui/markdown-editor/styles/yfm-themes.css';
 
-// PT Serif — the face behind Settings › Editor font › Serif (feeds `--gn-editor-font` in index.css).
-// Self-hosted via @fontsource: the woff2s are bundled (base64-inlined in the single-file build, local
-// files in the desktop app), so unlike a Google-Fonts `@import` there's nothing fetched at runtime and
-// it works offline. Latin + Latin-ext subsets × {400, 700, italic, bold-italic}; Cyrillic/other scripts
-// fall back down the serif stack (Georgia has Cyrillic). Add the `cyrillic-*` imports here to cover it.
-import '@fontsource/pt-serif/latin-400.css';
-import '@fontsource/pt-serif/latin-400-italic.css';
-import '@fontsource/pt-serif/latin-700.css';
-import '@fontsource/pt-serif/latin-700-italic.css';
-import '@fontsource/pt-serif/latin-ext-400.css';
-import '@fontsource/pt-serif/latin-ext-400-italic.css';
-import '@fontsource/pt-serif/latin-ext-700.css';
-import '@fontsource/pt-serif/latin-ext-700-italic.css';
+// PT Serif — the face behind Settings › Editor font › Serif. Self-hosted (woff2-only @font-face
+// rules over @fontsource's font files — see the rationale in fonts/pt-serif.css), so unlike a
+// Google-Fonts `@import` there's nothing fetched at runtime and it works offline.
+import './fonts/pt-serif.css';
 
 import './index.css';
 

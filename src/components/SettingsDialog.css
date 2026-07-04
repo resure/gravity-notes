@@ -50,16 +50,7 @@
     padding: 13px 0;
 }
 
-/* Picker rows: a fixed label column with the segmented control pulled left, hugging the label. */
-.settings-dialog__row_choice {
-    grid-template-columns: 150px 1fr;
-    column-gap: 20px;
-    padding: 11px 0;
-}
-
-.settings-dialog__picker {
-    justify-self: start;
-}
+/* Picker rows are the shared AppearanceChoiceRow (`appearance-choice_row`, appearanceControls.css). */
 
 .settings-dialog__label {
     display: flex;

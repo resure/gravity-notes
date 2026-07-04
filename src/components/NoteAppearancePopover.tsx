@@ -1,10 +1,8 @@
-import type {ReactNode} from 'react';
-
-import {Popup, SegmentedRadioGroup, Text} from '@gravity-ui/uikit';
+import {Popup, Text} from '@gravity-ui/uikit';
 
 import type {NoteAppearance} from '../hooks/useSettings';
 
-import {FONT_OPTIONS_WS, WIDTH_OPTIONS_WS} from './appearanceControls';
+import {AppearanceChoiceRow, FONT_OPTIONS_WS, WIDTH_OPTIONS_WS} from './appearanceControls';
 
 import './NoteAppearancePopover.css';
 
@@ -65,13 +63,15 @@ export function NoteAppearancePopover({
                     ) : null}
                 </div>
 
-                <ControlGroup
+                <AppearanceChoiceRow
+                    layout="stack"
                     label="Editor font"
                     options={FONT_OPTIONS_WS}
                     value={noteAppearance.editorFont}
                     onUpdate={(value) => onSet('editorFont', value)}
                 />
-                <ControlGroup
+                <AppearanceChoiceRow
+                    layout="stack"
                     label="Text width"
                     options={WIDTH_OPTIONS_WS}
                     value={noteAppearance.textWidth}
@@ -79,30 +79,5 @@ export function NoteAppearancePopover({
                 />
             </div>
         </Popup>
-    );
-}
-
-interface ControlGroupProps<T extends string> {
-    label: string;
-    options: {value: T; content: ReactNode}[];
-    value: T;
-    onUpdate: (value: T) => void;
-}
-
-function ControlGroup<T extends string>({label, options, value, onUpdate}: ControlGroupProps<T>) {
-    return (
-        <div className="note-appearance__group">
-            <Text color="secondary" className="note-appearance__label">
-                {label}
-            </Text>
-            <SegmentedRadioGroup
-                size="s"
-                width="max"
-                options={options}
-                value={value}
-                onUpdate={onUpdate}
-                aria-label={label}
-            />
-        </div>
     );
 }

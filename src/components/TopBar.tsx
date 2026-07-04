@@ -188,14 +188,18 @@ export function TopBar({
     // save doesn't cut the breath off mid-dip — held until the pulse reaches a cycle boundary after
     // saving ends. We ride the CSS `animationiteration` event for that boundary instead of timing it by
     // hand: saving-ended arms `pendingStop`, and the next iteration (opacity back at 1) drops the class.
-    // (Under prefers-reduced-motion the animation is `none`, so no iteration fires and the class lingers
-    // harmlessly — there's no pulse to stop, and `_pulsing` has no other effect.)
+    // Under prefers-reduced-motion the animation is `none`, so no iteration would ever fire to consume
+    // the pending stop — drop the class immediately instead (otherwise it lingers all session and a
+    // mid-session reduce-motion toggle would resume a phantom pulse).
     const [orbPulsing, setOrbPulsing] = useState(false);
     const pulsePendingStopRef = useRef(false);
     useEffect(() => {
         if (saveState === 'saving') {
             pulsePendingStopRef.current = false; // a fresh save cancels any pending stop
             setOrbPulsing(true);
+        } else if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            pulsePendingStopRef.current = false; // no animation runs — no iteration will arrive
+            setOrbPulsing(false);
         } else {
             pulsePendingStopRef.current = true; // let the breath finish, then stop (see the orb below)
         }

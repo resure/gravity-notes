@@ -5,8 +5,12 @@ import {
     type NoteAppearance,
     type Settings,
     type WorkspaceSettings,
+    clearLegacyNoteAppearances,
     effectiveAppearance,
-    useNoteSettings,
+    isNoteAppearanceOverridden,
+    noteAppearanceOf,
+    noteAppearanceToOverride,
+    readLegacyNoteAppearances,
     useSettings,
     useWorkspaceSettings,
 } from './useSettings';
@@ -27,7 +31,6 @@ const WS_DEFAULT: WorkspaceSettings = {
 
 const NOTE_DEFAULT: NoteAppearance = {
     editorFont: 'default',
-    accentColor: 'default',
     textWidth: 'default',
 };
 
@@ -57,7 +60,7 @@ describe('effectiveAppearance', () => {
         });
     });
 
-    it('lets a note override beat both workspace and app (note wins)', () => {
+    it('lets a note override beat both workspace and app (note wins; accent has no note layer)', () => {
         const ws: WorkspaceSettings = {
             editorFont: 'mono',
             accentColor: 'gray',
@@ -65,12 +68,11 @@ describe('effectiveAppearance', () => {
         };
         const note: NoteAppearance = {
             editorFont: 'sans',
-            accentColor: 'default',
             textWidth: 'default',
         };
         expect(effectiveAppearance(APP, ws, note)).toEqual({
             editorFont: 'sans', // note wins
-            accentColor: 'gray', // note default → workspace
+            accentColor: 'gray', // app ← workspace (never per-note)
             textWidth: 'narrow', // note default → workspace
         });
     });
@@ -125,48 +127,69 @@ describe('useWorkspaceSettings', () => {
     });
 });
 
-describe('useNoteSettings', () => {
-    it('defaults every field to "default" and reports not overridden', () => {
-        const {result} = renderHook(() => useNoteSettings('ws-1', 'Note.md'));
-        expect(result.current.noteAppearance).toEqual(NOTE_DEFAULT);
-        expect(result.current.isOverridden).toBe(false);
+describe('noteAppearanceOf / noteAppearanceToOverride', () => {
+    it('resolves an absent override to all-inherit and flags it not overridden', () => {
+        expect(noteAppearanceOf(undefined)).toEqual(NOTE_DEFAULT);
+        expect(isNoteAppearanceOverridden(noteAppearanceOf(undefined))).toBe(false);
     });
 
-    it('persists an override under the per-note key and flags overridden', () => {
-        const {result} = renderHook(() => useNoteSettings('ws-1', 'Work/Plan.md'));
-        act(() => result.current.setNoteSetting('editorFont', 'serif'));
-        const stored = JSON.parse(
-            localStorage.getItem('gravity-notes:ws-1:note:Work/Plan.md:appearance') ?? '{}',
-        );
-        expect(stored.editorFont).toBe('serif');
-        expect(result.current.isOverridden).toBe(true);
+    it('resolves sidecar values and flags them overridden', () => {
+        const appearance = noteAppearanceOf({editorFont: 'serif', textWidth: 'wide'});
+        expect(appearance).toEqual({editorFont: 'serif', textWidth: 'wide'});
+        expect(isNoteAppearanceOverridden(appearance)).toBe(true);
     });
 
-    it('reloads when the open note changes', () => {
-        localStorage.setItem(
-            'gravity-notes:ws-1:note:B.md:appearance',
-            JSON.stringify({editorFont: 'mono', accentColor: 'default', textWidth: 'default'}),
+    it('degrades unknown sidecar values (e.g. from a newer build) to inherit', () => {
+        expect(noteAppearanceOf({editorFont: 'comic-sans', textWidth: 'gigantic'})).toEqual(
+            NOTE_DEFAULT,
         );
-        const {result, rerender} = renderHook(({id}) => useNoteSettings('ws-1', id), {
-            initialProps: {id: 'A.md'},
+    });
+
+    it('round-trips through the override form, dropping "default" fields', () => {
+        expect(noteAppearanceToOverride({editorFont: 'mono', textWidth: 'default'})).toEqual({
+            editorFont: 'mono',
         });
-        expect(result.current.noteAppearance.editorFont).toBe('default');
-        rerender({id: 'B.md'});
-        expect(result.current.noteAppearance.editorFont).toBe('mono');
+        expect(noteAppearanceToOverride(NOTE_DEFAULT)).toEqual({});
+        const full: NoteAppearance = {editorFont: 'serif', textWidth: 'narrow'};
+        expect(noteAppearanceOf(noteAppearanceToOverride(full))).toEqual(full);
+    });
+});
+
+describe('legacy per-note appearance migration', () => {
+    const key = (id: string) => `gravity-notes:ws-1:note:${id}:appearance`;
+
+    it('reads legacy keys as overrides, skipping all-default and corrupt values', () => {
+        localStorage.setItem(
+            key('Work/Plan.md'),
+            JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
+        );
+        localStorage.setItem(
+            key('Idle.md'),
+            JSON.stringify({editorFont: 'default', accentColor: 'default', textWidth: 'default'}),
+        );
+        localStorage.setItem(key('Broken.md'), 'not json{');
+        localStorage.setItem('gravity-notes:ws-2:note:Other.md:appearance', '{}'); // other workspace
+        expect(readLegacyNoteAppearances('ws-1')).toEqual({
+            'Work/Plan.md': {editorFont: 'serif'},
+        });
     });
 
-    it('reset clears the override and removes the key', () => {
-        const {result} = renderHook(() => useNoteSettings('ws-1', 'A.md'));
-        act(() => result.current.setNoteSetting('accentColor', 'blue'));
-        expect(localStorage.getItem('gravity-notes:ws-1:note:A.md:appearance')).not.toBeNull();
-        act(() => result.current.resetNoteAppearance());
-        expect(result.current.noteAppearance).toEqual(NOTE_DEFAULT);
-        expect(localStorage.getItem('gravity-notes:ws-1:note:A.md:appearance')).toBeNull();
+    it('handles a note title containing the key separator', () => {
+        localStorage.setItem(key('Meeting: notes.md'), JSON.stringify({textWidth: 'wide'}));
+        expect(readLegacyNoteAppearances('ws-1')).toEqual({
+            'Meeting: notes.md': {textWidth: 'wide'},
+        });
     });
 
-    it('is a no-op when no note is open (null id)', () => {
-        const {result} = renderHook(() => useNoteSettings('ws-1', null));
-        act(() => result.current.setNoteSetting('editorFont', 'serif'));
-        expect(result.current.noteAppearance).toEqual(NOTE_DEFAULT);
+    it('clearLegacyNoteAppearances removes every legacy key for the workspace only', () => {
+        localStorage.setItem(key('A.md'), JSON.stringify({editorFont: 'mono'}));
+        localStorage.setItem(key('B.md'), 'junk');
+        localStorage.setItem('gravity-notes:ws-2:note:C.md:appearance', '{}');
+        localStorage.setItem('gravity-notes:ws-1:settings', '{}');
+        clearLegacyNoteAppearances('ws-1');
+        expect(localStorage.getItem(key('A.md'))).toBeNull();
+        expect(localStorage.getItem(key('B.md'))).toBeNull();
+        expect(localStorage.getItem('gravity-notes:ws-2:note:C.md:appearance')).not.toBeNull();
+        expect(localStorage.getItem('gravity-notes:ws-1:settings')).not.toBeNull();
     });
 });

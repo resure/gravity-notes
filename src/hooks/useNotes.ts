@@ -7,6 +7,7 @@ import {
     withActive,
     withCreatedStamp,
     withIcon,
+    withNoteAppearance,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -21,6 +22,7 @@ import {
     ConflictError,
     NameCollisionError,
     type Note,
+    type NoteAppearanceOverride,
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
@@ -97,10 +99,23 @@ export interface UseNotes {
      * body editor keys off this so a rename — which changes the id in place — never remounts it.
      */
     sessionId: number;
+    /** True once the initial load (notes + metadata + trash) has landed. */
+    ready: boolean;
     setSortMode(sort: SortMode): void;
     togglePin(id: string): void;
     /** Set (or clear, with an empty string) a note's icon (a Gravity component name). */
     setIcon(id: string, icon: string): void;
+    /**
+     * Set (or clear, with an empty override) a note's appearance override in the metadata sidecar —
+     * stored like its icon, so it follows the note through rename/move and travels with the folder.
+     */
+    setNoteAppearance(id: string, appearance: NoteAppearanceOverride): void;
+    /**
+     * One-time migration hook: fold externally-stored per-note overrides (the legacy localStorage
+     * layer) into the sidecar. Entries whose note already has a sidecar override are skipped — the
+     * sidecar may hold a newer value written by another machine. Call only after `ready`.
+     */
+    adoptNoteAppearances(overrides: Record<string, NoteAppearanceOverride>): Promise<void>;
     /** The single open note's id (mirrors `metadata.active`), or null. */
     activeId: string | null;
     /** Full content of the open note (the editor's initial markup), or null. */
@@ -188,6 +203,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
     const [metadata, setMetadata] = useState<NotesMetadata>(DEFAULT_METADATA);
     const metadataRef = useRef<NotesMetadata>(DEFAULT_METADATA);
+    const [ready, setReady] = useState(false);
     const [sessionId, setSessionId] = useState(0);
     const sessionRef = useRef(0);
     const bumpSession = useCallback(() => {
@@ -260,6 +276,22 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     );
     const setIcon = useCallback(
         (id: string, icon: string) => void persistMetadata(withIcon(metadataRef.current, id, icon)),
+        [persistMetadata],
+    );
+    const setNoteAppearance = useCallback(
+        (id: string, appearance: NoteAppearanceOverride) =>
+            void persistMetadata(withNoteAppearance(metadataRef.current, id, appearance)),
+        [persistMetadata],
+    );
+    const adoptNoteAppearances = useCallback(
+        async (overrides: Record<string, NoteAppearanceOverride>) => {
+            let next = metadataRef.current;
+            for (const [id, override] of Object.entries(overrides)) {
+                if (id in next.appearances) continue; // an existing sidecar override wins
+                next = withNoteAppearance(next, id, override);
+            }
+            if (next !== metadataRef.current) await persistMetadata(next);
+        },
         [persistMetadata],
     );
 
@@ -803,10 +835,11 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             try {
                 const originalPath = dirname(id);
                 const title = titleFromFileName(id);
-                // Preserve the original creation stamp + icon on the entry so restore can reinstate them
-                // (withTrashed → withRemoved drops both from the live metadata).
+                // Preserve the original creation stamp + icon + appearance on the entry so restore can
+                // reinstate them (withTrashed → withRemoved drops all three from the live metadata).
                 const created = metadataRef.current.created[id];
                 const icon = metadataRef.current.icons[id];
+                const appearance = metadataRef.current.appearances[id];
                 const trashId = await store.trash(id);
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
@@ -818,6 +851,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                         trashedAt: Date.now(),
                         created,
                         icon,
+                        appearance,
                     }),
                 );
                 if (wasActive) {
@@ -845,14 +879,16 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             const entry = metadataRef.current.trashed.find((t) => t.id === trashId);
             try {
                 const meta = await store.restore(trashId, entry?.originalPath ?? '');
-                // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime) and the
-                // icon — both keyed to `meta.id`, the (possibly deduped) id the note actually restored to.
+                // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime), the
+                // icon, and the appearance — keyed to `meta.id`, the (possibly deduped) id the note
+                // actually restored to.
                 let next = withCreatedStamp(
                     withoutTrashEntry(metadataRef.current, trashId),
                     meta.id,
                     entry?.created || meta.updatedAt || Date.now(),
                 );
                 if (entry?.icon) next = withIcon(next, meta.id, entry.icon);
+                if (entry?.appearance) next = withNoteAppearance(next, meta.id, entry.appearance);
                 await persistMetadata(next);
                 setTrashedNotes((prev) => prev.filter((n) => n.id !== trashId));
                 await refresh();
@@ -1042,6 +1078,9 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 if (reconciled.active !== meta.active) {
                     void store.writeMetadata(reconciled); // heal the dotfile if active vanished
                 }
+                // Signal that the sidecar is loaded — gates work that must not race the load above
+                // (e.g. Workspace's legacy-appearance migration, which read-modify-writes it).
+                setReady(true);
             } catch (err) {
                 // Listing or reading metadata failed (stale handle, permission loss, read error) —
                 // surface it instead of silently showing an empty "No notes yet" workspace.
@@ -1160,10 +1199,13 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         notes,
         folders,
         metadata,
+        ready,
         sessionId,
         setSortMode,
         togglePin,
         setIcon,
+        setNoteAppearance,
+        adoptNoteAppearances,
         activeId: metadata.active,
         note,
         saveState,

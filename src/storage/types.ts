@@ -55,6 +55,19 @@ export interface AttachmentMeta {
 export type SortMode = 'updated' | 'title' | 'title-desc' | 'created';
 
 /**
+ * Per-note appearance override stored in the sidecar. Only overridden fields are present (an absent
+ * field inherits the workspace/app value). Values are kept as plain strings at the storage layer —
+ * like {@link NotesMetadata.icons} — and validated by the settings layer on read, so unknown values
+ * from a newer build degrade to "inherit" instead of corrupting the sidecar round-trip.
+ */
+export interface NoteAppearanceOverride {
+    /** Editor font family for this note (e.g. `"serif"`). */
+    editorFont?: string;
+    /** Text column width for this note (e.g. `"wide"`). */
+    textWidth?: string;
+}
+
+/**
  * Registry entry for one trashed note. The bytes live in the backend's `.trash/` area (keyed by the
  * entry's `id`); this records what the backend can't infer — where the note came from and when it was
  * deleted — so the trash view can show "deleted X ago" and restore it to its original folder.
@@ -72,6 +85,8 @@ export interface TrashEntry {
     created?: number;
     /** The note's icon (component name or emoji), preserved so a restore can reinstate it (undefined if none). */
     icon?: string;
+    /** The note's appearance override, preserved so a restore can reinstate it (undefined if none). */
+    appearance?: NoteAppearanceOverride;
 }
 
 /** Per-folder notes metadata, persisted alongside the notes (not in any note body). */
@@ -89,6 +104,8 @@ export interface NotesMetadata {
      * (e.g. `"⭐"`). Absent id = default File icon.
      */
     icons: Readonly<Record<string, string>>;
+    /** Note id → per-note appearance override. Absent id = fully inherited appearance. */
+    appearances: Readonly<Record<string, NoteAppearanceOverride>>;
     /** The single open / last-open note id, or null when none is open. Restored on reload. */
     active: string | null;
     /**

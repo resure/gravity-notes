@@ -46,13 +46,4 @@
     color: var(--g-color-text-link-hover);
 }
 
-.note-appearance__group {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-
-.note-appearance__label {
-    font-size: 12px;
-    font-weight: 500;
-}
+/* The pickers are the shared AppearanceChoiceRow (`appearance-choice_stack`, appearanceControls.css). */

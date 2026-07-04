@@ -751,7 +751,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     return (
         <div className="note-list">
             <div className="note-list__toolbar">
-                <Button view="outlined" size="m" aria-label="Folders" onClick={onToggleRail}>
+                {/* `selected` doubles as the state signal: Gravity renders it as `aria-pressed`
+                    (a raw aria-pressed prop would be clobbered), plus the pressed look. */}
+                <Button
+                    view="outlined"
+                    size="m"
+                    aria-label="Folders"
+                    selected={railOpen}
+                    onClick={onToggleRail}
+                >
                     <Icon data={Folder} />
                 </Button>
                 <Select

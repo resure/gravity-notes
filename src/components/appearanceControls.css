@@ -1,3 +1,29 @@
+/* The shared picker row (AppearanceChoiceRow), in its two layouts. `row`: the Settings dialog's
+   fixed label column with the control pulled left beside it (matches its other rows' rhythm).
+   `stack`: the note-appearance popover's small label above a full-width control. */
+.appearance-choice_row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    column-gap: 20px;
+    align-items: center;
+    padding: 11px 0;
+}
+
+.appearance-choice_row .appearance-choice__picker {
+    justify-self: start;
+}
+
+.appearance-choice_stack {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.appearance-choice_stack .appearance-choice__label {
+    font-size: 12px;
+    font-weight: 500;
+}
+
 /* Accent-color option: a colored dot beside the label, so the picker reads as a color picker. Shared
    by the Settings dialog and the per-note appearance popover. The dot hues mirror the accent CSS
    variables in index.css (kept in sync by hand). */
