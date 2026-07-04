@@ -152,109 +152,12 @@
    put. They also share the --editor-gutter horizontal padding (set on .workspace__editor) so
    their left edges align. */
 .editor-pane {
-    position: relative; /* anchors the absolutely-positioned "Note appearance" ⋯ trigger */
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain; /* keep scroll momentum inside the editor (no chaining to the shell) */
-}
-
-/* The ⋯ trigger sits in a column-width band centered to the note's text measure (same max-width as
-   the content), so it aligns with the note's RIGHT edge — not the viewport's. The band is a
-   zero-height positioning layer that ignores pointer events; only the button takes them. */
-.editor-pane__note-actions {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    max-width: var(--gn-text-width, none);
-    height: 0;
-    margin-inline: auto;
-    box-sizing: border-box;
-    pointer-events: none;
-    z-index: 1;
-}
-
-/* The appearance popover pins to this point, NOT to the ⋯ button — the button lives in the scrolling
-   header and slides out of view, so opening the popover (⌘⇧I) while scrolled down would throw it
-   off-screen. This zero-size layer is `sticky` to the pane's top, so the popover hanging off it stays
-   at the note's top-right through any scroll. Centered + capped to the text column (like the ⋯ band),
-   and the point is offset to the same top/right, so at scroll-top the anchor sits under the ⋯. */
-.editor-pane__appearance-anchor {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    width: 100%;
-    max-width: var(--gn-text-width, none);
-    height: 0;
-    margin-inline: auto;
-    box-sizing: border-box;
-    pointer-events: none;
-}
-
-.editor-pane__appearance-anchor-point {
-    position: absolute;
-    top: 12px;
-    right: 16px;
-    width: 32px;
-    height: 32px;
-}
-
-/* Once scrolled, the ⋯ button has slid out of view, so the popover no longer needs to hang below it.
-   Collapse the anchor toward the pane top so the popover rises to sit just under the top bar instead
-   of floating at the button's old drop point with dead space above it. */
-.editor-pane_scrolled .editor-pane__appearance-anchor-point {
-    top: 0;
-    height: 8px;
-}
-
-/* A quiet chip at the top-right of the note, aligned with the title's first line (it scrolls away
-   with the header). Hover-revealed — hidden until the TITLE AREA or the button is hovered, the button
-   is keyboard-focused, or the popover is open — so it never competes with the text. Themed via
-   Gravity vars so it reads in light + dark. */
-.note-appearance-trigger {
-    position: absolute;
-    /* Vertically centered on the title's first line: the 32px button over the title row's
-       12px top padding + ~32px line (center ≈ 28px) → top 12px. */
-    top: 12px;
-    right: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--g-color-text-secondary);
-    cursor: pointer;
-    pointer-events: auto;
-    opacity: 0;
-    transition:
-        opacity 120ms ease,
-        color 120ms ease,
-        background-color 120ms ease;
-}
-
-.note-title-row:hover ~ .editor-pane__note-actions .note-appearance-trigger,
-.note-appearance-trigger:hover,
-.note-appearance-trigger:focus-visible,
-.note-appearance-trigger_open {
-    opacity: 1;
-}
-
-.note-appearance-trigger:hover {
-    color: var(--g-color-text-primary);
-    background: var(--g-color-base-generic-hover);
-}
-
-.note-appearance-trigger:focus-visible {
-    outline: 2px solid var(--g-color-line-focus);
-    outline-offset: 2px;
 }
 
 .editor-pane__body {

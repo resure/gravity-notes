@@ -1,4 +1,4 @@
-import {useLayoutEffect, useState} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import type {
     KeyboardEvent as ReactKeyboardEvent,
     MouseEvent as ReactMouseEvent,
@@ -13,6 +13,7 @@ import {
     CircleQuestion,
     ClockArrowRotateLeft,
     Database,
+    Ellipsis,
     Folder,
     FolderOpen,
     Gear,
@@ -20,18 +21,24 @@ import {
     Picture,
     TrashBin,
 } from '@gravity-ui/icons';
-import {DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
+import {Button, DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
+import type {NoteAppearance} from '../hooks/useSettings';
 import type {NoteMeta} from '../storage/types';
 
+import {NoteAppearancePopover} from './NoteAppearancePopover';
 import {THEME_OPTIONS, type ThemePref} from './theme';
 
 import './TopBar.css';
 
 /** How many recents the "Open Recent" submenu shows; the ⌃R switcher lists them all. */
 const MAX_RECENT_MENU = 8;
+
+/** The orb save-pulse's animation period (keep in sync with `topbar-orb-blink` in TopBar.css). The
+ *  pulse is held to a whole multiple of this after saving ends, so it always plays a full breath. */
+const PULSE_CYCLE_MS = 1800;
 
 export interface TopBarProps {
     /** Active storage label (folder name, or "In this browser"); shown in the menu. */
@@ -102,6 +109,20 @@ export interface TopBarProps {
     onEnterList: (id: string) => void;
     /** Enter on an empty box: move focus onto the previously selected note's row. */
     onFocusList: () => void;
+    /** Whether a note is open — shows the ⋯ "Note appearance" button at the bar's right edge. */
+    noteOpen: boolean;
+    /** Open state of the note-appearance popover (Workspace-owned, so ⌘⇧I can toggle it too). */
+    appearanceOpen: boolean;
+    /** Toggle the note-appearance popover (the ⋯ button + the ⌘⇧I shortcut). */
+    onToggleAppearance: () => void;
+    /** Close the note-appearance popover (Esc / outside-click). */
+    onCloseAppearance: () => void;
+    /** Per-note appearance overrides for the open note (drives the popover). */
+    noteAppearance: NoteAppearance;
+    onSetNoteAppearance: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
+    onResetNoteAppearance: () => void;
+    /** True when the open note overrides at least one appearance field — shows the popover's Reset. */
+    noteAppearanceOverridden: boolean;
 }
 
 /** Status line text for the menu, by autosave state. */
@@ -155,7 +176,51 @@ export function TopBar({
     onClose,
     onEnterList,
     onFocusList,
+    noteOpen,
+    appearanceOpen,
+    onToggleAppearance,
+    onCloseAppearance,
+    noteAppearance,
+    onSetNoteAppearance,
+    onResetNoteAppearance,
+    noteAppearanceOverridden,
 }: TopBarProps) {
+    // The ⋯ "Note appearance" button (right edge) that the popover anchors to; null until it mounts.
+    const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
+
+    // The orb's save-pulse, driven by a `_pulsing` class decoupled from `saveState`. The point of the
+    // decoupling: a save often finishes in a few frames, and dropping the pulse the instant saving ends
+    // would flash it (or cut it mid-breath). Instead, when saving ends we HOLD the pulse to the next
+    // animation-cycle boundary — a whole multiple of PULSE_CYCLE_MS from its start, where the keyframe's
+    // opacity is back at 1 — so it always plays a full, clean breath and stops with no snap.
+    const [orbPulsing, setOrbPulsing] = useState(false);
+    const orbPulsingRef = useRef(false);
+    const pulseStartRef = useRef(0);
+    const pulseStopRef = useRef<ReturnType<typeof setTimeout>>();
+    useEffect(() => {
+        if (saveState === 'saving') {
+            clearTimeout(pulseStopRef.current); // a fresh save cancels any pending stop
+            if (!orbPulsingRef.current) {
+                orbPulsingRef.current = true;
+                pulseStartRef.current = Date.now();
+                setOrbPulsing(true);
+            }
+            return undefined;
+        }
+        if (!orbPulsingRef.current) return undefined;
+        // Saving ended — let the current breath finish: stop at the next whole cycle from the start.
+        const elapsed = Date.now() - pulseStartRef.current;
+        const remaining = PULSE_CYCLE_MS - (elapsed % PULSE_CYCLE_MS);
+        clearTimeout(pulseStopRef.current);
+        pulseStopRef.current = setTimeout(() => {
+            orbPulsingRef.current = false;
+            setOrbPulsing(false);
+        }, remaining);
+        return undefined;
+    }, [saveState]);
+    // Cancel a pending pulse-stop on unmount.
+    useEffect(() => () => clearTimeout(pulseStopRef.current), []);
+
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
 
@@ -386,7 +451,9 @@ export function TopBar({
                     <button
                         {...props}
                         type="button"
-                        className={`topbar__menu-orb topbar__menu-orb_${saveState}`}
+                        className={`topbar__menu-orb topbar__menu-orb_${saveState}${
+                            orbPulsing ? ' topbar__menu-orb_pulsing' : ''
+                        }`}
                         aria-label="Menu"
                         aria-haspopup="true"
                         title={STATUS_TEXT[saveState]}
@@ -405,6 +472,34 @@ export function TopBar({
                 hasClear
                 onKeyDown={onSearchKeyDown}
             />
+            {/* The open note's "⋯" appearance menu, pinned at the bar's right edge (always visible, so
+                no scroll-position juggling). Only present when a note is open. */}
+            {noteOpen ? (
+                <>
+                    <Button
+                        ref={(el: HTMLButtonElement | null) => setAppearanceAnchor(el)}
+                        view="flat"
+                        size="m"
+                        className="topbar__note-actions"
+                        aria-label="Note appearance"
+                        aria-haspopup="dialog"
+                        aria-expanded={appearanceOpen}
+                        onClick={onToggleAppearance}
+                    >
+                        <Icon data={Ellipsis} />
+                    </Button>
+                    <NoteAppearancePopover
+                        open={appearanceOpen}
+                        anchor={appearanceAnchor}
+                        onClose={onCloseAppearance}
+                        noteAppearance={noteAppearance}
+                        onSet={onSetNoteAppearance}
+                        onReset={onResetNoteAppearance}
+                        overridden={noteAppearanceOverridden}
+                        workspaceLabel={storageLabel}
+                    />
+                </>
+            ) : null}
         </header>
     );
 }

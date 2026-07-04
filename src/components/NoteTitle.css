@@ -12,6 +12,13 @@
     padding: 12px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
 }
 
+/* Nudge the title icon down a hair: the large title text carries its visual weight below the line's
+   center, so a vertically-centered icon reads a touch high — this optically aligns it with the title.
+   `transform` keeps it purely visual (no layout shift in the centered row). */
+.note-title__icon {
+    transform: translateY(2px);
+}
+
 .note-title {
     flex: 1;
     min-width: 0;

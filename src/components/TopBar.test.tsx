@@ -57,6 +57,14 @@ function setup(overrides: Record<string, unknown> = {}) {
         onClose: vi.fn(),
         onEnterList: vi.fn(),
         onFocusList: vi.fn(),
+        noteOpen: false,
+        appearanceOpen: false,
+        onToggleAppearance: vi.fn(),
+        onCloseAppearance: vi.fn(),
+        noteAppearance: {editorFont: 'default', accentColor: 'default', textWidth: 'default'},
+        onSetNoteAppearance: vi.fn(),
+        onResetNoteAppearance: vi.fn(),
+        noteAppearanceOverridden: false,
         ...overrides,
     };
     renderWithProviders(<TopBar {...(props as TopBarProps)} />);
@@ -211,6 +219,14 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             onClose={noop}
             onEnterList={noop}
             onFocusList={noop}
+            noteOpen={false}
+            appearanceOpen={false}
+            onToggleAppearance={noop}
+            onCloseAppearance={noop}
+            noteAppearance={{editorFont: 'default', accentColor: 'default', textWidth: 'default'}}
+            onSetNoteAppearance={noop}
+            onResetNoteAppearance={noop}
+            noteAppearanceOverridden={false}
         />
     );
 }

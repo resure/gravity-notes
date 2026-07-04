@@ -16,7 +16,6 @@ import {
     Ellipsis,
     Folder,
     FolderOpen,
-    Folders,
     Pencil,
     Pin,
     PinFill,
@@ -752,15 +751,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     return (
         <div className="note-list">
             <div className="note-list__toolbar">
-                <Button
-                    view="flat"
-                    size="m"
-                    selected={railOpen}
-                    aria-label={railOpen ? 'Hide folders' : 'Show folders'}
-                    aria-pressed={railOpen}
-                    onClick={onToggleRail}
-                >
-                    <Icon data={Folders} />
+                <Button view="outlined" size="m" aria-label="Folders" onClick={onToggleRail}>
+                    <Icon data={Folder} />
                 </Button>
                 <Select
                     className="note-list__sort"

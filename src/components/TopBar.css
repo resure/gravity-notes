@@ -5,6 +5,8 @@
     padding: 6px 12px;
     border-bottom: 1px solid var(--g-color-line-generic);
     flex-shrink: 0;
+    /* Anchors the note-actions ⋯, which the desktop layout pins to the right edge (see below). */
+    position: relative;
 }
 
 /* Desktop app (Tauri): the native title bar is hidden (titleBarStyle "Overlay") and this strip plays
@@ -21,6 +23,17 @@
     width: clamp(320px, 40vw, 520px);
 }
 
+/* Desktop: the orb + search are a centered "command center", so the ⋯ can't ride along in that group
+   or it shifts the search off-center. Pin it to the window's right edge instead (it sits in the empty
+   drag area), leaving the centered search at its full width. The web build keeps it in flow (the
+   full-width search already runs to the right edge, with the ⋯ right after it). */
+.tauri-app .topbar__note-actions {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 /* The search is the hero: it fills from the orb up to the right edge. */
 .topbar__search {
     flex: 1;
@@ -32,6 +45,17 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
+}
+
+/* The open note's ⋯ "Note appearance" button, pinned at the bar's right edge (after the flex:1
+   search). A little transparent so it stays quiet next to the search; full-strength on hover. */
+.topbar__note-actions {
+    flex-shrink: 0;
+    opacity: 0.6;
+    transition: opacity 0.12s ease;
+}
+.topbar__note-actions:hover {
+    opacity: 1;
 }
 
 /* The orange orb = the app mark and the menu trigger: a small, flat disc in the app icon's orange —
@@ -64,9 +88,12 @@
     outline-offset: 2px;
 }
 
-/* Saving: a slow, gentle pulse — the same rhythm the old status dot used. */
-.topbar__menu-orb_saving {
-    animation: topbar-orb-blink 1.4s ease-in-out infinite;
+/* Saving: a slow, very gentle pulse — a shallow opacity dip so it reads as a quiet breath, not a
+   blink (kept subtle on purpose; the menu's status line spells out the state). Driven by a `_pulsing`
+   class (not `_saving`) so TopBar can ease it OUT when saving stops instead of snapping — see the
+   freeze-and-release effect there. */
+.topbar__menu-orb_pulsing {
+    animation: topbar-orb-blink 1.8s ease-in-out infinite;
 }
 
 @keyframes topbar-orb-blink {
@@ -75,7 +102,7 @@
         opacity: 1;
     }
     50% {
-        opacity: 0.4;
+        opacity: 0.72;
     }
 }
 
@@ -90,7 +117,7 @@
 
 /* Honor a reduced-motion preference: hold the orb steady instead of pulsing. */
 @media (prefers-reduced-motion: reduce) {
-    .topbar__menu-orb_saving {
+    .topbar__menu-orb_pulsing {
         animation: none;
     }
 }

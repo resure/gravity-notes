@@ -167,7 +167,10 @@
 
 .note-list__pin {
     flex-shrink: 0;
-    color: var(--g-color-text-warning);
+    /* A little breathing room before the title (the title row has no gap of its own). */
+    margin-right: 5px;
+    /* Follow the workspace accent (amber/blue/gray), like the orb and selection wash. */
+    color: var(--gn-orange);
 }
 
 /* Apple-Notes-style folder chip on its own line: which folder a note lives in, shown when the list

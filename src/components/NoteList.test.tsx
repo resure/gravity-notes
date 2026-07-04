@@ -373,13 +373,15 @@ describe('NoteList — toolbar', () => {
     it('toggles the folder rail from the toolbar button', async () => {
         const user = userEvent.setup();
         const {props} = setup({railOpen: false});
-        await user.click(screen.getByRole('button', {name: 'Show folders'}));
+        await user.click(screen.getByRole('button', {name: 'Folders'}));
         expect(props.onToggleRail).toHaveBeenCalledTimes(1);
     });
 
-    it('labels the rail toggle by its state', () => {
+    it('labels the rail toggle statically, even when the rail is open', () => {
         setup({railOpen: true});
-        expect(screen.getByRole('button', {name: 'Hide folders'})).toBeInTheDocument();
+        // Static label regardless of state — the button no longer reflects whether the rail is open
+        // (it's a plain "Folders" button now, not a pressed/unpressed toggle).
+        expect(screen.getByRole('button', {name: 'Folders'})).toBeInTheDocument();
     });
 });
 
