@@ -56,3 +56,22 @@
     font-size: 12px;
     font-weight: 500;
 }
+
+/* The popover glides (rather than snaps) when it lifts toward the top bar on scroll: the sticky
+   anchor shifts once as the ⋯ button leaves view, floating-ui rewrites this wrapper's position
+   transform, and this transitions it. Scoped to the open state — during the entrance/exit
+   (initial/close status) the transition is off, so Gravity's own open animation is untouched and the
+   popover doesn't slide in from the corner. floatingClassName lands on the positioned wrapper, which
+   also carries data-floating-ui-status. */
+.note-appearance-popup {
+    transition: transform 160ms ease;
+}
+.note-appearance-popup[data-floating-ui-status='initial'],
+.note-appearance-popup[data-floating-ui-status='close'] {
+    transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .note-appearance-popup {
+        transition: none;
+    }
+}

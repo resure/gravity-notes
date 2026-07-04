@@ -52,15 +52,22 @@
     line-height: var(--gn-editor-line-height, 1.35);
 }
 
+/* Lists get their own per-font leading (index.css), mirroring the editor's `li` rule so the two modes
+   stay in lockstep. The element selector out-ranks the `:where(p, li)` above; sans loosens, serif/mono
+   fall back to the body value. (The per-item gap is set on the specificity-matched rule below.) */
+.note-preview__body.yfm li {
+    line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.35));
+}
+
 /* YFM's own base rule `.yfm li:first-child, .yfm li + li { margin-block: 0.33em 0 }` carries element
    specificity (`li` + `:first-child`/`+ li`) that OUTRANKS the zero-element `:where(p, li)` rule above,
    so preview list items would inherit a ~5px top gap. The editor doesn't show it: its selector
-   (`.g-md-editor.ProseMirror.yfm …`) carries extra classes and wins. Re-assert the tight rhythm here at
-   matching specificity so lists line up with the editor (mirrors its computed `margin: 0 0 1px`). */
+   (`.g-md-editor.ProseMirror.yfm …`) carries extra classes and wins. Re-assert the per-font list
+   rhythm here at matching specificity so lists line up with the editor (mirrors its `li` margin). */
 .note-preview__body.yfm li:first-child,
 .note-preview__body.yfm li + li {
     margin-top: 0;
-    margin-bottom: 1px;
+    margin-bottom: var(--gn-editor-list-gap, 1px);
 }
 
 /* A touch of margin between paragraphs. diplodoc renders each markdown paragraph as its own <p>

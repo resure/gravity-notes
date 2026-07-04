@@ -5,7 +5,8 @@ import importOrderConfig from '@gravity-ui/eslint-config/import-order';
 import prettierConfig from '@gravity-ui/eslint-config/prettier';
 
 export default [
-    {ignores: ['dist', 'coverage', 'src-tauri']},
+    // Design handoff bundles (HTML prototypes + their runtime) are reference artifacts, not source.
+    {ignores: ['dist', 'coverage', 'src-tauri', 'handoffs', 'design_handoff_notes_list']},
     ...baseConfig,
     ...clientConfig,
     ...importOrderConfig,

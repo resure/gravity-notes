@@ -9,3 +9,4 @@ src-tauri/gen
 
 # Design handoff bundles (HTML prototypes, notes) — reference artifacts, not source to format.
 handoffs
+design_handoff_notes_list

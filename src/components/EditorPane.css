@@ -92,6 +92,14 @@
     line-height: var(--gn-editor-line-height, 1.35);
 }
 
+/* Lists get their own per-font rhythm (index.css): a touch more leading + a small gap between items,
+   overriding the body values above for `<li>` only (the element selector out-ranks the :where above).
+   Sans loosens; serif/mono fall back to the body rhythm. Preview mirrors this — keep it in sync. */
+.editor-pane .g-md-editor.ProseMirror.yfm li {
+    margin-bottom: var(--gn-editor-list-gap, 1px);
+    line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.35));
+}
+
 /* A touch of margin between paragraphs. */
 .editor-pane .g-md-editor.ProseMirror.yfm p {
     margin-bottom: 6px;
@@ -168,6 +176,39 @@
     box-sizing: border-box;
     pointer-events: none;
     z-index: 1;
+}
+
+/* The appearance popover pins to this point, NOT to the ⋯ button — the button lives in the scrolling
+   header and slides out of view, so opening the popover (⌘⇧I) while scrolled down would throw it
+   off-screen. This zero-size layer is `sticky` to the pane's top, so the popover hanging off it stays
+   at the note's top-right through any scroll. Centered + capped to the text column (like the ⋯ band),
+   and the point is offset to the same top/right, so at scroll-top the anchor sits under the ⋯. */
+.editor-pane__appearance-anchor {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    width: 100%;
+    max-width: var(--gn-text-width, none);
+    height: 0;
+    margin-inline: auto;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.editor-pane__appearance-anchor-point {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+}
+
+/* Once scrolled, the ⋯ button has slid out of view, so the popover no longer needs to hang below it.
+   Collapse the anchor toward the pane top so the popover rises to sit just under the top bar instead
+   of floating at the button's old drop point with dead space above it. */
+.editor-pane_scrolled .editor-pane__appearance-anchor-point {
+    top: 0;
+    height: 8px;
 }
 
 /* A quiet chip at the top-right of the note, aligned with the title's first line (it scrolls away
