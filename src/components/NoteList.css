@@ -183,12 +183,6 @@
     transform: none;
 }
 
-/* Optically center the glyph in its tile: most icons/emoji sit a hair high, so nudge the glyph down
-   1px. Purely visual (transform, no layout shift); the tile itself stays put. */
-.note-list__icon .g-button__icon {
-    transform: translateY(0px);
-}
-
 .note-list__pin {
     flex-shrink: 0;
     /* A little breathing room before the title (the title row has no gap of its own). */
