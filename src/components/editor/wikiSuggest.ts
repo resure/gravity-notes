@@ -16,6 +16,8 @@ export interface WikiSuggestOptions {
     getNotes(): NoteMeta[];
     getCurrentId(): string;
     onSuggest: WikiLinkSuggestSink;
+    /** True mid note-swap — the popup closes and won't open then (see WikiLinkOptions.isSwapping). */
+    isSwapping?: () => boolean;
 }
 
 interface SuggestState {
@@ -69,7 +71,7 @@ function insertLink(view: EditorView, markName: string, from: number, to: number
  * pushed through `onSuggest`. The ranked list itself is the pure `suggestWikiTargets`.
  */
 export function wikiSuggestPlugin(builder: ExtensionBuilder, opts: WikiSuggestOptions): void {
-    const {markName, getNotes, getCurrentId, onSuggest} = opts;
+    const {markName, getNotes, getCurrentId, onSuggest, isSwapping} = opts;
     const items = (st: SuggestState): NoteMeta[] =>
         st.active ? suggestWikiTargets(st.query, getNotes(), getCurrentId(), LIMIT) : [];
 
@@ -160,7 +162,11 @@ export function wikiSuggestPlugin(builder: ExtensionBuilder, opts: WikiSuggestOp
                         to: number;
                     } | null = null;
                     const push = () => {
-                        const st = KEY.getState(editorView.state);
+                        // Mid-swap updates close the popup and never open it: a restored caret
+                        // sitting after an unclosed `[[query` isn't the user typing one, and an
+                        // anchor computed mid-swap is detached by the swap's own redraw (a popup
+                        // pinned to a detached element renders at the viewport's top-left).
+                        const st = isSwapping?.() ? null : KEY.getState(editorView.state);
                         const list = st ? items(st) : [];
                         const anchor = editorView.dom.querySelector('.wiki-suggest');
                         if (!st?.active || list.length === 0 || !(anchor instanceof HTMLElement)) {

@@ -20,6 +20,23 @@ export type ShortcutAction =
     | 'deleteSelected'
     | 'openWorkspaces';
 
+/**
+ * The "open in a new window" chord — ⌘ (macOS) or Ctrl (Windows/Linux), no other modifier — on ↵
+ * and on click alike. Shared by the note-list rows (⌘↵ / ⌘-click), the orb menu's recents +
+ * "Open Folder…" items, and the ⌃R switcher, so the convention stays identical across every
+ * surface (and Ctrl works off macOS). Shift is excluded so ⌘⇧↵ (the global new-note chord) still
+ * bubbles. Structurally typed on the four modifier flags so it takes a React OR native mouse/
+ * keyboard event without importing React's types.
+ */
+export function isOpenInNewWindowChord(event: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+}): boolean {
+    return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey;
+}
+
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
     /**
@@ -59,6 +76,11 @@ export interface ShortcutDescriptor {
     group: 'Navigation' | 'Editing' | 'General';
     /** Present when the global handler (useShortcuts) owns this key; absent for list-scoped keys. */
     global?: GlobalBinding;
+    /**
+     * Only meaningful in the desktop shell: hidden from the help dialog in the browser build, and
+     * a `global` binding (if any) is skipped there by useShortcuts.
+     */
+    desktopOnly?: boolean;
 }
 
 /** Single source of truth for both the global handler and the help dialog. */
@@ -107,6 +129,22 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         keys: 'enter',
         description: 'Edit the selected note (in the title → jump to the body)',
         group: 'Navigation',
+    },
+    {
+        keys: 'mod+enter',
+        description: 'Open the selected note in a new window (or ⌘-click it)',
+        group: 'Navigation',
+        // List-scoped: handled by the focused row in NoteList, like plain Enter — no global binding.
+        desktopOnly: true,
+    },
+    {
+        keys: 'mod+0',
+        description: 'Show this workspace’s main window',
+        group: 'Navigation',
+        // Bound NATIVELY (Window ▸ Main Window carries the CmdOrCtrl+0 accelerator — see
+        // build_menu in src-tauri/src/lib.rs), so it works from any window regardless of focus;
+        // this row exists for discoverability only.
+        desktopOnly: true,
     },
     {keys: 'esc', description: 'Editor → list, then close (or clear search)', group: 'Navigation'},
     // No global binding: focusing search is the tail of the Esc ladder (escapeList focuses

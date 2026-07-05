@@ -5,6 +5,7 @@ import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
 import {useListboxNav} from '../hooks/useListboxNav';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
+import {isOpenInNewWindowChord} from '../shortcuts';
 
 import {highlightMatch} from './highlightMatch';
 
@@ -26,6 +27,8 @@ export interface WorkspaceSwitcherDialogProps {
     onOpenInNewWindow: (id: string) => void;
     /** Pick a brand-new folder (opens in this window). */
     onOpenFolder: () => void;
+    /** Desktop only: pick a folder and open it as its own window (⌘↵/⌘-click on the action row). */
+    onOpenFolderInNewWindow?: () => void;
     /** Drop from the recents list (notes on disk are untouched). */
     onRemove: (id: string) => void;
     onClose: () => void;
@@ -59,6 +62,7 @@ export function WorkspaceSwitcherDialog({
     onOpen,
     onOpenInNewWindow,
     onOpenFolder,
+    onOpenFolderInNewWindow,
     onRemove,
     onClose,
 }: WorkspaceSwitcherDialogProps) {
@@ -121,7 +125,10 @@ export function WorkspaceSwitcherDialog({
     const commit = (row: Row | undefined, newWindow: boolean) => {
         if (!row || row.disabled) return;
         if (row.openFolder) {
-            onOpenFolder();
+            // ⌘↵/⌘-click means "in a new window" for this row too — the picked folder opens in
+            // its own window and the current workspace stays put.
+            if (newWindow && isDesktop && onOpenFolderInNewWindow) onOpenFolderInNewWindow();
+            else onOpenFolder();
             return;
         }
         // A synthesized row exists nowhere yet, so a new window couldn't be assigned to it —
@@ -137,7 +144,7 @@ export function WorkspaceSwitcherDialog({
         items: entries,
         getKey: (row) => row.id,
         isDisabled: (row) => row.disabled,
-        onEnter: (index, event) => commit(entries[index], event.metaKey),
+        onEnter: (index, event) => commit(entries[index], isOpenInNewWindowChord(event)),
         onRemove: (index) => {
             const row = entries[index];
             if (row && !row.disabled && !row.synthesized && !row.openFolder) onRemove(row.id);
@@ -189,7 +196,7 @@ export function WorkspaceSwitcherDialog({
                 role="option"
                 aria-selected={active}
                 aria-disabled={row.disabled || undefined}
-                onClick={(event) => commit(row, event.metaKey)}
+                onClick={(event) => commit(row, isOpenInNewWindowChord(event))}
                 onMouseMove={() => {
                     if (!row.disabled && !active) setActiveIndex(index);
                 }}

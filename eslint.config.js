@@ -5,7 +5,12 @@ import importOrderConfig from '@gravity-ui/eslint-config/import-order';
 import prettierConfig from '@gravity-ui/eslint-config/prettier';
 
 export default [
-    {ignores: ['dist', 'coverage', 'src-tauri']},
+    // Flat config does NOT read .gitignore, and its only default ignores are node_modules/.git.
+    // '.vite' matters: a stray root-level Vite dep-cache (340 multi-MB minified chunks) once made
+    // `eslint .` grind for 40+ minutes inside prettier/scope-analysis before anyone saw output.
+    // '.claude' holds machine-local settings + isolation-mode worktrees (full repo copies) — linting
+    // those duplicates the whole tree and reports phantom errors; nothing tracked there is JS/TS.
+    {ignores: ['dist', 'coverage', 'src-tauri', '.vite', '.claude']},
     ...baseConfig,
     ...clientConfig,
     ...importOrderConfig,

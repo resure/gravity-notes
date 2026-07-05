@@ -1,5 +1,7 @@
+import {useEffect, useState} from 'react';
+
 import {Database, Folder} from '@gravity-ui/icons';
-import {Button, Card, Icon, Text} from '@gravity-ui/uikit';
+import {Button, Card, Icon, Loader, Text} from '@gravity-ui/uikit';
 
 import type {NotesStorage} from '../hooks/useNotesStorage';
 
@@ -9,11 +11,28 @@ import './FolderGate.css';
 const MAX_GATE_RECENTS = 5;
 
 /**
+ * Only a restore slower than this shows the bootstrap spinner at all. The common case — the
+ * last-active workspace (or a fresh ws-/note- window's shell-assigned one, which even skips the
+ * folder probe) opening in well under this — paints straight from the themed background into the
+ * workspace, with no intermediate flash of gate UI.
+ */
+const LOADER_DELAY_MS = 300;
+
+/**
  * Full-screen gate shown until a storage backend is chosen and ready. Renders the first-run
  * "where do your notes live" choice (a folder on your computer, or in this browser) and the
- * folder re-permission prompt, per the non-ready states of {@link NotesStorage}.
+ * folder re-permission prompt, per the non-ready states of {@link NotesStorage}. The transient
+ * 'loading' bootstrap state renders NO gate UI — flashing the welcome/choice card at every new
+ * window was noise — just a spinner once the restore proves slow (see LOADER_DELAY_MS).
  */
 export function FolderGate({storage}: {storage: NotesStorage}) {
+    if (storage.state === 'loading') {
+        return (
+            <div className="folder-gate">
+                <DelayedLoader />
+            </div>
+        );
+    }
     return (
         <div className="folder-gate">
             <Card className="folder-gate__card" view="raised">
@@ -26,6 +45,16 @@ export function FolderGate({storage}: {storage: NotesStorage}) {
             </Card>
         </div>
     );
+}
+
+/** Nothing for the first {@link LOADER_DELAY_MS}, then a plain centered spinner. */
+function DelayedLoader() {
+    const [visible, setVisible] = useState(false);
+    useEffect(() => {
+        const timer = setTimeout(() => setVisible(true), LOADER_DELAY_MS);
+        return () => clearTimeout(timer);
+    }, []);
+    return visible ? <Loader size="m" /> : null;
 }
 
 function Content({storage}: {storage: NotesStorage}) {
@@ -49,7 +78,8 @@ function Content({storage}: {storage: NotesStorage}) {
         );
     }
 
-    // 'choosing' (and 'loading', which shows the same choice briefly).
+    // 'choosing' — the bootstrap 'loading' state never reaches here (FolderGate renders the
+    // delayed spinner for it instead), so nothing below needs a mid-restore disabled state.
     return (
         <>
             <Icon data={Folder} size={32} className="folder-gate__icon" />
@@ -63,13 +93,7 @@ function Content({storage}: {storage: NotesStorage}) {
             </Text>
             <div className="folder-gate__actions">
                 {storage.supportsFolders ? (
-                    <Button
-                        view="action"
-                        size="l"
-                        loading={storage.state === 'loading'}
-                        disabled={storage.state === 'loading'}
-                        onClick={() => void storage.pickFolder()}
-                    >
+                    <Button view="action" size="l" onClick={() => void storage.pickFolder()}>
                         Open a folder…
                     </Button>
                 ) : null}
@@ -79,12 +103,6 @@ function Content({storage}: {storage: NotesStorage}) {
                     <Button
                         view={storage.supportsFolders ? 'outlined' : 'action'}
                         size="l"
-                        loading={storage.state === 'loading' && !storage.supportsFolders}
-                        // Disable while the remembered choice is still being restored, so a click
-                        // can't discard it mid-bootstrap (the folder button already showed a
-                        // spinner; this one didn't when `supportsFolders`, leaving it racily
-                        // clickable).
-                        disabled={storage.state === 'loading'}
                         onClick={() => void storage.useBrowserStorage()}
                     >
                         Store in this browser
@@ -98,9 +116,8 @@ function Content({storage}: {storage: NotesStorage}) {
                 </Text>
             ) : null}
             {/* Known workspaces, so landing here (first run aside — e.g. after a failed folder
-                probe) is never a dead end: any recent is one click away. Only once bootstrap has
-                settled — clicking mid-'loading' would race the restore. */}
-            {storage.state === 'choosing' && storage.workspaces.length > 0 ? (
+                probe) is never a dead end: any recent is one click away. */}
+            {storage.workspaces.length > 0 ? (
                 <div className="folder-gate__recents">
                     <Text variant="caption-2" color="secondary">
                         Or reopen a recent workspace:

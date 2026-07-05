@@ -34,3 +34,17 @@ export function currentWindowLabel(): string {
 export function isMainWindow(): boolean {
     return currentWindowLabel() === MAIN_WINDOW_LABEL;
 }
+
+/**
+ * Label prefix of single-note windows (`note-1`, `note-2`, …) created by the shell's
+ * `open_note_window`. Mirrors `NOTE_WINDOW_PREFIX` in `src-tauri/src/lib.rs` — keep them in sync.
+ * Like ws-N windows they really close on ⌘W; unlike them they open with both side panels closed,
+ * restore their assigned note instead of the sidecar's last-active pointer, and are excluded from
+ * workspace-level focus-if-open.
+ */
+export const NOTE_WINDOW_PREFIX = 'note-';
+
+/** Whether this window is a single-note window (see {@link NOTE_WINDOW_PREFIX}); false on web/tests. */
+export function isNoteWindow(): boolean {
+    return currentWindowLabel().startsWith(NOTE_WINDOW_PREFIX);
+}

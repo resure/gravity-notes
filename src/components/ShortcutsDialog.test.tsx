@@ -7,12 +7,18 @@ import {renderWithProviders} from '../test/render';
 import {ShortcutsDialog} from './ShortcutsDialog';
 
 describe('ShortcutsDialog', () => {
-    it('renders a row for every shortcut in the descriptor', () => {
+    it('renders a row for every shortcut in the descriptor (sans desktop-only, on the web)', () => {
         renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
+        // jsdom is the web build (no Tauri shell), so desktop-shell-only rows are filtered out.
+        const visible = SHORTCUTS.filter((shortcut) => !shortcut.desktopOnly);
+        expect(visible.length).toBeLessThan(SHORTCUTS.length); // the filter has something to do
         // One row per descriptor; descriptions can repeat (e.g. two chords both make a New note).
-        expect(document.querySelectorAll('.shortcuts-dialog__row')).toHaveLength(SHORTCUTS.length);
-        for (const shortcut of SHORTCUTS) {
+        expect(document.querySelectorAll('.shortcuts-dialog__row')).toHaveLength(visible.length);
+        for (const shortcut of visible) {
             expect(screen.getAllByText(shortcut.description).length).toBeGreaterThan(0);
+        }
+        for (const shortcut of SHORTCUTS.filter((s) => s.desktopOnly)) {
+            expect(screen.queryByText(shortcut.description)).not.toBeInTheDocument();
         }
     });
 
