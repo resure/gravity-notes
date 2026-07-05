@@ -127,6 +127,21 @@ describe('NotePreview', () => {
         // …and the URL went to the shared opener (OS browser on desktop, new tab on web).
         expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith('https://example.com/docs');
     });
+
+    it('hands the opener the LITERAL href, so a relative path stays swallowed', async () => {
+        transformMock.mockImplementation(await realTransform());
+
+        const {container} = renderWithProviders(<NotePreview markup="[local](foo/bar.md)" />);
+
+        const link = requireBody(container).querySelector('a[href="foo/bar.md"]');
+        expect(link).not.toBeNull();
+        const click = fireEvent.click(link as HTMLAnchorElement);
+        expect(click).toBe(false);
+        // The literal (relative) href reaches the opener, which rejects non-absolute URLs —
+        // `target.href` would instead resolve it against the document base into an openable
+        // http(s) URL and pop a junk tab.
+        expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith('foo/bar.md');
+    });
 });
 
 describe('withWikiLinks', () => {
