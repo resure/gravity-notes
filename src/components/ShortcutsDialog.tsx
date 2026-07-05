@@ -1,5 +1,6 @@
 import {Dialog, Hotkey, Text} from '@gravity-ui/uikit';
 
+import {isTauri} from '../isTauri';
 import {SHORTCUTS, SHORTCUT_GROUPS} from '../shortcuts';
 
 import './ShortcutsDialog.css';
@@ -19,7 +20,11 @@ export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
             <Dialog.Body>
                 <div className="shortcuts-dialog">
                     {SHORTCUT_GROUPS.map((group) => {
-                        const rows = SHORTCUTS.filter((shortcut) => shortcut.group === group);
+                        // Desktop-shell-only rows (per-note windows, ⌘0) are noise in the browser.
+                        const rows = SHORTCUTS.filter(
+                            (shortcut) =>
+                                shortcut.group === group && (!shortcut.desktopOnly || isTauri),
+                        );
                         if (rows.length === 0) return null;
                         return (
                             <div key={group} className="shortcuts-dialog__group">

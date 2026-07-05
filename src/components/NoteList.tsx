@@ -9,9 +9,15 @@ import {
     useRef,
     useState,
 } from 'react';
-import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 'react';
+import type {
+    KeyboardEvent as ReactKeyboardEvent,
+    MouseEvent as ReactMouseEvent,
+    ReactNode,
+    RefObject,
+} from 'react';
 
 import {
+    ArrowUpRightFromSquare,
     Copy,
     Ellipsis,
     Folder,
@@ -88,6 +94,11 @@ export interface NoteListProps {
     onRequestMove: (id: string) => void;
     /** Duplicate a note (shares its attachments). */
     onDuplicate: (id: string) => void;
+    /**
+     * Open a note in its own single-note window — desktop shell only (absent = menu item hidden
+     * and ⌘↵ on a row inert).
+     */
+    onOpenInNewWindow?: (id: string) => void;
     /** Reveal a note in Finder — present only on the native desktop backend (else hidden). */
     onReveal?: (id: string) => void;
     onRename: (id: string, nextTitle: string) => void;
@@ -126,6 +137,20 @@ function highlightTerms(text: string, terms: string[]): ReactNode {
             part
         ),
     );
+}
+
+/**
+ * ⌘/Ctrl with no other modifier — the open-in-new-window chord, on ↵ and on click alike
+ * (see onOpenInNewWindow). On macOS a Ctrl+click never reaches the click handler (WebKit turns it
+ * into the contextmenu event), so in practice the mouse path means ⌘-click.
+ */
+function isOpenInNewWindowChord(event: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+}): boolean {
+    return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey;
 }
 
 /** Compact list date: 24-hour time for today, otherwise `DD.MM.YY`. Exported for unit tests. */
@@ -167,7 +192,7 @@ interface NoteRowProps {
     /** Toggle the list's one shared icon-picker popup, anchored to this row's glyph button. */
     onOpenIconPicker: (id: string, anchor: HTMLElement) => void;
     showIcons: boolean;
-    onClickRow: (id: string) => void;
+    onClickRow: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
     onKeyDownRow: (event: ReactKeyboardEvent<HTMLDivElement>, id: string) => void;
     onOpenMenu: (note: NoteMeta, anchor: HTMLElement) => void;
@@ -220,7 +245,14 @@ const NoteRow = memo(function NoteRow({
                 e.dataTransfer.setData(NOTE_MIME, note.id);
                 e.dataTransfer.setData('text/plain', note.id);
             }}
-            onClick={() => onClickRow(note.id)}
+            onClick={(e) => onClickRow(note.id, e)}
+            onMouseDown={(e) => {
+                // Right-click and ⌘-click act on a row WITHOUT selecting it — block the mousedown
+                // default so the focusable row doesn't grab DOM focus either (the context menu /
+                // new window works off the row id; a plain-click browse focuses explicitly via
+                // focusRowById, so it loses nothing).
+                if (e.button === 2 || isOpenInNewWindowChord(e)) e.preventDefault();
+            }}
             onContextMenu={(e) => {
                 e.preventDefault();
                 onContextMenuRow(note, e.clientX, e.clientY);
@@ -352,6 +384,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onCreate,
         onRequestMove,
         onDuplicate,
+        onOpenInNewWindow,
         onReveal,
         onRename,
         onDelete,
@@ -424,6 +457,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onCommit,
         onEscapeList,
         onFocusRail,
+        onOpenInNewWindow,
         onRename,
         onSetIcon,
     });
@@ -437,6 +471,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onCommit,
         onEscapeList,
         onFocusRail,
+        onOpenInNewWindow,
         onRename,
         onSetIcon,
     };
@@ -576,20 +611,28 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     }, []);
 
     const onClickRow = useCallback(
-        (id: string) => {
-            if (live.current.editingId !== id) browseRow(id);
+        (id: string, event: ReactMouseEvent<HTMLDivElement>) => {
+            const {editingId: editing, onOpenInNewWindow: openInNew} = live.current;
+            if (editing === id) return;
+            // ⌘-click (desktop): open the note in its own window, leaving this window's selection
+            // alone — the same modifier convention as ⌘↵ here and ⌘-click in the recents submenu.
+            // Without the callback (web) the modifier is ignored and the click browses as usual.
+            if (openInNew && isOpenInNewWindowChord(event)) {
+                openInNew(id);
+                return;
+            }
+            browseRow(id);
         },
         [browseRow],
     );
 
-    const onContextMenuRow = useCallback(
-        (note: NoteMeta, x: number, y: number) => {
-            if (live.current.editingId === note.id) return;
-            browseRow(note.id);
-            setMenu({note, anchor: {getBoundingClientRect: () => new DOMRect(x, y, 0, 0)}});
-        },
-        [browseRow],
-    );
+    // Deliberately NO browse here: right-click acts on the clicked note via the menu's own
+    // `note` payload, without moving the selection/preview off whatever is open (same rule as
+    // ⌘-click / ⌘↵ opening a new window).
+    const onContextMenuRow = useCallback((note: NoteMeta, x: number, y: number) => {
+        if (live.current.editingId === note.id) return;
+        setMenu({note, anchor: {getBoundingClientRect: () => new DOMRect(x, y, 0, 0)}});
+    }, []);
 
     const onOpenMenu = useCallback((note: NoteMeta, anchor: HTMLElement) => {
         setMenu((open) => (open?.note.id === note.id ? null : {note, anchor}));
@@ -654,8 +697,17 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         focusRail();
                     }
                     break;
-                case 'Enter':
-                    if (!bare) break; // ⌘/Ctrl+Enter is the global new-note shortcut — let it bubble
+                case 'Enter': {
+                    if (!bare) {
+                        // ⌘↵ (no ⇧): open this row's note in its own desktop window. Everything
+                        // else modified — notably ⌘⇧↵, the global new-note chord — still bubbles.
+                        const {onOpenInNewWindow: openInNew} = live.current;
+                        if (openInNew && isOpenInNewWindowChord(event)) {
+                            event.preventDefault();
+                            openInNew(id);
+                        }
+                        break;
+                    }
                     // From a focused row-level button (icon glyph, ⋯ actions), Enter must activate
                     // the button — preventDefault on the bubbled keydown would cancel the button's
                     // click synthesis and open the note instead.
@@ -663,6 +715,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     event.preventDefault();
                     commit(id);
                     break;
+                }
                 case 'Escape':
                     event.preventDefault();
                     escape();
@@ -684,6 +737,16 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const noteMenuItems = (note: NoteMeta) => {
         const pinned = pinnedSet.has(note.id);
         return [
+            // Desktop only: a per-note window. First, like Apple Notes' context menu (⌘↵ too).
+            ...(onOpenInNewWindow
+                ? [
+                      {
+                          text: 'Open in New Window',
+                          iconStart: <Icon data={ArrowUpRightFromSquare} />,
+                          action: () => onOpenInNewWindow(note.id),
+                      },
+                  ]
+                : []),
             {
                 text: pinned ? 'Unpin' : 'Pin to top',
                 iconStart: <Icon data={pinned ? PinSlash : Pin} />,
