@@ -133,30 +133,44 @@ describe('searchNotes — large-corpus stress', () => {
 
         // Reference: a deliberately UNcapped body-count pass over the same corpus (the work the cap
         // removes). Only the body walk differs from the real scorer.
-        const tUncap = performance.now();
-        for (const note of dense) {
-            const b = denseLower.get(note.id) ?? body;
-            let from = 0;
-            for (;;) {
-                const i = b.indexOf(TERM, from);
-                if (i === -1) break;
-                from = i + TERM.length;
+        function uncappedPass(): number {
+            const t = performance.now();
+            for (const note of dense) {
+                const b = denseLower.get(note.id) ?? body;
+                let from = 0;
+                for (;;) {
+                    const i = b.indexOf(TERM, from);
+                    if (i === -1) break;
+                    from = i + TERM.length;
+                }
             }
+            return performance.now() - t;
         }
-        const uncappedMs = performance.now() - tUncap;
 
-        const tCap = performance.now();
-        const res = searchNotes(dense, denseContent, TERM, denseLower);
-        const cappedMs = performance.now() - tCap;
+        // Best-of-N with the min, for the same reason as the burst test above: under parallel vitest
+        // workers a single timed sample can be preempted mid-pass and invert the comparison. Interleave
+        // several runs and keep the fastest of each — uncapped first in each pair so the capped run
+        // can't be flattered by a cold JIT.
+        const RUNS = 5;
+        let uncappedMs = Infinity;
+        let cappedMs = Infinity;
+        let matched = 0;
+        for (let i = 0; i < RUNS; i++) {
+            uncappedMs = Math.min(uncappedMs, uncappedPass());
+            const tCap = performance.now();
+            const res = searchNotes(dense, denseContent, TERM, denseLower);
+            cappedMs = Math.min(cappedMs, performance.now() - tCap);
+            matched = res.length;
+        }
 
         // eslint-disable-next-line no-console
         console.log(
-            `[stress] repeat-term count — uncapped ${uncappedMs.toFixed(1)}ms vs capped ` +
-                `${cappedMs.toFixed(1)}ms (${(uncappedMs / Math.max(cappedMs, 0.01)).toFixed(2)}× faster)`,
+            `[stress] repeat-term count (best of ${RUNS}) — uncapped ${uncappedMs.toFixed(1)}ms vs ` +
+                `capped ${cappedMs.toFixed(1)}ms (${(uncappedMs / Math.max(cappedMs, 0.01)).toFixed(2)}× faster)`,
         );
         // Every note matches (the term is throughout each body); ranking correctness is covered by
         // search.test.ts — here we guard that the cap keeps the pass cheap despite N × REPEATS hits.
-        expect(res).toHaveLength(N);
+        expect(matched).toBe(N);
         expect(cappedMs).toBeLessThan(uncappedMs);
         // Absolute budget: an uncapped tally of N×REPEATS occurrences blows past this; the capped walk
         // (≈ BODY_FREQ_CAP+1 advances per note) stays well under it.
