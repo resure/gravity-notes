@@ -169,7 +169,10 @@ fn modified_ms(meta: &fs::Metadata) -> f64 {
 #[cfg(target_os = "macos")]
 fn is_dataless(meta: &fs::Metadata) -> bool {
     use std::os::macos::fs::MetadataExt;
-    // SF_DATALESS from <sys/stat.h> ("file is dataless object"); not exposed by libc consts.
+    // SF_DATALESS ("file is dataless object") from `<sys/stat.h>` — a super-user/system flag in the
+    // high half of `st_flags`, defined there as `0x40000000`. Hand-coded because libc doesn't expose
+    // it. Verified against the macOS 26.5 SDK header; if a future SDK ever moves it, the worst case
+    // is one blocking read of an evicted file (treated as local), not data loss. `st_flags()` is u32.
     const SF_DATALESS: u32 = 0x4000_0000;
     meta.st_flags() & SF_DATALESS != 0
 }
@@ -725,7 +728,9 @@ fn open_external(url: String) -> Result<(), String> {
 ///   the `Destroyed` window event.
 /// - `notes`: a note window's label → the note id (store rel-path) it shows. Assigned by
 ///   `open_note_window` before the page loads, kept current by the frontend's `set_window_note`
-///   (in-window navigation / rename / close), drained with `labels`. Powers per-note focus-if-open.
+///   (in-window navigation / close) plus `window_note_renamed` / `window_note_removed` (a rename,
+///   move, trash, or delete from ANOTHER window in the same workspace re-keys or drops the entry),
+///   drained with `labels`. Powers per-note focus-if-open.
 /// - `pending`: workspace ids (or `ws\u{1f}note` composite keys, see `note_pending_key`) whose
 ///   window is currently being built. During the build gap the window isn't yet resolvable via
 ///   `get_webview_window`, so without this marker a second open for the same target would treat
@@ -1089,6 +1094,39 @@ fn remap_note_windows(
     }
 }
 
+/// Drop note-window assignments for a note that was trashed or permanently deleted (rel-path
+/// `note_id`) in the CALLER's workspace — the delete-path mirror of `window_note_renamed`, keeping
+/// the `notes` map free of ids no longer openable. Without it, a note window left showing an
+/// orphaned note (trashed from another window) would keep answering per-note focus-if-open for a
+/// dead id — e.g. a later note of the same name would focus the orphan instead of opening fresh.
+/// Workspace-scoped (the delete ran in the caller's window), so the same rel-path in another
+/// workspace is untouched.
+#[tauri::command]
+fn window_note_removed(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+    note_id: String,
+) {
+    let mut st = state.0.lock().unwrap();
+    let Some(ws_id) = st.labels.get(window.label()).cloned() else {
+        return;
+    };
+    let WindowState { labels, notes, .. } = &mut *st;
+    unassign_note_windows(labels, notes, &ws_id, &note_id);
+}
+
+/// Pure core of `window_note_removed`, split out for the unit test.
+fn unassign_note_windows(
+    labels: &HashMap<String, String>,
+    notes: &mut HashMap<String, String>,
+    ws_id: &str,
+    note_id: &str,
+) {
+    notes.retain(|label, note| {
+        !(note.as_str() == note_id && labels.get(label).map(String::as_str) == Some(ws_id))
+    });
+}
+
 /// macOS window chrome shared by the main window (at setup) and each workspace window: make the
 /// title bar tall with SYSTEM-positioned traffic lights, and paint the webview backdrop in the
 /// resolved theme so a fresh window doesn't flash white before the page background loads (the
@@ -1340,6 +1378,7 @@ pub fn run() {
             window_note,
             set_window_note,
             window_note_renamed,
+            window_note_removed,
             open_note_window,
             focus_main_window,
         ])
@@ -1820,5 +1859,24 @@ mod tests {
         // A rename of a note no window shows is a no-op.
         remap_note_windows(&labels, &mut notes, "tauri:/a", "Missing.md", "Elsewhere.md");
         assert_eq!(notes.get("note-1").map(String::as_str), Some("New.md"));
+    }
+
+    #[test]
+    fn note_delete_unassigns_matching_windows_in_the_same_workspace_only() {
+        let mut labels = HashMap::new();
+        labels.insert("note-1".to_string(), "tauri:/a".to_string());
+        labels.insert("note-2".to_string(), "tauri:/b".to_string());
+        let mut notes = HashMap::new();
+        notes.insert("note-1".to_string(), "Gone.md".to_string());
+        // Same rel-path in ANOTHER workspace — a delete in /a must not evict it.
+        notes.insert("note-2".to_string(), "Gone.md".to_string());
+
+        unassign_note_windows(&labels, &mut notes, "tauri:/a", "Gone.md");
+        assert!(!notes.contains_key("note-1")); // dropped
+        assert_eq!(notes.get("note-2").map(String::as_str), Some("Gone.md")); // other ws kept
+
+        // Deleting a note no window shows is a no-op.
+        unassign_note_windows(&labels, &mut notes, "tauri:/b", "Other.md");
+        assert_eq!(notes.get("note-2").map(String::as_str), Some("Gone.md"));
     }
 }

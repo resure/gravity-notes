@@ -26,6 +26,7 @@ import {Button, DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import type {NoteAppearance} from '../hooks/useSettings';
+import {isOpenInNewWindowChord} from '../shortcuts';
 import type {NoteMeta} from '../storage/types';
 
 import {NoteAppearancePopover} from './NoteAppearancePopover';
@@ -369,11 +370,15 @@ export function TopBar({
                         iconStart: <Icon data={ws.backend === 'indexeddb' ? Database : Folder} />,
                         selected: ws.id === activeWorkspaceId,
                         // The uikit action gets a React mouse event on click but a NATIVE
-                        // KeyboardEvent on Enter — both carry metaKey, which is all we need.
+                        // KeyboardEvent on Enter — both carry the modifier flags the shared chord
+                        // reads (⌘ on macOS, Ctrl elsewhere).
                         action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
                             if (ws.id === activeWorkspaceId) return;
-                            if (isDesktop && event.metaKey) onOpenWorkspaceInNewWindow(ws.id);
-                            else onOpenWorkspace(ws.id);
+                            if (isDesktop && isOpenInNewWindowChord(event)) {
+                                onOpenWorkspaceInNewWindow(ws.id);
+                            } else {
+                                onOpenWorkspace(ws.id);
+                            }
                         },
                     })),
                     [
@@ -390,10 +395,14 @@ export function TopBar({
                       {
                           text: 'Open Folder…',
                           iconStart: <Icon data={FolderOpen} />,
-                          // ⌘-click / ⌘↵ (desktop) opens the picked folder in its OWN window —
-                          // the same modifier convention as the recents above.
+                          // ⌘-click / ⌘↵ (desktop; Ctrl elsewhere) opens the picked folder in its
+                          // OWN window — the same shared chord as the recents above.
                           action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
-                              if (isDesktop && event.metaKey && onOpenFolderInNewWindow) {
+                              if (
+                                  isDesktop &&
+                                  isOpenInNewWindowChord(event) &&
+                                  onOpenFolderInNewWindow
+                              ) {
                                   onOpenFolderInNewWindow();
                               } else {
                                   onOpenFolder();

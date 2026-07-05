@@ -5,6 +5,7 @@ import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
 import {useListboxNav} from '../hooks/useListboxNav';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
+import {isOpenInNewWindowChord} from '../shortcuts';
 
 import {highlightMatch} from './highlightMatch';
 
@@ -143,7 +144,7 @@ export function WorkspaceSwitcherDialog({
         items: entries,
         getKey: (row) => row.id,
         isDisabled: (row) => row.disabled,
-        onEnter: (index, event) => commit(entries[index], event.metaKey),
+        onEnter: (index, event) => commit(entries[index], isOpenInNewWindowChord(event)),
         onRemove: (index) => {
             const row = entries[index];
             if (row && !row.disabled && !row.synthesized && !row.openFolder) onRemove(row.id);
@@ -195,7 +196,7 @@ export function WorkspaceSwitcherDialog({
                 role="option"
                 aria-selected={active}
                 aria-disabled={row.disabled || undefined}
-                onClick={(event) => commit(row, event.metaKey)}
+                onClick={(event) => commit(row, isOpenInNewWindowChord(event))}
                 onMouseMove={() => {
                     if (!row.disabled && !active) setActiveIndex(index);
                 }}
