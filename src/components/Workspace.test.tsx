@@ -36,13 +36,16 @@ function workspaceProps() {
         workspaceId: 'test-ws',
         storageLabel: 'notes',
         workspaces: [],
+        initialNoteId: null,
         themePref: 'light' as const,
         onChangeThemePref: vi.fn(),
         onOpenWorkspace: vi.fn(async () => true),
         onOpenWorkspaceInNewWindow: vi.fn(async () => {}),
+        onOpenNoteInNewWindow: vi.fn(async () => {}),
         onRemoveWorkspace: vi.fn(async () => {}),
         onRefreshWorkspaces: vi.fn(async () => {}),
         onOpenFolder: vi.fn(),
+        onOpenFolderInNewWindow: vi.fn(async () => {}),
         supportsFolders: true,
     };
 }
@@ -498,6 +501,46 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Alpha/});
         await collapseThenPeek(user);
         fireEvent.pointerDown(document.body);
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+    });
+
+    it('typing a search auto-peeks the collapsed sidebar without stealing focus', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await toggleSidebarViaMenu(user);
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
+        // Type into the search box: results must become visible (peek opens)…
+        const search = screen.getByRole('textbox', {name: 'Search or create a note'});
+        search.focus();
+        fireEvent.change(search, {target: {value: 'Alp'}});
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
+        );
+        // …while focus STAYS in the box (unlike the deliberate ⌘' peek, which enters the list).
+        expect(document.activeElement).toBe(search);
+        // Clearing the query tucks the peek back away.
+        fireEvent.change(search, {target: {value: ''}});
+        await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
+    });
+
+    it('Enter on a search match while auto-peeked opens the note and closes the peek', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        await toggleSidebarViaMenu(user);
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
+        const search = screen.getByRole('textbox', {name: 'Search or create a note'});
+        search.focus();
+        fireEvent.change(search, {target: {value: 'Alpha'}});
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_peeked')).not.toBeNull(),
+        );
+        fireEvent.keyDown(search, {key: 'Enter'});
         await waitFor(() => expect(document.querySelector('.workspace__body_peeked')).toBeNull());
     });
 

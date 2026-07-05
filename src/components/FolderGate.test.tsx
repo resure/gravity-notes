@@ -1,4 +1,4 @@
-import {screen} from '@testing-library/react';
+import {act, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -16,6 +16,7 @@ function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
         backend: null,
         storageLabel: null,
         activeWorkspaceId: null,
+        windowNote: null,
         workspaces: [],
         error: null,
         isTauri,
@@ -23,11 +24,13 @@ function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
         // Default to consistency with the other flags unless a test overrides it explicitly.
         supportsFolders: over.supportsFolders ?? (isTauri || supportsFileSystem),
         pickFolder: vi.fn(async () => {}),
+        pickFolderForNewWindow: vi.fn(async () => {}),
         useBrowserStorage: vi.fn(async () => {}),
         grantPermission: vi.fn(async () => {}),
         reset: vi.fn(async () => {}),
         openWorkspace: vi.fn(async () => true),
         openInNewWindow: vi.fn(async () => {}),
+        openNoteInNewWindow: vi.fn(async () => {}),
         removeWorkspace: vi.fn(async () => {}),
         refreshWorkspaces: vi.fn(async () => {}),
         ...over,
@@ -83,9 +86,25 @@ describe('FolderGate', () => {
         expect(storage.reset).toHaveBeenCalledTimes(1);
     });
 
-    it('renders the choice screen while loading', () => {
+    it('renders no gate UI while loading (no welcome-card flash in fresh windows)', () => {
         renderWithProviders(<FolderGate storage={makeStorage({state: 'loading'})} />);
-        expect(screen.getByRole('button', {name: /Open a folder/})).toBeInTheDocument();
+        expect(screen.queryByText('Welcome to Gravity Notes')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Open a folder/})).not.toBeInTheDocument();
+    });
+
+    it('shows the bootstrap spinner only once the restore proves slow', () => {
+        vi.useFakeTimers();
+        try {
+            renderWithProviders(<FolderGate storage={makeStorage({state: 'loading'})} />);
+            // Immediately: just the themed background, not even a spinner (the common fast case).
+            expect(document.querySelector('.g-loader')).toBeNull();
+            act(() => {
+                vi.advanceTimersByTime(400);
+            });
+            expect(document.querySelector('.g-loader')).not.toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('renders the error text when set', () => {
@@ -110,7 +129,7 @@ describe('FolderGate', () => {
         expect(storage.openWorkspace).toHaveBeenCalledWith('tauri:/Users/me/Vault');
     });
 
-    it('hides the recents list while loading (a click would race the restore)', () => {
+    it('hides the recents list while loading (no gate UI at all — a click would race the restore)', () => {
         renderWithProviders(
             <FolderGate
                 storage={makeStorage({

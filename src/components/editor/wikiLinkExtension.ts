@@ -30,6 +30,14 @@ export interface WikiLinkOptions {
     onSuggest?: WikiLinkSuggestSink;
     /** Drive the edit tooltip shown while the caret sits in a link (state pushed up to EditorPane). */
     onTooltip?: WikiLinkTooltipSink;
+    /**
+     * True while a note-switch content swap is replaying transactions (EditorPane's swappingRef).
+     * The tooltip/suggest popups close and stay closed for those: they aren't user caret movement,
+     * and anchors computed mid-swap are detached by the swap's own redraw — a popup pinned to a
+     * detached element renders at the viewport's top-left and never repositions. A restored caret
+     * that lands inside a `[[link]]` must not pop editing UI the user didn't ask for, either.
+     */
+    isSwapping?: () => boolean;
 }
 
 /** A snapshot the editor pushes to EditorPane to render the `[[` suggestion popup, or null to hide it. */
@@ -97,7 +105,11 @@ function wikiLinkRange(state: EditorState): {from: number; to: number; target: s
             if (run && run.to === from)
                 run.to = to; // extend the contiguous run in place
             else run = {from, to};
-            if (pos >= run.from && pos <= run.to) hit = run; // caret touches this run (incl. edges)
+            // Caret inside the run or at its RIGHT edge. The LEFT edge is deliberately out: the
+            // mark is `inclusive: false`, so a caret there isn't "in" the link for typing — and a
+            // doc that STARTS with a link would otherwise pop the tooltip the moment a fresh
+            // window opens with the caret parked at doc start.
+            if (pos > run.from && pos <= run.to) hit = run;
         } else {
             run = null;
         }
@@ -369,9 +381,14 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
                             to: number;
                         } | null = null;
                         const push = () => {
-                            const range = wikiLinkRange(editorView.state);
+                            // Mid-swap updates close the tooltip and never open it (see
+                            // WikiLinkOptions.isSwapping); a detached anchor closes it too —
+                            // whatever it was pinned to is gone from the document.
+                            const range = opts.isSwapping?.()
+                                ? null
+                                : wikiLinkRange(editorView.state);
                             const anchor = range && wikiAnchorAt(editorView, range.from);
-                            if (!range || !anchor) {
+                            if (!range || !anchor?.isConnected) {
                                 if (last !== null) {
                                     last = null;
                                     onTooltip(null);
@@ -427,6 +444,7 @@ export function wikiLinkExtension(builder: ExtensionBuilder, opts: WikiLinkOptio
             getNotes: opts.getNotes,
             getCurrentId: opts.getCurrentId,
             onSuggest: opts.onSuggest,
+            isSwapping: opts.isSwapping,
         });
     }
 }

@@ -42,8 +42,31 @@
 }
 
 .workspace__panes {
+    position: relative; /* anchors the floating preview badge */
     flex: 1;
     min-height: 0;
+}
+
+/* Read-only-preview state chip, floated over the editor pane's top-right corner (the pane itself
+   scrolls, so the badge anchors to this non-scrolling wrapper and stays put). The label swaps to
+   the ACTION ("Exit preview") on hover — it grows under the cursor, so no hover flicker. */
+.workspace__preview-badge {
+    position: absolute;
+    top: 10px;
+    right: 18px;
+    z-index: 3;
+}
+
+.workspace__preview-badge .workspace__preview-badge-hover {
+    display: none;
+}
+
+.workspace__preview-badge:hover .workspace__preview-badge-idle {
+    display: none;
+}
+
+.workspace__preview-badge:hover .workspace__preview-badge-hover {
+    display: inline;
 }
 
 .editor-pane {

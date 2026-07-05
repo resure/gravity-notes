@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 
-import {Text, useToaster} from '@gravity-ui/uikit';
+import {Eye} from '@gravity-ui/icons';
+import {Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useAppUpdater} from '../hooks/useAppUpdater';
@@ -22,7 +23,7 @@ import {
     useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
-import {isMainWindow, isTauri} from '../isTauri';
+import {isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
@@ -56,18 +57,27 @@ interface WorkspaceProps {
     storageLabel: string | null;
     /** Known workspaces, most recently opened first — feeds the recents menu + ⌃R switcher. */
     workspaces: WorkspaceInfo[];
+    /**
+     * A single-note window's assigned note: opened instead of the last-active restore (and the
+     * window starts with both side panels closed). Null in every other window and on the web.
+     */
+    initialNoteId: string | null;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
     /** Switch this window to a workspace; false = it could not be opened (we stay put). */
     onOpenWorkspace: (id: string) => Promise<boolean>;
     /** Desktop only: open a workspace in its own window. */
     onOpenWorkspaceInNewWindow: (id: string) => Promise<void>;
+    /** Desktop only: open a note from this workspace in its own single-note window. */
+    onOpenNoteInNewWindow: (noteId: string, title: string) => Promise<void>;
     /** Drop a workspace from the recents registry. */
     onRemoveWorkspace: (id: string) => Promise<void>;
     /** Re-read the registry (other windows may have opened workspaces since). */
     onRefreshWorkspaces: () => Promise<void>;
     /** Open the folder picker (adds/opens a workspace in this window). */
     onOpenFolder: () => void;
+    /** Desktop only: pick a folder and open it as its own window (this window stays put). */
+    onOpenFolderInNewWindow: () => Promise<void>;
     /** Whether folder-on-disk workspaces are available (native app, or FSA in the browser). */
     supportsFolders: boolean;
 }
@@ -142,16 +152,25 @@ export function Workspace({
     workspaceId,
     storageLabel,
     workspaces,
+    initialNoteId,
     themePref,
     onChangeThemePref,
     onOpenWorkspace,
     onOpenWorkspaceInNewWindow,
+    onOpenNoteInNewWindow,
     onRemoveWorkspace,
     onRefreshWorkspaces,
     onOpenFolder,
+    onOpenFolderInNewWindow,
     supportsFolders,
 }: WorkspaceProps) {
     const {add} = useToaster();
+
+    // A single-note desktop window (constant for the window's whole life — it's the label).
+    // Both side panels start closed there, and its transient layout is never persisted to the
+    // workspace-namespaced keys: those belong to the full workspace views, and one localStorage
+    // is shared by every window.
+    const noteWindow = isNoteWindow();
 
     const onError = useCallback(
         (message: string) => {
@@ -166,7 +185,7 @@ export function Workspace({
         [add],
     );
 
-    const notes = useNotes(store, onError);
+    const notes = useNotes(store, onError, initialNoteId);
 
     // One attachment URL cache per store: resolves `Attachments/…` refs to object URLs for the
     // editor NodeView and preview. `useMemo` keeps a stable cache per store; the previous cache's
@@ -241,16 +260,19 @@ export function Workspace({
     const {backlinks} = useBacklinks(orderedNotes, notes.activeId, corpus);
 
     // The tree is collapsed by default; this persists the folders the user has explicitly expanded
-    // (the exceptions). A toggle rebuilds the set immutably.
+    // (the exceptions). A toggle rebuilds the set immutably. Note windows start from the defaults
+    // and skip both the read (readWorkspaceKey CONSUMES the legacy un-namespaced keys — a note
+    // window must not eat the main window's migration) and the write.
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() =>
-        loadExpandedFolders(workspaceId),
+        noteWindow ? new Set() : loadExpandedFolders(workspaceId),
     );
     useEffect(() => {
+        if (noteWindow) return;
         localStorage.setItem(
             nsKey(workspaceId, 'expanded-folders'),
             JSON.stringify([...expandedFolders]),
         );
-    }, [workspaceId, expandedFolders]);
+    }, [noteWindow, workspaceId, expandedFolders]);
     // One-time cleanup of the orphaned pre-inversion key (its semantics flipped, so it's unusable).
     useEffect(() => localStorage.removeItem(LEGACY_COLLAPSED_FOLDERS_KEY), []);
     const toggleCollapse = useCallback((path: string) => {
@@ -262,14 +284,18 @@ export function Workspace({
         });
     }, []);
 
-    // The folder selected in the rail (null = All Notes), persisted across reloads.
+    // The folder selected in the rail (null = All Notes), persisted across reloads. A note window
+    // always starts at All Notes (its list is hidden anyway, and ⌘N should create predictably).
     const [selectedFolder, setSelectedFolder] = useState<string | null>(() =>
-        readWorkspaceKey(workspaceId, 'selected-folder', LEGACY_SELECTED_FOLDER_KEY),
+        noteWindow
+            ? null
+            : readWorkspaceKey(workspaceId, 'selected-folder', LEGACY_SELECTED_FOLDER_KEY),
     );
     useEffect(() => {
+        if (noteWindow) return;
         if (selectedFolder === null) localStorage.removeItem(nsKey(workspaceId, 'selected-folder'));
         else localStorage.setItem(nsKey(workspaceId, 'selected-folder'), selectedFolder);
-    }, [workspaceId, selectedFolder]);
+    }, [noteWindow, workspaceId, selectedFolder]);
     // A selected folder that no longer exists (deleted, or renamed elsewhere) falls back to All Notes.
     useEffect(() => {
         if (selectedFolder !== null && !notes.folders.includes(selectedFolder)) {
@@ -278,13 +304,16 @@ export function Workspace({
     }, [notes.folders, selectedFolder]);
 
     // Whether the folder rail is shown. Off by default, so the app stays a 2-pane nvALT view
-    // until you reach for folders; persisted across reloads.
+    // until you reach for folders; persisted across reloads (never in a note window — closed).
     const [railOpen, setRailOpen] = useState(
-        () => readWorkspaceKey(workspaceId, 'rail-open', LEGACY_RAIL_OPEN_KEY) === 'true',
+        () =>
+            !noteWindow &&
+            readWorkspaceKey(workspaceId, 'rail-open', LEGACY_RAIL_OPEN_KEY) === 'true',
     );
     useEffect(() => {
+        if (noteWindow) return;
         localStorage.setItem(nsKey(workspaceId, 'rail-open'), String(railOpen));
-    }, [workspaceId, railOpen]);
+    }, [noteWindow, workspaceId, railOpen]);
     const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
 
     // Drive list MODE (ranked search vs folder scope) off the debounced query, so the list flips in
@@ -520,11 +549,14 @@ export function Workspace({
         return () => window.removeEventListener('scroll', onScroll, true);
     }, []);
     const [collapsed, setCollapsed] = useState(
-        () => readWorkspaceKey(workspaceId, 'sidebar-collapsed', LEGACY_SIDEBAR_KEY) === 'true',
+        () =>
+            noteWindow ||
+            readWorkspaceKey(workspaceId, 'sidebar-collapsed', LEGACY_SIDEBAR_KEY) === 'true',
     );
     useEffect(() => {
+        if (noteWindow) return;
         localStorage.setItem(nsKey(workspaceId, 'sidebar-collapsed'), String(collapsed));
-    }, [workspaceId, collapsed]);
+    }, [noteWindow, workspaceId, collapsed]);
     const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
     // Transient overlay reveal of the collapsed sidebar (⌘⇧'); not persisted. Only meaningful
@@ -533,10 +565,38 @@ export function Workspace({
     useEffect(() => {
         if (!collapsed && peeked) setPeeked(false);
     }, [collapsed, peeked]);
-    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately.
+    // True while the peek being opened is the automatic search peek below — it must NOT move
+    // focus into the list (the user is mid-typing in the search box).
+    const autoPeekRef = useRef(false);
+    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately —
+    // except for an auto-peek (see above), which leaves focus in the search box.
     useEffect(() => {
-        if (peeked) listRef.current?.focusSelected();
+        if (!peeked) return;
+        if (autoPeekRef.current) {
+            autoPeekRef.current = false;
+            return;
+        }
+        listRef.current?.focusSelected();
     }, [peeked]);
+    // Auto-peek while searching with the sidebar collapsed: the results would otherwise render
+    // into a hidden list, so typing looked like it did nothing. Opens on a query appearing (or
+    // resuming — each keystroke re-opens a dismissed peek, since typing means "show me matches"),
+    // closes when the query clears. Keyed on QUERY TRANSITIONS only: re-runs caused by
+    // peeked/collapsed flips compare equal and bail, so dismissing the overlay (outside click,
+    // committing a note) isn't instantly undone.
+    const prevSearchRef = useRef(query);
+    useEffect(() => {
+        const prev = prevSearchRef.current;
+        prevSearchRef.current = query;
+        if (query === prev || !collapsed) return;
+        const has = query.trim().length > 0;
+        if (has && !peeked) {
+            autoPeekRef.current = true;
+            setPeeked(true);
+        } else if (!has && prev.trim().length > 0 && peeked) {
+            setPeeked(false);
+        }
+    }, [query, collapsed, peeked]);
     // While peeked, a pointerdown anywhere outside the sidebar closes it (e.g. clicking the editor).
     // pointerdown (not mousedown) so touch/pen also dismiss the overlay.
     useEffect(() => {
@@ -581,10 +641,50 @@ export function Workspace({
         navigate: historyNavigate,
     });
 
-    // Land in the search box on first load (nvALT: ready to type); a restored note is previewed unfocused.
+    // Land in the search box on first load (nvALT: ready to type); a restored note is previewed
+    // unfocused. A note window exists to edit its one note, so it lands in the editor body instead
+    // (below, once the note has loaded and the editor mounted).
     useEffect(() => {
-        searchInputRef.current?.focus();
+        if (!noteWindow) searchInputRef.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only (noteWindow is constant)
     }, []);
+    const initialEditorFocusRef = useRef(false);
+    useEffect(() => {
+        if (!noteWindow || initialEditorFocusRef.current || !notes.ready) return;
+        initialEditorFocusRef.current = true;
+        // The assigned note failed to load (renamed/trashed since the window was asked for):
+        // nothing is focusable in a panels-closed window, so land in the search box — the
+        // keyboard stays alive and the placeholder's "create one" is one ⌘N away.
+        if (notes.note) editorRef.current?.focus();
+        else searchInputRef.current?.focus();
+    }, [noteWindow, notes.ready, notes.note]);
+
+    // A note window's native title tracks its open note (rename included), falling back to the
+    // workspace label once no note is open; it also keeps the shell's label→note assignment
+    // current, so a later "open in new window" for the note now shown here focuses this window
+    // instead of duplicating it — and stops matching a note this window has navigated away from.
+    // `notes.note` only changes identity on open/reload (edits flow through refs), so it's a
+    // stable-enough dep. Gated on `ready`: the mount runs before the assigned note has LOADED,
+    // and pushing `set_window_note(null)` then would wipe the label→note entry the shell seeded
+    // before this page loaded — leaving per-note focus-if-open blind for the whole load (a second
+    // ⌘↵ would duplicate the window) and flashing the native title through the workspace fallback.
+    const openNote = notes.note;
+    useEffect(() => {
+        if (!noteWindow || !notes.ready) return;
+        void (async () => {
+            try {
+                const {invoke} = await import('@tauri-apps/api/core');
+                await invoke('set_window_note', {noteId: openNote?.id ?? null});
+                const {getCurrentWindow} = await import('@tauri-apps/api/window');
+                await getCurrentWindow().setTitle(
+                    openNote?.title ??
+                        (storageLabel ? `${storageLabel} — Gravity Notes` : 'Gravity Notes'),
+                );
+            } catch {
+                // Best-effort: a failure only leaves the title stale / focus-if-open duplicable.
+            }
+        })();
+    }, [noteWindow, notes.ready, openNote, storageLabel]);
 
     // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
     // bar, the document body), send it back to the note list so keyboard nav resumes. When the
@@ -676,6 +776,37 @@ export function Workspace({
         [onOpenWorkspaceInNewWindow, onError],
     );
 
+    // ⌘0 / Window ▸ Main Window is handled ONCE PER WINDOW in App (a stable listener there), not
+    // here: Workspace is keyed by workspace and remounts on every ⌃R switch, and registering the
+    // menu listener per mount leaked duplicates that fired ⌘0 for several workspaces at once.
+
+    // Open a note in its own single-note window (row menu / ⌘↵ in the list). Unlike a workspace
+    // window, flush first: the new window reads the note from DISK, so a pending edit here (this
+    // note may well be the open one) must land before that page loads. If the flush could NOT
+    // land it (an unresolved conflict re-queued the edit) and it's THIS note being opened, refuse:
+    // the new window would show the stale disk copy while this one holds a divergent edit — a
+    // silent fork where whichever window autosaves last wins.
+    const handleOpenNoteInNewWindow = useCallback(
+        (id: string) => {
+            void (async () => {
+                const unresolved = await notes.flushPending();
+                if (unresolved && id === notes.activeId) {
+                    onError(
+                        'This note has an unresolved conflict — resolve it before opening it in a new window.',
+                    );
+                    return;
+                }
+                const title = notes.notes.find((n) => n.id === id)?.title ?? titleFromFileName(id);
+                try {
+                    await onOpenNoteInNewWindow(id, title);
+                } catch (err) {
+                    onError(err instanceof Error ? err.message : 'Could not open a new window');
+                }
+            })();
+        },
+        [notes, onOpenNoteInNewWindow, onError],
+    );
+
     const handleRemoveWorkspace = useCallback(
         (id: string) => {
             onRemoveWorkspace(id).catch((err) =>
@@ -693,6 +824,14 @@ export function Workspace({
             onOpenFolder();
         })();
     }, [confirmLeaveSafe, onOpenFolder]);
+
+    // ⌘↵ / ⌘-click on "Open Folder…": the picked folder opens in its OWN window, so this one
+    // stays put — no flush guard needed (nothing here is left).
+    const handleOpenFolderInNewWindow = useCallback(() => {
+        onOpenFolderInNewWindow().catch((err) =>
+            onError(err instanceof Error ? err.message : 'Could not open the folder'),
+        );
+    }, [onOpenFolderInNewWindow, onError]);
 
     // The ⌃R switcher. Refresh the registry BEFORE opening, so recents written by other windows are
     // already in the list when the dialog seeds its pre-highlight — otherwise a late refresh could
@@ -1072,6 +1211,8 @@ export function Workspace({
                     onOpenWorkspace={handleOpenWorkspace}
                     onOpenWorkspaceInNewWindow={handleOpenWorkspaceInNewWindow}
                     onOpenFolder={handleOpenFolder}
+                    // TopBar fires this only on desktop ⌘-click (and the hook no-ops on web).
+                    onOpenFolderInNewWindow={handleOpenFolderInNewWindow}
                     onOpenSwitcher={openSwitcher}
                     onMenuOpen={() => void onRefreshWorkspaces()}
                     onExport={handleExport}
@@ -1110,11 +1251,23 @@ export function Workspace({
                     // the debounce; flag that gap so the keyboard model doesn't act on a stale list.
                     searchPending={query !== debouncedQuery}
                     selectedId={nav.selectedId}
-                    onCommit={nav.commit}
+                    onCommit={(id) => {
+                        // Enter on a search match: tuck the (auto-)peeked sidebar back away —
+                        // focus moves to the editor, and the overlay has served its purpose.
+                        nav.commit(id);
+                        setPeeked(false);
+                    }}
                     onCreate={(title) => handleCreate(title, '')}
                     onClose={nav.closeFromSearch}
                     onEnterList={enterList}
-                    onFocusList={() => listRef.current?.focusSelected()}
+                    onFocusList={() => {
+                        // Enter on an EMPTY search box: step onto the selected note's row — but
+                        // with the sidebar collapsed (and not peeked) there is no visible row to
+                        // land on, so return to the editor body instead; the open note is the
+                        // only thing on screen.
+                        if (collapsed && !peeked && notes.note) editorRef.current?.focus();
+                        else listRef.current?.focusSelected();
+                    }}
                     noteOpen={notes.note !== null}
                     appearanceOpen={appearanceOpen}
                     onToggleAppearance={() => setAppearanceOpen((open) => !open)}
@@ -1174,6 +1327,7 @@ export function Workspace({
                             onCreate={handleCreate}
                             onRequestMove={setMovingNoteId}
                             onDuplicate={handleDuplicate}
+                            onOpenInNewWindow={isTauri ? handleOpenNoteInNewWindow : undefined}
                             onReveal={handleReveal}
                             onRename={handleRename}
                             onDelete={handleDelete}
@@ -1186,6 +1340,9 @@ export function Workspace({
                             showIcons={settings.showNoteIcons}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
+                            // Straight setSelectedFolder — unlike rail selection this must NOT
+                            // preview the first note (clearing a filter shouldn't switch notes).
+                            onClearScope={() => setSelectedFolder(null)}
                             onFocusRail={() => railRef.current?.focusSelected()}
                         />
                     </aside>
@@ -1212,6 +1369,28 @@ export function Workspace({
                                     </div>
                                 ) : null}
                                 <div className="workspace__panes">
+                                    {previewMode ? (
+                                        // Floating state chip: read-only preview is otherwise
+                                        // invisible (the surface just stops responding to edits).
+                                        // Clicking it (or ⌘⇧P) returns to editing.
+                                        <Label
+                                            className="workspace__preview-badge"
+                                            theme="info"
+                                            size="s"
+                                            icon={<Icon data={Eye} size={13} />}
+                                            interactive
+                                            onClick={() => setPreviewMode(false)}
+                                            title="Read-only preview — click (or ⌘⇧P) to edit"
+                                        >
+                                            {/* Text swaps to the action on hover (CSS). */}
+                                            <span className="workspace__preview-badge-idle">
+                                                Preview
+                                            </span>
+                                            <span className="workspace__preview-badge-hover">
+                                                Exit preview
+                                            </span>
+                                        </Label>
+                                    ) : null}
                                     <EditorPane
                                         ref={editorRef}
                                         note={notes.note}
@@ -1239,11 +1418,15 @@ export function Workspace({
                                 />
                             </>
                         ) : (
-                            <div className="workspace__placeholder">
-                                <Text variant="body-2" color="secondary">
-                                    Select a note, or create a new one to start writing.
-                                </Text>
-                            </div>
+                            // Only once loading settled: flashing the placeholder before the
+                            // restored note lands read as a blink on every new window.
+                            notes.ready && (
+                                <div className="workspace__placeholder">
+                                    <Text variant="body-2" color="secondary">
+                                        Select a note, or create a new one to start writing.
+                                    </Text>
+                                </div>
+                            )
                         )}
                     </main>
                 </div>
@@ -1317,6 +1500,12 @@ export function Workspace({
                     onOpenFolder={() => {
                         setSwitcherOpen(false);
                         handleOpenFolder();
+                    }}
+                    // The dialog routes here only on desktop ⌘↵/⌘-click (its commit gates on
+                    // isDesktop); the hook additionally no-ops on web.
+                    onOpenFolderInNewWindow={() => {
+                        setSwitcherOpen(false);
+                        handleOpenFolderInNewWindow();
                     }}
                     onRemove={handleRemoveWorkspace}
                     onClose={() => setSwitcherOpen(false)}

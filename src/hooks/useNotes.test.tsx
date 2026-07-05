@@ -167,6 +167,92 @@ describe('useNotes — single note', () => {
         expect(hook.result.current.note).toBeNull();
     });
 
+    it('an initialNoteId (single-note window) overrides the restore and spares the sidecar', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile('B.md', 'b', 200);
+        const metadata = JSON.stringify({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            active: 'A.md',
+        });
+        dir.seedFile(METADATA_FILENAME, metadata);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const hook = renderHook(() => useNotes(store, onError, 'B.md'));
+        // The window's assigned note opens, not the sidecar's last-active pointer…
+        await waitFor(() => expect(hook.result.current.activeId).toBe('B.md'));
+        expect(hook.result.current.note?.content).toBe('b');
+        expect(hook.result.current.sessionId).toBeGreaterThan(0);
+        // …and the sidecar keeps pointing at A.md: the main window's restore must not be
+        // hijacked just because a note window opened.
+        expect((await store.readMetadata()).active).toBe('A.md');
+    });
+
+    it('a note-window metadata write (pin, navigation) preserves the on-disk active pointer', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile('B.md', 'b', 200);
+        dir.seedFile('C.md', 'c', 300);
+        dir.seedFile(
+            METADATA_FILENAME,
+            JSON.stringify({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                active: 'A.md',
+            }),
+        );
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const hook = renderHook(() => useNotes(store, onError, 'B.md'));
+        await waitFor(() => expect(hook.result.current.activeId).toBe('B.md'));
+        // A deliberate metadata mutation from the note window (pin) writes the sidecar…
+        await act(async () => {
+            hook.result.current.togglePin('C.md');
+        });
+        await waitFor(async () => {
+            expect((await store.readMetadata()).pinned).toContain('C.md');
+        });
+        // …but the shared last-active pointer must stay the MAIN window's, not this window's note.
+        expect((await store.readMetadata()).active).toBe('A.md');
+        // Navigating within the note window (open → withActive write) must not leak it either.
+        await act(async () => {
+            await hook.result.current.open('C.md');
+        });
+        await act(async () => {
+            await hook.result.current.flushPending();
+        });
+        await waitFor(async () => {
+            expect((await store.readMetadata()).active).toBe('A.md');
+        });
+    });
+
+    it('a missing initialNoteId opens nothing and leaves the sidecar pointer intact', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        dir.seedFile(
+            METADATA_FILENAME,
+            JSON.stringify({
+                version: 1,
+                sort: 'updated',
+                pinned: [],
+                created: {},
+                active: 'A.md',
+            }),
+        );
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        const hook = renderHook(() => useNotes(store, onError, 'Deleted.md'));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        expect(hook.result.current.note).toBeNull();
+        // A.md may still be perfectly valid for the main window — no heal-write here.
+        expect((await store.readMetadata()).active).toBe('A.md');
+    });
+
     it('closing clears the active note', async () => {
         const {hook, store} = await setup((dir) => dir.seedFile('A.md', 'a', 100));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));

@@ -1,5 +1,6 @@
 import {useEffect, useRef} from 'react';
 
+import {isTauri} from '../isTauri';
 import {type GlobalBinding, SHORTCUTS, type ShortcutAction} from '../shortcuts';
 
 export type ShortcutActions = Record<ShortcutAction, () => void>;
@@ -56,8 +57,9 @@ export function useShortcuts(actions: ShortcutActions): void {
             // own listeners, not this hook.
             if (document.querySelector('[role="dialog"]')) return;
             const typing = isTypingTarget(document.activeElement);
-            for (const {global: binding} of SHORTCUTS) {
+            for (const {global: binding, desktopOnly} of SHORTCUTS) {
                 if (!binding) continue;
+                if (desktopOnly && !isTauri) continue; // desktop-shell chords stay free on the web
                 if (Boolean(binding.capture) !== capturePhase) continue;
                 const allowInTyping = binding.inTyping ?? binding.trigger !== 'bare';
                 if (typing && !allowInTyping) continue;
