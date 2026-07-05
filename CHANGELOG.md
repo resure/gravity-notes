@@ -4,6 +4,41 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-07-05
+
+### Added
+
+- **Appearance settings** — choose the note **editor font** (Sans — the native system font, a
+  bundled Serif, or Mono), an **accent color** (amber, blue, or gray — it recolors the orb, the
+  saving dot, the selection wash, and pins), and the **text width** of the reading column (narrow /
+  normal / wide / no limit). Set them app-wide or per workspace in **Settings › Appearance**, and
+  override font + width **per note** from the **⋯** button in the top bar (or **⌘⇧I**). Per-note
+  choices are stored with the notes folder's metadata, so they survive renames and moves, travel
+  with the folder, and come back after trash → restore.
+- **Remote images** — images referenced by a web URL now render in notes in the desktop app.
+- **Readable code highlighting in the dark theme** — code blocks get a proper dark palette instead
+  of barely-legible light-theme colors.
+
+### Changed
+
+- **Notes list redesign** — a cleaner, ledger-style list: tighter rows, refined icon tiles and
+  pinned/folder styling, and the note-appearance control moved to the top bar so it's always at
+  hand while you scroll.
+- **Typography polish** — the app chrome uses the native system font; each editor font carries its
+  own tuned size and line-height; the title and body share an exact left edge.
+
+### Fixed
+
+- **Traffic lights sit centered in the title bar again on macOS 26** — the system now owns their
+  position, instead of a manual placement macOS kept undoing on every layout pass.
+- **Mouse selection in the editor works again** (a stale guard class was eating drags).
+- **Clicking the blank space below a short note** drops the caret at the end again, in both editor
+  modes — instead of doing nothing and unfocusing the editor.
+- **Multiple windows no longer fight over settings** — an appearance change made in one window
+  isn't silently reverted by another window's later write, and other windows pick it up live.
+- The **note-appearance popover** no longer closes when you rename or move the open note.
+- The update dialog's release notes keep the app font instead of following the editor font.
+
 ## [0.5.0] - 2026-07-03
 
 ### Added
