@@ -43,6 +43,7 @@ import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
 import {useHeldValue} from '../hooks/useHeldValue';
 import {escapeRegExp, tokenizeQuery} from '../search';
+import {isOpenInNewWindowChord} from '../shortcuts';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 
@@ -151,20 +152,6 @@ function highlightTerms(text: string, terms: string[]): ReactNode {
             part
         ),
     );
-}
-
-/**
- * ⌘/Ctrl with no other modifier — the open-in-new-window chord, on ↵ and on click alike
- * (see onOpenInNewWindow). On macOS a Ctrl+click never reaches the click handler (WebKit turns it
- * into the contextmenu event), so in practice the mouse path means ⌘-click.
- */
-function isOpenInNewWindowChord(event: {
-    metaKey: boolean;
-    ctrlKey: boolean;
-    shiftKey: boolean;
-    altKey: boolean;
-}): boolean {
-    return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey;
 }
 
 /** Compact list date: 24-hour time for today, otherwise `DD.MM.YY`. Exported for unit tests. */

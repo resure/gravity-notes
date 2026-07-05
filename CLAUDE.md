@@ -43,10 +43,12 @@ because reading one blocks on download; they list by name/mtime with empty previ
 single-note open still materializes), the folder ops, `reveal_path`, and the **window commands** — a
 label→workspace map plus a label→note map powering
 `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window` and
-`window_note`/`set_window_note`/`window_note_renamed`/`open_note_window`, plus `focus_main_window`
-(the ⌘0 fallback App invokes when no Workspace is mounted to listen). `window_note_renamed` re-keys
-note-window assignments when a rename/move changes a note's rel-path (`useNotes.rename`/`move` fire
-it, fire-and-forget), so per-note focus-if-open doesn't go stale and spawn duplicate windows. All
+`window_note`/`set_window_note`/`window_note_renamed`/`window_note_removed`/`open_note_window`, plus
+`focus_main_window` (the ⌘0 fallback App invokes when no Workspace is mounted to listen).
+`window_note_renamed` re-keys note-window assignments when a rename/move changes a note's rel-path,
+and `window_note_removed` drops them when a note is trashed/deleted (`useNotes.rename`/`move`/`trash`/
+`remove` fire them, fire-and-forget, scoped to the caller's workspace), so per-note focus-if-open
+doesn't go stale and spawn duplicate windows. All
 three focus-if-open paths `unminimize()` before `show()`+`set_focus()` — set_focus alone leaves a
 minimized window in the Dock. (`ws-N` and `note-N` windows are cloned from the main
 window's config; note windows are 760×640, cascade centered on the opener's monitor, get their

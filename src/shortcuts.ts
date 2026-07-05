@@ -20,6 +20,23 @@ export type ShortcutAction =
     | 'deleteSelected'
     | 'openWorkspaces';
 
+/**
+ * The "open in a new window" chord — ⌘ (macOS) or Ctrl (Windows/Linux), no other modifier — on ↵
+ * and on click alike. Shared by the note-list rows (⌘↵ / ⌘-click), the orb menu's recents +
+ * "Open Folder…" items, and the ⌃R switcher, so the convention stays identical across every
+ * surface (and Ctrl works off macOS). Shift is excluded so ⌘⇧↵ (the global new-note chord) still
+ * bubbles. Structurally typed on the four modifier flags so it takes a React OR native mouse/
+ * keyboard event without importing React's types.
+ */
+export function isOpenInNewWindowChord(event: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+}): boolean {
+    return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey;
+}
+
 /** How a globally-handled shortcut maps to a key event. */
 export interface GlobalBinding {
     /**

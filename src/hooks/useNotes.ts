@@ -90,12 +90,26 @@ const FOCUS_REFRESH_MIN_GAP_MS = 2_000;
  * Tell the desktop shell a note's id (rel-path) changed, so any single-note WINDOW pinned to the
  * old id keeps answering per-note focus-if-open under the new one (without this, "open in new
  * window" for the renamed note would spawn a duplicate). Fire-and-forget: the shell map is an
- * optimization, and the web build has no shell at all.
+ * optimization, and the web build has no shell at all. Fired right after the in-memory rekey —
+ * the shell map is what focus-if-open reads, and the on-disk rename it reflects has already
+ * happened (the `store.rename`/`move` await completed before we get here).
  */
 function notifyShellNoteRenamed(oldId: string, newId: string): void {
     if (!isTauri) return;
     void import('@tauri-apps/api/core')
         .then(({invoke}) => invoke('window_note_renamed', {oldId, newId}))
+        .catch(() => {});
+}
+
+/**
+ * The delete-path twin of {@link notifyShellNoteRenamed}: tell the shell a note id is gone
+ * (trashed or permanently deleted) so its note-window map entry is dropped — else a note window
+ * left showing the orphan would keep answering focus-if-open for a dead id. Fire-and-forget.
+ */
+function notifyShellNoteRemoved(id: string): void {
+    if (!isTauri) return;
+    void import('@tauri-apps/api/core')
+        .then(({invoke}) => invoke('window_note_removed', {noteId: id}))
         .catch(() => {});
 }
 
@@ -277,7 +291,11 @@ export function useNotes(
                 // (the conflict checks key on it), but the on-disk pointer belongs to the main
                 // window's next-launch restore — substitute the live disk value at this write
                 // boundary so no note-window persist (pin, appearance, navigation, close…) can
-                // hijack it. The load-time snapshot backstops a failed disk read.
+                // hijack it. The `diskActiveRef` fallback is the LOAD-TIME snapshot (never
+                // refreshed), so it can be stale for a long-lived window — but it's only reached
+                // when a fresh read fails, and "keep roughly what was last on disk" beats
+                // clobbering the pointer with this window's note; it's a best-effort guard, not
+                // an authoritative value.
                 const active = await store
                     .readMetadata()
                     .then((disk) => disk.active)
@@ -855,6 +873,7 @@ export function useNotes(
             await flush();
             try {
                 await store.remove(id);
+                notifyShellNoteRemoved(id); // drop any note-window focus-if-open entry for it
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
                 await persistMetadata(withRemoved(metadataRef.current, id));
@@ -908,6 +927,7 @@ export function useNotes(
                 const icon = metadataRef.current.icons[id];
                 const appearance = metadataRef.current.appearances[id];
                 const trashId = await store.trash(id);
+                notifyShellNoteRemoved(id); // the live id is gone — drop its note-window entry
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
                 await persistMetadata(
