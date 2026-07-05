@@ -78,14 +78,16 @@ interface NotePreviewProps {
  * desktop, a new tab on the web) instead of letting the surface navigate. Without this, a link
  * click walks the WHOLE APP away from itself in the web build, and goes nowhere useful in
  * WKWebView. Non-openable hrefs (relative paths, footnote `#` anchors, disallowed schemes) are
- * swallowed — preview never navigates. Delegated from the container so it covers every link the
- * HTML re-renders produce.
+ * swallowed — preview never navigates. The LITERAL attribute is what gets vetted: `target.href`
+ * would resolve a relative path or `#` anchor against the document base into a perfectly
+ * openable http(s) URL, opening a junk tab instead of swallowing. Delegated from the container
+ * so it covers every link the HTML re-renders produce.
  */
 function handlePreviewClick(event: React.MouseEvent<HTMLDivElement>): void {
     const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
     if (!(target instanceof HTMLAnchorElement)) return;
     event.preventDefault();
-    openExternalUrl(target.href);
+    openExternalUrl(target.getAttribute('href') ?? '');
 }
 
 /**
