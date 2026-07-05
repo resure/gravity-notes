@@ -52,6 +52,8 @@ export interface TopBarProps {
     onOpenWorkspaceInNewWindow: (id: string) => void;
     /** Open the folder picker (adds/opens a workspace in this window). */
     onOpenFolder: () => void;
+    /** Desktop only: pick a folder and open it as its own window (⌘-click on "Open Folder…"). */
+    onOpenFolderInNewWindow?: () => void;
     /** Open the ⌃R workspace switcher dialog. */
     onOpenSwitcher: () => void;
     /** The orb menu just opened — a chance to refresh the recents it shows. */
@@ -143,6 +145,7 @@ export function TopBar({
     onOpenWorkspace,
     onOpenWorkspaceInNewWindow,
     onOpenFolder,
+    onOpenFolderInNewWindow,
     onOpenSwitcher,
     onMenuOpen,
     onExport,
@@ -387,7 +390,15 @@ export function TopBar({
                       {
                           text: 'Open Folder…',
                           iconStart: <Icon data={FolderOpen} />,
-                          action: onOpenFolder,
+                          // ⌘-click / ⌘↵ (desktop) opens the picked folder in its OWN window —
+                          // the same modifier convention as the recents above.
+                          action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
+                              if (isDesktop && event.metaKey && onOpenFolderInNewWindow) {
+                                  onOpenFolderInNewWindow();
+                              } else {
+                                  onOpenFolder();
+                              }
+                          },
                       },
                   ]
                 : []),

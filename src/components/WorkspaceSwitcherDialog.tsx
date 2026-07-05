@@ -26,6 +26,8 @@ export interface WorkspaceSwitcherDialogProps {
     onOpenInNewWindow: (id: string) => void;
     /** Pick a brand-new folder (opens in this window). */
     onOpenFolder: () => void;
+    /** Desktop only: pick a folder and open it as its own window (⌘↵/⌘-click on the action row). */
+    onOpenFolderInNewWindow?: () => void;
     /** Drop from the recents list (notes on disk are untouched). */
     onRemove: (id: string) => void;
     onClose: () => void;
@@ -59,6 +61,7 @@ export function WorkspaceSwitcherDialog({
     onOpen,
     onOpenInNewWindow,
     onOpenFolder,
+    onOpenFolderInNewWindow,
     onRemove,
     onClose,
 }: WorkspaceSwitcherDialogProps) {
@@ -121,7 +124,10 @@ export function WorkspaceSwitcherDialog({
     const commit = (row: Row | undefined, newWindow: boolean) => {
         if (!row || row.disabled) return;
         if (row.openFolder) {
-            onOpenFolder();
+            // ⌘↵/⌘-click means "in a new window" for this row too — the picked folder opens in
+            // its own window and the current workspace stays put.
+            if (newWindow && isDesktop && onOpenFolderInNewWindow) onOpenFolderInNewWindow();
+            else onOpenFolder();
             return;
         }
         // A synthesized row exists nowhere yet, so a new window couldn't be assigned to it —

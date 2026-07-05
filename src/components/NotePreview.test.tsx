@@ -1,7 +1,8 @@
 import transform from '@diplodoc/transform';
-import {screen} from '@testing-library/react';
+import {fireEvent, screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
+import {openExternalUrl} from '../openExternal';
 import {renderWithProviders} from '../test/render';
 
 import {NotePreview, withWikiLinks} from './NotePreview';
@@ -10,6 +11,8 @@ import {NotePreview, withWikiLinks} from './NotePreview';
 // transform or force a throw; the module is otherwise driven by the real impl.
 // (vi.mock is hoisted above the imports above by Vitest.)
 vi.mock('@diplodoc/transform', () => ({default: vi.fn()}));
+// Link clicks must route through the external opener (never navigate the page).
+vi.mock('../openExternal', () => ({openExternalUrl: vi.fn()}));
 
 const transformMock = vi.mocked(transform);
 
@@ -81,6 +84,48 @@ describe('NotePreview', () => {
 
         expect(container.querySelector('.note-preview__body')).toBeNull();
         expect(screen.getByText(/Couldn.t render/)).toBeInTheDocument();
+    });
+
+    it('linkifies bare URLs with an explicit scheme', async () => {
+        transformMock.mockImplementation(await realTransform());
+
+        const {container} = renderWithProviders(
+            <NotePreview markup="see https://example.com/docs for more" />,
+        );
+
+        const link = requireBody(container).querySelector('a[href="https://example.com/docs"]');
+        expect(link).not.toBeNull();
+        expect(link?.textContent).toBe('https://example.com/docs');
+    });
+
+    it('never fuzzy-links bare domains (a `Notes.md` mention is text, not a link)', async () => {
+        transformMock.mockImplementation(await realTransform());
+
+        const {container} = renderWithProviders(
+            <NotePreview markup="rename Notes.md and mail me@example.com about clck.ru/M9iCj" />,
+        );
+
+        const body = requireBody(container);
+        // .md and .ru are real TLDs — with fuzzy matching all three would become links (and the
+        // editor's identical linkify would then rewrite them on disk).
+        expect(body.querySelector('a')).toBeNull();
+        expect(body.textContent).toContain('Notes.md');
+    });
+
+    it('routes link clicks through the external opener instead of navigating', async () => {
+        transformMock.mockImplementation(await realTransform());
+
+        const {container} = renderWithProviders(
+            <NotePreview markup="[docs](https://example.com/docs)" />,
+        );
+
+        const link = requireBody(container).querySelector('a[href="https://example.com/docs"]');
+        expect(link).not.toBeNull();
+        const click = fireEvent.click(link as HTMLAnchorElement);
+        // preventDefault fired (fireEvent returns false) — the surface never navigates…
+        expect(click).toBe(false);
+        // …and the URL went to the shared opener (OS browser on desktop, new tab on web).
+        expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith('https://example.com/docs');
     });
 });
 

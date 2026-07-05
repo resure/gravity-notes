@@ -11,6 +11,7 @@ import transform from '@diplodoc/transform';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
+import {openExternalUrl} from '../openExternal';
 import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
 
 // Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
@@ -46,18 +47,45 @@ type PluginFactory = (options?: unknown) => unknown;
 const colorPlugin = resolveCjsExport(colorExtension, 'colorPlugin');
 const cutTransform = resolveCjsExport(cutExtension, 'transform') as PluginFactory;
 
+/**
+ * markdown-it plugin: keep linkify to EXPLICIT schemes only (https://…, mailto:…). Fuzzy matching
+ * would render bare domains as links — and `.md` is a real TLD, so every `Notes.md` mention would
+ * look like a link here (and, worse, the editor's identical linkify would REWRITE it on save).
+ * Must mirror the editor's configureMd in EditorPane.tsx so the two surfaces agree.
+ */
+function noFuzzyLinkify(md: {linkify: {set(opts: Record<string, boolean>): unknown}}): void {
+    md.linkify.set({fuzzyLink: false, fuzzyEmail: false});
+}
+
 const TRANSFORM_OPTIONS = {
     // `bundle: false` is load-bearing: the cut factory otherwise defaults to bundling its runtime
     // assets to disk via Node `fs`, which throws in the browser (fs is externalized) and fails the
     // whole transform. We ship the runtime ourselves (the side-effect import above), so no bundling.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- markdown-it plugins vs diplodoc's ExtendedPluginWithCollect type
-    plugins: [colorPlugin, cutTransform({bundle: false})].filter(Boolean) as any[],
+    plugins: [colorPlugin, cutTransform({bundle: false}), noFuzzyLinkify].filter(Boolean) as any[],
     disableCommonAnchors: true,
+    // Render bare URLs as links (explicit schemes only — see noFuzzyLinkify), matching the editor.
+    linkify: true,
 };
 
 interface NotePreviewProps {
     /** The Markdown to render (captured from the editor when preview is toggled on). */
     markup: string;
+}
+
+/**
+ * Route a click on any rendered `<a href>` through {@link openExternalUrl} (the OS browser on
+ * desktop, a new tab on the web) instead of letting the surface navigate. Without this, a link
+ * click walks the WHOLE APP away from itself in the web build, and goes nowhere useful in
+ * WKWebView. Non-openable hrefs (relative paths, footnote `#` anchors, disallowed schemes) are
+ * swallowed — preview never navigates. Delegated from the container so it covers every link the
+ * HTML re-renders produce.
+ */
+function handlePreviewClick(event: React.MouseEvent<HTMLDivElement>): void {
+    const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
+    if (!(target instanceof HTMLAnchorElement)) return;
+    event.preventDefault();
+    openExternalUrl(target.href);
 }
 
 /**
@@ -194,7 +222,8 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
     }, [markup, cache]);
 
     return (
-        <div ref={ref} className="note-preview" tabIndex={-1}>
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- delegated link-open only; the links inside are the interactive elements and stay keyboard-activatable natively
+        <div ref={ref} className="note-preview" tabIndex={-1} onClick={handlePreviewClick}>
             {rendered.error ? (
                 // Surface a transform failure instead of a silent blank pane; the editor body keeps
                 // the actual content, so the user can switch back and keep working.

@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 
-import {Text, useToaster} from '@gravity-ui/uikit';
+import {Eye} from '@gravity-ui/icons';
+import {Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useAppUpdater} from '../hooks/useAppUpdater';
@@ -75,6 +76,8 @@ interface WorkspaceProps {
     onRefreshWorkspaces: () => Promise<void>;
     /** Open the folder picker (adds/opens a workspace in this window). */
     onOpenFolder: () => void;
+    /** Desktop only: pick a folder and open it as its own window (this window stays put). */
+    onOpenFolderInNewWindow: () => Promise<void>;
     /** Whether folder-on-disk workspaces are available (native app, or FSA in the browser). */
     supportsFolders: boolean;
 }
@@ -158,6 +161,7 @@ export function Workspace({
     onRemoveWorkspace,
     onRefreshWorkspaces,
     onOpenFolder,
+    onOpenFolderInNewWindow,
     supportsFolders,
 }: WorkspaceProps) {
     const {add} = useToaster();
@@ -561,10 +565,38 @@ export function Workspace({
     useEffect(() => {
         if (!collapsed && peeked) setPeeked(false);
     }, [collapsed, peeked]);
-    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately.
+    // True while the peek being opened is the automatic search peek below — it must NOT move
+    // focus into the list (the user is mid-typing in the search box).
+    const autoPeekRef = useRef(false);
+    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately —
+    // except for an auto-peek (see above), which leaves focus in the search box.
     useEffect(() => {
-        if (peeked) listRef.current?.focusSelected();
+        if (!peeked) return;
+        if (autoPeekRef.current) {
+            autoPeekRef.current = false;
+            return;
+        }
+        listRef.current?.focusSelected();
     }, [peeked]);
+    // Auto-peek while searching with the sidebar collapsed: the results would otherwise render
+    // into a hidden list, so typing looked like it did nothing. Opens on a query appearing (or
+    // resuming — each keystroke re-opens a dismissed peek, since typing means "show me matches"),
+    // closes when the query clears. Keyed on QUERY TRANSITIONS only: re-runs caused by
+    // peeked/collapsed flips compare equal and bail, so dismissing the overlay (outside click,
+    // committing a note) isn't instantly undone.
+    const prevSearchRef = useRef(query);
+    useEffect(() => {
+        const prev = prevSearchRef.current;
+        prevSearchRef.current = query;
+        if (query === prev || !collapsed) return;
+        const has = query.trim().length > 0;
+        if (has && !peeked) {
+            autoPeekRef.current = true;
+            setPeeked(true);
+        } else if (!has && prev.trim().length > 0 && peeked) {
+            setPeeked(false);
+        }
+    }, [query, collapsed, peeked]);
     // While peeked, a pointerdown anywhere outside the sidebar closes it (e.g. clicking the editor).
     // pointerdown (not mousedown) so touch/pen also dismiss the overlay.
     useEffect(() => {
@@ -796,6 +828,14 @@ export function Workspace({
             onOpenFolder();
         })();
     }, [confirmLeaveSafe, onOpenFolder]);
+
+    // ⌘↵ / ⌘-click on "Open Folder…": the picked folder opens in its OWN window, so this one
+    // stays put — no flush guard needed (nothing here is left).
+    const handleOpenFolderInNewWindow = useCallback(() => {
+        onOpenFolderInNewWindow().catch((err) =>
+            onError(err instanceof Error ? err.message : 'Could not open the folder'),
+        );
+    }, [onOpenFolderInNewWindow, onError]);
 
     // The ⌃R switcher. Refresh the registry BEFORE opening, so recents written by other windows are
     // already in the list when the dialog seeds its pre-highlight — otherwise a late refresh could
@@ -1175,6 +1215,8 @@ export function Workspace({
                     onOpenWorkspace={handleOpenWorkspace}
                     onOpenWorkspaceInNewWindow={handleOpenWorkspaceInNewWindow}
                     onOpenFolder={handleOpenFolder}
+                    // TopBar fires this only on desktop ⌘-click (and the hook no-ops on web).
+                    onOpenFolderInNewWindow={handleOpenFolderInNewWindow}
                     onOpenSwitcher={openSwitcher}
                     onMenuOpen={() => void onRefreshWorkspaces()}
                     onExport={handleExport}
@@ -1213,7 +1255,12 @@ export function Workspace({
                     // the debounce; flag that gap so the keyboard model doesn't act on a stale list.
                     searchPending={query !== debouncedQuery}
                     selectedId={nav.selectedId}
-                    onCommit={nav.commit}
+                    onCommit={(id) => {
+                        // Enter on a search match: tuck the (auto-)peeked sidebar back away —
+                        // focus moves to the editor, and the overlay has served its purpose.
+                        nav.commit(id);
+                        setPeeked(false);
+                    }}
                     onCreate={(title) => handleCreate(title, '')}
                     onClose={nav.closeFromSearch}
                     onEnterList={enterList}
@@ -1290,6 +1337,9 @@ export function Workspace({
                             showIcons={settings.showNoteIcons}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
+                            // Straight setSelectedFolder — unlike rail selection this must NOT
+                            // preview the first note (clearing a filter shouldn't switch notes).
+                            onClearScope={() => setSelectedFolder(null)}
                             onFocusRail={() => railRef.current?.focusSelected()}
                         />
                     </aside>
@@ -1316,6 +1366,28 @@ export function Workspace({
                                     </div>
                                 ) : null}
                                 <div className="workspace__panes">
+                                    {previewMode ? (
+                                        // Floating state chip: read-only preview is otherwise
+                                        // invisible (the surface just stops responding to edits).
+                                        // Clicking it (or ⌘⇧P) returns to editing.
+                                        <Label
+                                            className="workspace__preview-badge"
+                                            theme="info"
+                                            size="s"
+                                            icon={<Icon data={Eye} size={13} />}
+                                            interactive
+                                            onClick={() => setPreviewMode(false)}
+                                            title="Read-only preview — click (or ⌘⇧P) to edit"
+                                        >
+                                            {/* Text swaps to the action on hover (CSS). */}
+                                            <span className="workspace__preview-badge-idle">
+                                                Preview
+                                            </span>
+                                            <span className="workspace__preview-badge-hover">
+                                                Exit preview
+                                            </span>
+                                        </Label>
+                                    ) : null}
                                     <EditorPane
                                         ref={editorRef}
                                         note={notes.note}
@@ -1425,6 +1497,12 @@ export function Workspace({
                     onOpenFolder={() => {
                         setSwitcherOpen(false);
                         handleOpenFolder();
+                    }}
+                    // The dialog routes here only on desktop ⌘↵/⌘-click (its commit gates on
+                    // isDesktop); the hook additionally no-ops on web.
+                    onOpenFolderInNewWindow={() => {
+                        setSwitcherOpen(false);
+                        handleOpenFolderInNewWindow();
                     }}
                     onRemove={handleRemoveWorkspace}
                     onClose={() => setSwitcherOpen(false)}
