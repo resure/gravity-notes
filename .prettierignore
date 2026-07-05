@@ -6,3 +6,5 @@ src-tauri/gen
 
 # Local, machine-specific Claude Code settings (gitignored) — not part of the codebase to format.
 .claude/settings.local.json
+# Isolation-mode worktrees are gitignored full-repo copies — don't format duplicated sources.
+.claude/worktrees

@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 import {
     MobileProvider,
@@ -57,6 +57,46 @@ export function App() {
             )
             .catch(() => {});
     }, [themePref]);
+
+    // ⌘0 (Window ▸ Main Window): surface the full workspace view for THIS window's workspace. The
+    // listener lives HERE — App mounts exactly once per window and never remounts — rather than in
+    // Workspace, which is keyed by workspace and remounts on every ⌃R switch: registering it there
+    // leaked a duplicate listener per switch (the async listen/unlisten doesn't tear down cleanly
+    // across rapid remounts), so a window ended up firing ⌘0 for several workspaces at once. One
+    // stable listener per window, reading the live workspace/state through a ref, fixes that by
+    // construction. `openInNewWindow` focuses the existing main/ws window for this workspace
+    // (un-hiding a ⌘W-hidden main) or creates one; the fallback re-shows main when there's no
+    // workspace to scope to (still bootstrapping, or parked on the gate after a failed probe).
+    const storageRef = useRef(storage);
+    storageRef.current = storage;
+    useEffect(() => {
+        if (!isTauri) return undefined;
+        let unlisten: (() => void) | undefined;
+        let disposed = false;
+        const showMain = () =>
+            void import('@tauri-apps/api/core').then(({invoke}) =>
+                invoke('focus_main_window').catch(() => {}),
+            );
+        void import('@tauri-apps/api/webviewWindow').then(({getCurrentWebviewWindow}) =>
+            getCurrentWebviewWindow()
+                .listen('menu:main-window', () => {
+                    const st = storageRef.current;
+                    if (st.state === 'ready' && st.activeWorkspaceId) {
+                        st.openInNewWindow(st.activeWorkspaceId).catch(showMain);
+                    } else {
+                        showMain();
+                    }
+                })
+                .then((fn) => {
+                    if (disposed) fn();
+                    else unlisten = fn;
+                }),
+        );
+        return () => {
+            disposed = true;
+            unlisten?.();
+        };
+    }, []);
 
     return (
         <ThemeProvider theme={themePref}>

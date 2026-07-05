@@ -81,9 +81,13 @@ interface NotePreviewProps {
  * swallowed — preview never navigates. The LITERAL attribute is what gets vetted: `target.href`
  * would resolve a relative path or `#` anchor against the document base into a perfectly
  * openable http(s) URL, opening a junk tab instead of swallowing. Delegated from the container
- * so it covers every link the HTML re-renders produce.
+ * so it covers every link the HTML re-renders produce. Bound to BOTH click and auxclick: a
+ * middle-click fires only `auxclick`, whose browser default (open in new tab) would otherwise
+ * bypass this vetting entirely with the base-resolved URL.
  */
 function handlePreviewClick(event: React.MouseEvent<HTMLDivElement>): void {
+    // auxclick also fires for right-click (button 2) — leave that to the context menu.
+    if (event.type === 'auxclick' && event.button !== 1) return;
     const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
     if (!(target instanceof HTMLAnchorElement)) return;
     event.preventDefault();
@@ -225,7 +229,13 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
 
     return (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- delegated link-open only; the links inside are the interactive elements and stay keyboard-activatable natively
-        <div ref={ref} className="note-preview" tabIndex={-1} onClick={handlePreviewClick}>
+        <div
+            ref={ref}
+            className="note-preview"
+            tabIndex={-1}
+            onClick={handlePreviewClick}
+            onAuxClick={handlePreviewClick}
+        >
             {rendered.error ? (
                 // Surface a transform failure instead of a silent blank pane; the editor body keeps
                 // the actual content, so the user can switch back and keep working.

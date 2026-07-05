@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-import {isNoteWindow, isTauri} from '../isTauri';
+import {isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
 import {TauriNoteStore} from '../storage/tauriStore';
@@ -411,9 +411,13 @@ export function useNotesStorage(): NotesStorage {
                 const opened = await openEntry(entry, {
                     seq,
                     isBootstrap: true,
-                    // A shell-assigned workspace was verified seconds ago by the window that
-                    // spawned this one — skip the probe so the new window paints sooner.
-                    skipProbe: assignment !== null,
+                    // A shell-assigned ws-/note- window's workspace was verified seconds ago by
+                    // the window that spawned it — skip the probe so the new window paints
+                    // sooner. NOT for the main window: its assignment is registered on every
+                    // in-place open and lives until the window is destroyed, so after a webview
+                    // reload (crash recovery, dev ⌘R) it can be hours stale — that path keeps
+                    // the timed liveness probe.
+                    skipProbe: assignment !== null && !isMainWindow(),
                 });
                 if (bail()) return;
                 // A restored entry that couldn't be opened but set no state itself (e.g. a
@@ -502,6 +506,19 @@ export function useNotesStorage(): NotesStorage {
             title: 'Choose your notes folder',
         });
         if (typeof selected !== 'string') return; // dismissed
+        // Probe the picked folder like every other tauri-fs open path: the new window's bootstrap
+        // SKIPS its own probe for shell-assigned workspaces on the premise the opener verified
+        // it — this is where that premise is made true. Probe BEFORE touching the registry, so a
+        // dead or endless (home-dir) pick never becomes the last-active launch pointer.
+        try {
+            await withTimeout(
+                new TauriNoteStore(selected).list(),
+                PROBE_TIMEOUT_MS,
+                'Folder probe',
+            );
+        } catch (err) {
+            throw new Error(probeFailureMessage(err, err instanceof TimeoutError));
+        }
         const entry: WorkspaceEntry = {
             id: workspaceIdForPath(selected),
             backend: 'tauri-fs',
@@ -611,21 +628,43 @@ export function useNotesStorage(): NotesStorage {
             // registry — first open creates it.
             if (!entry && id === 'indexeddb') entry = browserEntry();
             if (!entry) return false;
-            return openEntry(entry, {seq});
+            const opened = await openEntry(entry, {seq});
+            // The shell's note assignment is a one-shot for the workspace this window was
+            // created for: once the user explicitly switches the window somewhere else, drop it —
+            // otherwise a later switch BACK would re-apply the stale assignment and force the
+            // originally-assigned note open over the workspace's own last-active restore.
+            if (opened) setWindowNote(null);
+            return opened;
         },
         [beginOp, isStale, openEntry, refreshWorkspaces],
     );
 
-    const openInNewWindow = useCallback(async (id: string) => {
-        if (!isTauri) return;
-        const entry = entriesRef.current.find((candidate) => candidate.id === id);
-        if (!entry) return;
-        const {invoke} = await import('@tauri-apps/api/core');
-        await invoke('open_workspace_window', {
-            wsId: id,
-            title: `${displayName(entry)} — Gravity Notes`,
-        });
-    }, []);
+    const openInNewWindow = useCallback(
+        async (id: string) => {
+            if (!isTauri) return;
+            let entry = entriesRef.current.find((candidate) => candidate.id === id);
+            if (!entry) {
+                // This window's snapshot may be stale (another window may have just written the
+                // entry) — re-read before deciding.
+                await refreshWorkspaces();
+                entry = entriesRef.current.find((candidate) => candidate.id === id);
+            }
+            if (!entry) {
+                // Fail loudly instead of a silent no-op: this is also the ⌘0 (Main Window) path,
+                // and a forced open_workspace_window would only spawn a window whose bootstrap
+                // can't resolve the workspace from the registry (it would land on the gate).
+                throw new Error(
+                    'This workspace is no longer in the recents list — reopen its folder to restore it.',
+                );
+            }
+            const {invoke} = await import('@tauri-apps/api/core');
+            await invoke('open_workspace_window', {
+                wsId: id,
+                title: `${displayName(entry)} — Gravity Notes`,
+            });
+        },
+        [refreshWorkspaces],
+    );
 
     const openNoteInNewWindow = useCallback(async (noteId: string, title: string) => {
         if (!isTauri) return;

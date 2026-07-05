@@ -18,7 +18,7 @@ Markdown files, and they are yours.
   <img alt="Gravity Notes" src="assets/gravity-notes-dark.png">
 </picture>
 
-## Features (v1)
+## Features
 
 - **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers, or natively
   in the desktop app), or in-browser/in-app storage that works everywhere
@@ -182,23 +182,19 @@ Key modules:
 - **External changes** to the open note are detected when you return focus to the tab, not live while
   it stays focused.
 - **A selected image shows a faint caret line** beside it in the editor — the browser's native
-  object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected. See
-  `TODO.md`.
+  object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected.
 - **Auto-update (desktop) starts from the release that introduced it.** A build without the updater
   (≤ 0.2.0) has to be updated by hand once; from there the macOS app updates itself in place. arm64 only.
 
 ### Backlog
 
-- Bare-URL highlighting while EDITING (preview linkifies since 2026-07-05). Blocked on a safe
-  config: the editor serializes linkified URLs to `<url>` on save, and markdown-it's FUZZY
-  linkify would rewrite bare-domain text — `.md` is a real TLD, so a `Notes.md` mention would
-  become `[Notes.md](http://notes.md)` on disk. Needs linkify with `fuzzyLink: false` reachable
-  through the editor's options (or an upstream RawLink parse), plus a round-trip test.
-- iCloud dataless files: previews/search stay empty until a file is downloaded (the walks now
-  skip evicted content instead of hanging). Consider `startDownloadingUbiquitousItemAtURL` to
-  kick off downloads in the background + an "downloading…" preview state.
+- iCloud dataless files: not-yet-downloaded files list by name/mtime with an empty preview/search
+  body, and recover once macOS materializes them (a focus refresh picks up the filled-in preview).
+  Consider `startDownloadingUbiquitousItemAtURL` to kick off downloads in the background + a
+  "downloading…" preview state so it isn't silent.
 
-- Search index update on external file updates (+ reload workspace menu item?)
+- Live file-watching for external edits (today the list + search index refresh when the window
+  regains focus, not while it stays focused) + an explicit "reload workspace" menu item?
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
