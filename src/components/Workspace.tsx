@@ -1218,6 +1218,11 @@ export function Workspace({
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={handleManageAttachments}
+                    onReload={() => {
+                        notes.refresh().catch((err: unknown) => {
+                            onError(err instanceof Error ? err.message : 'Failed to reload notes');
+                        });
+                    }}
                     onOpenTrash={() => setTrashOpen(true)}
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}

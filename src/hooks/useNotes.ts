@@ -18,7 +18,7 @@ import {
     withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
-import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
+import {dirname, joinPath, previewFromContent, titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -85,6 +85,18 @@ const RETRY_MAX_DELAY = 30_000;
  * but focus can flap when ⌘-tabbing through windows, and a full list() walks the whole store.
  */
 const FOCUS_REFRESH_MIN_GAP_MS = 2_000;
+/**
+ * Trailing debounce for watcher-driven refreshes, on top of the backend's own event debounce —
+ * coalesces multi-batch arrivals (bulk external writes) into one re-list.
+ */
+const WATCH_REFRESH_DEBOUNCE_MS = 300;
+/**
+ * How long one of our own writes suppresses the watcher's echo of its path. Wide enough to cover
+ * the backend debounce + IPC; an external edit landing on the SAME note inside this window is
+ * still caught authoritatively — by the next autosave's optimistic-concurrency check, or by the
+ * next focus/watch check once the window lapses.
+ */
+const LOCAL_WRITE_WINDOW_MS = 3_000;
 
 /**
  * Tell the desktop shell a note's id (rel-path) changed, so any single-note WINDOW pinned to the
@@ -396,6 +408,31 @@ export function useNotes(
     const flushRef = useRef<() => Promise<boolean>>(async () => false);
     /** Latest `conflict`, read inside the long-lived window listeners so they needn't re-subscribe. */
     const conflictRef = useRef<NoteConflict | null>(null);
+    /**
+     * rel-paths (notes AND their ancestor folders — our fs ops churn those too, via
+     * create_dir_all / empty-ancestor pruning) this hook itself recently wrote, so the watcher's
+     * echo of our own writes isn't treated as an external change (each would cost a full
+     * re-list — write amplification while typing). Purely an optimization: a suppressed echo
+     * can't hide a real conflict, because a save advances baselineRef before its echo lands.
+     */
+    const recentLocalWritesRef = useRef<Map<string, number>>(new Map());
+    /** True while flush()'s store.save is in flight — see checkOpenNoteConflict. */
+    const saveInFlightRef = useRef(false);
+
+    /** Mark `relPath` (and its ancestor folders) as locally written just now. */
+    const stampLocalWrite = useCallback((relPath: string) => {
+        const now = Date.now();
+        const map = recentLocalWritesRef.current;
+        for (let p = relPath; p; p = dirname(p)) map.set(p, now);
+        // Keep the map bounded: drop stamps that already aged out of the window.
+        for (const [key, at] of map) {
+            if (now - at > LOCAL_WRITE_WINDOW_MS) map.delete(key);
+        }
+    }, []);
+    const isRecentLocalWrite = useCallback((relPath: string) => {
+        const at = recentLocalWritesRef.current.get(relPath);
+        return at !== undefined && Date.now() - at <= LOCAL_WRITE_WINDOW_MS;
+    }, []);
 
     const refresh = useCallback(async () => {
         const [list, folderList] = await Promise.all([store.list(), store.listFolders()]);
@@ -479,6 +516,9 @@ export function useNotes(
         // from each branch avoids the stale-closure trap of reading `conflict` state right after await.
         if (!pending) return conflictRef.current !== null;
         pendingRef.current = null;
+        // The watcher's echo of this write is not an external change; mark it before writing.
+        stampLocalWrite(pending.id);
+        saveInFlightRef.current = true;
         // Hold the raw save promise so a timeout below can still reconcile our baseline if it later
         // succeeds in the background (the underlying write can't be cancelled — it keeps running).
         const savePromise = store.save(pending.id, pending.content, baselineRef.current ?? 0);
@@ -489,6 +529,7 @@ export function useNotes(
             baselineRef.current = meta.updatedAt ?? null;
             retryRef.current = 0;
             setSaveState('saved');
+            stampLocalWrite(pending.id); // re-stamp at completion — a slow save outlives the entry stamp
             bumpInList(pending.id, meta.updatedAt, pending.content);
             return false; // saved cleanly — no conflict
         } catch (err) {
@@ -539,8 +580,10 @@ export function useNotes(
             }
             // A non-conflict error re-queues + retries the edit; there's no conflict to confirm here.
             return false;
+        } finally {
+            saveInFlightRef.current = false;
         }
-    }, [store, onError, bumpInList, clearTimer]);
+    }, [store, onError, bumpInList, clearTimer, stampLocalWrite]);
 
     // Keep the schedule target current so flush can re-arm its own retry without a circular dep.
     useEffect(() => {
@@ -609,6 +652,7 @@ export function useNotes(
             await flush();
             try {
                 const meta = await store.create(title?.trim() || 'Untitled', parentPath);
+                stampLocalWrite(meta.id); // our write — not an external change for the watcher
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
                 );
@@ -621,7 +665,7 @@ export function useNotes(
                 return null;
             }
         },
-        [flush, store, persistMetadata, addNote, relistFolders, open, onError],
+        [flush, store, persistMetadata, addNote, relistFolders, open, onError, stampLocalWrite],
     );
 
     const duplicate = useCallback(
@@ -631,6 +675,7 @@ export function useNotes(
                 // Copy the body verbatim so the copy shares the original's attachment refs.
                 const source = await store.get(id);
                 const meta = await store.create(`${titleFromFileName(id)} copy`, dirname(id));
+                stampLocalWrite(meta.id); // our writes (create + save below) — not external
                 const saved = await store.save(meta.id, source.content, meta.updatedAt ?? 0);
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, saved.updatedAt ?? 0),
@@ -645,19 +690,20 @@ export function useNotes(
                 return null;
             }
         },
-        [flush, store, persistMetadata, addNote, relistFolders, open, onError],
+        [flush, store, persistMetadata, addNote, relistFolders, open, onError, stampLocalWrite],
     );
 
     const createFolder = useCallback(
         async (parentPath: string, name: string): Promise<void> => {
             try {
                 await store.createFolder(parentPath, name);
+                stampLocalWrite(joinPath(parentPath, name)); // our dir write — not external
                 await refresh();
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to create folder');
             }
         },
-        [store, refresh, onError],
+        [store, refresh, onError, stampLocalWrite],
     );
 
     const removeFolder = useCallback(
@@ -673,13 +719,14 @@ export function useNotes(
             }
             try {
                 await store.removeFolder(path);
+                stampLocalWrite(path); // our dir removal — not external
                 // refresh() reconciles against the new folder set, which drops a pin on the gone folder.
                 await refresh();
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to remove folder');
             }
         },
-        [store, refresh, onError, notes, folders],
+        [store, refresh, onError, notes, folders, stampLocalWrite],
     );
 
     const moveFolder = useCallback(
@@ -721,6 +768,10 @@ export function useNotes(
             };
             try {
                 await store.moveFolder(fromPath, toPath);
+                // Our dir rename (+ ancestor pruning) — not external. Only the two dirs move on
+                // disk; FSEvents reports the directory paths, not per-child events.
+                stampLocalWrite(fromPath);
+                stampLocalWrite(toPath);
                 // Re-prefix metadata (note + folder pins, created stamps, active) in one write; this
                 // sets metadataRef.active synchronously, so a racing edit() already sees the new id.
                 await persistMetadata(withReprefixed(metadataRef.current, fromPath, toPath));
@@ -740,7 +791,7 @@ export function useNotes(
                 moveInProgressRef.current = false;
             }
         },
-        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError],
+        [conflict, flush, store, persistMetadata, refresh, clearTimer, onError, stampLocalWrite],
     );
 
     const rename = useCallback(
@@ -754,6 +805,8 @@ export function useNotes(
                 const meta = await store.rename(id, nextTitle);
                 // A no-op rename (same leaf): nothing re-keys on disk, so just report the id.
                 if (meta.id === id) return meta.id;
+                stampLocalWrite(id); // our rename — both ends echo through the watcher
+                stampLocalWrite(meta.id);
                 const wasActive = metadataRef.current.active === id;
                 // A keystroke during the flush/rename await may have re-queued an edit for the renamed
                 // note (the editor stays live — no remount). Kill its timer so it can't flush against
@@ -798,7 +851,7 @@ export function useNotes(
                 return null;
             }
         },
-        [conflict, flush, store, persistMetadata, rekeyNote, clearTimer, onError],
+        [conflict, flush, store, persistMetadata, rekeyNote, clearTimer, onError, stampLocalWrite],
     );
 
     const move = useCallback(
@@ -814,6 +867,8 @@ export function useNotes(
                 const meta = await store.move(id, destFolder);
                 // No-op move (already in that folder): nothing to reconcile.
                 if (meta.id === id) return meta.id;
+                stampLocalWrite(id); // our move — both ends echo through the watcher
+                stampLocalWrite(meta.id);
 
                 const wasActive = metadataRef.current.active === id;
                 // A keystroke during the flush/move awaits may have re-queued an edit for the moved
@@ -863,7 +918,17 @@ export function useNotes(
                 moveInProgressRef.current = false;
             }
         },
-        [conflict, flush, store, persistMetadata, rekeyNote, relistFolders, clearTimer, onError],
+        [
+            conflict,
+            flush,
+            store,
+            persistMetadata,
+            rekeyNote,
+            relistFolders,
+            clearTimer,
+            onError,
+            stampLocalWrite,
+        ],
     );
 
     const remove = useCallback(
@@ -873,6 +938,7 @@ export function useNotes(
             await flush();
             try {
                 await store.remove(id);
+                stampLocalWrite(id); // our deletion — not an external change
                 notifyShellNoteRemoved(id); // drop any note-window focus-if-open entry for it
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
@@ -889,7 +955,16 @@ export function useNotes(
                 onError(err instanceof Error ? err.message : 'Failed to delete note');
             }
         },
-        [flush, store, persistMetadata, dropNote, relistFolders, clearTimer, onError],
+        [
+            flush,
+            store,
+            persistMetadata,
+            dropNote,
+            relistFolders,
+            clearTimer,
+            onError,
+            stampLocalWrite,
+        ],
     );
 
     // Reload the trash from the store and reconcile the registry to mirror it (drop vanished entries,
@@ -927,6 +1002,8 @@ export function useNotes(
                 const icon = metadataRef.current.icons[id];
                 const appearance = metadataRef.current.appearances[id];
                 const trashId = await store.trash(id);
+                // Our move-to-trash: the live id vanishes (the `.trash/` end is filtered anyway).
+                stampLocalWrite(id);
                 notifyShellNoteRemoved(id); // the live id is gone — drop its note-window entry
                 if (pendingRef.current?.id === id) pendingRef.current = null;
                 const wasActive = metadataRef.current.active === id;
@@ -958,7 +1035,17 @@ export function useNotes(
                 return false;
             }
         },
-        [conflict, flush, store, persistMetadata, dropNote, relistFolders, clearTimer, onError],
+        [
+            conflict,
+            flush,
+            store,
+            persistMetadata,
+            dropNote,
+            relistFolders,
+            clearTimer,
+            onError,
+            stampLocalWrite,
+        ],
     );
 
     const restoreFromTrash = useCallback(
@@ -966,6 +1053,7 @@ export function useNotes(
             const entry = metadataRef.current.trashed.find((t) => t.id === trashId);
             try {
                 const meta = await store.restore(trashId, entry?.originalPath ?? '');
+                stampLocalWrite(meta.id); // our restore write — not an external change
                 // Reinstate the original creation stamp (truthy chain dodges a 0/undefined mtime), the
                 // icon, and the appearance — keyed to `meta.id`, the (possibly deduped) id the note
                 // actually restored to.
@@ -985,7 +1073,7 @@ export function useNotes(
                 return null;
             }
         },
-        [store, persistMetadata, refresh, onError],
+        [store, persistMetadata, refresh, onError, stampLocalWrite],
     );
 
     const purgeFromTrash = useCallback(
@@ -1053,6 +1141,7 @@ export function useNotes(
                 // the user to "Save as copy". create() reuses the same name when it's free, so the
                 // id usually survives; adopt the resulting id in place if it differs.
                 const recreated = await store.create(note?.title ?? 'Note', dirname(conflict.id));
+                stampLocalWrite(recreated.id); // our recreate + save — not external
                 const meta = await store.save(recreated.id, content, recreated.updatedAt ?? 0);
                 baselineRef.current = meta.updatedAt ?? null;
                 if (recreated.id !== conflict.id) {
@@ -1079,6 +1168,7 @@ export function useNotes(
                 return;
             }
             const meta = await store.save(conflict.id, content, conflict.diskUpdatedAt);
+            stampLocalWrite(conflict.id); // our overwrite — not an external change
             baselineRef.current = meta.updatedAt ?? null;
             setConflict(null);
             setSaveState('saved');
@@ -1087,7 +1177,7 @@ export function useNotes(
             pendingRef.current = {id: conflict.id, content};
             onError(err instanceof Error ? err.message : 'Failed to save note');
         }
-    }, [conflict, note, store, onError, bumpInList, persistMetadata, refresh]);
+    }, [conflict, note, store, onError, bumpInList, persistMetadata, refresh, stampLocalWrite]);
 
     const saveAsCopy = useCallback(async (): Promise<string | null> => {
         if (!conflict) return null;
@@ -1096,6 +1186,7 @@ export function useNotes(
         pendingRef.current = null;
         try {
             const copy = await store.create(`${title} (conflicted copy)`, dirname(conflict.id));
+            stampLocalWrite(copy.id); // our copy write — not an external change
             await store.save(copy.id, content, copy.updatedAt ?? 0);
             await persistMetadata(
                 withCreatedStamp(metadataRef.current, copy.id, copy.updatedAt ?? 0),
@@ -1109,7 +1200,7 @@ export function useNotes(
             onError(err instanceof Error ? err.message : 'Failed to save a copy');
             return null;
         }
-    }, [conflict, note, store, refresh, open, persistMetadata, onError]);
+    }, [conflict, note, store, refresh, open, persistMetadata, onError, stampLocalWrite]);
 
     const discard = useCallback(() => {
         pendingRef.current = null;
@@ -1260,37 +1351,47 @@ export function useNotes(
         };
     }, [flush, flushMetadata]);
 
+    /**
+     * Stat the open note and raise a conflict if the disk diverged from our baseline. Shared by
+     * the focus/visibility listeners and the watcher pipeline below (each applies its own
+     * visibility policy before calling).
+     */
+    const checkOpenNoteConflict = useCallback(async () => {
+        const id = metadataRef.current.active;
+        if (!id || conflictRef.current || pendingRef.current || moveInProgressRef.current) return;
+        // An in-flight save: pendingRef is already null but baselineRef hasn't advanced yet, so
+        // a stat now would see the just-written mtime and raise a phantom conflict.
+        if (saveInFlightRef.current) return;
+        let diskMtime: number | null;
+        try {
+            diskMtime = await store.stat(id);
+        } catch {
+            // stat() can throw on permission loss / unexpected FS errors; don't let the
+            // fire-and-forget check surface as an unhandled rejection.
+            return;
+        }
+        if (diskMtime === null) {
+            setConflict({id, diskUpdatedAt: 0, deleted: true});
+            setSaveState('conflict');
+        } else if (baselineRef.current !== null && diskMtime !== baselineRef.current) {
+            setConflict({id, diskUpdatedAt: diskMtime, deleted: false});
+            setSaveState('conflict');
+        }
+    }, [store]);
+
     // Detect an external change to the open note when returning to the tab/window.
     useEffect(() => {
-        const check = async () => {
+        const onFocus = () => {
             if (document.visibilityState !== 'visible') return;
-            const id = metadataRef.current.active;
-            if (!id || conflictRef.current || pendingRef.current || moveInProgressRef.current)
-                return;
-            let diskMtime: number | null;
-            try {
-                diskMtime = await store.stat(id);
-            } catch {
-                // stat() can throw on permission loss / unexpected FS errors; don't let the
-                // fire-and-forget check surface as an unhandled rejection.
-                return;
-            }
-            if (diskMtime === null) {
-                setConflict({id, diskUpdatedAt: 0, deleted: true});
-                setSaveState('conflict');
-            } else if (baselineRef.current !== null && diskMtime !== baselineRef.current) {
-                setConflict({id, diskUpdatedAt: diskMtime, deleted: false});
-                setSaveState('conflict');
-            }
+            void checkOpenNoteConflict();
         };
-        const onFocus = () => void check();
         window.addEventListener('focus', onFocus);
         document.addEventListener('visibilitychange', onFocus);
         return () => {
             window.removeEventListener('focus', onFocus);
             document.removeEventListener('visibilitychange', onFocus);
         };
-    }, [store]);
+    }, [checkOpenNoteConflict]);
 
     // Re-list on window focus: the check above covers only the OPEN note, but with single-note
     // windows the same folder is routinely shown in several windows at once, so a returning window
@@ -1312,6 +1413,98 @@ export function useNotes(
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
     }, [ready, refresh]);
+
+    // Desktop live watching: the store pushes external on-disk changes (another window, another
+    // app, a sync agent), so the list — and with it the search corpus, which keys off the list
+    // signature — refreshes and the open note's conflict check runs WITHOUT waiting for a window
+    // focus. Feature-detected off the seam (`store.watch`); the web backends keep the
+    // focus-driven refresh above. Our own writes echo back through the watcher too — suppressed
+    // via recentLocalWritesRef (a perf guard only; correctness never depends on it).
+    useEffect(() => {
+        if (!ready) return undefined;
+        const watch = store.watch?.bind(store);
+        if (!watch) return undefined;
+        let disposed = false;
+        let unwatch: (() => void) | undefined;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let running = false;
+        let queued = false;
+        let pendingWhileHidden = false;
+
+        // Trailing debounce on top of the backend's own event debounce, so a burst of batches
+        // (bulk external writes) lands as one refresh. Function declarations: run and schedule
+        // reference each other, in deferred positions only.
+        function schedule() {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                timer = null;
+                void run();
+            }, WATCH_REFRESH_DEBOUNCE_MS);
+        }
+        async function run() {
+            if (running) {
+                queued = true; // coalesce: at most one refresh running + one queued
+                return;
+            }
+            if (moveInProgressRef.current) {
+                schedule(); // re-arm rather than drop; the move settles in well under a window
+                return;
+            }
+            running = true;
+            try {
+                // Conflict check FIRST: refresh()'s reconcile nulls a vanished `active`, so the
+                // other order would miss an externally-deleted open note (no banner).
+                await checkOpenNoteConflict();
+                await refresh();
+            } catch {
+                // A transient read failure keeps the current list; the next event/focus retries.
+            } finally {
+                running = false;
+                if (queued && !disposed) {
+                    queued = false;
+                    schedule();
+                }
+            }
+        }
+        const onChange = (relPaths: string[]) => {
+            if (disposed) return;
+            // Skip pure echoes of our own writes. Empty = "many/unknown changes" — NEVER
+            // suppressible ([].every() is vacuously true).
+            if (relPaths.length > 0 && relPaths.every(isRecentLocalWrite)) return;
+            if (document.visibilityState === 'hidden') {
+                // Don't refresh a window the user can't see (minimized/occluded) — latch and
+                // replay on visibility. Becoming visible doesn't imply gaining focus, so the
+                // focus re-list above wouldn't cover it.
+                pendingWhileHidden = true;
+                return;
+            }
+            schedule();
+        };
+        const onVisible = () => {
+            if (document.visibilityState === 'visible' && pendingWhileHidden) {
+                pendingWhileHidden = false;
+                schedule();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        watch(onChange).then(
+            (dispose) => {
+                // Unmounted while subscribing (StrictMode remount / workspace switch): the
+                // backend refcounts subscriptions, so disposing the late handle is exact.
+                if (disposed) dispose();
+                else unwatch = dispose;
+            },
+            () => {
+                // Watching is best-effort — the focus-driven refresh still covers external edits.
+            },
+        );
+        return () => {
+            disposed = true;
+            if (timer) clearTimeout(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+            unwatch?.();
+        };
+    }, [ready, store, refresh, checkOpenNoteConflict, isRecentLocalWrite]);
 
     return {
         notes,

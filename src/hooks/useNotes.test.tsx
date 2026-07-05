@@ -1608,3 +1608,172 @@ describe('useNotes — trash', () => {
         expect(onError).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * An FSA-backed store posing as a desktop store: `watch` is grafted on (the seam's optional
+ * method), capturing the hook's onChange so tests can push watcher events by hand.
+ */
+async function setupWatched(seed?: (dir: FakeDirectoryHandle) => void) {
+    const onError = vi.fn();
+    const dir = new FakeDirectoryHandle();
+    seed?.(dir);
+    const store: NoteStore = new FileSystemNoteStore(asDirectoryHandle(dir));
+    const watchState = {
+        onChange: null as ((relPaths: string[]) => void) | null,
+        disposeCalls: 0,
+    };
+    store.watch = async (onChange) => {
+        watchState.onChange = onChange;
+        return () => {
+            watchState.disposeCalls += 1;
+            watchState.onChange = null;
+        };
+    };
+    const listSpy = vi.spyOn(store, 'list');
+    const hook = renderHook(() => useNotes(store, onError));
+    await waitFor(() => expect(hook.result.current.ready).toBe(true));
+    // The watch effect subscribes once `ready` lands (async — the store's watch() awaits).
+    await waitFor(() => expect(watchState.onChange).not.toBeNull());
+    return {hook, dir, store, onError, watchState, listSpy};
+}
+
+describe('useNotes — live watch', () => {
+    it('refreshes the list when the watcher reports an external change', async () => {
+        const {hook, dir, watchState} = await setupWatched((d) => d.seedFile('A.md', 'a', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+
+        dir.seedFile('B.md', 'b', 200); // an external tool created a note
+        act(() => watchState.onChange!(['B.md']));
+
+        // The debounced watcher pipeline re-lists without any focus event.
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+    });
+
+    it('raises a conflict for an externally-changed open note without any focus event', async () => {
+        const {hook, dir, watchState} = await setupWatched((d) =>
+            d.seedFile('Note.md', 'disk v1', 100),
+        );
+        await act(async () => {
+            await hook.result.current.open('Note.md');
+        });
+
+        dir.seedFile('Note.md', 'disk v2', 200); // external edit while the app stays focused
+        act(() => watchState.onChange!(['Note.md']));
+
+        await waitFor(() => expect(hook.result.current.conflict).toBeTruthy());
+        expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: false});
+    });
+
+    it('suppresses the echo of its own autosave (no re-list, no conflict)', async () => {
+        const {hook, watchState, listSpy} = await setupWatched((d) =>
+            d.seedFile('Note.md', 'v1', 100),
+        );
+        await act(async () => {
+            await hook.result.current.open('Note.md');
+        });
+        act(() => {
+            hook.result.current.edit('v2 local');
+        });
+        // Flush the pending edit now (the visibilitychange path), stamping it as a local write.
+        await act(async () => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await waitFor(() => expect(hook.result.current.saveState).toBe('saved'));
+
+        const listCalls = listSpy.mock.calls.length;
+        vi.useFakeTimers();
+        try {
+            // The watcher echoes our own write back; the pipeline must not run at all.
+            act(() => watchState.onChange!(['Note.md']));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+            expect(listSpy.mock.calls.length).toBe(listCalls);
+            expect(hook.result.current.conflict).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('an empty paths list ("many changes") refreshes even right after a local write', async () => {
+        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+            d.seedFile('Note.md', 'v1', 100),
+        );
+        await act(async () => {
+            await hook.result.current.open('Note.md');
+        });
+        act(() => {
+            hook.result.current.edit('v2 local');
+        });
+        await act(async () => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await waitFor(() => expect(hook.result.current.saveState).toBe('saved'));
+
+        dir.seedFile('Bulk.md', 'x', 300);
+        const listCalls = listSpy.mock.calls.length;
+        // Empty = "unknown/overflow": never suppressible ([].every() is vacuously true).
+        act(() => watchState.onChange!([]));
+
+        await waitFor(() => expect(listSpy.mock.calls.length).toBeGreaterThan(listCalls));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+    });
+
+    it('latches an event arriving while hidden and replays it on visibility', async () => {
+        let visibility: DocumentVisibilityState = 'visible';
+        Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            get: () => visibility,
+        });
+        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+            d.seedFile('A.md', 'a', 100),
+        );
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+
+        visibility = 'hidden';
+        dir.seedFile('B.md', 'b', 200);
+        const listCalls = listSpy.mock.calls.length;
+        vi.useFakeTimers();
+        try {
+            // Hidden window: the event is latched, not processed.
+            act(() => watchState.onChange!(['B.md']));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+            expect(listSpy.mock.calls.length).toBe(listCalls);
+        } finally {
+            vi.useRealTimers();
+        }
+
+        // Becoming visible (without a focus event) replays the latched change.
+        visibility = 'visible';
+        await act(async () => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
+    });
+
+    it('disposes a subscription that resolves only after unmount', async () => {
+        const onError = vi.fn();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('A.md', 'a', 100);
+        const store: NoteStore = new FileSystemNoteStore(asDirectoryHandle(dir));
+        let resolveWatch: ((dispose: () => void) => void) | null = null;
+        let disposeCalls = 0;
+        store.watch = (_onChange) =>
+            new Promise((resolve) => {
+                resolveWatch = resolve;
+            });
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await waitFor(() => expect(resolveWatch).not.toBeNull());
+
+        // Unmount while the subscription is still in flight (StrictMode/workspace-switch shape),
+        // then let it land: the late disposer must still be called (backend refcounts it).
+        hook.unmount();
+        resolveWatch!(() => {
+            disposeCalls += 1;
+        });
+        await waitFor(() => expect(disposeCalls).toBe(1));
+    });
+});

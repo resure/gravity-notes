@@ -12,6 +12,33 @@ vi.mock('@tauri-apps/api/core', () => ({
         fsHolder.current!.dispatch(cmd, args),
 }));
 
+/** The window's live `notes:changed` listeners (registered by `watch`), reset per test. */
+const {eventHolder} = vi.hoisted(() => ({
+    eventHolder: {
+        listeners: [] as Array<(event: {payload: unknown}) => void>,
+        unlistenCalls: 0,
+    },
+}));
+
+// `watch` loads the event API via dynamic import; vi.mock intercepts that too.
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+    getCurrentWebviewWindow: () => ({
+        listen: async (_event: string, handler: (event: {payload: unknown}) => void) => {
+            eventHolder.listeners.push(handler);
+            return () => {
+                eventHolder.unlistenCalls += 1;
+                const idx = eventHolder.listeners.indexOf(handler);
+                if (idx >= 0) eventHolder.listeners.splice(idx, 1);
+            };
+        },
+    }),
+}));
+
+/** Emit a `notes:changed` event to every registered listener, like the Rust `emit_to`. */
+function emitNotesChanged(dir: string, paths: string[]) {
+    for (const handler of [...eventHolder.listeners]) handler({payload: {dir, paths}});
+}
+
 /**
  * In-memory stand-in for the Rust `notes_*` commands, modelling a case-INSENSITIVE filesystem
  * (macOS's default) so case-only renames and collisions behave like the real desktop app. Keys are
@@ -19,6 +46,11 @@ vi.mock('@tauri-apps/api/core', () => ({
  * mtime so optimistic-concurrency conflicts are deterministic.
  */
 class FakeFs {
+    /** Recorded `notes_watch` / `notes_unwatch` invokes (see the dispatch arms below). */
+    watchCalls: Array<{dir: string; listenersAtCall: number}> = [];
+    unwatchCalls: string[] = [];
+    failWatch = false;
+
     private files = new Map<string, {name: string; content: string; mtime: number}>();
     private clock = 1000;
 
@@ -47,6 +79,18 @@ class FakeFs {
                 return this.stat(name);
             case 'notes_move_dir':
                 return this.moveDir(args.from as string, args.to as string);
+            case 'notes_watch':
+                if (this.failWatch) throw new Error('watch failed');
+                // Record how many listeners were live at call time: `watch` must subscribe the
+                // window BEFORE registering the native watcher, or an early event is lost.
+                this.watchCalls.push({
+                    dir: args.dir as string,
+                    listenersAtCall: eventHolder.listeners.length,
+                });
+                return null;
+            case 'notes_unwatch':
+                this.unwatchCalls.push(args.dir as string);
+                return null;
             default:
                 throw new Error(`unknown command: ${cmd}`);
         }
@@ -173,6 +217,8 @@ const {TauriNoteStore} = await import('./tauriStore');
 
 function newStore() {
     fsHolder.current = new FakeFs();
+    eventHolder.listeners = [];
+    eventHolder.unlistenCalls = 0;
     return {store: new TauriNoteStore('/notes'), fs: fsHolder.current};
 }
 
@@ -500,6 +546,45 @@ describe('TauriNoteStore', () => {
             expect((await store.listTrash()).map((t) => t.id)).toEqual(['.trash/B.md']);
             await store.emptyTrash();
             expect(await store.listTrash()).toEqual([]);
+        });
+    });
+
+    describe('watch', () => {
+        it('subscribes the window listener BEFORE registering the native watcher', async () => {
+            await store.watch(() => {});
+            expect(fs.watchCalls).toEqual([{dir: '/notes', listenersAtCall: 1}]);
+        });
+
+        it('delivers this folder’s change paths and filters other folders’ events', async () => {
+            const seen: string[][] = [];
+            await store.watch((paths) => seen.push(paths));
+
+            emitNotesChanged('/notes', ['Note.md', 'Work/Sub']);
+            // A stale listener for another store's folder (mid workspace switch) must not fire.
+            emitNotesChanged('/elsewhere', ['Other.md']);
+            emitNotesChanged('/notes', []); // the "many/unknown changes" signal passes through
+
+            expect(seen).toEqual([['Note.md', 'Work/Sub'], []]);
+        });
+
+        it('the disposer unlistens and unregisters the native watcher', async () => {
+            const seen: string[][] = [];
+            const dispose = await store.watch((paths) => seen.push(paths));
+
+            dispose();
+            emitNotesChanged('/notes', ['Note.md']);
+
+            expect(seen).toEqual([]);
+            expect(eventHolder.unlistenCalls).toBe(1);
+            // The fire-and-forget notes_unwatch invoke has been dispatched.
+            await vi.waitFor(() => expect(fs.unwatchCalls).toEqual(['/notes']));
+        });
+
+        it('a failed native registration unlistens and rethrows', async () => {
+            fs.failWatch = true;
+            await expect(store.watch(() => {})).rejects.toThrow('watch failed');
+            expect(eventHolder.listeners).toEqual([]);
+            expect(eventHolder.unlistenCalls).toBe(1);
         });
     });
 });
