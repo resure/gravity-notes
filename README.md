@@ -44,6 +44,11 @@ Markdown files, and they are yours.
 - Debounced **autosave**, with a status indicator and unsaved-changes guards
 - **Conflict handling** when a note changes underneath you (reload / keep mine / save a copy / discard)
 - Light / dark / system theme
+- **Appearance settings** (`⌘,`): pick the editor font (system sans, a bundled serif, or mono), an
+  accent color, and the text-column width — app-wide, per workspace, or per note (the `⋯` button or
+  `⌘⇧I`). Per-note choices live in the folder's metadata, so they survive renames and moves
+- **Multiple workspaces**: open several note folders and switch with `⌃R` (or the orb menu's Open
+  Recent) — on the desktop, each workspace can have its own window
 - **Automatic updates** (desktop app): the macOS app checks for a newer release on launch and installs
   it in place once you confirm — plus a manual **Check for Updates…** in the storage menu. Updates are
   delivered through GitHub Releases and verified by signature
@@ -169,10 +174,6 @@ Key modules:
   `TODO.md`.
 - **Auto-update (desktop) starts from the release that introduced it.** A build without the updater
   (≤ 0.2.0) has to be updated by hand once; from there the macOS app updates itself in place. arm64 only.
-- **The desktop app silently falls back to system fonts.** `@gravity-ui/uikit/styles/fonts.css`
-  (imported by `src/main.tsx`) `@import`s Inter from `fonts.googleapis.com`, which the app CSP
-  (`style-src`/`font-src 'self'` in `src-tauri/tauri.conf.json`) blocks. Fix options: self-host
-  Inter, allow the Google Fonts origins in the CSP, or drop the uikit `fonts.css` import.
 
 ### Backlog
 

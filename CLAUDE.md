@@ -34,8 +34,11 @@ lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` +
 commands, the folder ops, `reveal_path`, and the **workspace-window commands** — a label→workspace map
 powering `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window`
 (`ws-N` windows cloned from the main window's config); it also registers the **updater** + **process**
-plugins, sets a theme-aware native window background (anti-flash, factored as `apply_macos_chrome` and
-applied to every window), and builds a **custom app menu** whose macOS "About" item emits `menu:about`
+plugins, sets the macOS window chrome (factored as `apply_macos_chrome`, applied to every window: a
+theme-aware native background for anti-flash, plus an empty unified-compact **NSToolbar** that makes
+the title bar tall with SYSTEM-positioned traffic lights — macOS 26 re-runs title-bar layout on every
+pass and reverts hand-set button frames, so never position the lights manually), and builds a
+**custom app menu** whose macOS "About" item emits `menu:about`
 to the FOCUSED window so the frontend can open its own `AboutDialog`). **Close flow:** the main window
 hides on ⌘W (Rust-side, macOS convention) while `ws-N` windows really close — `useNotes`'s
 `onCloseRequested` handler flushes pending edits then calls `preventDefault()` ONLY for `main`; the JS
@@ -203,6 +206,18 @@ Key modules:
   Gravity's `Dialog` focus-manager can park focus on the dialog container, where an input handler goes
   silent. Callers own filtering + rendering + pre-highlight seeding; `highlightMatch` (shared) marks
   the filter match.
+- `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
+  text width + the toolbar/icons toggles), `WorkspaceSettings` (per-workspace `'default'`-able
+  overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
+  deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
+  and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
+  stored object at write time and adopts other windows' writes via `storage` events — the desktop
+  runs one window per workspace over one localStorage, so a naive whole-object persist was a
+  multi-window lost update. `Workspace` stamps the resolved values on `<html>` as
+  `data-editor-font` / `data-accent` / `data-text-width`; `index.css` consumes them (per-font
+  `--gn-editor-*` metrics; serif = self-hosted PT Serif, woff2-only rules in `src/fonts/pt-serif.css`).
+  Also owns the one-shot legacy-localStorage → sidecar migration helpers (keys are cleared only after
+  the adoption verifiably lands on disk; trashed notes' overrides attach to their `TrashEntry`).
 - `src/hooks/useAppUpdater.ts` — in-app auto-update (macOS desktop) over the Tauri updater/process
   plugins: a small state machine (check → available → downloading → installed / restart-required /
   error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
@@ -249,7 +264,11 @@ Key modules:
   `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), the `[[wiki link]]` editor
   pieces (`editor/wikiLinkExtension` — a mark with `escape: false` so it round-trips — plus the
   `WikiLinkSuggest` `[[` picker and `WikiLinkTooltip`), `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `UpdateDialog` (the software-update sheet;
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — General toggles +
+  Appearance for the app and workspace layers), `NoteAppearancePopover` (the per-note font/width
+  popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
+  `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
+  derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
   clickable links), `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
