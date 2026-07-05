@@ -90,6 +90,7 @@ export function App() {
                                 onRemoveWorkspace={storage.removeWorkspace}
                                 onRefreshWorkspaces={storage.refreshWorkspaces}
                                 onOpenFolder={() => void storage.pickFolder()}
+                                onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
                                 supportsFolders={storage.supportsFolders}
                             />
                         ) : (

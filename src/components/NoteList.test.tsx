@@ -558,6 +558,41 @@ describe('NoteList — open in new window (desktop)', () => {
     });
 });
 
+describe('NoteList — folder scope chip (rail closed)', () => {
+    const scoped = {scopeLabel: 'Work', railOpen: false, onClearScope: vi.fn()};
+
+    it('names the invisible folder scope and clears it via ×', async () => {
+        const user = userEvent.setup();
+        const onClearScope = vi.fn();
+        setup({...scoped, onClearScope});
+        expect(screen.getByText('Work')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', {name: 'Show all notes'}));
+        expect(onClearScope).toHaveBeenCalledTimes(1);
+    });
+
+    it('clicking the chip opens the folder rail', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({...scoped});
+        await user.click(screen.getByText('Work'));
+        expect(props.onToggleRail).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides the chip when the rail already shows the scope', () => {
+        setup({...scoped, railOpen: true});
+        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+    });
+
+    it('hides the chip while a search is live (the list is global then)', () => {
+        setup({...scoped, query: 'find me'});
+        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+    });
+
+    it('renders no chip at All Notes (no scope)', () => {
+        setup({...scoped, scopeLabel: null});
+        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+    });
+});
+
 describe('NoteList — right-click context menu', () => {
     it('opens the row action menu on right-click and runs an action', async () => {
         const user = userEvent.setup();

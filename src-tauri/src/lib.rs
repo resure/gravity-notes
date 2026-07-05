@@ -161,6 +161,24 @@ fn modified_ms(meta: &fs::Metadata) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Whether a file's content is evicted to the cloud (macOS APFS "dataless" files — iCloud Drive's
+/// download-on-demand). READING such a file blocks until the system has downloaded it, so the bulk
+/// walks (list previews, the search corpus) must skip their content instead of stalling the whole
+/// app on a folder that isn't downloaded — its metadata (name, mtime) is always local. An explicit
+/// single-note open still reads (and thereby downloads) the file.
+#[cfg(target_os = "macos")]
+fn is_dataless(meta: &fs::Metadata) -> bool {
+    use std::os::macos::fs::MetadataExt;
+    // SF_DATALESS from <sys/stat.h> ("file is dataless object"); not exposed by libc consts.
+    const SF_DATALESS: u32 = 0x4000_0000;
+    meta.st_flags() & SF_DATALESS != 0
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_dataless(_meta: &fs::Metadata) -> bool {
+    false
+}
+
 /// Write bytes durably: write a sibling temp file, then atomically rename it over the
 /// target (same-filesystem rename is atomic on macOS), so a crash mid-write never
 /// truncates the original. Replaces the web backend's `createWritable()`/`close()`
@@ -246,7 +264,13 @@ fn collect_md(root: &Path, current: &Path, full: bool, out: &mut Vec<Found>) -> 
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            let body = if full {
+            // A not-yet-downloaded iCloud file: list it by name/mtime but DON'T read its content —
+            // that would block until the system downloads it, turning a walk over a non-downloaded
+            // folder into a hang. Its preview/corpus body stays empty until it lands on disk
+            // (the focus-driven refresh picks it up); explicitly opening the note still reads it.
+            let body = if is_dataless(&meta) {
+                String::new()
+            } else if full {
                 String::from_utf8_lossy(&fs::read(&path)?).into_owned()
             } else {
                 let mut buf = Vec::new();
@@ -725,6 +749,10 @@ static NEXT_WS_WINDOW: AtomicU32 = AtomicU32::new(1);
 /// Monotonic suffix for `note-N` window labels (same one-run lifetime story as `NEXT_WS_WINDOW`).
 static NEXT_NOTE_WINDOW: AtomicU32 = AtomicU32::new(1);
 
+/// Single-note window size (logical px) — a single column of prose, not a three-pane workspace.
+const NOTE_WINDOW_WIDTH: f64 = 760.0;
+const NOTE_WINDOW_HEIGHT: f64 = 640.0;
+
 /// Label prefix of single-note windows. Mirrors `NOTE_WINDOW_PREFIX` in `src/isTauri.ts` — keep
 /// them in sync. A note window carries a workspace assignment in `labels` like any window (its
 /// page bootstraps through the same `window_workspace` ask), but workspace-level focus-if-open
@@ -913,13 +941,14 @@ fn set_window_note(
 #[tauri::command]
 async fn open_note_window(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, WindowWorkspaces>,
     ws_id: String,
     note_id: String,
     title: String,
 ) -> Result<bool, String> {
     let pending_key = note_pending_key(&ws_id, &note_id);
-    let label = {
+    let (label, cascade_step) = {
         let mut st = state.0.lock().unwrap();
         // This exact note's window is already being built — don't spawn a second (mirrors the
         // workspace path's pending guard).
@@ -950,24 +979,35 @@ async fn open_note_window(
             st.labels.remove(&found);
             st.notes.remove(&found);
         }
-        let label = format!(
-            "{NOTE_WINDOW_PREFIX}{}",
-            NEXT_NOTE_WINDOW.fetch_add(1, Ordering::SeqCst)
-        );
+        let n = NEXT_NOTE_WINDOW.fetch_add(1, Ordering::SeqCst);
+        let label = format!("{NOTE_WINDOW_PREFIX}{n}");
         // Assign workspace AND note before the window exists (the page's first asks can't race),
         // and mark the build pending — same discipline as `open_workspace_window`.
         st.labels.insert(label.clone(), ws_id.clone());
         st.notes.insert(label.clone(), note_id.clone());
         st.pending.insert(pending_key.clone());
-        label
+        (label, n)
     };
     // Clone the main window's config like workspace windows do, sized down: this window shows a
     // single note (both side panels closed), not a whole three-pane workspace.
     let mut config = app.config().app.windows[0].clone();
     config.label = label.clone();
     config.title = title;
-    config.width = 760.0;
-    config.height = 640.0;
+    config.width = NOTE_WINDOW_WIDTH;
+    config.height = NOTE_WINDOW_HEIGHT;
+    // Position: centered-ish on the opener's monitor (a third down, like a system dialog),
+    // cascading down-right per note window so consecutive opens don't stack exactly. Anchored to
+    // the SCREEN, not the opener: gluing the new window onto the opener's corner buried the main
+    // window under a nearly-aligned copy of the same note — which reads as a "doubled" editor.
+    // Wraps after 8 steps; without monitor info the window just centers (from_config default).
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let scale = monitor.scale_factor();
+        let mpos: tauri::LogicalPosition<f64> = monitor.position().to_logical(scale);
+        let msize: tauri::LogicalSize<f64> = monitor.size().to_logical(scale);
+        let step = f64::from((cascade_step - 1) % 8) * 28.0;
+        config.x = Some(mpos.x + ((msize.width - NOTE_WINDOW_WIDTH).max(0.0) / 2.0) + step);
+        config.y = Some(mpos.y + ((msize.height - NOTE_WINDOW_HEIGHT).max(0.0) / 3.0) + step);
+    }
     let built = tauri::WebviewWindowBuilder::from_config(&app, &config)
         .and_then(|builder| builder.build());
     {

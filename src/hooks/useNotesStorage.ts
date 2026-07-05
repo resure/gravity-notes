@@ -148,6 +148,12 @@ export interface NotesStorage {
     supportsFolders: boolean;
     /** Open the system folder picker (must be triggered by a user gesture). */
     pickFolder(): Promise<void>;
+    /**
+     * Desktop only: pick a folder and open it as its OWN workspace window, leaving this window
+     * untouched (⌘↵/⌘-click on "Open Folder…"). Rejections surface to the caller (toast);
+     * dismissing the picker resolves quietly.
+     */
+    pickFolderForNewWindow(): Promise<void>;
     /** Use in-browser (IndexedDB) storage. */
     useBrowserStorage(): Promise<void>;
     /** Re-request permission for the remembered folder (user gesture). */
@@ -487,6 +493,35 @@ export function useNotesStorage(): NotesStorage {
         }
     }, [activate, beginOp, isStale]);
 
+    const pickFolderForNewWindow = useCallback(async () => {
+        if (!isTauri) return;
+        const {open} = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({
+            directory: true,
+            multiple: false,
+            title: 'Choose your notes folder',
+        });
+        if (typeof selected !== 'string') return; // dismissed
+        const entry: WorkspaceEntry = {
+            id: workspaceIdForPath(selected),
+            backend: 'tauri-fs',
+            name: folderNameFromPath(selected),
+            lastOpenedAt: Date.now(),
+            path: selected,
+        };
+        // The new window bootstraps by looking its assigned workspace up in the REGISTRY, so the
+        // entry must be persisted before that page loads (deterministic tauri:<path> id — picking
+        // an already-known folder just refreshes its entry, and open_workspace_window focuses the
+        // window already showing it instead of duplicating).
+        await touchWorkspace(entry);
+        await refreshWorkspaces();
+        const {invoke} = await import('@tauri-apps/api/core');
+        await invoke('open_workspace_window', {
+            wsId: entry.id,
+            title: `${displayName(entry)} — Gravity Notes`,
+        });
+    }, [refreshWorkspaces]);
+
     const useBrowserStorage = useCallback(async () => {
         const seq = beginOp();
         setError(null);
@@ -622,6 +657,7 @@ export function useNotesStorage(): NotesStorage {
         supportsFileSystem,
         supportsFolders,
         pickFolder,
+        pickFolderForNewWindow,
         useBrowserStorage,
         grantPermission,
         reset,

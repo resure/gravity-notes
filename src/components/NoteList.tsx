@@ -29,7 +29,16 @@ import {
     Plus,
     TrashBin,
 } from '@gravity-ui/icons';
-import {Button, Dialog, DropdownMenu, Icon, Select, Text, TextInput} from '@gravity-ui/uikit';
+import {
+    Button,
+    Dialog,
+    DropdownMenu,
+    Icon,
+    Label,
+    Select,
+    Text,
+    TextInput,
+} from '@gravity-ui/uikit';
 import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
 import {useHeldValue} from '../hooks/useHeldValue';
@@ -115,6 +124,11 @@ export interface NoteListProps {
     railOpen: boolean;
     /** Show / hide the folder rail. */
     onToggleRail: () => void;
+    /**
+     * Back to All Notes (clear the folder scope). Drives the scope chip shown when a folder is
+     * selected while the rail is CLOSED — the only state where the scoping is otherwise invisible.
+     */
+    onClearScope?: () => void;
     /** Move focus into the folder rail (← on a row, when the rail is open). */
     onFocusRail: () => void;
 }
@@ -397,6 +411,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         showIcons,
         railOpen,
         onToggleRail,
+        onClearScope,
         onFocusRail,
     },
     ref,
@@ -846,6 +861,27 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     New
                 </Button>
             </div>
+
+            {/* Scope chip: with the rail closed, a selected folder silently filters the list — name
+                the scope, click-through to the folder tree, × back to All Notes. Hidden while a
+                search is live (the list is global then) and whenever the rail already shows it. */}
+            {!railOpen && scopeLabel && !query.trim() && onClearScope ? (
+                <div className="note-list__scope">
+                    <Label
+                        className="note-list__scope-chip"
+                        size="xs"
+                        type="close"
+                        icon={<Icon data={Folder} size={12} />}
+                        interactive
+                        onClick={onToggleRail}
+                        onCloseClick={onClearScope}
+                        closeButtonLabel="Show all notes"
+                        title={`Showing “${scopeLabel}” — click to open folders`}
+                    >
+                        {scopeLabel}
+                    </Label>
+                </div>
+            ) : null}
 
             <div
                 ref={scrollRef}

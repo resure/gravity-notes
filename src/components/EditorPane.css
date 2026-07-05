@@ -155,6 +155,13 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain; /* keep scroll momentum inside the editor (no chaining to the shell) */
+    /* Own compositing layer. WKWebView occasionally leaves a STALE PAINT of a single line behind
+       after a content swap / pane resize — a ghost copy of the caret line, offset a few px, that
+       reads as "doubled/blurred text" (2026-07-05 report, sidebar open). A promoted layer makes
+       WebKit invalidate the pane wholesale instead of per-tile. The transform's containing-block
+       side effect is safe here: nothing inside uses position:fixed (the Lightbox portals to
+       <body>), and the floating editor popups portal out too. */
+    transform: translateZ(0);
 }
 
 .editor-pane__body {

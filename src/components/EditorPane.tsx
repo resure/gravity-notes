@@ -1,5 +1,6 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
+import type {EditorState as CmEditorState} from '@codemirror/state';
 import {
     MarkdownEditorView,
     useMarkdownEditor,
@@ -17,6 +18,8 @@ import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
 import {WikiLinkTooltip} from './editor/WikiLinkTooltip';
 import {attachmentImageExtension} from './editor/attachmentImageExtension';
+import {linkifyTypedUrls} from './editor/linkifyTypedUrls';
+import {freshMarkupState, markupEditorOf} from './editor/markupHistory';
 import {openLinkExtension} from './editor/openLinkExtension';
 import {fixedSelectionContext} from './editor/selectionContextFix';
 import {
@@ -242,10 +245,31 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     const wikiViewRef = useRef<EditorView | null>(null);
     const [wikiSuggest, setWikiSuggest] = useState<WikiLinkSuggestState | null>(null);
     const [wikiTooltip, setWikiTooltip] = useState<WikiLinkTooltipState | null>(null);
+    // True while a note-switch content swap is in flight (replace + history reset), so the change
+    // handler treats the load echo (and any echo from the state reset) as a load, not a user edit —
+    // and the wiki popups neither open from the swap's transactions nor stay pinned to elements the
+    // swap's redraw detached. Declared before the editor so its extensions can close over it.
+    // Starts TRUE: the mount itself is a "swap" for popup purposes — the plugin views' initial
+    // push runs while the fresh view's layout is still settling, so a doc that starts with a
+    // [[link]] popped the tooltip at a wrong anchor in every new window. Cleared in the effect
+    // below (child effects — where the editor view mounts — run first, so the init push is gated).
+    const swappingRef = useRef(true);
+    useEffect(() => {
+        swappingRef.current = false;
+        return () => {
+            // Refs persist across a StrictMode unmount→remount; re-arm so the remounted editor
+            // view's init push is gated exactly like the first one.
+            swappingRef.current = true;
+        };
+    }, []);
 
     const editor = useMarkdownEditor(
         {
-            md: {html: false},
+            // linkify renders bare URLs as real links in WYSIWYG. Round-trip cost (accepted, like
+            // preserveEmptyRows below): a bare URL re-serializes as the `<url>` autolink on the
+            // next save — one-time, then stable. Fuzzy matching is disabled in configureMd below;
+            // WITHOUT that this option would be unshippable (see the comment there).
+            md: {html: false, linkify: true},
             initial: {markup: note.content, mode: 'wysiwyg'},
             // Keep intentionally-blank lines through the WYSIWYG round-trip. Without this the
             // serializer drops empty paragraphs (Markdown can't represent a bare blank line), so
@@ -274,9 +298,19 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                 // Resolve Attachments/ image srcs to displayable object URLs (keeps Markdown clean),
                 // and let ⌘/Ctrl-click on a link open it instead of opening the link-edit tooltip.
                 extensions: (builder) => {
+                    // Linkify (enabled via `md.linkify` above) must NOT fuzzy-match bare domains:
+                    // parsed links re-serialize on save, and `.md` is a real TLD (Moldova), so a
+                    // plain mention of `Notes.md` would be REWRITTEN on disk to
+                    // `[Notes.md](http://notes.md)`. With fuzzy off only explicit schemes
+                    // (https://…, mailto:…) match — same config as the preview (NotePreview.tsx).
+                    builder.configureMd((md) => {
+                        md.linkify.set({fuzzyLink: false, fuzzyEmail: false});
+                        return md;
+                    });
                     fixedSelectionContext(builder, {config: SELECTION_MENU_CONFIG});
                     attachmentImageExtension(builder);
                     openLinkExtension(builder);
+                    linkifyTypedUrls(builder);
                     wikiLinkExtension(builder, {
                         getNotes: () => wikiNotesRef.current,
                         getCurrentId: () => noteIdRef.current,
@@ -284,6 +318,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                         viewRef: wikiViewRef,
                         onSuggest: setWikiSuggest,
                         onTooltip: setWikiTooltip,
+                        isSwapping: () => swappingRef.current,
                     });
                 },
             },
@@ -292,13 +327,21 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     );
 
     const previewRef = useRef<HTMLDivElement>(null);
+    // The markup (CodeMirror) editor's PRISTINE state — captured at mount, when the lazy markup
+    // editor is first instantiated and its undo history is still empty. Every note switch rebuilds
+    // the markup state from this template (fresh doc, same extensions, NO history), because the one
+    // CodeMirror instance otherwise lives across notes and ⌘Z in markup mode could walk back into
+    // the previous note's content. See editor/markupHistory.ts for the full story.
+    const cmTemplateRef = useRef<CmEditorState | null>(null);
+    useEffect(() => {
+        if (!cmTemplateRef.current) {
+            cmTemplateRef.current = markupEditorOf(editor)?.cm.state ?? null;
+        }
+    }, [editor]);
     // The editor emits a no-op 'change' as the initial markup loads; suppress only that FIRST emit,
     // not every value that equals the original — otherwise undoing back to the loaded content within
     // the autosave window leaves a stale pending edit that writes the pre-undo value to disk.
     const settledRef = useRef(false);
-    // True while a note-switch content swap is in flight (replace + history reset), so the change
-    // handler treats the load echo (and any echo from the state reset) as a load, not a user edit.
-    const swappingRef = useRef(false);
 
     useImperativeHandle(
         ref,
@@ -408,6 +451,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         try {
             if (contentChanged) editor.replace(note.content);
             resetHistory(); // fresh undo stack; also resets the selection to doc start
+            resetMarkupHistory(); // the markup (CodeMirror) twin — its history survives replace()
             // Restore the saved caret only on a REAL switch — on a same-note disk reload the saved
             // caret came from the pre-reload doc, so replaying it lands at a meaningless offset in the
             // new content; leave the doc-start `resetHistory()` produced instead.
@@ -458,6 +502,20 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         const view = wikiViewRef.current;
         if (!view) return;
         view.updateState(EditorState.create({doc: view.state.doc, plugins: view.state.plugins}));
+    }
+
+    /**
+     * The markup-mode twin of {@link resetHistory}: give the (single, reused) CodeMirror instance a
+     * fresh state holding this note's content with an EMPTY undo history, built on the pristine
+     * template captured at mount. Runs on every swap regardless of the current mode — it also keeps
+     * the hidden markup buffer in sync, so entering markup mode later doesn't diff against a stale
+     * doc. No-op when the markup editor isn't reachable (template capture failed).
+     */
+    function resetMarkupHistory() {
+        const markup = markupEditorOf(editor);
+        const template = cmTemplateRef.current;
+        if (!markup || !template) return;
+        markup.cm.setState(freshMarkupState(template, note.content));
     }
 
     /** Restore a note's saved caret, clamped to the freshly-loaded doc (no-op for a first open). */

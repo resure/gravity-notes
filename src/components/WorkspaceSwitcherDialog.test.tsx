@@ -20,6 +20,7 @@ function setup(over: Partial<WorkspaceSwitcherDialogProps> = {}) {
     const onOpen = vi.fn();
     const onOpenInNewWindow = vi.fn();
     const onOpenFolder = vi.fn();
+    const onOpenFolderInNewWindow = vi.fn();
     const onRemove = vi.fn();
     const onClose = vi.fn();
     const props: WorkspaceSwitcherDialogProps = {
@@ -31,12 +32,13 @@ function setup(over: Partial<WorkspaceSwitcherDialogProps> = {}) {
         onOpen,
         onOpenInNewWindow,
         onOpenFolder,
+        onOpenFolderInNewWindow,
         onRemove,
         onClose,
         ...over,
     };
     renderWithProviders(<WorkspaceSwitcherDialog {...props} />);
-    return {onOpen, onOpenInNewWindow, onOpenFolder, onRemove, onClose};
+    return {onOpen, onOpenInNewWindow, onOpenFolder, onOpenFolderInNewWindow, onRemove, onClose};
 }
 
 const filter = () => screen.getByRole('combobox', {name: 'Filter workspaces'});
@@ -184,6 +186,36 @@ describe('WorkspaceSwitcherDialog', () => {
         await user.click(screen.getByRole('option', {name: /Open Folder/}));
         expect(onOpenFolder).toHaveBeenCalledTimes(1);
         expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('⌘Enter on the Open Folder row picks a folder for a NEW window (desktop)', () => {
+        const {onOpenFolder, onOpenFolderInNewWindow} = setup();
+        // Walk down to the action row: [Work] → In this app → Open Folder….
+        press('ArrowDown');
+        press('ArrowDown');
+        press('Enter', {metaKey: true});
+        expect(onOpenFolderInNewWindow).toHaveBeenCalledTimes(1);
+        expect(onOpenFolder).not.toHaveBeenCalled();
+    });
+
+    it('⌘-click on the Open Folder row also targets a new window (desktop)', () => {
+        const {onOpenFolder, onOpenFolderInNewWindow} = setup();
+        fireEvent.click(screen.getByRole('option', {name: /Open Folder/}), {metaKey: true});
+        expect(onOpenFolderInNewWindow).toHaveBeenCalledTimes(1);
+        expect(onOpenFolder).not.toHaveBeenCalled();
+    });
+
+    it('⌘Enter on Open Folder falls back to an in-place pick on the web', () => {
+        const {onOpenFolder, onOpenFolderInNewWindow} = setup({
+            isDesktop: false,
+            workspaces: WORKSPACES.filter((ws) => ws.backend !== 'indexeddb'),
+        });
+        // Web, in-app row synthesized: [Work] → In this browser → Open Folder….
+        press('ArrowDown');
+        press('ArrowDown');
+        press('Enter', {metaKey: true});
+        expect(onOpenFolder).toHaveBeenCalledTimes(1);
+        expect(onOpenFolderInNewWindow).not.toHaveBeenCalled();
     });
 
     it('hides the Open Folder action when folder storage is unavailable', () => {

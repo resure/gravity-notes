@@ -23,6 +23,18 @@
     min-width: 0;
 }
 
+/* The folder-scope chip row (rail closed + a folder selected — see the render-site comment). */
+.note-list__scope {
+    display: flex;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--g-color-line-generic);
+    flex-shrink: 0;
+}
+
+.note-list__scope-chip {
+    max-width: 100%;
+}
+
 .note-list__items {
     flex: 1;
     overflow-y: auto;

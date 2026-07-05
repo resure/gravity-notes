@@ -24,6 +24,7 @@ function makeStorage(over: Partial<NotesStorage> = {}): NotesStorage {
         // Default to consistency with the other flags unless a test overrides it explicitly.
         supportsFolders: over.supportsFolders ?? (isTauri || supportsFileSystem),
         pickFolder: vi.fn(async () => {}),
+        pickFolderForNewWindow: vi.fn(async () => {}),
         useBrowserStorage: vi.fn(async () => {}),
         grantPermission: vi.fn(async () => {}),
         reset: vi.fn(async () => {}),

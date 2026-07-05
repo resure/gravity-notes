@@ -34,7 +34,11 @@ Markdown files, and they are yours.
   the storage menu (the `⋯` orb)
 - **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
   passage shown as a snippet in the list (multi-word queries match all terms)
-- Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode
+- Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode (a floating
+  "Preview" chip shows while it's on — click it to exit)
+- **Live URLs**: bare `https://…` links render as real links in the editor and the preview (typing one
+  linkifies on the trailing space), and open in your browser via ⌘-click (or a plain click in
+  preview). Explicit schemes only — a stray `Notes.md` never turns into a link or gets rewritten
 - **`[[wiki links]]`** between notes: type `[[` for a note picker, or write them by hand. They render
   like links (no brackets) and ⌘-click follows them — creating the note if it doesn't exist yet;
   unresolved links are dimmed. Stored verbatim as `[[Title]]`, so they're Obsidian-compatible
@@ -48,7 +52,11 @@ Markdown files, and they are yours.
   accent color, and the text-column width — app-wide, per workspace, or per note (the `⋯` button or
   `⌘⇧I`). Per-note choices live in the folder's metadata, so they survive renames and moves
 - **Multiple workspaces**: open several note folders and switch with `⌃R` (or the orb menu's Open
-  Recent) — on the desktop, each workspace can have its own window
+  Recent) — on the desktop, each workspace can have its own window (`⌘-click` a recent, `⌘↵` in the
+  switcher — works on "Open Folder…" too)
+- **Per-note windows** (desktop): `⌘↵` or `⌘-click` a note in the list (or "Open in New Window" from
+  its menu) to open just that note in a small window with the panels tucked away — reopening the same
+  note focuses its existing window, and `⌘0` brings back the workspace's main window
 - **Automatic updates** (desktop app): the macOS app checks for a newer release on launch and installs
   it in place once you confirm — plus a manual **Check for Updates…** in the storage menu. Updates are
   delivered through GitHub Releases and verified by signature
@@ -65,6 +73,8 @@ Markdown files, and they are yours.
 | `⌘J` / `⌘K`               | Preview next / previous note (works while editing)                                                                                      |
 | `⌘[` / `⌘]`               | Go back / forward through visited notes (browser-style history)                                                                         |
 | `Enter`                   | Edit the selected note                                                                                                                  |
+| `⌘Enter` / `⌘-click`      | Open the selected note in its own window (desktop)                                                                                      |
+| `⌘0`                      | Show this workspace's main window (desktop; also in Window ▸ Main Window)                                                               |
 | `Esc`                     | Editor → list → search (then close / clear)                                                                                             |
 | `⌘L`                      | Jump to the search box (`⌘L` in the desktop app; browsers reserve it)                                                                   |
 | `⌘⇧Enter` / `⌘N`          | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
@@ -88,7 +98,9 @@ menu the row's `⋯` button opens, at the cursor.
 
 A **folder rail** (toggle with `⌘⇧\`) lists your folders left of the notes list; it's off by default,
 so the app stays a two-pane view until you want it. Selecting a folder scopes the notes list to it
-(**All Notes** shows everything), while search stays global. **New note** (`⌘N`) lands in the selected
+(**All Notes** shows everything), while search stays global. With the rail closed, a small **folder
+chip** above the list names the active scope (click it to open the rail, ✕ to go back to All Notes).
+**New note** (`⌘N`) lands in the selected
 folder. Drag a note onto a folder to file it, or drag a folder onto another to nest it (onto **All
 Notes** to move it back to the root). Double-click or `F2` renames a folder; with a folder focused, `n`
 makes a subfolder and `⌫` removes an empty one.
@@ -177,21 +189,14 @@ Key modules:
 
 ### Backlog
 
-Bugs (testing notes, 2026-07-05):
-
-- iCloud Drive: opening a folder whose files aren't downloaded yet hangs the app (probe/walk
-  blocks on download-on-demand materialization; needs async download handling or a clear error)
-- Plain URLs in note text aren't highlighted as links — not even in preview mode
-- Opening a note that begins with a `[[wiki link]]` sometimes pops the link tooltip immediately,
-  anchored top-left and stuck (likely a caret-lands-inside-link position race; sometimes fine)
-- Markup (CodeMirror) mode: the undo/redo stack appears shared across notes — undo after
-  switching can revert the previous note's edits (WYSIWYG resets history on swap; CM may not)
-
-UI wishes:
-
-- Indicate that read-only preview mode is active (some visible state, not just the frozen editor)
-- Indicate the selected folder scope when the folder rail is closed (the list silently stays
-  filtered)
+- Bare-URL highlighting while EDITING (preview linkifies since 2026-07-05). Blocked on a safe
+  config: the editor serializes linkified URLs to `<url>` on save, and markdown-it's FUZZY
+  linkify would rewrite bare-domain text — `.md` is a real TLD, so a `Notes.md` mention would
+  become `[Notes.md](http://notes.md)` on disk. Needs linkify with `fuzzyLink: false` reachable
+  through the editor's options (or an upstream RawLink parse), plus a round-trip test.
+- iCloud dataless files: previews/search stay empty until a file is downloaded (the walks now
+  skip evicted content instead of hanging). Consider `startDownloadingUbiquitousItemAtURL` to
+  kick off downloads in the background + an "downloading…" preview state.
 
 - Search index update on external file updates (+ reload workspace menu item?)
 - Density (line spacing) setting to complement the per-note font/width overrides?
