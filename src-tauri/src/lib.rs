@@ -848,18 +848,41 @@ async fn open_workspace_window(
     Ok(false)
 }
 
-/// macOS window chrome shared by the main window (at setup) and each workspace window: center the
-/// traffic lights in the taller custom title bar (titleBarStyle "Overlay"), and paint the webview
-/// backdrop in the resolved theme so a fresh window doesn't flash white before the page background
-/// loads (the index.html anti-flash style covers the content paint; this covers the empty frame
-/// before it).
+/// macOS window chrome shared by the main window (at setup) and each workspace window: make the
+/// title bar tall with SYSTEM-positioned traffic lights, and paint the webview backdrop in the
+/// resolved theme so a fresh window doesn't flash white before the page background loads (the
+/// index.html anti-flash style covers the content paint; this covers the empty frame before it).
 fn apply_macos_chrome(window: &tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
     {
-        use tauri_plugin_decorum::WebviewWindowExt;
-        // Nudge the traffic lights down + right to center them in our bar; decorum re-applies the
-        // inset on resize/fullscreen. (x = right, y = down.)
-        let _ = window.set_traffic_lights_inset(16.0, 20.0);
+        // Tall title bar via the "hidden toolbar" technique (what Electron's `hiddenInset` does):
+        // an empty unified-compact NSToolbar makes AppKit itself size the title bar to ~40pt and
+        // vertically center the traffic lights in it — their position is OWNED by AppKit layout,
+        // so it survives every relayout, appearance flip, and live resize. The previous approach
+        // (tauri-plugin-decorum's set_traffic_lights_inset) hand-moved the button frames and
+        // resized NSTitlebarContainerView; macOS 26 re-runs title-bar layout on every pass and
+        // reverts foreign frames, so the lights snapped back to the stock corner (and the
+        // windowDidResize re-apply lost the same race — resizing didn't fix it). Probed on 26.5:
+        // unifiedCompact = 40pt bar, close button at (12, 13) — a hair from the old hand-tuned
+        // (16, 14) — and stable in both appearances. AppKit APIs are main-thread-only, and this
+        // runs off-main for ws-N windows (async command), so hop explicitly.
+        let w = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::{
+                NSTitlebarSeparatorStyle, NSToolbar, NSWindow, NSWindowToolbarStyle,
+            };
+            let (Some(mtm), Ok(ns_ptr)) = (MainThreadMarker::new(), w.ns_window()) else {
+                return;
+            };
+            let ns_window = unsafe { &*(ns_ptr as *mut NSWindow) };
+            let toolbar = NSToolbar::new(mtm);
+            toolbar.setAllowsUserCustomization(false);
+            ns_window.setToolbar(Some(&toolbar));
+            ns_window.setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+            // The bar is transparent (titleBarStyle Overlay); our own CSS hairline separates it.
+            ns_window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
+        });
         // Colors mirror Gravity's base background (dark tuned in index.css). Default to dark if
         // the theme can't be read — "better dark than white" (the requested fallback).
         let dark = window.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true);
@@ -978,7 +1001,6 @@ pub fn run() {
             }
         })
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_decorum::init())
         // In-app auto-update (macOS) via GitHub Releases: the updater downloads + verifies the
         // signed `.app.tar.gz` against the pubkey in tauri.conf.json; `process` provides relaunch().
         .plugin(tauri_plugin_updater::Builder::new().build())
