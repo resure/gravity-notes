@@ -198,22 +198,17 @@ Key modules:
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
-- Easter egg in top bar (to the right of the search bar) ?
 - Resizable left panel
-- Page title backgrounds
+- Icon picker polish: `aria-activedescendant` can point at a virtualized-out option; the title picker can still set an icon in preview mode; no search debounce
 
 - Preserve cmd+z between notes
-- Auto-empty the Trash and clean unused attachments (after 30 days?)
-
-- Drop standalone web version support?
-- Versioning / snapshots (with manual snapshopts?)
-
-- Metadata storage approach review
 - Cmd+z for undoing deleting of notes and moves between folders?
-- Backend sync — add an `ApiStore` implementing `NoteStore`
+
+- Easter egg in top bar (to the right of the search bar) ?
+- Notion-like page title backgrounds
+
+- Auto-empty the Trash and clean unused attachments (after 30 days?)
+- Metadata storage approach review
 - Mobile view
 - Mobile app
-- Mac App Store?
 
-- Icon picker polish: `aria-activedescendant` can point at a virtualized-out option; the title
-  picker can still set an icon in preview mode; no search debounce
