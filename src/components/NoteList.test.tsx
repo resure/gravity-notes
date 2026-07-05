@@ -486,6 +486,78 @@ describe('NoteList — reveal in Finder', () => {
     });
 });
 
+describe('NoteList — open in new window (desktop)', () => {
+    it('opens a note in a new window via the row menu', async () => {
+        const user = userEvent.setup();
+        const onOpenInNewWindow = vi.fn();
+        setup({onOpenInNewWindow});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Open in New Window/}));
+        expect(onOpenInNewWindow).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('omits the item on targets without windows (no onOpenInNewWindow)', async () => {
+        const user = userEvent.setup();
+        setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
+        expect(await screen.findByRole('menuitem', {name: /Rename/})).toBeInTheDocument();
+        expect(
+            screen.queryByRole('menuitem', {name: /Open in New Window/}),
+        ).not.toBeInTheDocument();
+    });
+
+    it('⌘↵ on a focused row opens that note in a new window (no commit)', () => {
+        const onOpenInNewWindow = vi.fn();
+        const {props} = setup({onOpenInNewWindow});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        beta.focus();
+        fireEvent.keyDown(beta, {key: 'Enter', metaKey: true});
+        expect(onOpenInNewWindow).toHaveBeenCalledWith('Beta.md');
+        expect(props.onCommit).not.toHaveBeenCalled();
+    });
+
+    it('⌘⇧↵ (the global new-note chord) is left to bubble, not treated as open-in-window', () => {
+        const onOpenInNewWindow = vi.fn();
+        setup({onOpenInNewWindow});
+        const beta = screen.getByRole('option', {name: /Beta/});
+        beta.focus();
+        fireEvent.keyDown(beta, {key: 'Enter', metaKey: true, shiftKey: true});
+        expect(onOpenInNewWindow).not.toHaveBeenCalled();
+    });
+
+    it('⌘↵ stays inert without the callback (web build)', () => {
+        const {props} = setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        beta.focus();
+        fireEvent.keyDown(beta, {key: 'Enter', metaKey: true});
+        expect(props.onCommit).not.toHaveBeenCalled();
+    });
+
+    it('⌘-click on a row opens it in a new window, leaving this window’s selection alone', () => {
+        const onOpenInNewWindow = vi.fn();
+        const {props} = setup({onOpenInNewWindow});
+        fireEvent.click(screen.getByRole('option', {name: /Beta/}), {metaKey: true});
+        expect(onOpenInNewWindow).toHaveBeenCalledWith('Beta.md');
+        expect(props.onBrowse).not.toHaveBeenCalled();
+    });
+
+    it('a plain click still browses even when the callback is present', () => {
+        const onOpenInNewWindow = vi.fn();
+        const {props} = setup({onOpenInNewWindow});
+        fireEvent.click(screen.getByRole('option', {name: /Beta/}));
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+        expect(onOpenInNewWindow).not.toHaveBeenCalled();
+    });
+
+    it('⌘-click without the callback (web build) falls back to a normal browse', () => {
+        const {props} = setup();
+        fireEvent.click(screen.getByRole('option', {name: /Beta/}), {metaKey: true});
+        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+    });
+});
+
 describe('NoteList — right-click context menu', () => {
     it('opens the row action menu on right-click and runs an action', async () => {
         const user = userEvent.setup();
@@ -495,10 +567,14 @@ describe('NoteList — right-click context menu', () => {
         expect(props.onRequestMove).toHaveBeenCalledWith('Alpha.md');
     });
 
-    it('previews the right-clicked note (so the menu acts on what you clicked)', () => {
+    it('right-click leaves the selection/preview untouched (the menu carries its own target)', async () => {
+        const user = userEvent.setup();
         const {props} = setup({selectedId: 'Alpha.md'});
         fireEvent.contextMenu(screen.getByRole('option', {name: /Beta/}));
-        expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
+        expect(props.onBrowse).not.toHaveBeenCalled();
+        // …and the menu still acts on the note that was right-clicked, not the selected one.
+        await user.click(await screen.findByRole('menuitem', {name: /Duplicate/}));
+        expect(props.onDuplicate).toHaveBeenCalledWith('Beta.md');
     });
 });
 

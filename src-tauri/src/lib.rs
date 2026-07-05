@@ -696,17 +696,22 @@ fn open_external(url: String) -> Result<(), String> {
 
 /// Per-window workspace tracking.
 /// - `labels`: a live window's label → the workspace id it shows. Fed by the frontend
-///   (`set_window_workspace` on every workspace open) and by `open_workspace_window` (which assigns
-///   the workspace *before* the window's page loads); drained by the `Destroyed` window event.
-/// - `pending`: workspace ids whose window is currently being built. During the build gap the
-///   window isn't yet resolvable via `get_webview_window`, so without this marker a second
-///   `open_workspace_window` for the same workspace would treat the label as dead, prune it, and
-///   spawn a duplicate window.
+///   (`set_window_workspace` on every workspace open) and by `open_workspace_window` /
+///   `open_note_window` (which assign the workspace *before* the window's page loads); drained by
+///   the `Destroyed` window event.
+/// - `notes`: a note window's label → the note id (store rel-path) it shows. Assigned by
+///   `open_note_window` before the page loads, kept current by the frontend's `set_window_note`
+///   (in-window navigation / rename / close), drained with `labels`. Powers per-note focus-if-open.
+/// - `pending`: workspace ids (or `ws\u{1f}note` composite keys, see `note_pending_key`) whose
+///   window is currently being built. During the build gap the window isn't yet resolvable via
+///   `get_webview_window`, so without this marker a second open for the same target would treat
+///   the label as dead, prune it, and spawn a duplicate window.
 ///
-/// Powers focus-if-open, so the same workspace never casually ends up in two windows.
+/// Powers focus-if-open, so the same workspace (or note) never casually ends up in two windows.
 #[derive(Default)]
 struct WindowState {
     labels: HashMap<String, String>,
+    notes: HashMap<String, String>,
     pending: HashSet<String>,
 }
 
@@ -717,15 +722,35 @@ struct WindowWorkspaces(Mutex<WindowState>);
 /// nothing restores workspace windows across launches.
 static NEXT_WS_WINDOW: AtomicU32 = AtomicU32::new(1);
 
+/// Monotonic suffix for `note-N` window labels (same one-run lifetime story as `NEXT_WS_WINDOW`).
+static NEXT_NOTE_WINDOW: AtomicU32 = AtomicU32::new(1);
+
+/// Label prefix of single-note windows. Mirrors `NOTE_WINDOW_PREFIX` in `src/isTauri.ts` — keep
+/// them in sync. A note window carries a workspace assignment in `labels` like any window (its
+/// page bootstraps through the same `window_workspace` ask), but workspace-level focus-if-open
+/// skips it: asking for a workspace should land on a full workspace view, never on a lone note.
+const NOTE_WINDOW_PREFIX: &str = "note-";
+
+/// `pending` key for a note-window build. The unit separator can't occur in a workspace id or a
+/// note rel-path, so composite keys share the set with plain workspace ids without colliding.
+fn note_pending_key(ws_id: &str, note_id: &str) -> String {
+    format!("{ws_id}\u{1f}{note_id}")
+}
+
 /// The label of a window showing `ws_id`, excluding `exclude` (a window never "finds itself"
-/// when asking where else its target workspace is open).
+/// when asking where else its target workspace is open). Note windows never match — see
+/// `NOTE_WINDOW_PREFIX`.
 fn window_label_for_workspace(
     map: &HashMap<String, String>,
     ws_id: &str,
     exclude: Option<&str>,
 ) -> Option<String> {
     map.iter()
-        .find(|(label, ws)| ws.as_str() == ws_id && Some(label.as_str()) != exclude)
+        .find(|(label, ws)| {
+            !label.starts_with(NOTE_WINDOW_PREFIX)
+                && ws.as_str() == ws_id
+                && Some(label.as_str()) != exclude
+        })
         .map(|(label, _)| label.clone())
 }
 
@@ -848,6 +873,128 @@ async fn open_workspace_window(
     Ok(false)
 }
 
+/// This window's assigned note id, if it's a note window (assigned before its page loads, so the
+/// bootstrap ask can't race it — mirrors `window_workspace`).
+#[tauri::command]
+fn window_note(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+) -> Option<String> {
+    state.0.lock().unwrap().notes.get(window.label()).cloned()
+}
+
+/// Record which note this (note) window is showing — the frontend calls it whenever the open note
+/// changes (navigation, rename, close), keeping per-note focus-if-open accurate. `None` drops the
+/// assignment (the window closed its note).
+#[tauri::command]
+fn set_window_note(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+    note_id: Option<String>,
+) {
+    let mut st = state.0.lock().unwrap();
+    match note_id {
+        Some(id) => {
+            st.notes.insert(window.label().to_string(), id);
+        }
+        None => {
+            st.notes.remove(window.label());
+        }
+    }
+}
+
+/// Open a single note in its own window: focus the note window already showing this exact
+/// (workspace, note), or create a fresh `note-N` window assigned to both before its page loads.
+/// The frontend recognizes the `note-` label and opens with both side panels closed. Returns
+/// whether an existing window was focused rather than a new one created.
+///
+/// Async for the same reason as `open_workspace_window`: `WebviewWindowBuilder::build` may
+/// deadlock on the main thread, and async commands run off it.
+#[tauri::command]
+async fn open_note_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, WindowWorkspaces>,
+    ws_id: String,
+    note_id: String,
+    title: String,
+) -> Result<bool, String> {
+    let pending_key = note_pending_key(&ws_id, &note_id);
+    let label = {
+        let mut st = state.0.lock().unwrap();
+        // This exact note's window is already being built — don't spawn a second (mirrors the
+        // workspace path's pending guard).
+        if st.pending.contains(&pending_key) {
+            return Ok(true);
+        }
+        // Focus the live window already showing this (workspace, note); prune dead labels (a crash
+        // that skipped the Destroyed cleanup) along the way, like the workspace path.
+        loop {
+            let found = {
+                let WindowState { labels, notes, .. } = &mut *st;
+                notes
+                    .iter()
+                    .find(|(label, note)| {
+                        note.as_str() == note_id
+                            && labels.get(label.as_str()).map(String::as_str)
+                                == Some(ws_id.as_str())
+                    })
+                    .map(|(label, _)| label.clone())
+            };
+            let Some(found) = found else { break };
+            if let Some(target) = app.get_webview_window(&found) {
+                drop(st);
+                let _ = target.show();
+                let _ = target.set_focus();
+                return Ok(true);
+            }
+            st.labels.remove(&found);
+            st.notes.remove(&found);
+        }
+        let label = format!(
+            "{NOTE_WINDOW_PREFIX}{}",
+            NEXT_NOTE_WINDOW.fetch_add(1, Ordering::SeqCst)
+        );
+        // Assign workspace AND note before the window exists (the page's first asks can't race),
+        // and mark the build pending — same discipline as `open_workspace_window`.
+        st.labels.insert(label.clone(), ws_id.clone());
+        st.notes.insert(label.clone(), note_id.clone());
+        st.pending.insert(pending_key.clone());
+        label
+    };
+    // Clone the main window's config like workspace windows do, sized down: this window shows a
+    // single note (both side panels closed), not a whole three-pane workspace.
+    let mut config = app.config().app.windows[0].clone();
+    config.label = label.clone();
+    config.title = title;
+    config.width = 760.0;
+    config.height = 640.0;
+    let built = tauri::WebviewWindowBuilder::from_config(&app, &config)
+        .and_then(|builder| builder.build());
+    {
+        let mut st = state.0.lock().unwrap();
+        st.pending.remove(&pending_key);
+        if built.is_err() {
+            st.labels.remove(&label);
+            st.notes.remove(&label);
+        }
+    }
+    let window = built.map_err(stringify)?;
+    apply_macos_chrome(&window);
+    Ok(false)
+}
+
+/// Re-show + focus the main window: the Dock-icon Reopen and the no-window-focused fallback of
+/// Window ▸ Main Window (⌘0) land here. On macOS ⌘W *hides* main rather than closing it (see the
+/// close-request handler), so this is a show+focus; unminimize first so a minimized main actually
+/// comes forward instead of just taking keyboard focus in the Dock.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
 /// macOS window chrome shared by the main window (at setup) and each workspace window: make the
 /// title bar tall with SYSTEM-positioned traffic lights, and paint the webview backdrop in the
 /// resolved theme so a fresh window doesn't flash white before the page background loads (the
@@ -949,6 +1096,18 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
             true,
             &[&PredefinedMenuItem::fullscreen(app, None)?],
         )?;
+        // "Main Window" (⌘0) surfaces the full workspace view for the FOCUSED window's workspace —
+        // the way back from a single-note window, mirroring Mail's Window ▸ Message Viewer. The
+        // event handler emits to the focused window, whose frontend focuses (or creates) the
+        // workspace window for ITS workspace. A native accelerator (not a frontend keydown) so it
+        // works from every window regardless of what has focus, like the Edit-menu clipboard chords.
+        let main_window = MenuItem::with_id(
+            app,
+            "main-window",
+            "Main Window",
+            true,
+            Some("CmdOrCtrl+0"),
+        )?;
         let window_menu = Submenu::with_items(
             app,
             "Window",
@@ -956,6 +1115,8 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
             &[
                 &PredefinedMenuItem::minimize(app, None)?,
                 &PredefinedMenuItem::maximize(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &main_window,
                 &PredefinedMenuItem::separator(app)?,
                 &PredefinedMenuItem::close_window(app, None)?,
             ],
@@ -977,7 +1138,24 @@ pub fn run() {
         // default menu (Edit's copy/paste/undo, Window, View) so nothing is lost.
         .menu(build_menu)
         .on_menu_event(|app, event| {
-            if event.id() == "about" {
+            if event.id() == "main-window" {
+                // ⌘0 is WORKSPACE-scoped: tell the focused window, and its frontend focuses (or
+                // creates) the full workspace window for its own workspace via
+                // `open_workspace_window` — so a note window returns to ITS workspace's list
+                // view, never dragging forward a main window parked on some other workspace.
+                // Target selection mirrors the About item below; with no window to ask at all,
+                // fall back to plainly re-showing the hidden main.
+                let windows = app.webview_windows();
+                let target = windows
+                    .values()
+                    .find(|window| window.is_focused().unwrap_or(false))
+                    .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
+                if let Some(window) = target {
+                    let _ = app.emit_to(window.label(), "menu:main-window", ());
+                } else {
+                    show_main_window(app);
+                }
+            } else if event.id() == "about" {
                 // The frontend (Workspace) listens for this and opens <AboutDialog>. Target one
                 // window — a broadcast would pop the dialog in every open workspace window at once.
                 // Prefer the focused window; if none is focused (the app is backgrounded, or main
@@ -1030,10 +1208,12 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                 }
-                // A closed window's workspace assignment must not keep answering focus-if-open.
+                // A closed window's workspace/note assignments must not keep answering focus-if-open.
                 tauri::WindowEvent::Destroyed => {
                     let state = window.state::<WindowWorkspaces>();
-                    state.0.lock().unwrap().labels.remove(window.label());
+                    let mut st = state.0.lock().unwrap();
+                    st.labels.remove(window.label());
+                    st.notes.remove(window.label());
                 }
                 _ => {}
             }
@@ -1063,6 +1243,9 @@ pub fn run() {
             set_window_workspace,
             focus_workspace_window,
             open_workspace_window,
+            window_note,
+            set_window_note,
+            open_note_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1075,10 +1258,7 @@ pub fn run() {
             } = event
             {
                 if !has_visible_windows {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    show_main_window(app_handle);
                 }
             }
             // The handler is macOS-only; consume the args elsewhere so the build stays warning-free.
@@ -1514,5 +1694,15 @@ mod tests {
         // A destroyed window's entry stops answering once removed (the Destroyed handler's job).
         map.remove("ws-1");
         assert_eq!(window_label_for_workspace(&map, "tauri:/b", None), None);
+
+        // A single-note window registers its workspace too, but must never answer a
+        // workspace-level focus-if-open — opening a workspace should never land on a lone note.
+        map.insert("note-1".to_string(), "tauri:/b".to_string());
+        assert_eq!(window_label_for_workspace(&map, "tauri:/b", None), None);
+        map.insert("ws-2".to_string(), "tauri:/b".to_string());
+        assert_eq!(
+            window_label_for_workspace(&map, "tauri:/b", None),
+            Some("ws-2".to_string())
+        );
     }
 }

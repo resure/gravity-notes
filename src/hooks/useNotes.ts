@@ -8,7 +8,6 @@ import {
     withCreatedStamp,
     withIcon,
     withNoteAppearance,
-    withTrashedAppearance,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -16,6 +15,7 @@ import {
     withSortMode,
     withTrashEmptied,
     withTrashed,
+    withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
 import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
@@ -79,6 +79,12 @@ const SAVE_TIMEOUT_MS = 15_000;
 /** Retry a transient save failure a few times (capped backoff) before leaving it to the user. */
 const MAX_SAVE_RETRIES = 5;
 const RETRY_MAX_DELAY = 30_000;
+/**
+ * Minimum gap between focus-driven list refreshes. Regaining focus re-lists the store (the same
+ * folder can be open in several desktop windows — main + single-note windows — and in other apps),
+ * but focus can flap when ⌘-tabbing through windows, and a full list() walks the whole store.
+ */
+const FOCUS_REFRESH_MIN_GAP_MS = 2_000;
 
 /** A detected external change to the open note. */
 export interface NoteConflict {
@@ -201,8 +207,16 @@ export interface UseNotes {
  * autosave for a given `NoteStore`. Editing is decoupled from React state: keystrokes
  * flow into a ref + timer (not `setState`), so the editor is never re-created mid-typing.
  * Switching notes (`open`) flushes the outgoing note's pending edit first.
+ *
+ * `initialNoteId` (a single-note desktop window's assigned note) overrides the restore: that note
+ * is opened instead of the sidecar's last-`active` pointer, and the sidecar is NOT healed/written
+ * during the load — the last-active pointer belongs to the main window's next-launch restore.
  */
-export function useNotes(store: NoteStore, onError: (message: string) => void): UseNotes {
+export function useNotes(
+    store: NoteStore,
+    onError: (message: string) => void,
+    initialNoteId?: string | null,
+): UseNotes {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
     const [folders, setFolders] = useState<string[]>([]);
     const [trashedNotes, setTrashedNotes] = useState<TrashedNote[]>([]);
@@ -1071,10 +1085,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 const meta = reconcile(raw, [...list.map((n) => n.id), ...folderList], {
                     recursive: store.listsRecursively,
                 });
+                // A note window restores its ASSIGNED note, not the (shared) last-active pointer.
+                const restoreId = initialNoteId ?? meta.active;
                 let loaded: Note | null = null;
-                if (meta.active) {
+                if (restoreId) {
                     try {
-                        loaded = await store.get(meta.active);
+                        loaded = await store.get(restoreId);
                     } catch {
                         loaded = null;
                     }
@@ -1085,7 +1101,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                 const {trashed, display} = buildTrashView(meta.trashed, trashList);
                 const reconciled: NotesMetadata = {
                     ...meta,
-                    active: loaded ? meta.active : null,
+                    active: loaded ? restoreId : null,
                     trashed,
                 };
                 setNotes(list);
@@ -1097,8 +1113,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     setNote(loaded);
                     bumpSession();
                 }
-                if (reconciled.active !== meta.active) {
-                    void store.writeMetadata(reconciled); // heal the dotfile if active vanished
+                // Heal the dotfile if active vanished — but never from an initialNoteId override:
+                // in-memory `active` then deliberately differs from disk, and writing it would
+                // clobber the pointer the MAIN window restores from (whether the override loaded
+                // or turned out deleted).
+                if (!initialNoteId && reconciled.active !== meta.active) {
+                    void store.writeMetadata(reconciled);
                 }
                 // Signal that the sidecar is loaded — gates work that must not race the load above
                 // (e.g. Workspace's legacy-appearance migration, which read-modify-writes it).
@@ -1113,7 +1133,7 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         return () => {
             cancelled = true;
         };
-    }, [store, applyMetadata, bumpSession, onError]);
+    }, [store, initialNoteId, applyMetadata, bumpSession, onError]);
 
     // Clear pending timers (autosave + the throttled metadata write) when the hook unmounts.
     useEffect(() => {
@@ -1216,6 +1236,27 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
             document.removeEventListener('visibilitychange', onFocus);
         };
     }, [store]);
+
+    // Re-list on window focus: the check above covers only the OPEN note, but with single-note
+    // windows the same folder is routinely shown in several windows at once, so a returning window
+    // must also pick up notes created/edited/renamed elsewhere (another window, another app).
+    // Gated on `ready` so it can't interleave with the initial load, throttled against focus flap,
+    // and skipped mid-move like the conflict check.
+    useEffect(() => {
+        if (!ready) return undefined;
+        let last = 0;
+        const onFocus = () => {
+            if (document.visibilityState !== 'visible' || moveInProgressRef.current) return;
+            const now = Date.now();
+            if (now - last < FOCUS_REFRESH_MIN_GAP_MS) return;
+            last = now;
+            refresh().catch(() => {
+                // A transient read failure keeps the current list; the next focus retries.
+            });
+        };
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [ready, refresh]);
 
     return {
         notes,

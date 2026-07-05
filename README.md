@@ -177,6 +177,22 @@ Key modules:
 
 ### Backlog
 
+Bugs (testing notes, 2026-07-05):
+
+- iCloud Drive: opening a folder whose files aren't downloaded yet hangs the app (probe/walk
+  blocks on download-on-demand materialization; needs async download handling or a clear error)
+- Plain URLs in note text aren't highlighted as links — not even in preview mode
+- Opening a note that begins with a `[[wiki link]]` sometimes pops the link tooltip immediately,
+  anchored top-left and stuck (likely a caret-lands-inside-link position race; sometimes fine)
+- Markup (CodeMirror) mode: the undo/redo stack appears shared across notes — undo after
+  switching can revert the previous note's edits (WYSIWYG resets history on swap; CM may not)
+
+UI wishes:
+
+- Indicate that read-only preview mode is active (some visible state, not just the frozen editor)
+- Indicate the selected folder scope when the folder rail is closed (the list silently stays
+  filtered)
+
 - Search index update on external file updates (+ reload workspace menu item?)
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)

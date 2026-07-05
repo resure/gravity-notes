@@ -73,10 +73,20 @@ export function App() {
                                 workspaceId={storage.activeWorkspaceId ?? 'workspace'}
                                 storageLabel={storage.storageLabel}
                                 workspaces={storage.workspaces}
+                                // A single-note window's assigned note — only while it still
+                                // shows the workspace it was created for (an in-place workspace
+                                // switch remounts Workspace without a note assignment).
+                                initialNoteId={
+                                    storage.windowNote &&
+                                    storage.windowNote.workspaceId === storage.activeWorkspaceId
+                                        ? storage.windowNote.noteId
+                                        : null
+                                }
                                 themePref={themePref}
                                 onChangeThemePref={setThemePref}
                                 onOpenWorkspace={storage.openWorkspace}
                                 onOpenWorkspaceInNewWindow={storage.openInNewWindow}
+                                onOpenNoteInNewWindow={storage.openNoteInNewWindow}
                                 onRemoveWorkspace={storage.removeWorkspace}
                                 onRefreshWorkspaces={storage.refreshWorkspaces}
                                 onOpenFolder={() => void storage.pickFolder()}
