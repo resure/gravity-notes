@@ -5,7 +5,7 @@ import {
     type NoteAppearance,
     type Settings,
     type WorkspaceSettings,
-    clearLegacyNoteAppearances,
+    clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
     isNoteAppearanceOverridden,
     noteAppearanceOf,
@@ -110,6 +110,26 @@ describe('useSettings', () => {
         expect(result.current.settings.textWidth).toBe('normal');
         expect(result.current.settings.editorFont).toBe('sans');
     });
+
+    it('merges a set into the freshest STORED object, so another window’s change survives', () => {
+        const {result} = renderHook(() => useSettings());
+        // Another window persists an accent change after this window mounted — this window's
+        // in-memory copy is now stale (same-document writes fire no storage event).
+        localStorage.setItem('gravity-notes:settings', JSON.stringify({accentColor: 'blue'}));
+        act(() => result.current.setSetting('showEditorToolbar', true));
+        const stored = JSON.parse(localStorage.getItem('gravity-notes:settings') ?? '{}');
+        expect(stored.showEditorToolbar).toBe(true);
+        expect(stored.accentColor).toBe('blue'); // NOT clobbered back to this window's stale amber
+    });
+
+    it('adopts another window’s write when its storage event arrives', () => {
+        const {result} = renderHook(() => useSettings());
+        act(() => {
+            localStorage.setItem('gravity-notes:settings', JSON.stringify({accentColor: 'gray'}));
+            window.dispatchEvent(new StorageEvent('storage', {key: 'gravity-notes:settings'}));
+        });
+        expect(result.current.settings.accentColor).toBe('gray');
+    });
 });
 
 describe('useWorkspaceSettings', () => {
@@ -158,7 +178,7 @@ describe('noteAppearanceOf / noteAppearanceToOverride', () => {
 describe('legacy per-note appearance migration', () => {
     const key = (id: string) => `gravity-notes:ws-1:note:${id}:appearance`;
 
-    it('reads legacy keys as overrides, skipping all-default and corrupt values', () => {
+    it('reads legacy keys as overrides, skipping all-default and corrupt values — but lists every key', () => {
         localStorage.setItem(
             key('Work/Plan.md'),
             JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
@@ -169,24 +189,29 @@ describe('legacy per-note appearance migration', () => {
         );
         localStorage.setItem(key('Broken.md'), 'not json{');
         localStorage.setItem('gravity-notes:ws-2:note:Other.md:appearance', '{}'); // other workspace
-        expect(readLegacyNoteAppearances('ws-1')).toEqual({
+        const legacy = readLegacyNoteAppearances('ws-1');
+        expect(legacy.overrides).toEqual({
             'Work/Plan.md': {editorFont: 'serif'},
         });
+        // All-default and corrupt entries carry nothing to migrate, but their keys still get cleared.
+        expect([...legacy.keys].sort()).toEqual(
+            [key('Work/Plan.md'), key('Idle.md'), key('Broken.md')].sort(),
+        );
     });
 
     it('handles a note title containing the key separator', () => {
         localStorage.setItem(key('Meeting: notes.md'), JSON.stringify({textWidth: 'wide'}));
-        expect(readLegacyNoteAppearances('ws-1')).toEqual({
+        expect(readLegacyNoteAppearances('ws-1').overrides).toEqual({
             'Meeting: notes.md': {textWidth: 'wide'},
         });
     });
 
-    it('clearLegacyNoteAppearances removes every legacy key for the workspace only', () => {
+    it('clearLegacyNoteAppearanceKeys removes exactly the keys the read pass found', () => {
         localStorage.setItem(key('A.md'), JSON.stringify({editorFont: 'mono'}));
         localStorage.setItem(key('B.md'), 'junk');
         localStorage.setItem('gravity-notes:ws-2:note:C.md:appearance', '{}');
         localStorage.setItem('gravity-notes:ws-1:settings', '{}');
-        clearLegacyNoteAppearances('ws-1');
+        clearLegacyNoteAppearanceKeys(readLegacyNoteAppearances('ws-1').keys);
         expect(localStorage.getItem(key('A.md'))).toBeNull();
         expect(localStorage.getItem(key('B.md'))).toBeNull();
         expect(localStorage.getItem('gravity-notes:ws-2:note:C.md:appearance')).not.toBeNull();

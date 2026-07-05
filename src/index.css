@@ -16,7 +16,14 @@ body,
    and the saving status dot; theme-independent, so it lives on :root. The orb's luminous halo is
    derived from the same hue. */
 :root {
-    --gn-orange: #ea892b;
+    /* One hex per accent — the single source for each hue, consumed by the [data-accent] blocks
+       below AND the picker swatch dots (appearanceControls.css). The halo/rgb variants restate a
+       hue numerically (rgba/channel forms CSS can't derive from a hex) — keep those in sync by
+       hand when tuning one of these. */
+    --gn-accent-amber: #ea892b;
+    --gn-accent-blue: #1f81ff;
+    --gn-accent-gray: #8a8a8a;
+    --gn-orange: var(--gn-accent-amber);
     --gn-orb-halo: rgba(238, 152, 46, 0.55);
     /* RGB channels of the warmer accent the list-selection wash shares with the orb halo. Exposed as
        channels (not a color) so the wash can keep its own per-theme alpha via rgba(var(--gn-accent-rgb), α),
@@ -115,7 +122,7 @@ body,
 }
 
 :root[data-editor-font='serif'] .g-root {
-    /* PT Serif is bundled (self-hosted via @fontsource, imported in main.tsx); the rest is a graceful
+    /* PT Serif is bundled (self-hosted @fontsource files via src/fonts/pt-serif.css); the rest is a graceful
        fallback if it ever fails to load, and covers scripts we don't ship a PT Serif subset for. Its
        smaller x-height reads small at 15px, so bump the size up and give it a touch more leading
        (1.4 vs sans/mono's 1.35). */
@@ -174,16 +181,17 @@ body,
    Swaps the accent trio the orb / saving dot / list-selection wash read (see `--gn-orange` etc.
    above). `amber` is the `:root` default, so `Workspace` stamps `data-accent` on <html> only for
    blue/gray — leaving amber off falls through to that default. `:root[data-accent]` out-ranks the
-   base `:root` on specificity, so an explicit choice always wins. Keep these hexes in sync with the
-   swatch dots in SettingsDialog.css. */
+   base `:root` on specificity, so an explicit choice always wins. Hues come from the `--gn-accent-*`
+   constants on `:root` above (shared with the picker swatch dots in appearanceControls.css); only
+   the halo/rgb restatements live here. */
 :root[data-accent='blue'] {
-    --gn-orange: #1f81ff;
+    --gn-orange: var(--gn-accent-blue);
     --gn-orb-halo: rgba(31, 129, 255, 0.55);
     --gn-accent-rgb: 31, 129, 255;
 }
 
 :root[data-accent='gray'] {
-    --gn-orange: #8a8a8a;
+    --gn-orange: var(--gn-accent-gray);
     --gn-orb-halo: rgba(138, 138, 138, 0.5);
     --gn-accent-rgb: 138, 138, 138;
 }
@@ -201,9 +209,8 @@ body,
 :root[data-text-width='narrow'] {
     --gn-text-width: 42rem;
 }
-:root[data-text-width='normal'] {
-    --gn-text-width: 52rem;
-}
+/* No 'normal' block — it IS the :root default above (mirrors data-editor-font, which has no 'sans'
+   rule); the stamped attribute simply matches no override and falls through. */
 :root[data-text-width='wide'] {
     --gn-text-width: 72rem;
 }

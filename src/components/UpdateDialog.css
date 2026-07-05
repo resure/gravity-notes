@@ -25,6 +25,10 @@
     border-radius: var(--g-border-radius-m);
     background: var(--g-color-base-generic);
     word-break: break-word;
+    /* This is app CHROME wearing the `.yfm` class for typography — pin the app font explicitly,
+       or the `.g-root .yfm` editor-font remap (index.css) would restyle the release notes to
+       whatever note-content font (even a per-note override) happens to be active. */
+    font-family: var(--g-font-family-sans);
     font-size: var(--g-text-body-1-font-size);
     line-height: var(--g-text-body-1-line-height);
     color: var(--g-color-text-primary);

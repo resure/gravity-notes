@@ -64,7 +64,6 @@ function setup(overrides: Record<string, unknown> = {}) {
         noteAppearance: {editorFont: 'default', textWidth: 'default'},
         onSetNoteAppearance: vi.fn(),
         onResetNoteAppearance: vi.fn(),
-        noteAppearanceOverridden: false,
         ...overrides,
     };
     const view = renderWithProviders(<TopBar {...(props as TopBarProps)} />);
@@ -226,7 +225,6 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             noteAppearance={{editorFont: 'default', textWidth: 'default'}}
             onSetNoteAppearance={noop}
             onResetNoteAppearance={noop}
-            noteAppearanceOverridden={false}
         />
     );
 }

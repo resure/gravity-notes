@@ -85,7 +85,9 @@
 
 .folder-rail__pin {
     flex-shrink: 0;
-    color: var(--g-color-text-warning);
+    /* Follow the workspace accent (amber/blue/gray), like the orb and the note list's pin — the two
+       pin glyphs sit side by side, so they must share one color. */
+    color: var(--gn-orange);
 }
 
 .folder-rail__name {

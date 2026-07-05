@@ -86,8 +86,9 @@ function withResolvedImages(html: string, cache: AttachmentUrlCache): string {
             return;
         }
         // A remote image src leaks the user's IP + a referrer to a third party the moment it renders.
-        // We don't block it (a note may legitimately embed one), but strip the referrer header. On the
-        // desktop the CSP (tauri.conf.json) is the stronger control.
+        // We don't block it — a note may legitimately embed one, and the desktop CSP
+        // (tauri.conf.json) deliberately allows remote http/https images for the same reason
+        // (a deliberate product choice: embeds always render) — but strip the referrer header.
         if (/^https?:/i.test(ref) && img.getAttribute('referrerpolicy') !== 'no-referrer') {
             img.setAttribute('referrerpolicy', 'no-referrer');
             changed = true;

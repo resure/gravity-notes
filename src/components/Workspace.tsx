@@ -14,21 +14,19 @@ import {useNotes} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {
     type NoteAppearance,
-    clearLegacyNoteAppearances,
+    clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
-    isNoteAppearanceOverridden,
     noteAppearanceOf,
-    noteAppearanceToOverride,
     readLegacyNoteAppearances,
     useSettings,
     useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {isMainWindow, isTauri} from '../isTauri';
-import {orderNotes} from '../storage/metadata';
+import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
-import type {NoteStore} from '../storage/types';
+import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
 import {resolveWikiLink} from '../wikiLinks';
 
@@ -345,58 +343,73 @@ export function Workspace({
             ),
         [notes.metadata.appearances, openNoteId],
     );
-    const isOverridden = isNoteAppearanceOverridden(noteAppearance);
     const setNoteSetting = useCallback(
         <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => {
             if (openNoteId === null) return;
-            notes.setNoteAppearance(
-                openNoteId,
-                noteAppearanceToOverride({...noteAppearance, [key]: value}),
-            );
+            // Merge into the RAW stored override, not the validated view: an unknown value a newer
+            // build wrote in the OTHER field must survive this edit (the tolerance contract in
+            // storage/types.ts) — round-tripping the validated form would degrade it to 'default'
+            // and then drop it.
+            const next: NoteAppearanceOverride = {...notes.metadata.appearances[openNoteId]};
+            if (value === 'default') delete next[key];
+            else next[key] = value;
+            notes.setNoteAppearance(openNoteId, next);
         },
-        [openNoteId, noteAppearance, notes.setNoteAppearance],
+        [openNoteId, notes.metadata.appearances, notes.setNoteAppearance],
     );
     const resetNoteAppearance = useCallback(() => {
         if (openNoteId !== null) notes.setNoteAppearance(openNoteId, {});
     }, [openNoteId, notes.setNoteAppearance]);
 
     // One-time migration of the legacy localStorage per-note overrides into the sidecar (they used to
-    // strand on every rename/move). Gated on `ready` so it can't race the sidecar's initial load, and
-    // scoped to ids that still exist — stranded leftovers are dropped. Keys are cleared only after the
-    // adoption has landed, so a crash mid-way just retries next launch (adoption is idempotent: an
-    // existing sidecar entry wins).
+    // strand on every rename/move). Gated on `ready` so it can't race the sidecar's initial load.
+    // Live ids adopt into `appearances`; an override whose note sits in the Trash attaches to its
+    // TrashEntry (matched by original path) so a restore reinstates it; only truly-gone ids drop.
+    // Keys are cleared only when the adoption verifiably LANDED on disk (adopt resolves false on a
+    // failed sidecar write), so a crash or write failure mid-way just retries next launch (adoption
+    // is idempotent: an existing sidecar entry wins).
     const appearanceMigrationRef = useRef(false);
     useEffect(() => {
         if (!notes.ready || appearanceMigrationRef.current) return;
         appearanceMigrationRef.current = true;
         const legacy = readLegacyNoteAppearances(workspaceId);
+        if (legacy.keys.length === 0) return; // pristine (the forever-after case) — nothing to do
         const liveIds = new Set(notes.notes.map((n) => n.id));
-        const overrides = Object.fromEntries(
-            Object.entries(legacy).filter(([id]) => liveIds.has(id)),
-        );
-        void notes.adoptNoteAppearances(overrides).then(() => {
-            clearLegacyNoteAppearances(workspaceId);
+        const trashedIds = new Set(notes.metadata.trashed.map(trashEntryOriginalId));
+        const live: Record<string, NoteAppearanceOverride> = {};
+        const trashed: Record<string, NoteAppearanceOverride> = {};
+        for (const [id, override] of Object.entries(legacy.overrides)) {
+            if (liveIds.has(id)) live[id] = override;
+            else if (trashedIds.has(id)) trashed[id] = override;
+        }
+        void notes.adoptNoteAppearances(live, trashed).then((landed) => {
+            if (landed) clearLegacyNoteAppearanceKeys(legacy.keys);
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot: reads notes.notes at ready-time only
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot: reads notes state at ready-time only
     }, [notes.ready, workspaceId]);
     // The note-appearance popover's open state lives here (its ⋯ trigger is in the TopBar) so the ⌘⇧I
-    // shortcut can toggle it too. Closed whenever the open note changes, so it never lingers over a
-    // different note than it was opened for.
+    // shortcut can toggle it too. Closed whenever the editing SESSION changes (another note opened,
+    // or the note closed) — keyed on sessionId, NOT note id, because a rename/move re-keys the id in
+    // place without ending the session and shouldn't dismiss a popover mid-adjustment.
     const [appearanceOpen, setAppearanceOpen] = useState(false);
-    useEffect(() => setAppearanceOpen(false), [notes.note?.id]);
+    const noteClosed = notes.note === null;
+    useEffect(() => setAppearanceOpen(false), [notes.sessionId, noteClosed]);
 
     // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
     // that index.css reads: `data-editor-font` swaps the editor/preview/title font, `data-accent` the
     // accent trio, `data-text-width` the content column width. useLayoutEffect (not useEffect) so the
     // swap lands before paint — on a workspace switch the tree remounts (keyed in App), so this runs
     // synchronously with the unmount cleanup, avoiding a one-frame flash to the default appearance.
-    // Amber is the CSS default, so it clears the attribute rather than stamping it.
+    // Amber is the CSS default, so it clears the attribute rather than stamping it. Deps are the
+    // three RESOLVED strings, not the source objects — those change identity on every note switch
+    // (and on unrelated settings toggles), and each re-run is a remove+set attribute pair that
+    // dirties style for the whole .g-root subtree for a no-op.
+    const {editorFont, accentColor, textWidth} = effectiveAppearance(
+        settings,
+        workspaceSettings,
+        noteAppearance,
+    );
     useLayoutEffect(() => {
-        const {editorFont, accentColor, textWidth} = effectiveAppearance(
-            settings,
-            workspaceSettings,
-            noteAppearance,
-        );
         const root = document.documentElement;
         root.setAttribute('data-editor-font', editorFont);
         root.setAttribute('data-text-width', textWidth);
@@ -407,7 +420,7 @@ export function Workspace({
             root.removeAttribute('data-accent');
             root.removeAttribute('data-text-width');
         };
-    }, [settings, workspaceSettings, noteAppearance]);
+    }, [editorFont, accentColor, textWidth]);
 
     const [aboutOpen, setAboutOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
@@ -1109,7 +1122,6 @@ export function Workspace({
                     noteAppearance={noteAppearance}
                     onSetNoteAppearance={setNoteSetting}
                     onResetNoteAppearance={resetNoteAppearance}
-                    noteAppearanceOverridden={isOverridden}
                 />
 
                 <div

@@ -91,9 +91,9 @@ const ACCENT_PREFS: readonly AccentColorPref[] = ['default', ...ACCENT_COLORS];
 const WIDTH_PREFS: readonly TextWidthPref[] = ['default', ...TEXT_WIDTHS];
 
 /** Read persisted app settings, tolerating absent/corrupt storage and unknown keys (defaults fill gaps). */
-function loadSettings(): Settings {
+function loadSettings(key: string): Settings {
     try {
-        const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>;
+        const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings>;
         return {
             showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
@@ -120,6 +120,54 @@ function loadWorkspaceOverrides(key: string): WorkspaceSettings {
     }
 }
 
+/** Field-wise equality over two same-shape settings objects (loaders always emit every field). */
+function sameSettings<T extends object>(a: T, b: T): boolean {
+    return (Object.keys(b) as (keyof T)[]).every((key) => a[key] === b[key]);
+}
+
+/**
+ * A localStorage-backed settings object — the shared machinery under {@link useSettings} and
+ * {@link useWorkspaceSettings}. The desktop app opens one window per workspace and every window
+ * shares one localStorage, so a naive "persist my whole in-memory object on change" turns
+ * concurrent windows into lost updates (a stale window changing field A reverts another window's
+ * field B). Instead:
+ * - a set MERGES into the freshest STORED object (re-read at set time), so it can only change the
+ *   field it was asked to change;
+ * - a `storage` listener (fires in the OTHER windows) adopts external writes live.
+ * `load` must be a stable module-level function — it sits in effect deps.
+ */
+function usePersistedSettings<T extends object>(
+    storageKey: string,
+    load: (key: string) => T,
+): [T, <K extends keyof T>(key: K, value: T[K]) => void] {
+    const [value, setValue] = useState<T>(() => load(storageKey));
+
+    useEffect(() => {
+        const onStorage = (event: StorageEvent) => {
+            if (event.key !== null && event.key !== storageKey) return; // null = storage.clear()
+            const next = load(storageKey);
+            setValue((prev) => (sameSettings(prev, next) ? prev : next));
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, [storageKey, load]);
+
+    const set = useCallback(
+        <K extends keyof T>(key: K, fieldValue: T[K]) => {
+            const next = {...load(storageKey), [key]: fieldValue};
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(next));
+            } catch {
+                // Quota/private-mode write failure: keep the in-memory change; it just won't stick.
+            }
+            setValue((prev) => (sameSettings(prev, next) ? prev : next));
+        },
+        [storageKey, load],
+    );
+
+    return [value, set];
+}
+
 export interface UseSettings {
     settings: Settings;
     setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
@@ -127,16 +175,7 @@ export interface UseSettings {
 
 /** App settings state, persisted to localStorage on every change. */
 export function useSettings(): UseSettings {
-    const [settings, setSettings] = useState<Settings>(loadSettings);
-
-    useEffect(() => {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    }, [settings]);
-
-    const setSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
-        setSettings((prev) => (prev[key] === value ? prev : {...prev, [key]: value}));
-    }, []);
-
+    const [settings, setSetting] = usePersistedSettings(SETTINGS_KEY, loadSettings);
     return {settings, setSetting};
 }
 
@@ -154,21 +193,10 @@ export interface UseWorkspaceSettings {
  * the storage key) is constant for its lifetime — no cross-workspace reconcile to worry about.
  */
 export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings {
-    const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>(() =>
-        loadWorkspaceOverrides(workspaceSettingsKey(workspaceId)),
+    const [workspaceSettings, setWorkspaceSetting] = usePersistedSettings(
+        workspaceSettingsKey(workspaceId),
+        loadWorkspaceOverrides,
     );
-
-    useEffect(() => {
-        localStorage.setItem(workspaceSettingsKey(workspaceId), JSON.stringify(workspaceSettings));
-    }, [workspaceId, workspaceSettings]);
-
-    const setWorkspaceSetting = useCallback(
-        <K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) => {
-            setWorkspaceSettings((prev) => (prev[key] === value ? prev : {...prev, [key]: value}));
-        },
-        [],
-    );
-
     return {workspaceSettings, setWorkspaceSetting};
 }
 
@@ -218,29 +246,37 @@ function legacyNoteAppearanceKeys(workspaceId: string): Map<string, string> {
     return byId;
 }
 
-/** Read every legacy per-note override left for this workspace, in sidecar (override) form. */
-export function readLegacyNoteAppearances(
-    workspaceId: string,
-): Record<string, NoteAppearanceOverride> {
-    const overrides: Record<string, NoteAppearanceOverride> = {};
-    for (const [id, key] of legacyNoteAppearanceKeys(workspaceId)) {
-        try {
-            const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
-            const override = noteAppearanceToOverride({
-                editorFont: oneOf<EditorFontPref>(raw.editorFont, EDITOR_FONTS, 'default'),
-                textWidth: oneOf<TextWidthPref>(raw.textWidth, TEXT_WIDTHS, 'default'),
-            });
-            if (override.editorFont || override.textWidth) overrides[id] = override;
-        } catch {
-            // Corrupt value — nothing to migrate; the key still goes with the clear pass.
-        }
-    }
-    return overrides;
+export interface LegacyNoteAppearances {
+    /** id → migratable override (well-formed, non-empty). */
+    overrides: Record<string, NoteAppearanceOverride>;
+    /** EVERY legacy key found — including corrupt/empty ones — for the post-adoption clear pass. */
+    keys: string[];
 }
 
-/** Drop every legacy per-note override key for this workspace (after a successful migration). */
-export function clearLegacyNoteAppearances(workspaceId: string): void {
-    for (const key of legacyNoteAppearanceKeys(workspaceId).values()) {
+/** Read every legacy per-note override left for this workspace, in sidecar (override) form. */
+export function readLegacyNoteAppearances(workspaceId: string): LegacyNoteAppearances {
+    const overrides: Record<string, NoteAppearanceOverride> = {};
+    const keys: string[] = [];
+    for (const [id, key] of legacyNoteAppearanceKeys(workspaceId)) {
+        keys.push(key);
+        try {
+            const raw = JSON.parse(
+                localStorage.getItem(key) ?? '{}',
+            ) as NoteAppearanceOverride | null;
+            // Validate through the same lens as a live read (noteAppearanceOf), so the migration
+            // and the sidecar reader can never disagree about which fields/values count.
+            const override = noteAppearanceToOverride(noteAppearanceOf(raw ?? undefined));
+            if (override.editorFont || override.textWidth) overrides[id] = override;
+        } catch {
+            // Corrupt value — nothing to migrate; the key is still in `keys` for the clear pass.
+        }
+    }
+    return {overrides, keys};
+}
+
+/** Drop the legacy keys a {@link readLegacyNoteAppearances} pass found, once adoption has landed. */
+export function clearLegacyNoteAppearanceKeys(keys: readonly string[]): void {
+    for (const key of keys) {
         localStorage.removeItem(key);
     }
 }

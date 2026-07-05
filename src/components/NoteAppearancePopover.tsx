@@ -1,6 +1,6 @@
 import {Popup, Text} from '@gravity-ui/uikit';
 
-import type {NoteAppearance} from '../hooks/useSettings';
+import {type NoteAppearance, isNoteAppearanceOverridden} from '../hooks/useSettings';
 
 import {AppearanceChoiceRow, FONT_OPTIONS_WS, WIDTH_OPTIONS_WS} from './appearanceControls';
 
@@ -14,8 +14,6 @@ interface NoteAppearancePopoverProps {
     noteAppearance: NoteAppearance;
     onSet: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
     onReset: () => void;
-    /** True when at least one field overrides its inherited value — shows the Reset affordance. */
-    overridden: boolean;
     /** Active workspace label, for the "Overrides …" subtext. */
     workspaceLabel: string | null;
 }
@@ -34,9 +32,10 @@ export function NoteAppearancePopover({
     noteAppearance,
     onSet,
     onReset,
-    overridden,
     workspaceLabel,
 }: NoteAppearancePopoverProps) {
+    // Derived here rather than threaded down as a prop — it's a pure function of `noteAppearance`.
+    const overridden = isNoteAppearanceOverridden(noteAppearance);
     return (
         <Popup
             open={open}
@@ -47,7 +46,9 @@ export function NoteAppearancePopover({
                 if (!isOpen) onClose();
             }}
         >
-            <div className="note-appearance">
+            {/* The trigger advertises aria-haspopup="dialog" (TopBar), so a dialog role must actually
+                appear in the tree when it opens — Gravity Popup emits none by default. */}
+            <div className="note-appearance" role="dialog" aria-label="Note appearance">
                 <div className="note-appearance__head">
                     <div className="note-appearance__titles">
                         <Text variant="subheader-1">Note appearance</Text>
