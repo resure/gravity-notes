@@ -24,6 +24,10 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
-tauri-plugin-decorum = "1.1.1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# The tall-titlebar toolbar trick in apply_macos_chrome (already in the tree via tao/wry).
+[target."cfg(target_os = \"macos\")".dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSToolbar", "NSWindow"] }
