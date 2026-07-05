@@ -117,8 +117,6 @@ export interface TopBarProps {
     noteAppearance: NoteAppearance;
     onSetNoteAppearance: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
     onResetNoteAppearance: () => void;
-    /** True when the open note overrides at least one appearance field — shows the popover's Reset. */
-    noteAppearanceOverridden: boolean;
 }
 
 /** Status line text for the menu, by autosave state. */
@@ -179,7 +177,6 @@ export function TopBar({
     noteAppearance,
     onSetNoteAppearance,
     onResetNoteAppearance,
-    noteAppearanceOverridden,
 }: TopBarProps) {
     // The ⋯ "Note appearance" button (right edge) that the popover anchors to; null until it mounts.
     const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
@@ -204,6 +201,23 @@ export function TopBar({
             pulsePendingStopRef.current = true; // let the breath finish, then stop (see the orb below)
         }
     }, [saveState]);
+    // An armed pending-stop waits on an animation-iteration event — but if reduce-motion flips ON
+    // inside that window, the animation becomes `none` and the event never arrives, stranding the
+    // pulse class. Watch the preference and consume the pending stop the moment it flips on.
+    // (Guarded: jsdom's matchMedia stub may lack addEventListener on the MediaQueryList.)
+    useEffect(() => {
+        if (typeof window.matchMedia !== 'function') return undefined;
+        const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (typeof query.addEventListener !== 'function') return undefined;
+        const onChange = (event: MediaQueryListEvent) => {
+            if (event.matches && pulsePendingStopRef.current) {
+                pulsePendingStopRef.current = false;
+                setOrbPulsing(false);
+            }
+        };
+        query.addEventListener('change', onChange);
+        return () => query.removeEventListener('change', onChange);
+    }, []);
 
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
@@ -486,7 +500,6 @@ export function TopBar({
                         noteAppearance={noteAppearance}
                         onSet={onSetNoteAppearance}
                         onReset={onResetNoteAppearance}
-                        overridden={noteAppearanceOverridden}
                         workspaceLabel={storageLabel}
                     />
                 </>

@@ -13,7 +13,10 @@ writing a new one, as in nvALT. The design takes after [Things](https://cultured
 plain, quiet, out of the way. Every action has a key. The type is set to be read; the notes are plain
 Markdown files, and they are yours.
 
-![Gravity Notes in dark mode](assets/gravity-notes-dark.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="assets/gravity-notes-light.png">
+  <img alt="Gravity Notes" src="assets/gravity-notes-dark.png">
+</picture>
 
 ## Features (v1)
 

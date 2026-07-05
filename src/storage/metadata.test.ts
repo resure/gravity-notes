@@ -6,6 +6,7 @@ import {
     orderNotes,
     parseMetadata,
     reconcile,
+    trashEntryOriginalId,
     withActive,
     withCreatedStamp,
     withIcon,
@@ -17,6 +18,7 @@ import {
     withSortMode,
     withTrashEmptied,
     withTrashed,
+    withTrashedAppearance,
     withoutTrashEntry,
 } from './metadata';
 import type {NoteMeta, TrashEntry} from './types';
@@ -229,6 +231,32 @@ describe('immutable transforms', () => {
         const withNone = {...base, appearances: {}};
         expect(withNoteAppearance(withNone, 'Z.md', {})).toBe(withNone);
         expect(withNoteAppearance(base, 'A.md', {editorFont: 'serif'})).toBe(base);
+    });
+
+    it('withTrashedAppearance attaches an override by ORIGINAL note id; sidecar-era data wins', () => {
+        // originalPath is the original FOLDER (dirname); the original id reconstructs as
+        // `<originalPath>/<title>.md` — the trash FILE id may be dedupe-renamed, the title is not.
+        const bare = {id: '.trash/A 2.md', title: 'A', originalPath: 'Work', trashedAt: 5};
+        const rooted = {id: '.trash/R.md', title: 'R', originalPath: '', trashedAt: 6};
+        const carrying = {
+            id: '.trash/B.md',
+            title: 'B',
+            originalPath: 'Work',
+            trashedAt: 7,
+            appearance: {editorFont: 'mono'},
+        };
+        const meta = {...base, trashed: [bare, rooted, carrying]};
+        expect(trashEntryOriginalId(bare)).toBe('Work/A.md');
+        expect(trashEntryOriginalId(rooted)).toBe('R.md');
+        const attached = withTrashedAppearance(meta, 'Work/A.md', {editorFont: 'serif'});
+        expect(attached.trashed[0].appearance).toEqual({editorFont: 'serif'});
+        const atRoot = withTrashedAppearance(meta, 'R.md', {textWidth: 'wide'});
+        expect(atRoot.trashed[1].appearance).toEqual({textWidth: 'wide'});
+        // An entry already carrying an appearance is left alone (identity no-op)…
+        expect(withTrashedAppearance(meta, 'Work/B.md', {editorFont: 'serif'})).toBe(meta);
+        // …as are a missing match and an empty override.
+        expect(withTrashedAppearance(meta, 'Gone.md', {editorFont: 'serif'})).toBe(meta);
+        expect(withTrashedAppearance(meta, 'Work/A.md', {})).toBe(meta);
     });
 });
 

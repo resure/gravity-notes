@@ -300,23 +300,53 @@ describe('EditorPane — empty-area click', () => {
         }
     });
 
-    it('leaves a mousedown on the editor content to the editor (no caret yank)', () => {
-        // Regression: the guard matched only the stale `.g-md-editor` class, so it missed the
-        // current `.g-md-editor-component` wrapper (both WYSIWYG and CodeMirror markup live under
-        // it). A mousedown on Markup mode's `.cm-content` fell through to moveCursorEnd() + a
-        // preventDefault, which killed click-to-place-caret and double-click word-select there.
+    /** The real editor DOM the guard must discriminate: wrapper → per-mode content hosts. */
+    function mountEditorDom(body: Element) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'g-md-editor-component';
+        const pmContent = document.createElement('div');
+        pmContent.className = 'g-md-editor ProseMirror';
+        const cmEditor = document.createElement('div');
+        cmEditor.className = 'cm-editor';
+        const cmContent = document.createElement('div');
+        cmContent.className = 'cm-content';
+        cmEditor.appendChild(cmContent);
+        wrapper.appendChild(pmContent);
+        wrapper.appendChild(cmEditor);
+        body.appendChild(wrapper);
+        return {wrapper, pmContent, cmContent};
+    }
+
+    it('leaves a mousedown on either mode’s editor content to the editor (no caret yank)', () => {
+        // Regression (f7c3484): the guard once matched only `.g-md-editor`, which misses Markup
+        // mode — a mousedown on `.cm-content` fell through to moveCursorEnd() + preventDefault,
+        // killing click-to-place-caret and double-click word-select there. `.cm-editor` is in the
+        // guard for exactly that.
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
-        const editor = document.createElement('div');
-        editor.className = 'g-md-editor-component';
-        const content = document.createElement('div');
-        content.className = 'cm-content';
-        editor.appendChild(content);
-        body.appendChild(editor);
+        const {pmContent, cmContent} = mountEditorDom(body);
         moveCursor.mockClear();
-        fireEvent.mouseDown(content);
+        fireEvent.mouseDown(cmContent);
         expect(moveCursor).not.toHaveBeenCalled();
+        fireEvent.mouseDown(pmContent);
+        expect(moveCursor).not.toHaveBeenCalled();
+    });
+
+    it('still drops the caret at the end for blank space inside the editor wrapper', () => {
+        // Regression of the regression-fix: broadening the guard to `.g-md-editor-component` (the
+        // full-height wrapper) swallowed every blank-area click — the 300px bottom padding strip and
+        // the margins beside a capped text column are inside the wrapper but OUTSIDE the per-mode
+        // content hosts, and clicking them must still append-and-focus, not blur the editor.
+        const {container} = renderPane();
+        const body = container.querySelector('.editor-pane__body');
+        if (!body) throw new Error('body not rendered');
+        const {wrapper} = mountEditorDom(body);
+        moveCursor.mockClear();
+        focus.mockClear();
+        fireEvent.mouseDown(wrapper);
+        expect(moveCursor).toHaveBeenCalledWith('end');
+        expect(focus).toHaveBeenCalled();
     });
 });
 

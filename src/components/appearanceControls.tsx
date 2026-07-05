@@ -2,13 +2,16 @@ import type {ReactNode} from 'react';
 
 import {SegmentedRadioGroup, Text} from '@gravity-ui/uikit';
 
-import type {
-    AccentColor,
-    AccentColorPref,
-    EditorFont,
-    EditorFontPref,
-    TextWidth,
-    TextWidthPref,
+import {
+    ACCENT_COLORS,
+    type AccentColor,
+    type AccentColorPref,
+    EDITOR_FONTS,
+    type EditorFont,
+    type EditorFontPref,
+    TEXT_WIDTHS,
+    type TextWidth,
+    type TextWidthPref,
 } from '../hooks/useSettings';
 
 import './appearanceControls.css';
@@ -70,24 +73,34 @@ export function accentContent(color: AccentColor, label: string): ReactNode {
     );
 }
 
-export const FONT_OPTIONS: {value: EditorFont; content: string}[] = [
-    {value: 'sans', content: 'Sans'},
-    {value: 'serif', content: 'Serif'},
-    {value: 'mono', content: 'Mono'},
-];
+/**
+ * Labels keyed by the full union (`Record` exhaustiveness), and options DERIVED from the canonical
+ * value arrays — the same arrays `oneOf` validates persisted values against. A new union member
+ * fails typecheck here until it's labeled, and then appears in every picker automatically; the
+ * pickers can never silently offer less than storage accepts.
+ */
+const FONT_LABELS: Record<EditorFont, string> = {sans: 'Sans', serif: 'Serif', mono: 'Mono'};
+const ACCENT_LABELS: Record<AccentColor, string> = {amber: 'Amber', blue: 'Blue', gray: 'Gray'};
+const WIDTH_LABELS: Record<TextWidth, string> = {
+    narrow: 'Narrow',
+    normal: 'Normal',
+    wide: 'Wide',
+    unlimited: 'No limit',
+};
 
-export const ACCENT_OPTIONS: {value: AccentColor; content: ReactNode}[] = [
-    {value: 'amber', content: accentContent('amber', 'Amber')},
-    {value: 'blue', content: accentContent('blue', 'Blue')},
-    {value: 'gray', content: accentContent('gray', 'Gray')},
-];
+export const FONT_OPTIONS: {value: EditorFont; content: string}[] = EDITOR_FONTS.map((value) => ({
+    value,
+    content: FONT_LABELS[value],
+}));
 
-export const WIDTH_OPTIONS: {value: TextWidth; content: string}[] = [
-    {value: 'narrow', content: 'Narrow'},
-    {value: 'normal', content: 'Normal'},
-    {value: 'wide', content: 'Wide'},
-    {value: 'unlimited', content: 'No limit'},
-];
+export const ACCENT_OPTIONS: {value: AccentColor; content: ReactNode}[] = ACCENT_COLORS.map(
+    (value) => ({value, content: accentContent(value, ACCENT_LABELS[value])}),
+);
+
+export const WIDTH_OPTIONS: {value: TextWidth; content: string}[] = TEXT_WIDTHS.map((value) => ({
+    value,
+    content: WIDTH_LABELS[value],
+}));
 
 const DEFAULT_OPTION = {value: 'default' as const, content: 'Default'};
 

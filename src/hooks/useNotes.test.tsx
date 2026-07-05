@@ -1356,6 +1356,64 @@ describe('useNotes — trash', () => {
         });
     });
 
+    it('adoptNoteAppearances attaches a trashed note’s override to its TrashEntry (restore reinstates it)', async () => {
+        const store = new ControllableStore();
+        store.seed('Work/A.md', 'body');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await act(async () => {
+            await hook.result.current.trash('Work/A.md');
+        });
+        await act(async () => {
+            await hook.result.current.refreshTrash();
+        });
+
+        // The legacy layer knew this note by its ORIGINAL path; the migration hands it over keyed
+        // that way, and the entry carries it until a restore.
+        await act(async () => {
+            await hook.result.current.adoptNoteAppearances(
+                {},
+                {'Work/A.md': {editorFont: 'serif'}},
+            );
+        });
+
+        const trashId = hook.result.current.trashedNotes[0].id;
+        await act(async () => {
+            await hook.result.current.restoreFromTrash(trashId);
+        });
+        expect(hook.result.current.metadata.appearances['Work/A.md']).toEqual({
+            editorFont: 'serif',
+        });
+    });
+
+    it('adoptNoteAppearances resolves false on a failed sidecar write (caller keeps its source)', async () => {
+        const store = new ControllableStore();
+        store.seed('A.md', 'a');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(store, onError));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+
+        store.writeMetadata = async () => {
+            throw new Error('disk full');
+        };
+        let landed = true;
+        await act(async () => {
+            landed = await hook.result.current.adoptNoteAppearances({
+                'A.md': {editorFont: 'serif'},
+            });
+        });
+        expect(landed).toBe(false);
+        expect(onError).toHaveBeenCalled();
+
+        // Nothing to adopt writes nothing — trivially landed, so stray keys still get cleaned up.
+        let noop = false;
+        await act(async () => {
+            noop = await hook.result.current.adoptNoteAppearances({});
+        });
+        expect(noop).toBe(true);
+    });
+
     it('purges one trashed note and empties the rest', async () => {
         const store = new ControllableStore();
         store.seed('A.md', 'a');

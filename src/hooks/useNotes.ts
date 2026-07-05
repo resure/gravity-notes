@@ -8,6 +8,7 @@ import {
     withCreatedStamp,
     withIcon,
     withNoteAppearance,
+    withTrashedAppearance,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -113,9 +114,16 @@ export interface UseNotes {
     /**
      * One-time migration hook: fold externally-stored per-note overrides (the legacy localStorage
      * layer) into the sidecar. Entries whose note already has a sidecar override are skipped — the
-     * sidecar may hold a newer value written by another machine. Call only after `ready`.
+     * sidecar may hold a newer value written by another machine. `trashed` carries overrides whose
+     * note currently sits in the Trash, keyed by ORIGINAL path; they attach to the matching
+     * TrashEntry so a later restore reinstates them. Call only after `ready`. Resolves `true` only
+     * when the adoption is durably on disk (or there was nothing to write) — callers must not
+     * delete their source copy on `false`.
      */
-    adoptNoteAppearances(overrides: Record<string, NoteAppearanceOverride>): Promise<void>;
+    adoptNoteAppearances(
+        overrides: Record<string, NoteAppearanceOverride>,
+        trashed?: Record<string, NoteAppearanceOverride>,
+    ): Promise<boolean>;
     /** The single open note's id (mirrors `metadata.active`), or null. */
     activeId: string | null;
     /** Full content of the open note (the editor's initial markup), or null. */
@@ -221,8 +229,12 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
     const metaWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const metaWriteDirtyRef = useRef(false);
 
-    /** Write the latest in-memory metadata to disk now, clearing any pending throttled write. */
-    const writeMetadataNow = useCallback(async () => {
+    /**
+     * Write the latest in-memory metadata to disk now, clearing any pending throttled write.
+     * Resolves `true` on success; on failure it toasts, re-marks the state dirty (so a later
+     * flush retries instead of silently dropping the change), and resolves `false`.
+     */
+    const writeMetadataNow = useCallback(async (): Promise<boolean> => {
         metaWriteDirtyRef.current = false;
         if (metaWriteTimerRef.current) {
             clearTimeout(metaWriteTimerRef.current);
@@ -230,13 +242,16 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         }
         try {
             await store.writeMetadata(metadataRef.current);
+            return true;
         } catch (err) {
+            metaWriteDirtyRef.current = true;
             onError(err instanceof Error ? err.message : 'Failed to save notes metadata');
+            return false;
         }
     }, [store, onError]);
 
     const persistMetadata = useCallback(
-        async (next: NotesMetadata, options?: {defer?: boolean}) => {
+        async (next: NotesMetadata, options?: {defer?: boolean}): Promise<boolean> => {
             applyMetadata(next); // always update in-memory state immediately
             if (options?.defer) {
                 // Hot path (active-pointer change on every browse): debounce the disk write. TRAILING
@@ -252,18 +267,18 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
                     metaWriteTimerRef.current = null;
                     if (metaWriteDirtyRef.current) void writeMetadataNow();
                 }, ACTIVE_PERSIST_DELAY);
-                return;
+                return true; // deferred: the write is owed, not failed
             }
             // A deliberate mutation writes the whole (latest) metadata now — which also satisfies and
             // cancels any pending deferred active-write (writeMetadataNow clears the throttle timer).
-            await writeMetadataNow();
+            return writeMetadataNow();
         },
         [applyMetadata, writeMetadataNow],
     );
 
     /** Force any deferred metadata write to disk now — for teardown / before a storage switch. */
-    const flushMetadata = useCallback((): Promise<void> => {
-        return metaWriteDirtyRef.current ? writeMetadataNow() : Promise.resolve();
+    const flushMetadata = useCallback(async (): Promise<void> => {
+        if (metaWriteDirtyRef.current) await writeMetadataNow();
     }, [writeMetadataNow]);
 
     const setSortMode = useCallback(
@@ -284,13 +299,20 @@ export function useNotes(store: NoteStore, onError: (message: string) => void): 
         [persistMetadata],
     );
     const adoptNoteAppearances = useCallback(
-        async (overrides: Record<string, NoteAppearanceOverride>) => {
+        async (
+            overrides: Record<string, NoteAppearanceOverride>,
+            trashed: Record<string, NoteAppearanceOverride> = {},
+        ): Promise<boolean> => {
             let next = metadataRef.current;
             for (const [id, override] of Object.entries(overrides)) {
                 if (id in next.appearances) continue; // an existing sidecar override wins
                 next = withNoteAppearance(next, id, override);
             }
-            if (next !== metadataRef.current) await persistMetadata(next);
+            for (const [originalPath, override] of Object.entries(trashed)) {
+                next = withTrashedAppearance(next, originalPath, override);
+            }
+            if (next === metadataRef.current) return true; // nothing new — already landed
+            return persistMetadata(next);
         },
         [persistMetadata],
     );

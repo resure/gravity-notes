@@ -25,8 +25,8 @@
 }
 
 /* Accent-color option: a colored dot beside the label, so the picker reads as a color picker. Shared
-   by the Settings dialog and the per-note appearance popover. The dot hues mirror the accent CSS
-   variables in index.css (kept in sync by hand). */
+   by the Settings dialog and the per-note appearance popover. The dots read the `--gn-accent-*`
+   constants from index.css — each accent's hue lives in exactly one place. */
 .appearance-accent {
     display: inline-flex;
     align-items: center;
@@ -41,13 +41,13 @@
 }
 
 .appearance-accent__dot_amber {
-    background: #ea892b;
+    background: var(--gn-accent-amber);
 }
 
 .appearance-accent__dot_blue {
-    background: #1f81ff;
+    background: var(--gn-accent-blue);
 }
 
 .appearance-accent__dot_gray {
-    background: #8a8a8a;
+    background: var(--gn-accent-gray);
 }
