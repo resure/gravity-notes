@@ -43,7 +43,12 @@ because reading one blocks on download; they list by name/mtime with empty previ
 single-note open still materializes), the folder ops, `reveal_path`, and the **window commands** — a
 label→workspace map plus a label→note map powering
 `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window` and
-`window_note`/`set_window_note`/`open_note_window` (`ws-N` and `note-N` windows cloned from the main
+`window_note`/`set_window_note`/`window_note_renamed`/`open_note_window`, plus `focus_main_window`
+(the ⌘0 fallback App invokes when no Workspace is mounted to listen). `window_note_renamed` re-keys
+note-window assignments when a rename/move changes a note's rel-path (`useNotes.rename`/`move` fire
+it, fire-and-forget), so per-note focus-if-open doesn't go stale and spawn duplicate windows. All
+three focus-if-open paths `unminimize()` before `show()`+`set_focus()` — set_focus alone leaves a
+minimized window in the Dock. (`ws-N` and `note-N` windows are cloned from the main
 window's config; note windows are 760×640, cascade centered on the opener's monitor, get their
 workspace AND note assigned before the page loads, and are EXCLUDED from workspace-level
 focus-if-open — `NOTE_WINDOW_PREFIX` is mirrored in `src/isTauri.ts`, keep in sync); it also registers
@@ -57,7 +62,9 @@ position the lights manually), and builds a **custom app menu**: the macOS "Abou
 focuses-or-creates the workspace window for ITS OWN workspace (never dragging forward a main window
 parked on another one). **Close flow:** the main window hides on ⌘W (Rust-side, macOS convention)
 while `ws-N`/`note-N` windows really close — `useNotes`'s `onCloseRequested` handler flushes pending
-edits then calls `preventDefault()` ONLY for `main`; the JS wrapper's `destroy()` needs the
+edits then calls `preventDefault()` for `main` AND for any window whose flush could not land its
+edit (an unresolved conflict re-queued it — destroying then would silently drop the edit, so the
+window stays open with its conflict banner); the JS wrapper's `destroy()` needs the
 `core:window:allow-destroy` capability (granted to `main`, `ws-*`, and `note-*`), so those must stay
 in sync.
 
@@ -180,15 +187,22 @@ Key modules:
 - `src/hooks/useNotesStorage.ts` — the workspace lifecycle (state machine:
   `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore` plus the recents list.
   Bootstrap order: the shell's per-window assignment (`readWindowAssignment`: `window_workspace` +
-  `window_note`, both set before a `ws-N`/`note-N` window's page loads; a shell-assigned workspace
-  SKIPS the folder probe — the opener verified it seconds ago — so new windows paint fast) → the
+  `window_note`, both set before a `ws-N`/`note-N` window's page loads; a shell-assigned `ws-`/`note-`
+  window SKIPS the folder probe — the opener verified it moments ago — so new windows paint fast;
+  NOT the main window, whose assignment is registered on every in-place open and can be hours stale
+  after a webview reload) → the
   last-active pointer → `choosing`. A note window's assignment surfaces as `windowNote`
   ({workspaceId, noteId}), which App forwards to `Workspace` as `initialNoteId` only while the window
-  still shows that workspace. `openWorkspace(id)` switches in place (probe-guarded; desktop first asks
+  still shows that workspace — and is cleared for good on the first explicit `openWorkspace` switch,
+  so returning to the original workspace later restores its own last-active note, not the stale
+  assignment. `openWorkspace(id)` switches in place (probe-guarded; desktop first asks
   `focus_workspace_window` so a workspace already shown elsewhere is focused, not duplicated; a failed
-  switch leaves the current workspace mounted); `openInNewWindow(id)` invokes `open_workspace_window`;
-  `openNoteInNewWindow(noteId, title)` invokes `open_note_window` for the ACTIVE workspace;
-  `pickFolderForNewWindow()` picks a folder and opens it as its own window — persisting the registry
+  switch leaves the current workspace mounted); `openInNewWindow(id)` invokes `open_workspace_window`
+  (refreshing the registry and failing LOUDLY if the workspace is no longer in it — it's also the ⌘0
+  path); `openNoteInNewWindow(noteId, title)` invokes `open_note_window` for the ACTIVE workspace;
+  `pickFolderForNewWindow()` probes the picked folder (timed, BEFORE touching the registry — the new
+  window skips its own probe on the premise the opener verified it, and a dead/huge pick must not
+  become the launch pointer) then opens it as its own window — persisting the registry
   entry FIRST, since that's what the new window's bootstrap reads. Activation touches the registry,
   registers the window's workspace, and sets the native title (skipped in note windows — their title
   tracks the open note, owned by `Workspace`). Detects the Tauri shell (`__TAURI_INTERNALS__`):
@@ -208,8 +222,11 @@ Key modules:
   `visibilitychange` / `beforeunload`; `open()` is guarded by a generation counter (wrong-note race) and
   short-circuits the already-open note (no remount). An optional `initialNoteId` (a note window's
   assignment) overrides the restore: that note loads instead of the sidecar's last-`active` pointer,
-  and the sidecar is NOT written during the load — the pointer belongs to the main window's
-  next-launch restore. Re-lists on window focus (2 s throttle, `ready`-gated) — main + note windows
+  and the pointer belongs to the main window's next-launch restore — the load never writes it, and
+  every later metadata write from that hook (pin, appearance, wiki-link navigation, close) substitutes
+  the LIVE on-disk `active` at the write boundary (`writeMetadataNow` re-reads the sidecar; in-memory
+  `active` keeps tracking the window's own note for the conflict checks). Re-lists on window focus
+  (2 s throttle, `ready`-gated) — main + note windows
   routinely show the same folder now, so a returning window picks up notes created/edited elsewhere.
   Exposes `flushPending()` (teardown) and `refresh()` (re-list after import). Takes a `NoteStore` —
   agnostic to which backend it is.
@@ -217,7 +234,10 @@ Key modules:
   note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
   desktop) and every body is held once. Derives `contentById` (raw, for snippets), `lowerById`
   (pre-lowercased), and `linksById` (`[[…]]` pre-extracted). Refreshes **incrementally** (re-reads only
-  notes whose `updatedAt` changed) and keeps `linksById`'s identity stable across a non-link edit, so a
+  notes whose `updatedAt` changed — plus any cached with an EMPTY body whose list preview turned
+  non-empty: an iCloud-dataless file materializes without an mtime bump, so the preview flip is the
+  only signal its content became readable; the signature includes that bit) and keeps `linksById`'s
+  identity stable across a non-link edit, so a
   plain autosave doesn't rebuild the backlink graph. Dropped on backend change.
 - `src/hooks/useNoteNavigation.ts` / `useNoteSearch.ts` / `useBacklinks.ts` / `useShortcuts.ts` — list
   cursor + focus ladder (browse/commit/escape); search-or-create scoring against the shared corpus; the
@@ -261,7 +281,11 @@ Key modules:
   owns export/import and the flush-then-confirm guard before any workspace switch; per-workspace UI
   layout persists under `gravity-notes:<wsId>:*` localStorage keys, adopting the legacy un-namespaced
   value once — note windows skip both the read and the write, start with panels closed + editor
-  focused, and sync their native title + `set_window_note` assignment to the open note; also owns the
+  focused (search box when the assigned note failed to load, so the window is never
+  keyboard-orphaned), and sync their native title + `set_window_note` assignment to the open note
+  ONLY once `notes.ready` — the mount run would otherwise push `set_window_note(null)` mid-load and
+  wipe the shell's pre-seeded assignment (a second ⌘↵ during the load would duplicate the window);
+  also owns the
   floating **Preview badge** (read-only preview is otherwise invisible; hover swaps it to "Exit
   preview", click or ⌘⇧P leaves) and the **search auto-peek** — typing a query while the sidebar is
   collapsed peeks the list WITHOUT stealing focus from the box, and clearing the query or committing a
@@ -335,7 +359,13 @@ Key modules:
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`. The theme key (`gravity-notes:theme`) is also read by an inline anti-flash
   script in `index.html` that paints the document background in the resolved theme before the bundle
-  loads (so launch doesn't flash white before dark) — keep the two in sync.
+  loads (so launch doesn't flash white before dark) — keep the two in sync. Also owns the **⌘0
+  (`menu:main-window`) listener** — deliberately HERE, not in `Workspace`: App mounts exactly once
+  per window and never remounts, whereas `Workspace` is keyed by workspace and remounts on every
+  ⌃R switch, so registering the listener there leaked a duplicate per switch (a window then fired
+  ⌘0 for several workspaces at once). It reads the live workspace/state via a ref and calls
+  `openInNewWindow(activeWorkspaceId)` (fallback `focus_main_window` when no workspace is mounted —
+  bootstrapping, or parked on the gate).
 - `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
 
 ## Conventions

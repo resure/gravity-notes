@@ -27,12 +27,15 @@ import {type WikiLinkRef, extractWikiLinks} from '../wikiLinks';
  */
 
 /**
- * Order-independent fingerprint of the note list (id + last-modified). The corpus reloads only when
- * this changes — a note's content/identity changed — not on a re-sort, re-pin, or keystroke.
+ * Order-independent fingerprint of the note list (id + last-modified + has-preview). The corpus
+ * reloads only when this changes — a note's content/identity changed — not on a re-sort, re-pin, or
+ * keystroke. The preview BIT is included for iCloud-dataless files: the bulk walk lists them with an
+ * empty body/preview, and materialization restores the original mtime — so the empty→non-empty
+ * preview flip on a later walk is the only signal that the content is now readable.
  */
 function listSignature(notes: NoteMeta[]): string {
     return notes
-        .map((n) => `${n.id}:${n.updatedAt ?? 0}`)
+        .map((n) => `${n.id}:${n.updatedAt ?? 0}:${n.preview ? 1 : 0}`)
         .sort()
         .join('\n');
 }
@@ -190,9 +193,15 @@ export function useCorpus(store: CorpusSource, notes: NoteMeta[], active: boolea
                 } else {
                     // Incremental: re-read only notes whose updatedAt changed (or are new); reuse the
                     // rest, and drop any that vanished. Avoids a full re-scan when one note is edited.
-                    const stale = currentNotes.filter(
-                        (n) => cachedCorpus.get(n.id)?.updatedAt !== (n.updatedAt ?? 0),
-                    );
+                    const stale = currentNotes.filter((n) => {
+                        const cached = cachedCorpus.get(n.id);
+                        if (!cached || cached.updatedAt !== (n.updatedAt ?? 0)) return true;
+                        // An iCloud-dataless file was cached with an EMPTY body, and downloading
+                        // it doesn't bump mtime — but the list preview flips non-empty once the
+                        // content is local. Re-read then; a still-dataless file keeps an empty
+                        // preview, so this never forces a blocking read of evicted content.
+                        return cached.content === '' && Boolean(n.preview);
+                    });
                     const fetched = await Promise.all(
                         stale.map((n) =>
                             store.get(n.id).then(

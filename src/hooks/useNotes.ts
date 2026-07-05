@@ -86,6 +86,19 @@ const RETRY_MAX_DELAY = 30_000;
  */
 const FOCUS_REFRESH_MIN_GAP_MS = 2_000;
 
+/**
+ * Tell the desktop shell a note's id (rel-path) changed, so any single-note WINDOW pinned to the
+ * old id keeps answering per-note focus-if-open under the new one (without this, "open in new
+ * window" for the renamed note would spawn a duplicate). Fire-and-forget: the shell map is an
+ * optimization, and the web build has no shell at all.
+ */
+function notifyShellNoteRenamed(oldId: string, newId: string): void {
+    if (!isTauri) return;
+    void import('@tauri-apps/api/core')
+        .then(({invoke}) => invoke('window_note_renamed', {oldId, newId}))
+        .catch(() => {});
+}
+
 /** A detected external change to the open note. */
 export interface NoteConflict {
     id: string;
@@ -225,6 +238,9 @@ export function useNotes(
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
     const [metadata, setMetadata] = useState<NotesMetadata>(DEFAULT_METADATA);
     const metadataRef = useRef<NotesMetadata>(DEFAULT_METADATA);
+    // The sidecar's on-disk `active` as of the initial load — the fallback for the note-window
+    // write-boundary substitution in writeMetadataNow when a fresh disk read fails.
+    const diskActiveRef = useRef<string | null>(null);
     const [ready, setReady] = useState(false);
     const [sessionId, setSessionId] = useState(0);
     const sessionRef = useRef(0);
@@ -255,14 +271,27 @@ export function useNotes(
             metaWriteTimerRef.current = null;
         }
         try {
-            await store.writeMetadata(metadataRef.current);
+            let payload = metadataRef.current;
+            if (typeof initialNoteId === 'string') {
+                // A single-note window's in-memory `active` deliberately tracks ITS open note
+                // (the conflict checks key on it), but the on-disk pointer belongs to the main
+                // window's next-launch restore — substitute the live disk value at this write
+                // boundary so no note-window persist (pin, appearance, navigation, close…) can
+                // hijack it. The load-time snapshot backstops a failed disk read.
+                const active = await store
+                    .readMetadata()
+                    .then((disk) => disk.active)
+                    .catch(() => diskActiveRef.current);
+                payload = {...payload, active};
+            }
+            await store.writeMetadata(payload);
             return true;
         } catch (err) {
             metaWriteDirtyRef.current = true;
             onError(err instanceof Error ? err.message : 'Failed to save notes metadata');
             return false;
         }
-    }, [store, onError]);
+    }, [store, initialNoteId, onError]);
 
     const persistMetadata = useCallback(
         async (next: NotesMetadata, options?: {defer?: boolean}): Promise<boolean> => {
@@ -740,6 +769,7 @@ export function useNotes(
                     timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
                 }
                 rekeyNote(id, meta); // re-key the list row in place (body/preview unchanged)
+                notifyShellNoteRenamed(id, meta.id); // keep note-window focus-if-open matching
                 return meta.id;
             } catch (err) {
                 if (err instanceof NameCollisionError) {
@@ -801,6 +831,7 @@ export function useNotes(
                     timerRef.current = setTimeout(() => void flush(), AUTOSAVE_DELAY);
                 }
                 rekeyNote(id, meta); // re-key the list row in place; folder synthesizes from the path
+                notifyShellNoteRenamed(id, meta.id); // keep note-window focus-if-open matching
                 await relistFolders(); // dest folder may be new; emptied source folder may be pruned
                 return meta.id;
             } catch (err) {
@@ -1087,6 +1118,7 @@ export function useNotes(
                 });
                 // A note window restores its ASSIGNED note, not the (shared) last-active pointer.
                 const restoreId = initialNoteId ?? meta.active;
+                diskActiveRef.current = meta.active;
                 let loaded: Note | null = null;
                 if (restoreId) {
                     try {
@@ -1187,12 +1219,15 @@ export function useNotes(
             void getCurrentWindow()
                 .onCloseRequested(async (event) => {
                     await flushMetadata();
-                    await flush();
+                    const unresolved = await flush();
                     // The MAIN window is never destroyed — the Rust shell hides it on close (macOS
                     // convention), so stop the JS wrapper from destroying it after this handler.
-                    // Workspace (ws-N) windows fall through: the wrapper destroys them once the
-                    // flush above has landed — exactly the flush-then-close ordering we want.
-                    if (isMainWindow()) event.preventDefault();
+                    // Workspace (ws-N) and note (note-N) windows fall through: the wrapper
+                    // destroys them once the flush above has landed — UNLESS the flush could NOT
+                    // land the edit (an unresolved conflict re-queued it, `unresolved`);
+                    // destroying then would silently drop the edit, so keep the window (and its
+                    // conflict banner) alive for the user to resolve first.
+                    if (isMainWindow() || unresolved) event.preventDefault();
                 })
                 .then((fn) => {
                     if (disposed) fn();

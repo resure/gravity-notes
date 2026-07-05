@@ -829,6 +829,9 @@ fn focus_workspace_window(
         if let Some(target) = app.get_webview_window(&label) {
             // Don't hold the lock across window ops — they may hop to the main thread.
             drop(st);
+            // Unminimize first — set_focus on a miniaturized window only takes keyboard focus
+            // in the Dock (see show_main_window).
+            let _ = target.unminimize();
             let _ = target.show();
             let _ = target.set_focus();
             return true;
@@ -865,6 +868,9 @@ async fn open_workspace_window(
         while let Some(existing) = window_label_for_workspace(&st.labels, &ws_id, None) {
             if let Some(target) = app.get_webview_window(&existing) {
                 drop(st);
+                // Unminimize first — set_focus alone leaves a minimized window in the Dock
+                // (see show_main_window).
+                let _ = target.unminimize();
                 let _ = target.show();
                 let _ = target.set_focus();
                 return Ok(true);
@@ -972,6 +978,9 @@ async fn open_note_window(
             let Some(found) = found else { break };
             if let Some(target) = app.get_webview_window(&found) {
                 drop(st);
+                // Unminimize first — set_focus alone leaves a minimized window in the Dock
+                // (see show_main_window).
+                let _ = target.unminimize();
                 let _ = target.show();
                 let _ = target.set_focus();
                 return Ok(true);
@@ -1032,6 +1041,51 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
+    }
+}
+
+/// Frontend fallback for Window ▸ Main Window (⌘0) when the focused window has no workspace
+/// mounted (still bootstrapping, or parked on the storage gate after a failed probe): there is
+/// nothing workspace-scoped to focus, so plainly re-show the (possibly ⌘W-hidden) main window.
+#[tauri::command]
+fn focus_main_window(app: tauri::AppHandle) {
+    show_main_window(&app);
+}
+
+/// Re-key note-window assignments after a note rename/move: any note window in the CALLER's
+/// workspace showing `old_id` is re-pointed at `new_id`, so per-note focus-if-open keeps
+/// matching. Without this, the map goes stale the moment another window renames the note —
+/// "open in new window" for the new path would then spawn a duplicate while the old window's
+/// entry pointed at a path that no longer exists. The workspace scope comes from the caller's
+/// own label registration (the rename ran in that window), so same rel-paths in OTHER
+/// workspaces are untouched.
+#[tauri::command]
+fn window_note_renamed(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WindowWorkspaces>,
+    old_id: String,
+    new_id: String,
+) {
+    let mut st = state.0.lock().unwrap();
+    let Some(ws_id) = st.labels.get(window.label()).cloned() else {
+        return;
+    };
+    let WindowState { labels, notes, .. } = &mut *st;
+    remap_note_windows(labels, notes, &ws_id, &old_id, &new_id);
+}
+
+/// Pure core of `window_note_renamed`, split out for the unit test.
+fn remap_note_windows(
+    labels: &HashMap<String, String>,
+    notes: &mut HashMap<String, String>,
+    ws_id: &str,
+    old_id: &str,
+    new_id: &str,
+) {
+    for (label, note) in notes.iter_mut() {
+        if note.as_str() == old_id && labels.get(label).map(String::as_str) == Some(ws_id) {
+            new_id.clone_into(note);
+        }
     }
 }
 
@@ -1285,7 +1339,9 @@ pub fn run() {
             open_workspace_window,
             window_note,
             set_window_note,
+            window_note_renamed,
             open_note_window,
+            focus_main_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1744,5 +1800,25 @@ mod tests {
             window_label_for_workspace(&map, "tauri:/b", None),
             Some("ws-2".to_string())
         );
+    }
+
+    #[test]
+    fn note_rename_remaps_matching_windows_in_the_same_workspace_only() {
+        let mut labels = HashMap::new();
+        labels.insert("main".to_string(), "tauri:/a".to_string());
+        labels.insert("note-1".to_string(), "tauri:/a".to_string());
+        labels.insert("note-2".to_string(), "tauri:/b".to_string());
+        let mut notes = HashMap::new();
+        notes.insert("note-1".to_string(), "Old.md".to_string());
+        // Same rel-path open in ANOTHER workspace — must not be touched by /a's rename.
+        notes.insert("note-2".to_string(), "Old.md".to_string());
+
+        remap_note_windows(&labels, &mut notes, "tauri:/a", "Old.md", "New.md");
+        assert_eq!(notes.get("note-1").map(String::as_str), Some("New.md"));
+        assert_eq!(notes.get("note-2").map(String::as_str), Some("Old.md"));
+
+        // A rename of a note no window shows is a no-op.
+        remap_note_windows(&labels, &mut notes, "tauri:/a", "Missing.md", "Elsewhere.md");
+        assert_eq!(notes.get("note-1").map(String::as_str), Some("New.md"));
     }
 }

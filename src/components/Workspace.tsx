@@ -650,20 +650,27 @@ export function Workspace({
     }, []);
     const initialEditorFocusRef = useRef(false);
     useEffect(() => {
-        if (!noteWindow || initialEditorFocusRef.current || !notes.note) return;
+        if (!noteWindow || initialEditorFocusRef.current || !notes.ready) return;
         initialEditorFocusRef.current = true;
-        editorRef.current?.focus();
-    }, [noteWindow, notes.note]);
+        // The assigned note failed to load (renamed/trashed since the window was asked for):
+        // nothing is focusable in a panels-closed window, so land in the search box — the
+        // keyboard stays alive and the placeholder's "create one" is one ⌘N away.
+        if (notes.note) editorRef.current?.focus();
+        else searchInputRef.current?.focus();
+    }, [noteWindow, notes.ready, notes.note]);
 
     // A note window's native title tracks its open note (rename included), falling back to the
     // workspace label once no note is open; it also keeps the shell's label→note assignment
     // current, so a later "open in new window" for the note now shown here focuses this window
     // instead of duplicating it — and stops matching a note this window has navigated away from.
     // `notes.note` only changes identity on open/reload (edits flow through refs), so it's a
-    // stable-enough dep.
+    // stable-enough dep. Gated on `ready`: the mount runs before the assigned note has LOADED,
+    // and pushing `set_window_note(null)` then would wipe the label→note entry the shell seeded
+    // before this page loaded — leaving per-note focus-if-open blind for the whole load (a second
+    // ⌘↵ would duplicate the window) and flashing the native title through the workspace fallback.
     const openNote = notes.note;
     useEffect(() => {
-        if (!noteWindow) return;
+        if (!noteWindow || !notes.ready) return;
         void (async () => {
             try {
                 const {invoke} = await import('@tauri-apps/api/core');
@@ -677,7 +684,7 @@ export function Workspace({
                 // Best-effort: a failure only leaves the title stale / focus-if-open duplicable.
             }
         })();
-    }, [noteWindow, openNote, storageLabel]);
+    }, [noteWindow, notes.ready, openNote, storageLabel]);
 
     // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
     // bar, the document body), send it back to the note list so keyboard nav resumes. When the
@@ -769,37 +776,26 @@ export function Workspace({
         [onOpenWorkspaceInNewWindow, onError],
     );
 
-    // ⌘0 / Window ▸ Main Window: the shell asks the FOCUSED window (this one) to surface the full
-    // workspace view for ITS workspace. Reusing the workspace-window opener gives the right
-    // semantics for free: it focuses the existing main/ws-N window showing this workspace
-    // (un-hiding a ⌘W-hidden main), creates one when none exists, and never lands on a note
-    // window — so ⌘0 stays within the current workspace instead of dragging forward a main
-    // window parked on some other one. In a full workspace window it self-focuses (a no-op).
-    useEffect(() => {
-        if (!isTauri) return undefined;
-        let unlisten: (() => void) | undefined;
-        let disposed = false;
-        void import('@tauri-apps/api/webviewWindow').then(({getCurrentWebviewWindow}) =>
-            getCurrentWebviewWindow()
-                .listen('menu:main-window', () => handleOpenWorkspaceInNewWindow(workspaceId))
-                .then((fn) => {
-                    if (disposed) fn();
-                    else unlisten = fn;
-                }),
-        );
-        return () => {
-            disposed = true;
-            unlisten?.();
-        };
-    }, [workspaceId, handleOpenWorkspaceInNewWindow]);
+    // ⌘0 / Window ▸ Main Window is handled ONCE PER WINDOW in App (a stable listener there), not
+    // here: Workspace is keyed by workspace and remounts on every ⌃R switch, and registering the
+    // menu listener per mount leaked duplicates that fired ⌘0 for several workspaces at once.
 
     // Open a note in its own single-note window (row menu / ⌘↵ in the list). Unlike a workspace
     // window, flush first: the new window reads the note from DISK, so a pending edit here (this
-    // note may well be the open one) must land before that page loads.
+    // note may well be the open one) must land before that page loads. If the flush could NOT
+    // land it (an unresolved conflict re-queued the edit) and it's THIS note being opened, refuse:
+    // the new window would show the stale disk copy while this one holds a divergent edit — a
+    // silent fork where whichever window autosaves last wins.
     const handleOpenNoteInNewWindow = useCallback(
         (id: string) => {
             void (async () => {
-                await notes.flushPending();
+                const unresolved = await notes.flushPending();
+                if (unresolved && id === notes.activeId) {
+                    onError(
+                        'This note has an unresolved conflict — resolve it before opening it in a new window.',
+                    );
+                    return;
+                }
                 const title = notes.notes.find((n) => n.id === id)?.title ?? titleFromFileName(id);
                 try {
                     await onOpenNoteInNewWindow(id, title);
@@ -1264,7 +1260,14 @@ export function Workspace({
                     onCreate={(title) => handleCreate(title, '')}
                     onClose={nav.closeFromSearch}
                     onEnterList={enterList}
-                    onFocusList={() => listRef.current?.focusSelected()}
+                    onFocusList={() => {
+                        // Enter on an EMPTY search box: step onto the selected note's row — but
+                        // with the sidebar collapsed (and not peeked) there is no visible row to
+                        // land on, so return to the editor body instead; the open note is the
+                        // only thing on screen.
+                        if (collapsed && !peeked && notes.note) editorRef.current?.focus();
+                        else listRef.current?.focusSelected();
+                    }}
                     noteOpen={notes.note !== null}
                     appearanceOpen={appearanceOpen}
                     onToggleAppearance={() => setAppearanceOpen((open) => !open)}
