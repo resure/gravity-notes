@@ -206,6 +206,7 @@ Key modules:
 
 - Easter egg in top bar (to the right of the search bar) ?
 - Notion-like page title backgrounds
+- Better looking checklists
 
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Metadata storage approach review
