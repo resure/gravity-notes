@@ -47,6 +47,14 @@ interface AttachmentEntry {
     size: number;
     modifiedMs: number;
 }
+/**
+ * Payload of the Rust `notes:changed` watcher event. `dir` is the raw folder path (strict-equal
+ * to this store's `dir`); empty `paths` means "many/unknown changes".
+ */
+interface NotesChangedPayload {
+    dir: string;
+    paths: string[];
+}
 
 /** Mirror the web backend's deleted-note signal so `useNotes` maps it to a "deleted" conflict. */
 function notFound(id: string): DOMException {
@@ -334,6 +342,38 @@ export class TauriNoteStore implements NoteStore {
     /** Reveal a note / folder / attachment in Finder (native desktop only). */
     async reveal(relPath: string): Promise<void> {
         await invoke('reveal_path', {dir: this.dir, name: relPath});
+    }
+
+    /**
+     * Subscribe to external on-disk changes (see `NoteStore.watch`): one debounced native
+     * watcher per folder, refcount-shared across windows Rust-side. Window-scoped `listen` —
+     * the shell emits `notes:changed` per subscriber via `emit_to`.
+     */
+    async watch(onChange: (relPaths: string[]) => void): Promise<() => void> {
+        // Dynamic import keeps the Tauri event API out of the web bundle (this class is only
+        // constructed in the shell, but the module is imported unconditionally).
+        const {getCurrentWebviewWindow} = await import('@tauri-apps/api/webviewWindow');
+        // Listen BEFORE registering the native watcher, so no event can slip between the two.
+        const unlisten = await getCurrentWebviewWindow().listen<NotesChangedPayload>(
+            'notes:changed',
+            (event) => {
+                // During a workspace switch this window can briefly hold listeners for the
+                // outgoing store too — deliver only this folder's events.
+                if (event.payload.dir === this.dir) onChange(event.payload.paths);
+            },
+        );
+        try {
+            await invoke('notes_watch', {dir: this.dir});
+        } catch (err) {
+            unlisten();
+            throw err;
+        }
+        return () => {
+            unlisten();
+            // Fire-and-forget: the disposer runs in effect cleanups that can't await, and the
+            // Rust side is refcounted + idempotent (a late unwatch after window destroy no-ops).
+            void invoke('notes_unwatch', {dir: this.dir}).catch(() => {});
+        };
     }
 
     async readMetadata(): Promise<NotesMetadata> {

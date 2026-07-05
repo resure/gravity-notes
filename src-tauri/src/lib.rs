@@ -721,6 +721,220 @@ fn open_external(url: String) -> Result<(), String> {
     }
 }
 
+/// Quiet period the native debouncer waits before flushing a batch of fs events.
+const WATCH_DEBOUNCE_MS: u64 = 400;
+/// Above this many distinct changed rel-paths in one batch, the payload sends an EMPTY list
+/// instead ("many changes — refresh everything") to bound the IPC payload.
+const WATCH_MAX_PATHS: usize = 64;
+
+/// One live folder watcher: the debounced FSEvents stream plus per-window subscription counts.
+/// Counts, not a set: React StrictMode double-mounts the frontend effect, so `watch, watch,
+/// unwatch` is a legal wire order and must leave the subscription alive.
+struct WatcherEntry {
+    /// Held for its `Drop` (stops the watcher and joins its thread); never read.
+    _debouncer: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
+    subscribers: HashMap<String, u32>,
+}
+
+/// Raw notes-folder path (exactly as the frontend passes `dir`) → its live watcher. One watcher
+/// per folder, shared by every window subscribed to it (main + note windows on the same folder).
+#[derive(Default)]
+struct Watchers(Mutex<HashMap<String, WatcherEntry>>);
+
+/// Payload of the `notes:changed` event. `dir` is the RAW folder path — strict-equal to the
+/// subscribing `TauriNoteStore`'s `dir`, so the frontend can filter events for its own store
+/// (FSEvents-canonicalized paths would not compare equal). `paths` are root-relative POSIX
+/// paths; EMPTY means "many/unknown changes — treat everything as changed".
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotesChangedPayload {
+    dir: String,
+    paths: Vec<String>,
+}
+
+/// Root-relative POSIX path of one fs event, if it's note-relevant; `None` to ignore. FSEvents
+/// reports canonicalized absolute paths (`/var` → `/private/var`, symlinks resolved), so
+/// `canon_root` must be the canonicalized watch root or `strip_prefix` misses every event.
+/// Skips what the note walks skip — dot-entries (`.trash/`, `.git/`, `.DS_Store`, the sidecar,
+/// `.gnkeep`), `node_modules`, the root `Attachments/` — plus in-flight write temps. Directory
+/// events are load-bearing: a Finder folder rename reports ONLY the directory paths, no
+/// per-child events. A path that no longer exists can't be classified (was it a note? a
+/// folder?) — include it: a spurious refresh is cheap, a missed deletion is a bug.
+fn watch_rel_path(canon_root: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(canon_root).ok()?;
+    let mut segments: Vec<&str> = Vec::new();
+    for component in rel.components() {
+        match component {
+            Component::Normal(segment) => segments.push(segment.to_str()?),
+            _ => return None,
+        }
+    }
+    let leaf = *segments.last()?; // empty rel-path (the root itself) → None
+    if segments.iter().any(|segment| is_skipped_dir(segment)) {
+        return None;
+    }
+    if segments.first() == Some(&ATTACHMENTS_DIR) {
+        return None;
+    }
+    if leaf.ends_with(".gn-tmp") || leaf.ends_with(".rename-tmp") {
+        return None;
+    }
+    if is_md(leaf) {
+        return Some(segments.join("/"));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => Some(segments.join("/")),
+        Ok(_) => None,                     // an existing non-md file — not note-relevant
+        Err(_) => Some(segments.join("/")), // gone/unreadable — unclassifiable, include
+    }
+}
+
+/// Add one subscription for `label` (a window can hold several across StrictMode remounts).
+fn add_subscription(subs: &mut HashMap<String, u32>, label: &str) {
+    *subs.entry(label.to_string()).or_insert(0) += 1;
+}
+
+/// Drop one subscription for `label`; returns `true` when NO subscribers remain (the caller
+/// should tear the watcher down). An unknown label is a no-op — a late disposer arriving after
+/// the `Destroyed` cleanup must not error.
+fn drop_subscription(subs: &mut HashMap<String, u32>, label: &str) -> bool {
+    if let Some(count) = subs.get_mut(label) {
+        *count -= 1;
+        if *count == 0 {
+            subs.remove(label);
+        }
+    }
+    subs.is_empty()
+}
+
+/// The debouncer callback: filter one flushed batch down to note-relevant rel-paths and emit
+/// `notes:changed` to every window subscribed to this folder. Runs on the debouncer's own
+/// thread — `AppHandle` is `Send + Sync` and `emit_to` is thread-safe.
+fn handle_watch_events(
+    app: &tauri::AppHandle,
+    dir: &str,
+    canon_root: &Path,
+    res: notify_debouncer_mini::DebounceEventResult,
+) {
+    let paths: Vec<String> = match res {
+        Ok(events) => {
+            // BTreeSet: dedup (one save fires several events per file) + stable order.
+            let set: std::collections::BTreeSet<String> = events
+                .iter()
+                .filter_map(|event| watch_rel_path(canon_root, &event.path))
+                .collect();
+            if set.is_empty() {
+                return; // nothing note-relevant (sidecar churn, .DS_Store, attachments…)
+            }
+            if set.len() > WATCH_MAX_PATHS {
+                Vec::new() // "many changes" — the frontend refreshes everything
+            } else {
+                set.into_iter().collect()
+            }
+        }
+        // Watcher error / kernel queue overflow: events may have been missed — refresh everything.
+        Err(_) => Vec::new(),
+    };
+    let labels: Vec<String> = {
+        let watchers = app.state::<Watchers>();
+        let map = watchers.0.lock().unwrap();
+        match map.get(dir) {
+            Some(entry) => entry.subscribers.keys().cloned().collect(),
+            None => return, // unwatched between the debouncer flush and now
+        }
+    };
+    for label in labels {
+        let _ = app.emit_to(
+            &label,
+            "notes:changed",
+            NotesChangedPayload {
+                dir: dir.to_string(),
+                paths: paths.clone(),
+            },
+        );
+    }
+}
+
+/// Subscribe the calling window to external-change events for `dir` (see `Watchers`). Async so
+/// `canonicalize` + FSEvents stream creation stay off the main thread.
+#[tauri::command]
+async fn notes_watch(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Watchers>,
+    dir: String,
+) -> Result<(), String> {
+    {
+        let mut map = state.0.lock().unwrap();
+        if let Some(entry) = map.get_mut(&dir) {
+            add_subscription(&mut entry.subscribers, window.label());
+            return Ok(());
+        }
+    }
+    // Build the watcher outside the lock (stream creation can block).
+    let canon_root = fs::canonicalize(&dir).map_err(stringify)?;
+    let handle = app.clone();
+    let key = dir.clone();
+    let root = canon_root.clone();
+    let mut debouncer = notify_debouncer_mini::new_debouncer(
+        std::time::Duration::from_millis(WATCH_DEBOUNCE_MS),
+        move |res| handle_watch_events(&handle, &key, &root, res),
+    )
+    .map_err(stringify)?;
+    debouncer
+        .watcher()
+        .watch(&canon_root, notify::RecursiveMode::Recursive)
+        .map_err(stringify)?;
+    // Re-lock to insert. A concurrent notes_watch for the same dir may have won the race — keep
+    // ITS entry and discard our duplicate stream, but only after releasing the lock (dropping a
+    // debouncer joins its thread; never do that under the mutex).
+    let duplicate = {
+        let mut map = state.0.lock().unwrap();
+        match map.entry(dir) {
+            std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                add_subscription(&mut occupied.get_mut().subscribers, window.label());
+                Some(debouncer)
+            }
+            std::collections::hash_map::Entry::Vacant(vacant) => {
+                let mut subscribers = HashMap::new();
+                add_subscription(&mut subscribers, window.label());
+                vacant.insert(WatcherEntry {
+                    _debouncer: debouncer,
+                    subscribers,
+                });
+                None
+            }
+        }
+    };
+    drop(duplicate);
+    Ok(())
+}
+
+/// Drop one of the calling window's subscriptions for `dir`; the folder's watcher is torn down
+/// when the last one goes. Unknown dir/label is a silent no-op (idempotent — see
+/// `drop_subscription`).
+#[tauri::command]
+async fn notes_unwatch(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Watchers>,
+    dir: String,
+) -> Result<(), String> {
+    let removed = {
+        let mut map = state.0.lock().unwrap();
+        let emptied = match map.get_mut(&dir) {
+            Some(entry) => drop_subscription(&mut entry.subscribers, window.label()),
+            None => false,
+        };
+        if emptied {
+            map.remove(&dir)
+        } else {
+            None
+        }
+    };
+    drop(removed); // joins the debouncer thread — after the lock is released
+    Ok(())
+}
+
 /// Per-window workspace tracking.
 /// - `labels`: a live window's label → the workspace id it shows. Fed by the frontend
 ///   (`set_window_workspace` on every workspace open) and by `open_workspace_window` /
@@ -1316,6 +1530,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(WindowWorkspaces::default())
+        .manage(Watchers::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -1342,10 +1557,27 @@ pub fn run() {
                 }
                 // A closed window's workspace/note assignments must not keep answering focus-if-open.
                 tauri::WindowEvent::Destroyed => {
-                    let state = window.state::<WindowWorkspaces>();
-                    let mut st = state.0.lock().unwrap();
-                    st.labels.remove(window.label());
-                    st.notes.remove(window.label());
+                    {
+                        let state = window.state::<WindowWorkspaces>();
+                        let mut st = state.0.lock().unwrap();
+                        st.labels.remove(window.label());
+                        st.notes.remove(window.label());
+                    }
+                    // Drop the window's watch subscriptions too; a watcher left with no
+                    // subscribers is torn down — outside the lock (Drop joins its thread).
+                    let watchers = window.state::<Watchers>();
+                    let removed: Vec<WatcherEntry> = {
+                        let mut map = watchers.0.lock().unwrap();
+                        let emptied: Vec<String> = map
+                            .iter_mut()
+                            .filter_map(|(dir, entry)| {
+                                entry.subscribers.remove(window.label());
+                                entry.subscribers.is_empty().then(|| dir.clone())
+                            })
+                            .collect();
+                        emptied.into_iter().filter_map(|dir| map.remove(&dir)).collect()
+                    };
+                    drop(removed);
                 }
                 _ => {}
             }
@@ -1364,6 +1596,8 @@ pub fn run() {
             attachment_remove,
             notes_exists,
             notes_stat,
+            notes_watch,
+            notes_unwatch,
             reveal_path,
             open_external,
             notes_create_folder,
@@ -1878,5 +2112,57 @@ mod tests {
         // Deleting a note no window shows is a no-op.
         unassign_note_windows(&labels, &mut notes, "tauri:/b", "Other.md");
         assert_eq!(notes.get("note-2").map(String::as_str), Some("Gone.md"));
+    }
+
+    #[test]
+    fn watch_rel_path_filters_note_relevant_paths() {
+        let dir = temp_dir();
+        // The filter compares against the CANONICAL root (FSEvents reports resolved paths;
+        // macOS's temp dir itself sits behind the /var → /private/var symlink).
+        let root = fs::canonicalize(&dir).unwrap();
+        fs::create_dir_all(root.join("Work").join("Sub")).unwrap();
+        fs::write(root.join("Work").join("Sub").join("Deep.md"), "x").unwrap();
+        fs::write(root.join("readme.txt"), "x").unwrap();
+
+        let rel = |p: &Path| watch_rel_path(&root, p);
+        // Notes pass as POSIX rel-paths — existing or already deleted (a deleted path can't be
+        // classified, and a missed deletion would be a bug).
+        assert_eq!(rel(&root.join("Work/Sub/Deep.md")), Some("Work/Sub/Deep.md".into()));
+        assert_eq!(rel(&root.join("Note.md")), Some("Note.md".into()));
+        // Existing directories pass: a Finder folder rename reports ONLY the dir paths.
+        assert_eq!(rel(&root.join("Work/Sub")), Some("Work/Sub".into()));
+        // A vanished path of unknown kind passes (unclassifiable → refresh, cheap).
+        assert_eq!(rel(&root.join("Gone")), Some("Gone".into()));
+        // Noise is dropped: dot-entries (incl. the sidecar + trash), attachments, deps,
+        // in-flight write temps, and existing non-md files.
+        assert_eq!(rel(&root.join(".DS_Store")), None);
+        assert_eq!(rel(&root.join(".gravity-notes.json")), None);
+        assert_eq!(rel(&root.join(".trash/Old.md")), None);
+        assert_eq!(rel(&root.join("Attachments/pic.png")), None);
+        assert_eq!(rel(&root.join("node_modules/x.md")), None);
+        assert_eq!(rel(&root.join("Work/node_modules/y.md")), None);
+        assert_eq!(rel(&root.join("Note.md.gn-tmp")), None);
+        assert_eq!(rel(&root.join("Note.md.rename-tmp")), None);
+        assert_eq!(rel(&root.join("readme.txt")), None);
+        // The root itself and paths outside it are ignored.
+        assert_eq!(rel(&root), None);
+        assert_eq!(rel(Path::new("/elsewhere/Note.md")), None);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn watch_subscriptions_refcount_across_strictmode_interleaving() {
+        let mut subs: HashMap<String, u32> = HashMap::new();
+        // StrictMode's legal wire order — watch, watch, unwatch — must stay subscribed.
+        add_subscription(&mut subs, "main");
+        add_subscription(&mut subs, "main");
+        assert!(!drop_subscription(&mut subs, "main"));
+        // A second window keeps the watcher alive after the first fully unsubscribes.
+        add_subscription(&mut subs, "note-1");
+        assert!(!drop_subscription(&mut subs, "main"));
+        assert!(drop_subscription(&mut subs, "note-1"));
+        // Idempotent: an unknown label on an empty map is a no-op that reports empty.
+        assert!(drop_subscription(&mut subs, "ghost"));
     }
 }
