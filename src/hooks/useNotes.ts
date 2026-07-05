@@ -8,7 +8,6 @@ import {
     withCreatedStamp,
     withIcon,
     withNoteAppearance,
-    withTrashedAppearance,
     withPinToggled,
     withRemoved,
     withRenamed,
@@ -16,6 +15,7 @@ import {
     withSortMode,
     withTrashEmptied,
     withTrashed,
+    withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
 import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
