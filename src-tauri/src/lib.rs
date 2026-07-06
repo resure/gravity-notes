@@ -198,6 +198,14 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
 }
 
+/// Suffix of the write-temp `notes_write` stages through (see `tmp_sibling`). Also consumed by
+/// the folder watcher's filter — a suffix changed in one place but not the other would leak
+/// every save's temp churn as spurious `notes:changed` events.
+const WRITE_TMP_SUFFIX: &str = ".gn-tmp";
+/// Suffix of the case-only-rename temp. Minted in TypeScript (`tauriStore.ts` /
+/// `fileSystemStore.ts` — mirror-commented there); Rust only filters it in the watcher.
+const RENAME_TMP_SUFFIX: &str = ".rename-tmp";
+
 /// `<path>.gn-tmp` next to the target. The suffix isn't `.md`, so listings ignore it
 /// even while it transiently exists.
 fn tmp_sibling(path: &Path) -> PathBuf {
@@ -205,7 +213,7 @@ fn tmp_sibling(path: &Path) -> PathBuf {
         .file_name()
         .map(|n| n.to_os_string())
         .unwrap_or_default();
-    name.push(".gn-tmp");
+    name.push(WRITE_TMP_SUFFIX);
     match path.parent() {
         Some(parent) => parent.join(name),
         None => PathBuf::from(name),
@@ -721,7 +729,9 @@ fn open_external(url: String) -> Result<(), String> {
     }
 }
 
-/// Quiet period the native debouncer waits before flushing a batch of fs events.
+/// Quiet period the native debouncer waits before flushing a batch of fs events. The frontend
+/// adds its own trailing debounce on top (`WATCH_REFRESH_DEBOUNCE_MS`, 300 ms, in
+/// `useNotes.ts`), so end-to-end refresh latency is roughly the sum of the two.
 const WATCH_DEBOUNCE_MS: u64 = 400;
 /// Above this many distinct changed rel-paths in one batch, the payload sends an EMPTY list
 /// instead ("many changes — refresh everything") to bound the IPC payload.
@@ -770,13 +780,20 @@ fn watch_rel_path(canon_root: &Path, path: &Path) -> Option<String> {
         }
     }
     let leaf = *segments.last()?; // empty rel-path (the root itself) → None
-    if segments.iter().any(|segment| is_skipped_dir(segment)) {
+    let dirs = &segments[..segments.len() - 1];
+    if dirs.iter().any(|segment| is_skipped_dir(segment)) {
+        return None;
+    }
+    // The leaf gets the same skip rule EXCEPT for `.md` files: the note walks skip dot-DIRS
+    // only and list a dot-named `.hidden.md`, so the watcher must pass its events too — else
+    // an externally-created dot-note is listed but never live-refreshed.
+    if !is_md(leaf) && is_skipped_dir(leaf) {
         return None;
     }
     if segments.first() == Some(&ATTACHMENTS_DIR) {
         return None;
     }
-    if leaf.ends_with(".gn-tmp") || leaf.ends_with(".rename-tmp") {
+    if leaf.ends_with(WRITE_TMP_SUFFIX) || leaf.ends_with(RENAME_TMP_SUFFIX) {
         return None;
     }
     if is_md(leaf) {
@@ -807,6 +824,35 @@ fn drop_subscription(subs: &mut HashMap<String, u32>, label: &str) -> bool {
     subs.is_empty()
 }
 
+/// Remove EVERY subscription `label` holds (window destroyed, or its page reloaded — both
+/// orphan the JS disposers), returning the watchers that emptied. The caller MUST drop the
+/// returned entries OUTSIDE any lock on `Watchers`: a `WatcherEntry`'s Drop joins the debouncer
+/// thread, whose callback locks the same mutex — dropping under the lock can deadlock.
+#[must_use]
+fn remove_window_subscriptions(watchers: &Watchers, label: &str) -> Vec<WatcherEntry> {
+    let mut map = watchers.0.lock().unwrap();
+    let emptied: Vec<String> = map
+        .iter_mut()
+        .filter_map(|(dir, entry)| {
+            entry.subscribers.remove(label);
+            entry.subscribers.is_empty().then(|| dir.clone())
+        })
+        .collect();
+    emptied.into_iter().filter_map(|dir| map.remove(&dir)).collect()
+}
+
+/// Belt for the `notes_watch` ↔ `Destroyed` race: the watcher build runs outside the lock, so a
+/// subscription can land for a window whose `Destroyed` sweep already ran — nothing would ever
+/// drain it, and a dead label in `subscribers` blocks the last LIVE unsubscriber from tearing
+/// the watcher down. Re-check liveness after subscribing; if the window is gone, sweep again.
+fn reap_dead_window_subscriptions(app: &tauri::AppHandle, label: &str) {
+    if app.get_webview_window(label).is_some() {
+        return;
+    }
+    let removed = remove_window_subscriptions(&app.state::<Watchers>(), label);
+    drop(removed); // joins the debouncer threads — outside the lock (see above)
+}
+
 /// The debouncer callback: filter one flushed batch down to note-relevant rel-paths and emit
 /// `notes:changed` to every window subscribed to this folder. Runs on the debouncer's own
 /// thread — `AppHandle` is `Send + Sync` and `emit_to` is thread-safe.
@@ -817,6 +863,11 @@ fn handle_watch_events(
     res: notify_debouncer_mini::DebounceEventResult,
 ) {
     let paths: Vec<String> = match res {
+        // An event on the WATCH ROOT itself is FSEvents' queue-overflow signal
+        // (kFSEventStreamEventFlagMustScanSubDirs — the debouncer strips the flag, so the root
+        // path is all that's left of it): events were missed, refresh everything. A genuine
+        // root event (an attr change) is rare enough that over-refreshing on it is cheap.
+        Ok(events) if events.iter().any(|event| event.path.as_path() == canon_root) => Vec::new(),
         Ok(events) => {
             // BTreeSet: dedup (one save fires several events per file) + stable order.
             let set: std::collections::BTreeSet<String> = events
@@ -832,7 +883,7 @@ fn handle_watch_events(
                 set.into_iter().collect()
             }
         }
-        // Watcher error / kernel queue overflow: events may have been missed — refresh everything.
+        // Watcher error (e.g. inotify-style overflow surfaces here): refresh everything.
         Err(_) => Vec::new(),
     };
     let labels: Vec<String> = {
@@ -864,12 +915,19 @@ async fn notes_watch(
     state: tauri::State<'_, Watchers>,
     dir: String,
 ) -> Result<(), String> {
-    {
+    let subscribed_existing = {
         let mut map = state.0.lock().unwrap();
-        if let Some(entry) = map.get_mut(&dir) {
-            add_subscription(&mut entry.subscribers, window.label());
-            return Ok(());
+        match map.get_mut(&dir) {
+            Some(entry) => {
+                add_subscription(&mut entry.subscribers, window.label());
+                true
+            }
+            None => false,
         }
+    };
+    if subscribed_existing {
+        reap_dead_window_subscriptions(&app, window.label());
+        return Ok(());
     }
     // Build the watcher outside the lock (stream creation can block).
     let canon_root = fs::canonicalize(&dir).map_err(stringify)?;
@@ -907,6 +965,9 @@ async fn notes_watch(
         }
     };
     drop(duplicate);
+    // The build above ran unlocked — the window may have been destroyed (and its `Destroyed`
+    // sweep run) meanwhile, which would leave this fresh subscription undrainable.
+    reap_dead_window_subscriptions(&app, window.label());
     Ok(())
 }
 
@@ -1531,6 +1592,18 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(WindowWorkspaces::default())
         .manage(Watchers::default())
+        // A page (re)load without a window teardown — WKWebView's default content-process-crash
+        // recovery reloads in place, and dev reloads do too — orphans the old JS context's watch
+        // subscriptions (its disposers are gone, and no `Destroyed` event will ever come). Reset
+        // the label's refcounts before the fresh page subscribes anew; on a window's FIRST load
+        // this is a no-op (nothing subscribed yet — `notes_watch` only runs from page JS).
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                let removed =
+                    remove_window_subscriptions(&webview.state::<Watchers>(), webview.label());
+                drop(removed); // outside the lock (Drop joins the debouncer thread)
+            }
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -1565,18 +1638,8 @@ pub fn run() {
                     }
                     // Drop the window's watch subscriptions too; a watcher left with no
                     // subscribers is torn down — outside the lock (Drop joins its thread).
-                    let watchers = window.state::<Watchers>();
-                    let removed: Vec<WatcherEntry> = {
-                        let mut map = watchers.0.lock().unwrap();
-                        let emptied: Vec<String> = map
-                            .iter_mut()
-                            .filter_map(|(dir, entry)| {
-                                entry.subscribers.remove(window.label());
-                                entry.subscribers.is_empty().then(|| dir.clone())
-                            })
-                            .collect();
-                        emptied.into_iter().filter_map(|dir| map.remove(&dir)).collect()
-                    };
+                    let removed =
+                        remove_window_subscriptions(&window.state::<Watchers>(), window.label());
                     drop(removed);
                 }
                 _ => {}
@@ -2129,6 +2192,9 @@ mod tests {
         // classified, and a missed deletion would be a bug).
         assert_eq!(rel(&root.join("Work/Sub/Deep.md")), Some("Work/Sub/Deep.md".into()));
         assert_eq!(rel(&root.join("Note.md")), Some("Note.md".into()));
+        // A dot-NAMED note passes: the note walks skip dot-DIRS only and do list `.hidden.md`,
+        // so the watcher must report its changes too (listed-but-never-refreshed otherwise).
+        assert_eq!(rel(&root.join(".hidden.md")), Some(".hidden.md".into()));
         // Existing directories pass: a Finder folder rename reports ONLY the dir paths.
         assert_eq!(rel(&root.join("Work/Sub")), Some("Work/Sub".into()));
         // A vanished path of unknown kind passes (unclassifiable → refresh, cheap).

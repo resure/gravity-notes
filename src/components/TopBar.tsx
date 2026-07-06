@@ -8,7 +8,6 @@ import type {
 import {
     ArrowDownToLine,
     ArrowUpFromLine,
-    ArrowsRotateLeft,
     ArrowsRotateRight,
     CircleArrowUp,
     CircleQuestion,
@@ -420,7 +419,7 @@ export function TopBar({
                 : []),
             {
                 text: 'Reload notes',
-                iconStart: <Icon data={ArrowsRotateLeft} />,
+                iconStart: <Icon data={ArrowsRotateRight} />,
                 action: onReload,
             },
         ],

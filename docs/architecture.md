@@ -102,10 +102,12 @@ macOS materializes them.
 
 ## Known limitations
 
-- **Single-tab (per store, on the web).** Sidecar metadata (sort/pins/active) is last-write-wins,
-  and conflict detection uses a modification timestamp — coarse enough that rapid multi-tab
-  editing of the same notes can miss or over-report changes. The desktop app's windows coordinate
-  through the shell; browser tabs don't.
+- **Two windows on one store can clobber each other's _metadata_.** The sidecar (sort, pins,
+  icons, per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
+  workspace assignments and note _bodies_ (the live watcher + conflict banner) through the shell,
+  but not the sidecar — and browser tabs coordinate nothing, seeing external changes only on
+  refocus. Body conflicts are detected by modification timestamp, coarse enough that rapid
+  multi-window editing of the same note can miss or over-report changes.
 - **In-browser storage is per-browser and per-origin.** It isn't synced across devices, and
   clearing the browser's site data erases it — use **Export** to keep a `.md` backup.
 - **External changes are live only in the desktop app** (the folder watcher). In the browser

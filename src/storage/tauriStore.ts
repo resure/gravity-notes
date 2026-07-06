@@ -163,6 +163,8 @@ export class TauriNoteStore implements NoteStore {
             // On a case-SENSITIVE volume `nextName` could be a distinct existing file (the collision
             // probe above is skipped for case-only renames); the Rust `notes_rename` no-clobber guard
             // refuses to overwrite a different file, so this can't silently destroy data.
+            // `.rename-tmp` mirrors RENAME_TMP_SUFFIX in src-tauri/src/lib.rs — the folder
+            // watcher filters these; a changed suffix there would leak the temp's events.
             const tempName = `${nextName}.rename-tmp`;
             await invoke('notes_rename', {dir: this.dir, from: id, to: tempName});
             const updatedAt = await invoke<number>('notes_rename', {
@@ -368,10 +370,16 @@ export class TauriNoteStore implements NoteStore {
             unlisten();
             throw err;
         }
+        let disposed = false;
         return () => {
+            // Idempotent per handle: the Rust side decrements a per-window refcount on EVERY
+            // unwatch (only a fully-gone label no-ops), so a double-dispose would tear the
+            // count down under another live subscription of this same window.
+            if (disposed) return;
+            disposed = true;
             unlisten();
-            // Fire-and-forget: the disposer runs in effect cleanups that can't await, and the
-            // Rust side is refcounted + idempotent (a late unwatch after window destroy no-ops).
+            // Fire-and-forget: the disposer runs in effect cleanups that can't await, and a
+            // late unwatch after window destroy no-ops on the Rust side.
             void invoke('notes_unwatch', {dir: this.dir}).catch(() => {});
         };
     }
