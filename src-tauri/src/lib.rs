@@ -250,7 +250,12 @@ struct Found {
 /// separators. Skips dot-directories (`.git`, `.obsidian`, …) and never follows symlinks (so the
 /// walk can't escape the folder or loop). Non-`.md` entries — the sidecar, `.gnkeep`, `*.gn-tmp`,
 /// `*.rename-tmp` — are filtered by `is_md`. `full` reads the whole body; otherwise just the head.
-fn collect_md(root: &Path, current: &Path, full: bool, out: &mut Vec<Found>) -> std::io::Result<()> {
+fn collect_md(
+    root: &Path,
+    current: &Path,
+    full: bool,
+    out: &mut Vec<Found>,
+) -> std::io::Result<()> {
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
@@ -1171,8 +1176,8 @@ async fn open_workspace_window(
     let mut config = app.config().app.windows[0].clone();
     config.label = label.clone();
     config.title = title;
-    let built = tauri::WebviewWindowBuilder::from_config(&app, &config)
-        .and_then(|builder| builder.build());
+    let built =
+        tauri::WebviewWindowBuilder::from_config(&app, &config).and_then(|builder| builder.build());
     // Clear the pending marker regardless of outcome; on a build failure the page never loaded,
     // so drop the pre-assigned label too (nothing else will ever release it).
     {
@@ -1297,8 +1302,8 @@ async fn open_note_window(
         config.x = Some(mpos.x + ((msize.width - NOTE_WINDOW_WIDTH).max(0.0) / 2.0) + step);
         config.y = Some(mpos.y + ((msize.height - NOTE_WINDOW_HEIGHT).max(0.0) / 3.0) + step);
     }
-    let built = tauri::WebviewWindowBuilder::from_config(&app, &config)
-        .and_then(|builder| builder.build());
+    let built =
+        tauri::WebviewWindowBuilder::from_config(&app, &config).and_then(|builder| builder.build());
     {
         let mut st = state.0.lock().unwrap();
         st.pending.remove(&pending_key);
@@ -1439,7 +1444,10 @@ fn apply_macos_chrome(window: &tauri::WebviewWindow) {
         });
         // Colors mirror Gravity's base background (dark tuned in index.css). Default to dark if
         // the theme can't be read — "better dark than white" (the requested fallback).
-        let dark = window.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true);
+        let dark = window
+            .theme()
+            .map(|t| t == tauri::Theme::Dark)
+            .unwrap_or(true);
         let bg = if dark {
             tauri::window::Color(33, 30, 26, 255)
         } else {
@@ -1460,13 +1468,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
     {
         use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
         let name = app.package_info().name.clone();
-        let about = MenuItem::with_id(
-            app,
-            "about",
-            format!("About {name}"),
-            true,
-            None::<&str>,
-        )?;
+        let about = MenuItem::with_id(app, "about", format!("About {name}"), true, None::<&str>)?;
         let app_menu = Submenu::with_items(
             app,
             &name,
@@ -1508,13 +1510,8 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
         // event handler emits to the focused window, whose frontend focuses (or creates) the
         // workspace window for ITS workspace. A native accelerator (not a frontend keydown) so it
         // works from every window regardless of what has focus, like the Edit-menu clipboard chords.
-        let main_window = MenuItem::with_id(
-            app,
-            "main-window",
-            "Main Window",
-            true,
-            Some("CmdOrCtrl+0"),
-        )?;
+        let main_window =
+            MenuItem::with_id(app, "main-window", "Main Window", true, Some("CmdOrCtrl+0"))?;
         let window_menu = Submenu::with_items(
             app,
             "Window",
@@ -1624,7 +1621,7 @@ pub fn run() {
                 // (`ws-N`) windows really close — the frontend flushes pending edits in its
                 // close-requested listener, then lets the close proceed. ⌘Q still quits.
                 #[cfg(target_os = "macos")]
-                tauri::WindowEvent::CloseRequested {api, ..} if window.label() == "main" => {
+                tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -1686,7 +1683,8 @@ pub fn run() {
             // when nothing is visible, so it doesn't yank main above an open workspace window.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
-                has_visible_windows, ..
+                has_visible_windows,
+                ..
             } = event
             {
                 if !has_visible_windows {
@@ -1709,7 +1707,8 @@ mod tests {
     /// A fresh, unique temp directory for one test (removed at the end).
     fn temp_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("gravity-notes-test-{}-{n}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("gravity-notes-test-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1725,7 +1724,9 @@ mod tests {
         notes_write(s(&dir), "Work/Sub/Note.md".into(), "hello".into()).unwrap();
 
         // The intermediate folders were created and the file is readable by its path-id.
-        let read = notes_read_opt(s(&dir), "Work/Sub/Note.md".into()).unwrap().unwrap();
+        let read = notes_read_opt(s(&dir), "Work/Sub/Note.md".into())
+            .unwrap()
+            .unwrap();
         assert_eq!(read.content, "hello");
         assert!(dir.join("Work").join("Sub").join("Note.md").is_file());
 
@@ -1747,13 +1748,25 @@ mod tests {
         fs::write(dir.join("node_modules").join("README.md"), "dep").unwrap();
         fs::write(dir.join("node_modules").join("pkg").join("Index.md"), "dep").unwrap();
         fs::create_dir_all(dir.join("Work").join("node_modules")).unwrap();
-        fs::write(dir.join("Work").join("node_modules").join("Nested.md"), "dep").unwrap();
+        fs::write(
+            dir.join("Work").join("node_modules").join("Nested.md"),
+            "dep",
+        )
+        .unwrap();
 
-        let mut ids: Vec<String> = notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
+        let mut ids: Vec<String> = notes_list(s(&dir))
+            .unwrap()
+            .into_iter()
+            .map(|n| n.name)
+            .collect();
         ids.sort();
         assert_eq!(ids, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
 
-        let mut all: Vec<String> = notes_read_all(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
+        let mut all: Vec<String> = notes_read_all(s(&dir))
+            .unwrap()
+            .into_iter()
+            .map(|n| n.name)
+            .collect();
         all.sort();
         assert_eq!(all, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
 
@@ -1798,7 +1811,11 @@ mod tests {
 
         // The dot-directory is invisible to the recursive note + folder walks (Root.md aside).
         assert_eq!(
-            notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect::<Vec<_>>(),
+            notes_list(s(&dir))
+                .unwrap()
+                .into_iter()
+                .map(|n| n.name)
+                .collect::<Vec<_>>(),
             vec!["Root.md"]
         );
         assert!(notes_list_folders(s(&dir)).unwrap().is_empty());
@@ -1834,8 +1851,12 @@ mod tests {
 
         notes_rename(s(&dir), "Inbox/Note.md".into(), "Archive/Note.md".into()).unwrap();
 
-        assert!(notes_stat(s(&dir), "Inbox/Note.md".into()).unwrap().is_none());
-        let moved = notes_read_opt(s(&dir), "Archive/Note.md".into()).unwrap().unwrap();
+        assert!(notes_stat(s(&dir), "Inbox/Note.md".into())
+            .unwrap()
+            .is_none());
+        let moved = notes_read_opt(s(&dir), "Archive/Note.md".into())
+            .unwrap()
+            .unwrap();
         assert_eq!(moved.content, "keep");
 
         let _ = fs::remove_dir_all(&dir);
@@ -1925,7 +1946,12 @@ mod tests {
         // The whole subtree moved under Archive/, and the now-empty Work/ was pruned.
         assert!(!dir.join("Work").exists());
         assert!(dir.join("Archive").join("Work").join("A.md").is_file());
-        assert!(dir.join("Archive").join("Work").join("Sub").join("B.md").is_file());
+        assert!(dir
+            .join("Archive")
+            .join("Work")
+            .join("Sub")
+            .join("B.md")
+            .is_file());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1954,7 +1980,10 @@ mod tests {
         assert_eq!(read, Some(bytes));
 
         // A missing attachment reads as None (mapped to not-found TS-side), not an error.
-        assert_eq!(attachment_read(s(&dir), "Attachments/missing.png".into()).unwrap(), None);
+        assert_eq!(
+            attachment_read(s(&dir), "Attachments/missing.png".into()).unwrap(),
+            None
+        );
 
         // Both arguments are containment-guarded.
         assert!(attachment_write(s(&dir), "../evil.png".into(), vec![1]).is_err());
@@ -1974,16 +2003,26 @@ mod tests {
         // A dotfile in the folder must be ignored by the listing.
         fs::write(dir.join("Attachments").join(".keep"), b"").unwrap();
 
-        let mut names: Vec<String> =
-            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        let mut names: Vec<String> = attachment_list(s(&dir))
+            .unwrap()
+            .into_iter()
+            .map(|a| a.name)
+            .collect();
         names.sort();
         assert_eq!(names, vec!["cat.png", "dog.gif"]);
-        let cat = attachment_list(s(&dir)).unwrap().into_iter().find(|a| a.name == "cat.png").unwrap();
+        let cat = attachment_list(s(&dir))
+            .unwrap()
+            .into_iter()
+            .find(|a| a.name == "cat.png")
+            .unwrap();
         assert_eq!(cat.size, 3.0);
 
         attachment_remove(s(&dir), "Attachments/cat.png".into()).unwrap();
-        let names: Vec<String> =
-            attachment_list(s(&dir)).unwrap().into_iter().map(|a| a.name).collect();
+        let names: Vec<String> = attachment_list(s(&dir))
+            .unwrap()
+            .into_iter()
+            .map(|a| a.name)
+            .collect();
         assert_eq!(names, vec!["dog.gif"]);
         // Removing a missing file is a no-op; traversal is rejected.
         assert!(attachment_remove(s(&dir), "Attachments/gone.png".into()).is_ok());
@@ -2000,7 +2039,11 @@ mod tests {
         // A stray .md inside Attachments/ must not be picked up as a note.
         fs::write(dir.join("Attachments").join("Stray.md"), "nope").unwrap();
 
-        let notes: Vec<String> = notes_list(s(&dir)).unwrap().into_iter().map(|n| n.name).collect();
+        let notes: Vec<String> = notes_list(s(&dir))
+            .unwrap()
+            .into_iter()
+            .map(|n| n.name)
+            .collect();
         assert_eq!(notes, vec!["Note.md"]);
         assert!(notes_list_folders(s(&dir)).unwrap().is_empty());
 
@@ -2070,8 +2113,20 @@ mod tests {
 
         // Renaming A onto the existing, distinct B must fail and leave both intact.
         assert!(notes_rename(s(&dir), "A.md".into(), "B.md".into()).is_err());
-        assert_eq!(notes_read_opt(s(&dir), "A.md".into()).unwrap().unwrap().content, "aaa");
-        assert_eq!(notes_read_opt(s(&dir), "B.md".into()).unwrap().unwrap().content, "bbb");
+        assert_eq!(
+            notes_read_opt(s(&dir), "A.md".into())
+                .unwrap()
+                .unwrap()
+                .content,
+            "aaa"
+        );
+        assert_eq!(
+            notes_read_opt(s(&dir), "B.md".into())
+                .unwrap()
+                .unwrap()
+                .content,
+            "bbb"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2115,7 +2170,10 @@ mod tests {
             Some("ws-1".to_string())
         );
         // …but never the asking window itself (a switch must not "focus" its own window).
-        assert_eq!(window_label_for_workspace(&map, "tauri:/b", Some("ws-1")), None);
+        assert_eq!(
+            window_label_for_workspace(&map, "tauri:/b", Some("ws-1")),
+            None
+        );
         assert_eq!(
             window_label_for_workspace(&map, "tauri:/a", Some("ws-1")),
             Some("main".to_string())
@@ -2154,7 +2212,13 @@ mod tests {
         assert_eq!(notes.get("note-2").map(String::as_str), Some("Old.md"));
 
         // A rename of a note no window shows is a no-op.
-        remap_note_windows(&labels, &mut notes, "tauri:/a", "Missing.md", "Elsewhere.md");
+        remap_note_windows(
+            &labels,
+            &mut notes,
+            "tauri:/a",
+            "Missing.md",
+            "Elsewhere.md",
+        );
         assert_eq!(notes.get("note-1").map(String::as_str), Some("New.md"));
     }
 
