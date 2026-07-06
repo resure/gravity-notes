@@ -41,6 +41,22 @@ describe('IconPicker', () => {
         expect(target?.className).toMatch(/icon-picker__item_active/);
     });
 
+    it('does not crash when the highlight is roved past a then-shrunken result set', async () => {
+        const {combobox} = await openPicker();
+        // Rove into the grid so the highlight sits on row 3 (activeIndex 24).
+        for (let i = 0; i < 4; i++) fireEvent.keyDown(combobox, {key: 'ArrowDown'});
+        // Narrow to a tiny (non-empty) set — the roved row now lies PAST the shrunken list. With the
+        // unguarded rangeExtractor this pushed an out-of-range index into the virtualizer and crashed
+        // the render (`measurements[i]` undefined → `virtualRow.key` deref).
+        fireEvent.change(combobox, {target: {value: 'unicorn'}});
+        await waitFor(() => {
+            const opts = screen.getAllByRole('option');
+            expect(opts.length).toBeGreaterThan(0);
+            // One row's worth or fewer — proves the set shrank below the roved row (row 3).
+            expect(opts.length).toBeLessThan(9);
+        });
+    });
+
     it('closes an open popup when it becomes disabled (entering read-only preview mode)', async () => {
         const {rerender} = await openPicker();
         expect(screen.getByRole('listbox', {name: 'Pick an icon'})).toBeInTheDocument();

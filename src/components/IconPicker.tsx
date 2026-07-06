@@ -218,7 +218,13 @@ export const IconPickerPopup = memo(function IconPickerPopup({
         // window is a few sorted indexes, so the extra push + sort is free.
         rangeExtractor: (range) => {
             const indexes = defaultRangeExtractor(range);
-            if (activeRow >= 0 && !indexes.includes(activeRow)) indexes.push(activeRow);
+            // Guard `< rows.length`: a query can shrink the grid a render before the roving
+            // highlight resets (that reset is a post-commit effect), leaving `activeRow` past the
+            // new list — pushing it would hand the virtualizer an out-of-range index and crash the
+            // render (`measurements[i]` is undefined → `virtualRow.key` deref).
+            if (activeRow >= 0 && activeRow < rows.length && !indexes.includes(activeRow)) {
+                indexes.push(activeRow);
+            }
             return indexes.sort((a, b) => a - b);
         },
     });
