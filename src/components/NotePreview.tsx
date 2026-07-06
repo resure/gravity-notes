@@ -8,6 +8,12 @@ import * as cutExtension from '@diplodoc/cut-extension';
 // runtime; the runtime only adds the focus-into-a-collapsed-cut reveal.
 import '@diplodoc/cut-extension/runtime';
 import transform from '@diplodoc/transform';
+// diplodoc's checkbox plugin ships inside @diplodoc/transform but isn't in its default plugin set —
+// without it, GFM task lists (`- [ ] item`) leak through as literal `[ ] item` text in preview. It
+// lives at a deep path (no re-export from the package root; the package has no `exports` map, so the
+// subpath import resolves). `module.exports = fn`, so it's dug out with resolveCjsExport like the
+// others below.
+import * as checkboxExtension from '@diplodoc/transform/lib/plugins/checkbox';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
@@ -29,6 +35,8 @@ import '@diplodoc/cut-extension/runtime/styles.css';
 //     markdown-it plugin); interactivity comes from the runtime imported above.
 //   • disableCommonAnchors — the editor shows no `#` anchor buttons beside headings; diplodoc adds
 //     them by default, so turn them off to match.
+//   • checkbox — `- [ ] item` / `- [x] item` → a real (read-only) <input type=checkbox> + label,
+//     matching the editor's WYSIWYG checkboxes. Without it the raw `[ ]`/`[x]` markup shows through.
 // Both packages are CJS, and bundlers expose their shape inconsistently: under Node the named export
 // binds directly, but Vite pre-bundles them so the export sits nested under `default` (the whole
 // `module.exports` object) — a bare named/default import resolves to `undefined` in one env or the
@@ -46,6 +54,7 @@ function resolveCjsExport(mod: unknown, name: string): unknown {
 type PluginFactory = (options?: unknown) => unknown;
 const colorPlugin = resolveCjsExport(colorExtension, 'colorPlugin');
 const cutTransform = resolveCjsExport(cutExtension, 'transform') as PluginFactory;
+const checkboxPlugin = resolveCjsExport(checkboxExtension, 'checkbox');
 
 /**
  * markdown-it plugin: keep linkify to EXPLICIT schemes only (https://…, mailto:…). Fuzzy matching
@@ -57,12 +66,20 @@ function noFuzzyLinkify(md: {linkify: {set(opts: Record<string, boolean>): unkno
     md.linkify.set({fuzzyLink: false, fuzzyEmail: false});
 }
 
+// `bundle: false` on the cut factory is load-bearing: it otherwise defaults to bundling its runtime
+// assets to disk via Node `fs`, which throws in the browser (fs is externalized) and fails the whole
+// transform. We ship the runtime ourselves (the side-effect import above), so no bundling. The array
+// is cast to `any[]` — markdown-it plugins don't match diplodoc's ExtendedPluginWithCollect type.
+const TRANSFORM_PLUGINS = [
+    colorPlugin,
+    cutTransform({bundle: false}),
+    checkboxPlugin,
+    noFuzzyLinkify,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+].filter(Boolean) as any[];
+
 const TRANSFORM_OPTIONS = {
-    // `bundle: false` is load-bearing: the cut factory otherwise defaults to bundling its runtime
-    // assets to disk via Node `fs`, which throws in the browser (fs is externalized) and fails the
-    // whole transform. We ship the runtime ourselves (the side-effect import above), so no bundling.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- markdown-it plugins vs diplodoc's ExtendedPluginWithCollect type
-    plugins: [colorPlugin, cutTransform({bundle: false}), noFuzzyLinkify].filter(Boolean) as any[],
+    plugins: TRANSFORM_PLUGINS,
     disableCommonAnchors: true,
     // Render bare URLs as links (explicit schemes only — see noFuzzyLinkify), matching the editor.
     linkify: true,

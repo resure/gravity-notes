@@ -806,7 +806,7 @@ fn watch_rel_path(canon_root: &Path, path: &Path) -> Option<String> {
     }
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.is_dir() => Some(segments.join("/")),
-        Ok(_) => None,                     // an existing non-md file — not note-relevant
+        Ok(_) => None, // an existing non-md file — not note-relevant
         Err(_) => Some(segments.join("/")), // gone/unreadable — unclassifiable, include
     }
 }
@@ -843,7 +843,10 @@ fn remove_window_subscriptions(watchers: &Watchers, label: &str) -> Vec<WatcherE
             entry.subscribers.is_empty().then(|| dir.clone())
         })
         .collect();
-    emptied.into_iter().filter_map(|dir| map.remove(&dir)).collect()
+    emptied
+        .into_iter()
+        .filter_map(|dir| map.remove(&dir))
+        .collect()
 }
 
 /// Belt for the `notes_watch` ↔ `Destroyed` race: the watcher build runs outside the lock, so a
@@ -872,7 +875,13 @@ fn handle_watch_events(
         // (kFSEventStreamEventFlagMustScanSubDirs — the debouncer strips the flag, so the root
         // path is all that's left of it): events were missed, refresh everything. A genuine
         // root event (an attr change) is rare enough that over-refreshing on it is cheap.
-        Ok(events) if events.iter().any(|event| event.path.as_path() == canon_root) => Vec::new(),
+        Ok(events)
+            if events
+                .iter()
+                .any(|event| event.path.as_path() == canon_root) =>
+        {
+            Vec::new()
+        }
         Ok(events) => {
             // BTreeSet: dedup (one save fires several events per file) + stable order.
             let set: std::collections::BTreeSet<String> = events
@@ -2254,7 +2263,10 @@ mod tests {
         let rel = |p: &Path| watch_rel_path(&root, p);
         // Notes pass as POSIX rel-paths — existing or already deleted (a deleted path can't be
         // classified, and a missed deletion would be a bug).
-        assert_eq!(rel(&root.join("Work/Sub/Deep.md")), Some("Work/Sub/Deep.md".into()));
+        assert_eq!(
+            rel(&root.join("Work/Sub/Deep.md")),
+            Some("Work/Sub/Deep.md".into())
+        );
         assert_eq!(rel(&root.join("Note.md")), Some("Note.md".into()));
         // A dot-NAMED note passes: the note walks skip dot-DIRS only and do list `.hidden.md`,
         // so the watcher must report its changes too (listed-but-never-refreshed otherwise).

@@ -16,21 +16,21 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 ## Navigation
 
-| Keys                     | Action                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------- |
-| `↑` / `↓` (or `k` / `j`) | Preview the previous / next note                                                      |
-| `⌘J` / `⌘K`              | Preview next / previous note (works while editing)                                    |
-| `⌘[` / `⌘]`              | Go back / forward through visited notes (browser-style history)                       |
-| `Enter`                  | Edit the selected note (in the title → jump to the body)                              |
-| `⌘Enter` / `⌘-click`     | Open the selected note in its own window _(desktop)_                                  |
-| `⌘0`                     | Show this workspace's main window _(desktop; also Window ▸ Main Window)_              |
-| `Esc`                    | Editor → list → search (then close / clear)                                           |
-| `Esc` `Esc`              | Focus the search box                                                                  |
-| `⌘L`                     | Jump to the search box (desktop app; browsers reserve it for the address bar)         |
-| `⌘\`                     | Toggle the sidebar                                                                    |
-| `⌘⇧\`                    | Toggle the folder rail                                                                |
-| `⌘'`                     | Peek the collapsed sidebar / focus the list (again to close)                          |
-| `⌃R`                     | Switch workspace — the recent-folders dialog (`↵` open, `⌘↵` new window, `⌘⌫` remove) |
+| Keys                                | Action                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `↑` / `↓` (or `k` / `j`)            | Preview the previous / next note                                                      |
+| `⌘J` / `⌘K`                         | Preview next / previous note (works while editing)                                    |
+| `⌘[` / `⌘]`                         | Go back / forward through visited notes (browser-style history)                       |
+| `Enter`                             | Edit the selected note (in the title → jump to the body)                              |
+| `⌘Enter` / `⌘-click` / double-click | Open the selected note in its own window _(desktop)_                                  |
+| `⌘0`                                | Show this workspace's main window _(desktop; also Window ▸ Main Window)_              |
+| `Esc`                               | Editor → list → search (then close / clear)                                           |
+| `Esc` `Esc`                         | Focus the search box                                                                  |
+| `⌘L`                                | Jump to the search box (desktop app; browsers reserve it for the address bar)         |
+| `⌘\`                                | Toggle the sidebar                                                                    |
+| `⌘⇧\`                               | Toggle the folder rail                                                                |
+| `⌘'`                                | Peek the collapsed sidebar / focus the list (again to close)                          |
+| `⌃R`                                | Switch workspace — the recent-folders dialog (`↵` open, `⌘↵` new window, `⌘⌫` remove) |
 
 ## Editing
 

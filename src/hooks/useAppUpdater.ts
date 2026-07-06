@@ -8,6 +8,18 @@ import {isTauri} from '../isTauri';
 // reached via dynamic `import()` so it never enters the browser bundle (mirrors the plugin-dialog
 // convention).
 
+// Neither the manifest fetch nor the binary download has a timeout by default, so a stalled
+// connection (captive portal, half-open socket, a download that never leaves 0 B) hangs the flow
+// forever — pinning the UI on "Checking for updates…" / "0 B" and the `busyRef` latch with it (so no
+// later check or retry could run either). The plugin maps both to reqwest's whole-request timeout
+// (connect → full body read), so they double as connect timeouts.
+//   • check: a tiny JSON — 15 s is plenty.
+//   • download: the update artifact is ~6 MB, so 2 min clears it on any usable link (even ~0.4 Mbps)
+//     while still bailing out of a true stall. NOT so tight it would abort a legitimately slow
+//     download — 6 MB just isn't big enough for that to be a real risk.
+const CHECK_TIMEOUT_MS = 15_000;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+
 export type UpdaterStatus =
     | 'idle'
     | 'checking'
@@ -92,7 +104,7 @@ export function useAppUpdater(): AppUpdater {
             // resource); ignore close errors — a stale handle is harmless.
             await updateRef.current?.close().catch(() => {});
             updateRef.current = null;
-            const update = await runCheck();
+            const update = await runCheck({timeout: CHECK_TIMEOUT_MS});
             if (!update) {
                 setInfo(null);
                 // No Update handle means no version to read from it — ask the app shell directly so
@@ -142,21 +154,24 @@ export function useAppUpdater(): AppUpdater {
         setProgress({downloaded: 0, total: null});
         setStatus('downloading');
         try {
-            await update.downloadAndInstall((event) => {
-                if (event.event === 'Started') {
-                    setProgress({downloaded: 0, total: event.data.contentLength ?? null});
-                } else if (event.event === 'Progress') {
-                    setProgress((prev) => ({
-                        downloaded: (prev?.downloaded ?? 0) + event.data.chunkLength,
-                        total: prev?.total ?? null,
-                    }));
-                } else if (event.event === 'Finished') {
-                    // Pin the bar to 100% — the last Progress chunk leaves it just short.
-                    setProgress((prev) =>
-                        prev && prev.total !== null ? {...prev, downloaded: prev.total} : prev,
-                    );
-                }
-            });
+            await update.downloadAndInstall(
+                (event) => {
+                    if (event.event === 'Started') {
+                        setProgress({downloaded: 0, total: event.data.contentLength ?? null});
+                    } else if (event.event === 'Progress') {
+                        setProgress((prev) => ({
+                            downloaded: (prev?.downloaded ?? 0) + event.data.chunkLength,
+                            total: prev?.total ?? null,
+                        }));
+                    } else if (event.event === 'Finished') {
+                        // Pin the bar to 100% — the last Progress chunk leaves it just short.
+                        setProgress((prev) =>
+                            prev && prev.total !== null ? {...prev, downloaded: prev.total} : prev,
+                        );
+                    }
+                },
+                {timeout: DOWNLOAD_TIMEOUT_MS},
+            );
         } catch (err) {
             // Download/install failed — nothing was swapped in. The found handle is kept, so the
             // dialog can retry install() on it.
