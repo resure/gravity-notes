@@ -20,104 +20,37 @@ Markdown files, and they are yours.
 
 ## Features
 
-- **Choose your storage** on first run: a folder of plain `.md` files (Chromium browsers, or natively
-  in the desktop app), or in-browser/in-app storage that works everywhere
-- **Export / import**: download all notes as a `.md` zip, or import `.md` files / a zip — so you own
-  your data regardless of backend, and can migrate between them. Your **folder structure** is
-  preserved both ways, including deliberately-empty folders (kept alive by a `.gnkeep` marker)
-- Sidebar list of notes with create / rename / delete, **pinning**, and four **sort modes**
-  (updated, created, title A→Z / Z→A)
-- **Note icons** (opt-in via Settings, `⌘,`): tag a note with a Gravity icon or an emoji from a
-  searchable picker — on the note title and on every list row
-- **Trash**: deleting a note moves it to a Trash (a hidden `.trash/` folder, so it leaves your notes
-  but isn't erased) you can **restore** from — back to its original folder — or **empty**. Open it from
-  the storage menu (the `⋯` orb)
-- **Full-text search** across note titles _and_ bodies, ranked by relevance, with the matching
-  passage shown as a snippet in the list (multi-word queries match all terms)
-- Gravity Markdown editor (WYSIWYG + markup modes) with a read-only **preview** mode (a floating
-  "Preview" chip shows while it's on — click it to exit)
-- **Live URLs**: bare `https://…` links render as real links in the editor and the preview (typing one
-  linkifies on the trailing space), and open in your browser via ⌘-click (or a plain click in
-  preview). Explicit schemes only — a stray `Notes.md` never turns into a link or gets rewritten
-- **`[[wiki links]]`** between notes: type `[[` for a note picker, or write them by hand. They render
-  like links (no brackets) and ⌘-click follows them — creating the note if it doesn't exist yet;
-  unresolved links are dimmed. Stored verbatim as `[[Title]]`, so they're Obsidian-compatible
-- **Backlinks**: a "linked references" panel under each note lists every note that links to it, with
-  the surrounding context
-- **Recent-note history**: `⌘[` / `⌘]` step back / forward through the notes you've visited, browser-style
-- Debounced **autosave**, with a status indicator and unsaved-changes guards
-- **Conflict handling** when a note changes underneath you (reload / keep mine / save a copy / discard)
-- Light / dark / system theme
-- **Appearance settings** (`⌘,`): pick the editor font (system sans, a bundled serif, or mono), an
-  accent color, and the text-column width — app-wide, per workspace, or per note (the `⋯` button or
-  `⌘⇧I`). Per-note choices live in the folder's metadata, so they survive renames and moves
-- **Multiple workspaces**: open several note folders and switch with `⌃R` (or the orb menu's Open
-  Recent) — on the desktop, each workspace can have its own window (`⌘-click` a recent, `⌘↵` in the
-  switcher — works on "Open Folder…" too)
-- **Per-note windows** (desktop): `⌘↵` or `⌘-click` a note in the list (or "Open in New Window" from
-  its menu) to open just that note in a small window with the panels tucked away — reopening the same
-  note focuses its existing window, and `⌘0` brings back the workspace's main window
-- **Automatic updates** (desktop app): the macOS app checks for a newer release on launch and installs
-  it in place once you confirm — plus a manual **Check for Updates…** in the storage menu. Updates are
-  delivered through GitHub Releases and verified by signature
-- **Keyboard-first** navigation (nvALT / Notational Velocity style): type to search-or-create, arrow to
-  preview, Enter to edit, Esc to step back. Press `⌘/` in the app for the full shortcut sheet.
-
-### Keyboard shortcuts
-
-| Keys                      | Action                                                                                                                                  |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Type in the search box    | Full-text search of titles + bodies (ranked); `Enter` opens the top match, or creates a note titled with the query when nothing matches |
-| `Tab` (in the search box) | Accept the inline autocomplete — fill the box with the top match's title (nvALT-style)                                                  |
-| `↑` / `↓` (or `k` / `j`)  | Preview the previous / next note                                                                                                        |
-| `⌘J` / `⌘K`               | Preview next / previous note (works while editing)                                                                                      |
-| `⌘[` / `⌘]`               | Go back / forward through visited notes (browser-style history)                                                                         |
-| `Enter`                   | Edit the selected note                                                                                                                  |
-| `⌘Enter` / `⌘-click`      | Open the selected note in its own window (desktop)                                                                                      |
-| `⌘0`                      | Show this workspace's main window (desktop; also in Window ▸ Main Window)                                                               |
-| `Esc`                     | Editor → list → search (then close / clear)                                                                                             |
-| `⌘L`                      | Jump to the search box (`⌘L` in the desktop app; browsers reserve it)                                                                   |
-| `⌘⇧Enter` / `⌘N`          | New note (`⌘N` in the desktop app; browsers reserve it)                                                                                 |
-| `⌘\`                      | Toggle the sidebar                                                                                                                      |
-| `⌘'`                      | Peek the collapsed sidebar / focus the list                                                                                             |
-| `⌘⇧\`                     | Toggle the folder rail                                                                                                                  |
-| `⌘⇧;`                     | Toggle WYSIWYG / Markup                                                                                                                 |
-| `⌘⇧P`                     | Toggle read-only preview                                                                                                                |
-| `⌘⇧K`                     | Insert link (in the editor)                                                                                                             |
-| `[[`                      | Open the wiki-link note picker (in the editor)                                                                                          |
-| `⌘-click` a link          | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed)                                             |
-| `F2`                      | Rename the selected note, or the focused folder in the rail                                                                             |
-| `⌘⇧M`                     | Move the selected note to a folder                                                                                                      |
-| `⌘⇧⌫`                     | Move the selected note to the Trash (recoverable)                                                                                       |
-| `⌘/`                      | Show the shortcut help                                                                                                                  |
-
-**Right-click** a note or folder for its actions (pin, rename, move, duplicate, delete, …) — the same
-menu the row's `⋯` button opens, at the cursor.
-
-### Folders
-
-A **folder rail** (toggle with `⌘⇧\`) lists your folders left of the notes list; it's off by default,
-so the app stays a two-pane view until you want it. Selecting a folder scopes the notes list to it
-(**All Notes** shows everything), while search stays global. With the rail closed, a small **folder
-chip** above the list names the active scope (click it to open the rail, ✕ to go back to All Notes).
-**New note** (`⌘N`) lands in the selected
-folder. Drag a note onto a folder to file it, or drag a folder onto another to nest it (onto **All
-Notes** to move it back to the root). Double-click or `F2` renames a folder; with a folder focused, `n`
-makes a subfolder and `⌫` removes an empty one.
-
-## Requirements
-
-Any modern browser works. **Folder storage** in the browser uses the
-[File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API), which is
-Chromium-only (Chrome, Edge, …); on Firefox/Safari the first-run screen offers only **in-browser
-storage** (IndexedDB). The **desktop app** (Tauri, macOS arm64) reads/writes the folder natively, so
-folder storage works there regardless — with no per-session permission re-grant. Use **Export** to
-get your notes out as plain `.md` files at any time.
-
-Building the desktop app needs a Rust toolchain (**rustc ≥ 1.88**; [rustup](https://rustup.rs) is
-recommended) and the Xcode Command Line Tools.
+- **Your notes are plain `.md` files** in a folder you own — or in-browser storage; export/import
+  a zip either way
+- **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
+  step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
+- **Gravity Markdown editor**: WYSIWYG and markup modes, read-only preview, live URLs
+- **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible
+- **Full-text search** across titles and bodies, ranked, with match snippets
+- **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**
+- **Images**: paste or drop into a note — stored as files in `Attachments/`, click to zoom
+- **Plays nice with other tools**: external edits show up live in the desktop app (a folder
+  watcher), with conflict handling when a note changes underneath you
+- **Multiple workspaces & windows** (desktop): switch folders with `⌃R`, open a workspace — or a
+  single note — in its own window
+- **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
+  per workspace, or per note
+- **Autosave**, visited-note history (`⌘[` / `⌘]`), and automatic signed updates in the macOS app
 
 ## Getting started
+
+### Download the app (macOS)
+
+Grab the latest `.dmg` from the
+[releases page](https://github.com/resure/gravity-notes/releases/latest) (Apple silicon). The app
+updates itself in place from there. On first run, pick **Open a folder** (plain `.md` files you
+own) or **Store inside the app** — you can switch later, or export/import, from the storage menu
+in the top bar.
+
+### Run from source
+
+You'll need Node.js. The desktop app additionally needs a Rust toolchain (**rustc ≥ 1.88**;
+[rustup](https://rustup.rs) is recommended) and the Xcode Command Line Tools.
 
 ```bash
 npm install
@@ -130,71 +63,24 @@ npm run tauri:dev    # run the macOS desktop app against the dev server
 npm run tauri:build  # build the .app / .dmg (arm64) → src-tauri/target/release/bundle
 ```
 
-On first run, pick **Open a folder** or **Store in this browser** (**Store inside the app** in the
-desktop build). The choice is remembered across reloads. In the browser, a folder re-prompts for
-permission each session (a browser security requirement); the desktop app does not. Switch later — or
-export/import — from the storage menu in the top bar.
+In the browser, any modern one works — but **folder storage** uses the
+[File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API), which
+is Chromium-only (Chrome, Edge, …) and re-prompts for permission each session; Firefox/Safari get
+in-browser storage. The desktop app reads the folder natively, with no re-prompting.
 
-## Architecture
+## Documentation
 
-```
-FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ useNotes() ──▶ NoteList + EditorPane
-(choose storage)  (.md on disk: web FSA / native Rust; or IndexedDB)  (state + autosave)   (UI)
-```
+- [docs/shortcuts.md](docs/shortcuts.md) — every keyboard shortcut (also `⌘/` in the app)
+- [docs/architecture.md](docs/architecture.md) — how it's built, what's written to your disk,
+  and known limitations
 
-All persistence sits behind the `NoteStore` interface (`src/storage/types.ts`), with three backends:
-`FileSystemNoteStore` (`src/storage/fileSystemStore.ts`, plain `.md` files via the browser File System
-Access API), `TauriNoteStore` (`src/storage/tauriStore.ts`, the same `.md` folder via native Rust `fs`
-commands in the desktop app), and `IndexedDbNoteStore` (`src/storage/indexedDbStore.ts`, in-browser).
-All share the same `<Title>.md` ids, canonical body shape, and `updatedAt`-based conflict semantics
-(`src/storage/noteText.ts`), so everything above the seam is backend-agnostic. Per-folder/-store
-metadata — sort mode, pins, created stamps, the open note — lives in `metadata.ts`. Every opened
-folder/store is a **workspace** in an IndexedDB registry (`src/storage/workspaceRegistry.ts`) that
-feeds the recents UI: the orb menu's "Open Recent" submenu, the ⌃R switcher, and (desktop) one native
-window per workspace. The desktop shell is `src-tauri/` (Tauri 2); its app code is the `notes_*`
-filesystem commands plus the workspace-window commands in `src-tauri/src/lib.rs`.
-
-Key modules:
-
-- `src/storage/` — `types.ts` (the `NoteStore` seam), `fileSystemStore.ts` + `tauriStore.ts` +
-  `indexedDbStore.ts` (the three backends), `noteText.ts` (shared id/body helpers), `metadata.ts`
-  (sort/pins sidecar), `transfer.ts` (`.md` zip export/import), `workspaceRegistry.ts` (the
-  workspace registry: known folders/stores + recency + last-active)
-- `src/hooks/useNotesStorage.ts` — workspace lifecycle (first-run choice, restore, switching,
-  new-window opens) + FSA permission lifecycle; yields a ready `NoteStore`
-- `src/hooks/useNotes.ts` — note list, selection, debounced autosave, and conflict detection
-- `src/hooks/useNoteNavigation.ts`, `useNoteSearch.ts`, `useBacklinks.ts`, `useShortcuts.ts` —
-  cursor/focus flow, full-text search-or-create and backlinks (both scoring a shared in-memory corpus
-  loaded once by `useCorpus`; ranking + `[[wiki link]]` resolution are pure `src/search.ts` /
-  `src/wikiLinks.ts`, fed by `NoteStore.getAll()`), and global keyboard shortcuts
-- `src/components/` — `FolderGate`, `Workspace`, `TopBar`, `NoteList` (virtualized), `EditorPane`
-  (+ `NoteTitle`, `NotePreview`), `BacklinksPanel`, `ConflictBanner`, `ShortcutsDialog`,
-  `ThemeSwitcher`, `ErrorBoundary`
-- `src/main.tsx` — app-shell styles; `src/App.tsx` — Gravity providers + theme
-
-### Known limitations
-
-- **Single-tab.** Metadata (sort/pins/active) is last-write-wins, and conflict detection uses a
-  modification timestamp — coarse enough that rapid multi-tab editing of the same notes can miss or
-  over-report changes. Use one tab per store for now.
-- **In-browser storage is per-browser and per-origin.** It isn't synced across devices, and clearing
-  the browser's site data erases it — use **Export** to keep a `.md` backup.
-- **External changes** to the open note are detected when you return focus to the tab, not live while
-  it stays focused.
-- **A selected image shows a faint caret line** beside it in the editor — the browser's native
-  object-selection caret, which resists CSS hiding. Cosmetic only; editing is unaffected.
-- **Auto-update (desktop) starts from the release that introduced it.** A build without the updater
-  (≤ 0.2.0) has to be updated by hand once; from there the macOS app updates itself in place. arm64 only.
-
-### Backlog
+## Backlog
 
 - iCloud dataless files: not-yet-downloaded files list by name/mtime with an empty preview/search
   body, and recover once macOS materializes them (a focus refresh picks up the filled-in preview).
   Consider `startDownloadingUbiquitousItemAtURL` to kick off downloads in the background + a
   "downloading…" preview state so it isn't silent.
 
-- Live file-watching for external edits (today the list + search index refresh when the window
-  regains focus, not while it stays focused) + an explicit "reload workspace" menu item?
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
@@ -206,9 +92,9 @@ Key modules:
 
 - Easter egg in top bar (to the right of the search bar) ?
 - Notion-like page title backgrounds
+- Better looking checklists
 
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Metadata storage approach review
 - Mobile view
 - Mobile app
-

@@ -872,13 +872,18 @@ export function Workspace({
             if (!files || files.length === 0) return;
             void (async () => {
                 try {
-                    const count = await importNotes(store, files);
-                    await notes.refresh();
+                    // Hold the watcher/focus pipelines off while the bulk write runs — imports
+                    // write below the hook's echo stamps, so every batch would otherwise trigger
+                    // a full mid-import re-list. reload() (not refresh()) afterwards: an import
+                    // can overwrite the OPEN note, which must surface as a conflict, not a
+                    // silent reconcile.
+                    const count = await notes.withBulkWrites(() => importNotes(store, files));
+                    await notes.reload();
                     notify(count === 1 ? 'Imported 1 note' : `Imported ${count} notes`);
                 } catch (err) {
                     // The import may have written some notes before throwing — refresh so those
                     // become visible, and word the error as a possible partial import.
-                    await notes.refresh();
+                    await notes.reload();
                     onError(
                         err instanceof Error
                             ? `Import failed (some notes may have been imported): ${err.message}`
@@ -1218,6 +1223,13 @@ export function Workspace({
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={handleManageAttachments}
+                    onReload={() => {
+                        // reload(), not refresh(): the conflict check must run first, or an
+                        // externally-deleted open note reloads with no banner (see useNotes).
+                        notes.reload().catch((err: unknown) => {
+                            onError(err instanceof Error ? err.message : 'Failed to reload notes');
+                        });
+                    }}
                     onOpenTrash={() => setTrashOpen(true)}
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}

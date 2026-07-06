@@ -40,7 +40,26 @@ Notes also move between backends via `.md` export/import (`src/storage/transfer.
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
 commands (the bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
 because reading one blocks on download; they list by name/mtime with empty previews, and an explicit
-single-note open still materializes), the folder ops, `reveal_path`, and the **window commands** — a
+single-note open still materializes), the folder ops, `reveal_path`, the **live folder watcher**
+(`notes_watch`/`notes_unwatch` + the `Watchers` state: ONE debounced `notify`/FSEvents stream per
+open folder, with per-window-label REFCOUNTED subscriptions — StrictMode makes `watch, watch,
+unwatch` a legal wire order, so a set would break — emitting `notes:changed` `{dir, paths}` to each
+subscriber via `emit_to`; `dir` is the RAW path the frontend passed (strict-equals
+`TauriNoteStore.dir`) while `strip_prefix` runs against the canonicalized root — FSEvents resolves
+`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes `.md` leaves (INCLUDING
+dot-named ones — the note walks list `.hidden.md`, only dot DIRS are skipped), existing DIRS
+(a Finder folder rename reports ONLY the dir paths), and vanished paths (unclassifiable → include),
+dropping dot dirs/`node_modules`/root-`Attachments/`/write temps (the `WRITE_TMP_SUFFIX`/
+`RENAME_TMP_SUFFIX` consts — the TS stores mint `.rename-tmp`, mirror-commented there); >64 paths,
+a watcher error, or an event on the WATCH ROOT itself (FSEvents' queue-overflow rescan signal, all
+that survives the debouncer) → EMPTY `paths` = "refresh everything"; never drop a `WatcherEntry`
+under the mutex — Drop joins the debouncer thread, so `remove_window_subscriptions` returns the
+emptied entries for the caller to drop unlocked; subscriptions are drained on `Destroyed`, on
+`on_page_load` Started (a reload orphans the old JS context's disposers and fires no Destroyed —
+without the reset every crash-reload would leak refcounts and pin dead watchers alive), and by
+`reap_dead_window_subscriptions` after each `notes_watch` (the unlocked build gap can land a
+subscription for an already-destroyed window that nothing else would ever drain)), and the
+**window commands** — a
 label→workspace map plus a label→note map powering
 `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window` and
 `window_note`/`set_window_note`/`window_note_renamed`/`window_note_removed`/`open_note_window`, plus
@@ -117,8 +136,8 @@ FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ use
 All persistence sits behind the **`NoteStore` interface** (`src/storage/types.ts`) — the key extension
 seam, with three backends (two of them folder-of-`.md`). A note id is its POSIX rel-path (`<Title>.md`
 at the root, `Work/Sub/<Title>.md` when nested); the basename without `.md` is the title. The seam
-spans notes, **nested folders**, and **media attachments** (plus an optional desktop-only `reveal`).
-Anything above the seam (`useNotes`, navigation, UI) is backend-agnostic.
+spans notes, **nested folders**, and **media attachments** (plus optional desktop-only `reveal` and
+`watch`). Anything above the seam (`useNotes`, navigation, UI) is backend-agnostic.
 
 Key modules:
 
@@ -127,7 +146,11 @@ Key modules:
   seam also covers nested folders (`create(title, parentPath)`, `move`, `createFolder`/`removeFolder`/
   `moveFolder`/`listFolders`, and `listsRecursively` so metadata reconcile never prunes ids a backend
   can't yet enumerate), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
-  `listAttachments`/`removeAttachment`), and an optional desktop-only `reveal(relPath)`.
+  `listAttachments`/`removeAttachment`), an optional desktop-only `reveal(relPath)`, and an optional
+  desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; resolves
+  to a SYNC disposer; `TauriNoteStore.watch` listens window-scoped for `notes:changed` filtered by
+  `payload.dir === this.dir`, subscribes the listener BEFORE invoking `notes_watch` so no event can
+  slip the gap, and unlistens+rethrows if the invoke fails).
 - `src/search.ts` — pure full-text ranking (no I/O, no React): `tokenizeQuery`, `scoreNoteText`
   (multi-term AND; title ≫ body, word-boundary/prefix/phrase boosts), `buildSnippet`, `searchNotes`.
   The corpus (id → body, plus a pre-lowercased `lowerById` so a big folder isn't re-lowercased on
@@ -230,7 +253,36 @@ Key modules:
   `active` keeps tracking the window's own note for the conflict checks). Re-lists on window focus
   (2 s throttle, `ready`-gated) — main + note windows
   routinely show the same folder now, so a returning window picks up notes created/edited elsewhere.
-  Exposes `flushPending()` (teardown) and `refresh()` (re-list after import). Takes a `NoteStore` —
+  On desktop it also subscribes to `store.watch` (`ready`-gated): external changes push a
+  300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN `refresh()`
+  (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow the
+  deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
+  reason; the corpus follows the list signature for free). `checkOpenNoteConflict` RE-VALIDATES
+  after its `store.stat` await (same id, no conflict/pending/save, baseline unchanged) — a note
+  switch mid-stat would otherwise raise a phantom conflict for the WRONG note, whose banner
+  actions key off `conflict.id` and would cross-contaminate the two notes — and mirrors a raised
+  conflict into `conflictRef` synchronously (the effect mirror lags a render; flush's raise sites
+  do too), because `refresh()` reads the ref to KEEP a vanished `active` alive while its
+  deleted-conflict banner is up (nulling it would silently drop every keystroke typed under the
+  banner — `edit()` records nothing without an id). `refresh()` also merges newest-wins per row,
+  so a save landing mid-walk isn't clobbered back to a stale preview (`addNote` replaces-not-
+  appends for the same reason). The hook's own writes echo back through the watcher via
+  `recentLocalWritesRef` (3 s window; every mutation stamps its rel-path — store-returned, post-
+  sanitize — AND the `dirname()` ancestor chain, since fs ops churn ancestor dirs; an EMPTY
+  `paths` event is NEVER suppressible, `[].every()` is vacuously true): echo-only batches skip
+  the 300 ms cadence but are NEVER dropped — they defer ONE trailing verify run
+  (`WATCH_SUPPRESSED_VERIFY_MS`, past the stamp window, superseded by any sooner real run), so a
+  stamp false-positive (an external dir-only event under an ancestor stamp, an external rewrite
+  of a just-saved note) delays a refresh instead of losing it; correctness additionally never
+  rests on suppression because a save advances `baselineRef` before its echo lands.
+  `saveInFlightRef` gates the conflict check (mid-save, `pendingRef` is already null and
+  `baselineRef` stale → phantom conflict). Events while `hidden` latch and replay on
+  `visibilitychange` (visible ≠ focused, so the focus re-list wouldn't cover it; `run()` re-checks
+  visibility at fire time). A failed `watch()` subscription degrades to focus-refresh with a
+  `console.warn`. Exposes `flushPending()` (teardown), `refresh()` (plain re-list), `reload()`
+  (check-then-refresh — the orb menu's "Reload notes" and post-import path; a bare `refresh()`
+  there would swallow the deleted-conflict), and `withBulkWrites()` (holds the watcher/focus
+  pipelines off during import — bulk writes bypass the echo stamps). Takes a `NoteStore` —
   agnostic to which backend it is.
 - `src/hooks/useCorpus.ts` — the **shared body corpus**, loaded once (lazily, while a query is live or a
   note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
@@ -383,6 +435,16 @@ Key modules:
   canonical `isTauri` lives in `src/isTauri.ts`) and keep the browser build working (e.g. `pickFolder`
   branches; `@tauri-apps/plugin-dialog`/`-updater`/`-process` are loaded via dynamic `import()` so they
   never enter the web bundle).
+
+## Docs
+
+Human-facing docs live in `docs/`: `architecture.md` (how it's built, the on-disk format, and the
+**known limitations** — the canonical list) and `shortcuts.md` (the full shortcut sheet). The
+README stays slim — features, two-path Getting started (download / from source), doc pointers,
+backlog. Keep these in sync with code changes: a new/changed shortcut updates `docs/shortcuts.md`
+alongside the `SHORTCUTS` descriptor in `src/shortcuts.ts` (the in-app `⌘/` dialog renders from the
+descriptor, the doc is by hand); a new limitation, storage-format change, or architectural shift
+updates `docs/architecture.md`; a new user-facing feature gets a README feature bullet.
 
 ## Roadmap
 

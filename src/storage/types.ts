@@ -234,6 +234,16 @@ export interface NoteStore {
      * affordance on the web / in-browser backends, which have no file to reveal.
      */
     reveal?(relPath: string): Promise<void>;
+    /**
+     * Subscribe to EXTERNAL on-disk changes in the notes folder (another app, another window,
+     * a sync agent). `onChange` receives root-relative POSIX paths of changed notes/folders — an
+     * EMPTY array means "many/unknown changes, treat everything as changed". Events are debounced
+     * backend-side; the caller still owns its own coalescing, self-echo suppression, and refresh
+     * policy. Resolves to a disposer that unsubscribes (sync — the underlying native teardown is
+     * fire-and-forget). Present only on the native desktop backend; callers feature-detect it
+     * (`store.watch`), and the web backends keep the focus-driven refresh instead.
+     */
+    watch?(onChange: (relPaths: string[]) => void): Promise<() => void>;
     /** Current `lastModified` for a note, or `null` if it no longer exists. */
     stat(id: string): Promise<number | null>;
     /** Read the folder's notes metadata (sort, pins, created times); defaults if absent or corrupt. */

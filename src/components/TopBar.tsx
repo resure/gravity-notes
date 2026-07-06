@@ -65,6 +65,11 @@ export interface TopBarProps {
     onImport: () => void;
     /** Open the media-attachments manager. */
     onManageAttachments: () => void;
+    /**
+     * Re-read the notes list from the store. The manual lever for picking up external edits on
+     * backends without live watching (web FSA), and an escape hatch on the desktop.
+     */
+    onReload: () => void;
     /** Open the Trash (soft-deleted notes). */
     onOpenTrash: () => void;
     /** Number of notes currently in the Trash, for the menu-item badge. */
@@ -152,6 +157,7 @@ export function TopBar({
     onExport,
     onImport,
     onManageAttachments,
+    onReload,
     onOpenTrash,
     trashCount,
     onOpenHelp,
@@ -411,6 +417,11 @@ export function TopBar({
                       },
                   ]
                 : []),
+            {
+                text: 'Reload notes',
+                iconStart: <Icon data={ArrowsRotateRight} />,
+                action: onReload,
+            },
         ],
         [
             {

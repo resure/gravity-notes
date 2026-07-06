@@ -26,6 +26,9 @@ tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Live watching of the notes folder (FSEvents on macOS), for external-edit refresh.
+notify = "8.2"
+notify-debouncer-mini = "0.7"
 
 # The tall-titlebar toolbar trick in apply_macos_chrome (already in the tree via tao/wry).
 [target."cfg(target_os = \"macos\")".dependencies]
