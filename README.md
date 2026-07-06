@@ -85,7 +85,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
 - Resizable left panel
-- Icon picker polish: `aria-activedescendant` can point at a virtualized-out option; the title picker can still set an icon in preview mode; no search debounce
 
 - Preserve cmd+z between notes
 - Cmd+z for undoing deleting of notes and moves between folders?

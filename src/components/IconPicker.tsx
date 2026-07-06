@@ -12,8 +12,9 @@ import type {KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent}
 
 import {Button, Icon, Popup, SegmentedRadioGroup, TextInput} from '@gravity-ui/uikit';
 import type {ButtonProps} from '@gravity-ui/uikit';
-import {useVirtualizer} from '@tanstack/react-virtual';
+import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
+import {useDebouncedValue} from '../hooks/useDebouncedValue';
 import {
     type EmojiItem,
     type IconItem,
@@ -131,6 +132,10 @@ export const IconPickerPopup = memo(function IconPickerPopup({
     // Open is the anchor's presence — one prop, so no caller can render an anchorless open popup.
     const open = anchorElement !== null;
     const [query, setQuery] = useState('');
+    // Debounce the query that DRIVES filtering — the catalog is thousands of icons + emoji, so
+    // re-filtering and re-virtualizing on every keystroke is wasteful. The input stays bound to the
+    // live `query` for responsive typing; only the grid reads the settled value.
+    const debouncedQuery = useDebouncedValue(query, 100);
     const [type, setType] = useState<IconPickerType>('all');
     const [emojis, setEmojis] = useState<EmojiItem[] | null>(null);
     const [icons, setIcons] = useState<IconItem[] | null>(() => getIconCatalog()?.all ?? null);
@@ -168,7 +173,7 @@ export const IconPickerPopup = memo(function IconPickerPopup({
         const out: Entry[] = [];
         // In the "All" view, emoji come first, then the Gravity symbols.
         if (type !== 'icons' && emojis) {
-            for (const emoji of filterEmojis(query, emojis)) {
+            for (const emoji of filterEmojis(debouncedQuery, emojis)) {
                 out.push({
                     kind: 'emoji',
                     key: `emoji:${emoji.char}`,
@@ -179,7 +184,7 @@ export const IconPickerPopup = memo(function IconPickerPopup({
             }
         }
         if (type !== 'emoji' && icons) {
-            for (const icon of filterIcons(query, icons)) {
+            for (const icon of filterIcons(debouncedQuery, icons)) {
                 out.push({
                     kind: 'icon',
                     key: icon.name,
@@ -189,7 +194,7 @@ export const IconPickerPopup = memo(function IconPickerPopup({
             }
         }
         return out;
-    }, [open, query, type, emojis, icons]);
+    }, [open, debouncedQuery, type, emojis, icons]);
 
     // Chunk the flat entry list into fixed 8-wide rows so we can virtualize by row: the catalog runs
     // to thousands of icons/emoji and mounting them all was what made the popup lag.
@@ -199,12 +204,23 @@ export const IconPickerPopup = memo(function IconPickerPopup({
         return out;
     }, [entries]);
 
+    // The grid row holding the keyboard highlight. Forced to stay mounted below so the search box's
+    // `aria-activedescendant` always points at a real element — a highlighted option scrolled out of
+    // the virtual window would otherwise leave the attribute dangling at a torn-down id.
+    const activeRow = activeIndex >= 0 ? Math.floor(activeIndex / COLUMNS) : -1;
     const scrollRef = useRef<HTMLDivElement>(null);
     const rowVirtualizer = useVirtualizer({
         count: rows.length,
         getScrollElement: () => scrollRef.current,
         estimateSize: () => ROW_HEIGHT,
         overscan: 4,
+        // A fresh closure per render keeps `activeRow` current (matches NoteList's row list). The
+        // window is a few sorted indexes, so the extra push + sort is free.
+        rangeExtractor: (range) => {
+            const indexes = defaultRangeExtractor(range);
+            if (activeRow >= 0 && !indexes.includes(activeRow)) indexes.push(activeRow);
+            return indexes.sort((a, b) => a - b);
+        },
     });
 
     // The Popup unmounts its content on close, so on reopen the virtualizer is left measuring a stale
@@ -399,6 +415,12 @@ export function IconPicker({value, onChange, size = 'm', disabled, className}: I
     const onOpenChange = useCallback((next: boolean) => {
         if (!next) setAnchor(null);
     }, []);
+    // Close the popup if the picker becomes disabled while it's open — e.g. toggling the note into
+    // read-only preview mode (⌘⇧P) with the popup up. The disabled BUTTON only blocks opening; an
+    // already-open popup would otherwise stay pickable and commit a change preview should forbid.
+    useEffect(() => {
+        if (disabled) setAnchor(null);
+    }, [disabled]);
     return (
         <>
             <IconPickerButton
