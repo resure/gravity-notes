@@ -159,6 +159,32 @@ describe('useAppUpdater', () => {
         expect(result.current.error).toBeNull();
     });
 
+    it('check() passes a timeout so a stalled manifest fetch cannot hang forever', async () => {
+        checkMock.mockResolvedValue(null);
+        const {result} = renderHook(() => useAppUpdater());
+        await act(async () => {
+            await result.current.check();
+        });
+        expect(checkMock).toHaveBeenCalledWith({timeout: 15_000});
+    });
+
+    it('install() passes a download timeout so a 0-B stall cannot hang forever', async () => {
+        const downloadAndInstall = vi.fn(async (cb?: (e: DownloadEvent) => void) => {
+            cb?.({event: 'Started', data: {contentLength: 10}});
+            cb?.({event: 'Finished'});
+        });
+        checkMock.mockResolvedValue(makeUpdate(downloadAndInstall));
+        const {result} = renderHook(() => useAppUpdater());
+        await act(async () => {
+            await result.current.check();
+        });
+        await act(async () => {
+            await result.current.install();
+        });
+        // Second arg to downloadAndInstall(cb, options) carries the timeout.
+        expect(downloadAndInstall).toHaveBeenCalledWith(expect.any(Function), {timeout: 120_000});
+    });
+
     it('a failed install is retryable on the still-held handle', async () => {
         const downloadAndInstall = vi
             .fn()

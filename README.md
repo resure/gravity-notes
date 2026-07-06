@@ -85,14 +85,12 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
 - Resizable left panel
-- Icon picker polish: `aria-activedescendant` can point at a virtualized-out option; the title picker can still set an icon in preview mode; no search debounce
 
 - Preserve cmd+z between notes
 - Cmd+z for undoing deleting of notes and moves between folders?
 
 - Easter egg in top bar (to the right of the search bar) ?
 - Notion-like page title backgrounds
-- Better looking checklists
 
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Metadata storage approach review

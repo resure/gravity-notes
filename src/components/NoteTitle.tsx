@@ -148,7 +148,11 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
                     className="note-title__icon"
                     value={icon}
                     disabled={readOnly}
-                    onChange={(name) => onSetIcon?.(name)}
+                    // Belt-and-suspenders: the disabled button + close-on-disable already block this in
+                    // preview mode, but never write an icon while read-only.
+                    onChange={(name) => {
+                        if (!readOnly) onSetIcon?.(name);
+                    }}
                     size="l"
                 />
             ) : null}
