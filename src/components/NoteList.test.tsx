@@ -785,5 +785,5 @@ describe('NoteList — note icons (one shared picker)', () => {
         await user.click(within(alpha).getByRole('button', {name: /note icon/i}));
         await screen.findByRole('listbox', {name: 'Pick an icon'});
         expect(screen.getByRole('radio', {name: 'All'})).toBeChecked();
-    }, 15_000);
+    });
 });
