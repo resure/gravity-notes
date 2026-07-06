@@ -29,14 +29,29 @@ build, or a "this looks wrong" after actually trying the app, leaves only throwa
    (`~/.cargo/bin/cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
    `rust-toolchain-tauri` memory). The build script prepends `~/.cargo/bin` to PATH itself, so a
    Homebrew cargo sitting first on PATH no longer breaks the build.
-3. **Signing credentials** in the environment (the build script reads these; never print their
-   values): the Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`, which
-   the build script aliases to it), `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (the `.p8` file is
-   readable) — **and** the updater key
-   `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
-   `~/Documents/Apple Connect Keys/gravity-notes-updater.key`;
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may be empty). Check each is set — without the updater key
-   the build can't sign the auto-update bundle and fails.
+3. **Signing credentials** — these live in **`~/.localrc`**, NOT in the agent's default
+   environment. The Bash tool starts a **fresh shell on every call** and does not persist env vars
+   between calls, so you must `source ~/.localrc` **in the same command** as anything that reads the
+   credentials — both this check **and** the build in Step 3 (a bare `source` in an earlier call is
+   gone by the next). The vars (the build script reads these; **never print their values**): the
+   Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`, which the build
+   script aliases to it), `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (the `.p8` file is readable) —
+   **and** the updater key `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
+   `~/Documents/Apple Connect Keys/gravity-notes-updater.key`; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+   may be empty). Verify each is set (names only, never values) — without the updater key the build
+   can't sign the auto-update bundle and fails:
+
+   ```bash
+   # The Bash tool runs zsh, so this stays POSIX (no `${!v}` indirect expansion — that's a bash-ism).
+   test -f ~/.localrc || echo "MISSING ~/.localrc — signing creds live here"
+   source ~/.localrc
+   [ -n "$APPLE_SIGNING_IDENTITY" ] || echo "MISSING: APPLE_SIGNING_IDENTITY"
+   [ -n "$APPLE_API_ISSUER" ] || echo "MISSING: APPLE_API_ISSUER"
+   [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || echo "MISSING: TAURI_SIGNING_PRIVATE_KEY"
+   [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_ID" ] || echo "MISSING: APPLE_API_KEY"
+   [ -r "$APPLE_API_KEY_PATH" ] || echo "MISSING/unreadable: APPLE_API_KEY_PATH"
+   ```
+
 4. **GitHub CLI.** `gh auth status` is logged in.
 5. **Green tree.** Run `npm run typecheck`, `npm test`, and `npm run lint`. Do not
    release a red tree.
@@ -83,8 +98,11 @@ lockstep (leave them **uncommitted** for now). Capture `$NEW` — every later st
 
 ## Step 3 — Build, sign, notarize (the slow step)
 
+**Source the credentials in the same command as the build** — the Bash tool's shell doesn't carry
+env vars over from the Step 0 check (fresh shell per call), so the build needs its own `source`:
+
 ```bash
-./scripts/build-mac-release.sh
+source ~/.localrc && ./scripts/build-mac-release.sh
 ```
 
 Tauri builds + signs the `.app` (hardened runtime, Developer ID) and notarizes+staples
