@@ -211,4 +211,3 @@ Key modules:
 - Metadata storage approach review
 - Mobile view
 - Mobile app
-
