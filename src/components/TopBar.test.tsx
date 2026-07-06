@@ -37,6 +37,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         onExport: vi.fn(),
         onImport: vi.fn(),
         onManageAttachments: vi.fn(),
+        onReload: vi.fn(),
         onOpenTrash: vi.fn(),
         trashCount: 0,
         onOpenHelp: vi.fn(),
@@ -198,6 +199,7 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             onExport={noop}
             onImport={noop}
             onManageAttachments={noop}
+            onReload={noop}
             onOpenTrash={noop}
             trashCount={0}
             onOpenHelp={noop}
