@@ -33,8 +33,8 @@ Markdown files, and they are yours.
   watcher), with conflict handling when a note changes underneath you
 - **Multiple workspaces & windows** (desktop): switch folders with `⌃R`, open a workspace — or a
   single note — in its own window
-- **Make it yours**: light/dark theme, editor font, accent color, text width — app-wide, per
-  workspace, or per note
+- **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
+  per workspace, or per note
 - **Autosave**, visited-note history (`⌘[` / `⌘]`), and automatic signed updates in the macOS app
 
 ## Getting started

@@ -1620,12 +1620,10 @@ async function setupWatched(seed?: (dir: FakeDirectoryHandle) => void) {
     const store: NoteStore = new FileSystemNoteStore(asDirectoryHandle(dir));
     const watchState = {
         onChange: null as ((relPaths: string[]) => void) | null,
-        disposeCalls: 0,
     };
     store.watch = async (onChange) => {
         watchState.onChange = onChange;
         return () => {
-            watchState.disposeCalls += 1;
             watchState.onChange = null;
         };
     };
@@ -1664,7 +1662,7 @@ describe('useNotes — live watch', () => {
         expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: false});
     });
 
-    it('suppresses the echo of its own autosave (no re-list, no conflict)', async () => {
+    it('defers the echo of its own autosave to one trailing verify run', async () => {
         const {hook, watchState, listSpy} = await setupWatched((d) =>
             d.seedFile('Note.md', 'v1', 100),
         );
@@ -1683,16 +1681,69 @@ describe('useNotes — live watch', () => {
         const listCalls = listSpy.mock.calls.length;
         vi.useFakeTimers();
         try {
-            // The watcher echoes our own write back; the pipeline must not run at all.
+            // The watcher echoes our own write back; no refresh at the fast 300 ms cadence…
             act(() => watchState.onChange!(['Note.md']));
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(2_000);
             });
             expect(listSpy.mock.calls.length).toBe(listCalls);
             expect(hook.result.current.conflict).toBeNull();
+            // …but the batch is deferred, not dropped: ONE verify run fires once the echoes go
+            // quiet — a stamp false-positive (e.g. an external dir event matching an ancestor
+            // stamp) may only ever delay a refresh, never lose one.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(2_000);
+            });
+            expect(listSpy.mock.calls.length).toBe(listCalls + 1);
+            expect(hook.result.current.conflict).toBeNull();
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('keeps the deleted note active (and its keystrokes) under the conflict banner', async () => {
+        const {hook, dir, store, watchState} = await setupWatched((d) =>
+            d.seedFile('Note.md', 'v1', 100),
+        );
+        await act(async () => {
+            await hook.result.current.open('Note.md');
+        });
+
+        await dir.removeEntry('Note.md'); // deleted externally while open
+        act(() => watchState.onChange!(['Note.md']));
+        await waitFor(() =>
+            expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: true}),
+        );
+
+        // The pipeline's refresh must NOT null `active` while the banner is up — otherwise
+        // edit() records nothing and everything typed under the banner is silently lost.
+        expect(hook.result.current.activeId).toBe('Note.md');
+        act(() => {
+            hook.result.current.edit('typed under the banner');
+        });
+        let copyId: string | null = null;
+        await act(async () => {
+            copyId = await hook.result.current.saveAsCopy();
+        });
+        expect(copyId).not.toBeNull();
+        const copy = await store.get(copyId!);
+        expect(copy.content).toBe('typed under the banner');
+    });
+
+    it('reload() raises the deleted-conflict instead of letting refresh swallow it', async () => {
+        const {hook, dir} = await setupWatched((d) => d.seedFile('Note.md', 'v1', 100));
+        await act(async () => {
+            await hook.result.current.open('Note.md');
+        });
+
+        await dir.removeEntry('Note.md'); // deleted externally; the window never lost focus
+        await act(async () => {
+            await hook.result.current.reload(); // the orb menu's "Reload notes"
+        });
+
+        // A bare refresh() would reconcile `active` away with no banner (dead editor).
+        expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: true});
+        expect(hook.result.current.activeId).toBe('Note.md');
     });
 
     it('an empty paths list ("many changes") refreshes even right after a local write', async () => {

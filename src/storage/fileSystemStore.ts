@@ -280,6 +280,8 @@ export class FileSystemNoteStore implements NoteStore {
             // even transiently), remove the source so the new-cased name is free, then write it. The
             // bytes live safely in the temp across the (necessary, unavoidable on this FS) window
             // between dropping `oldLeaf` and committing `nextLeaf`.
+            // `.rename-tmp` mirrors RENAME_TMP_SUFFIX in src-tauri/src/lib.rs (shared with the
+            // Tauri store so the desktop folder watcher's temp filter covers both spellings).
             const tempLeaf = `${nextLeaf}.rename-tmp`;
             await this.copyFileBytes(srcHandle, dir, tempLeaf);
             const tempHandle = await this.existingFileHandle(dir, tempLeaf);

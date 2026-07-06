@@ -578,6 +578,14 @@ describe('TauriNoteStore', () => {
             expect(eventHolder.unlistenCalls).toBe(1);
             // The fire-and-forget notes_unwatch invoke has been dispatched.
             await vi.waitFor(() => expect(fs.unwatchCalls).toEqual(['/notes']));
+
+            // Idempotent per handle: the Rust side decrements a refcount on every unwatch, so a
+            // double-dispose must not double-decrement (it could tear the watcher down under
+            // this window's other live subscription).
+            dispose();
+            expect(eventHolder.unlistenCalls).toBe(1);
+            await Promise.resolve(); // give a (wrongly) dispatched invoke a tick to record
+            expect(fs.unwatchCalls).toEqual(['/notes']);
         });
 
         it('a failed native registration unlistens and rethrows', async () => {

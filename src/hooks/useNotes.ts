@@ -18,7 +18,7 @@ import {
     withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
-import {dirname, joinPath, previewFromContent, titleFromFileName} from '../storage/noteText';
+import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -86,17 +86,26 @@ const RETRY_MAX_DELAY = 30_000;
  */
 const FOCUS_REFRESH_MIN_GAP_MS = 2_000;
 /**
- * Trailing debounce for watcher-driven refreshes, on top of the backend's own event debounce —
+ * Trailing debounce for watcher-driven refreshes, on top of the backend's own event debounce
+ * (`WATCH_DEBOUNCE_MS`, 400 ms, in `src-tauri/src/lib.rs` — end-to-end latency is the sum) —
  * coalesces multi-batch arrivals (bulk external writes) into one re-list.
  */
 const WATCH_REFRESH_DEBOUNCE_MS = 300;
 /**
- * How long one of our own writes suppresses the watcher's echo of its path. Wide enough to cover
- * the backend debounce + IPC; an external edit landing on the SAME note inside this window is
- * still caught authoritatively — by the next autosave's optimistic-concurrency check, or by the
- * next focus/watch check once the window lapses.
+ * How long one of our own writes marks the watcher's echo of its path as an echo. Wide enough to
+ * cover the backend debounce + IPC; an external edit landing on the SAME note inside this window
+ * is still caught authoritatively — by the next autosave's optimistic-concurrency check, or by
+ * the deferred verify run below once the echoes go quiet.
  */
 const LOCAL_WRITE_WINDOW_MS = 3_000;
+/**
+ * Echo-only watcher batches are not dropped — they defer one verify run this long past the LAST
+ * echo (trailing). The stamps can false-positive (an external dir-only event covered by ancestor
+ * stamps; an external rewrite of a just-saved note), so suppression may only ever DELAY a
+ * refresh, never lose one. Sized past the stamp window so steady typing (echo per autosave)
+ * can't fire it mid-burst.
+ */
+const WATCH_SUPPRESSED_VERIFY_MS = LOCAL_WRITE_WINDOW_MS + WATCH_REFRESH_DEBOUNCE_MS;
 
 /**
  * Tell the desktop shell a note's id (rel-path) changed, so any single-note WINDOW pinned to the
@@ -234,6 +243,18 @@ export interface UseNotes {
     flushPending(): Promise<boolean>;
     /** Re-read the note list from the store (e.g. after importing notes). */
     refresh(): Promise<void>;
+    /**
+     * Manual full re-sync (the orb menu's "Reload notes" / post-import): checks the open note
+     * for an external conflict FIRST, then refreshes — a bare refresh() would let reconcile
+     * null an externally-deleted open note's `active` with no banner.
+     */
+    reload(): Promise<void>;
+    /**
+     * Run a bulk store mutation (import) with the watcher/focus refresh pipelines held off —
+     * bulk writes bypass this hook's echo stamps, so each batch would otherwise trigger a full
+     * mid-import re-list.
+     */
+    withBulkWrites<T>(fn: () => Promise<T>): Promise<T>;
     /** Conflict resolvers (act on the open note). */
     reloadDisk(): Promise<void>;
     keepMine(): Promise<void>;
@@ -411,9 +432,12 @@ export function useNotes(
     /**
      * rel-paths (notes AND their ancestor folders — our fs ops churn those too, via
      * create_dir_all / empty-ancestor pruning) this hook itself recently wrote, so the watcher's
-     * echo of our own writes isn't treated as an external change (each would cost a full
-     * re-list — write amplification while typing). Purely an optimization: a suppressed echo
-     * can't hide a real conflict, because a save advances baselineRef before its echo lands.
+     * echo of our own writes isn't refreshed at full cadence (each would cost a full re-list —
+     * write amplification while typing). An optimization only, twice over: a suppressed echo
+     * can't hide a real conflict (a save advances baselineRef before its echo lands), and an
+     * echo-only batch still schedules one deferred verify run (see the watch effect) — so a
+     * false-positive stamp (e.g. an external dir event matching an ancestor stamp) delays a
+     * refresh by a few seconds instead of losing it.
      */
     const recentLocalWritesRef = useRef<Map<string, number>>(new Map());
     /** True while flush()'s store.save is in flight — see checkOpenNoteConflict. */
@@ -436,14 +460,31 @@ export function useNotes(
 
     const refresh = useCallback(async () => {
         const [list, folderList] = await Promise.all([store.list(), store.listFolders()]);
-        setNotes(list);
+        // Newest-wins per row: an autosave can land while list() walks the folder, so its
+        // bumpInList row (fresher mtime + preview) must survive this snapshot — which was read
+        // before the write and would otherwise clobber it back to stale (and the save's own
+        // watcher echo is suppressed, so nothing would correct the row until the next trigger).
+        setNotes((prev) => {
+            const prevById = new Map(prev.map((n) => [n.id, n]));
+            return list.map((n) => {
+                const cur = prevById.get(n.id);
+                return cur && (cur.updatedAt ?? 0) > (n.updatedAt ?? 0) ? cur : n;
+            });
+        });
         setFolders(folderList);
         // Reconcile against notes AND folders, so a pinned empty folder isn't pruned.
-        applyMetadata(
-            reconcile(metadataRef.current, [...list.map((n) => n.id), ...folderList], {
-                recursive: store.listsRecursively,
-            }),
-        );
+        let next = reconcile(metadataRef.current, [...list.map((n) => n.id), ...folderList], {
+            recursive: store.listsRecursively,
+        });
+        // Keep a vanished `active` alive while its deleted-conflict banner is up: nulling it
+        // would silently drop every keystroke typed under the banner (edit() records nothing
+        // without an id) and strand "Save as copy" with pre-deletion content. Every resolution
+        // path rewrites or clears the pointer, so it can't leak past the conflict.
+        const prevActive = metadataRef.current.active;
+        if (!next.active && prevActive && conflictRef.current?.id === prevActive) {
+            next = withActive(next, prevActive);
+        }
+        applyMetadata(next);
         // NOTE: refresh() deliberately does NOT re-stat `.trash/`. The trash registry (and thus the
         // `trashCount` badge) is kept in sync in-memory by the trash mutations (withTrashed /
         // withoutTrashEntry / …), and refresh() runs after every note/folder op — folding a
@@ -484,7 +525,15 @@ export function useNotes(
     // by note moves. Metadata stays consistent via the with* helpers each handler already applies.
     /** Append a freshly-created note to the list (preview derived from its initial body). */
     const addNote = useCallback((meta: NoteMeta, content = '') => {
-        setNotes((prev) => [...prev, {...meta, preview: previewFromContent(content)}]);
+        setNotes((prev) => {
+            const row = {...meta, preview: previewFromContent(content)};
+            // A concurrent watcher/focus refresh may already have listed the just-created file
+            // (create awaits a metadata write before patching the list) — replace, don't append,
+            // or the row (and its React key) would double until the next full refresh.
+            return prev.some((n) => n.id === meta.id)
+                ? prev.map((n) => (n.id === meta.id ? row : n))
+                : [...prev, row];
+        });
     }, []);
     /** Re-key a note after a rename/move (id + title + mtime change; body/preview unchanged). */
     const rekeyNote = useCallback((oldId: string, meta: NoteMeta) => {
@@ -558,11 +607,19 @@ export function useNotes(
             // the newer edit (already in pendingRef, with its own timer) must win, not be clobbered.
             if (pendingRef.current === null) pendingRef.current = pending;
             if (err instanceof ConflictError) {
-                setConflict({id: err.id, diskUpdatedAt: err.diskUpdatedAt, deleted: false});
+                // Mirror into the ref synchronously (the effect mirror lags a render): a
+                // refresh() racing this raise must see the conflict to keep `active` alive.
+                conflictRef.current = {
+                    id: err.id,
+                    diskUpdatedAt: err.diskUpdatedAt,
+                    deleted: false,
+                };
+                setConflict(conflictRef.current);
                 setSaveState('conflict');
                 return true; // unresolved conflict still holds the unsaved edit
             } else if (err instanceof DOMException && err.name === 'NotFoundError') {
-                setConflict({id: pending.id, diskUpdatedAt: 0, deleted: true});
+                conflictRef.current = {id: pending.id, diskUpdatedAt: 0, deleted: true};
+                setConflict(conflictRef.current);
                 setSaveState('conflict');
                 return true; // note deleted out from under us; the edit is unsaved
             } else {
@@ -696,8 +753,10 @@ export function useNotes(
     const createFolder = useCallback(
         async (parentPath: string, name: string): Promise<void> => {
             try {
-                await store.createFolder(parentPath, name);
-                stampLocalWrite(joinPath(parentPath, name)); // our dir write — not external
+                // Stamp the path the store actually created (it sanitizes the segment) — the
+                // raw typed name would stamp a key the watcher's echo never matches.
+                const path = await store.createFolder(parentPath, name);
+                stampLocalWrite(path); // our dir write — not external
                 await refresh();
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to create folder');
@@ -1362,6 +1421,7 @@ export function useNotes(
         // An in-flight save: pendingRef is already null but baselineRef hasn't advanced yet, so
         // a stat now would see the just-written mtime and raise a phantom conflict.
         if (saveInFlightRef.current) return;
+        const baselineAtStart = baselineRef.current;
         let diskMtime: number | null;
         try {
             diskMtime = await store.stat(id);
@@ -1370,14 +1430,59 @@ export function useNotes(
             // fire-and-forget check surface as an unhandled rejection.
             return;
         }
+        // Re-validate after the await: a note switch, fresh edit, or save that started (or
+        // started AND finished — the baseline recapture) during the stat means this result
+        // belongs to a stale world. Acting on it would raise a phantom conflict for the WRONG
+        // note, and the banner's actions key off conflict.id — "Keep mine" would save the now-
+        // open note's body over the statted one's file.
+        if (
+            metadataRef.current.active !== id ||
+            conflictRef.current ||
+            pendingRef.current ||
+            moveInProgressRef.current ||
+            saveInFlightRef.current ||
+            baselineRef.current !== baselineAtStart
+        ) {
+            return;
+        }
         if (diskMtime === null) {
-            setConflict({id, diskUpdatedAt: 0, deleted: true});
+            // Mirror into the ref synchronously (the effect mirror lags a render): the refresh
+            // that typically follows this check must see the conflict to keep `active` alive.
+            conflictRef.current = {id, diskUpdatedAt: 0, deleted: true};
+            setConflict(conflictRef.current);
             setSaveState('conflict');
         } else if (baselineRef.current !== null && diskMtime !== baselineRef.current) {
-            setConflict({id, diskUpdatedAt: diskMtime, deleted: false});
+            conflictRef.current = {id, diskUpdatedAt: diskMtime, deleted: false};
+            setConflict(conflictRef.current);
             setSaveState('conflict');
         }
     }, [store]);
+
+    /**
+     * Manual full re-sync (the orb menu's "Reload notes"): same check-then-refresh order as the
+     * watcher pipeline — a bare refresh() would let reconcile null an externally-deleted open
+     * note's `active` with no banner, silently dead-ending the editor.
+     */
+    const reload = useCallback(async () => {
+        await checkOpenNoteConflict();
+        await refresh();
+    }, [checkOpenNoteConflict, refresh]);
+
+    /**
+     * Run a bulk store mutation (import) with the watcher/focus pipelines held off: bulk writes
+     * go through the store directly — below this hook's echo stamps — so every batch would
+     * otherwise refresh mid-import (full re-list churn racing the import's own writes). Reuses
+     * the move guard; the watcher pipeline re-arms and settles once `fn` resolves, and the
+     * caller refreshes afterwards anyway (import does).
+     */
+    const withBulkWrites = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
+        moveInProgressRef.current = true;
+        try {
+            return await fn();
+        } finally {
+            moveInProgressRef.current = false;
+        }
+    }, []);
 
     // Detect an external change to the open note when returning to the tab/window.
     useEffect(() => {
@@ -1406,20 +1511,26 @@ export function useNotes(
             const now = Date.now();
             if (now - last < FOCUS_REFRESH_MIN_GAP_MS) return;
             last = now;
-            refresh().catch(() => {
-                // A transient read failure keeps the current list; the next focus retries.
-            });
+            // Same order as the watcher pipeline: the check must raise a deleted-conflict (and
+            // pin `active`) BEFORE refresh()'s reconcile can null the vanished pointer —
+            // refresh-first would swallow the banner and dead-end the editor.
+            checkOpenNoteConflict()
+                .then(() => refresh())
+                .catch(() => {
+                    // A transient read failure keeps the current list; the next focus retries.
+                });
         };
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
-    }, [ready, refresh]);
+    }, [ready, refresh, checkOpenNoteConflict]);
 
     // Desktop live watching: the store pushes external on-disk changes (another window, another
     // app, a sync agent), so the list — and with it the search corpus, which keys off the list
     // signature — refreshes and the open note's conflict check runs WITHOUT waiting for a window
     // focus. Feature-detected off the seam (`store.watch`); the web backends keep the
-    // focus-driven refresh above. Our own writes echo back through the watcher too — suppressed
-    // via recentLocalWritesRef (a perf guard only; correctness never depends on it).
+    // focus-driven refresh above. Our own writes echo back through the watcher too — echo-only
+    // batches skip the fast 300 ms cadence and defer ONE trailing verify run instead (a perf
+    // guard that can only delay a refresh, never lose one).
     useEffect(() => {
         if (!ready) return undefined;
         const watch = store.watch?.bind(store);
@@ -1427,6 +1538,7 @@ export function useNotes(
         let disposed = false;
         let unwatch: (() => void) | undefined;
         let timer: ReturnType<typeof setTimeout> | null = null;
+        let verifyTimer: ReturnType<typeof setTimeout> | null = null;
         let running = false;
         let queued = false;
         let pendingWhileHidden = false;
@@ -1435,15 +1547,38 @@ export function useNotes(
         // (bulk external writes) lands as one refresh. Function declarations: run and schedule
         // reference each other, in deferred positions only.
         function schedule() {
+            // A sooner full run supersedes a pending echo-verify (it reads the same disk truth).
+            if (verifyTimer) {
+                clearTimeout(verifyTimer);
+                verifyTimer = null;
+            }
             if (timer) clearTimeout(timer);
             timer = setTimeout(() => {
                 timer = null;
                 void run();
             }, WATCH_REFRESH_DEBOUNCE_MS);
         }
+        // Echo-only batches: one deferred run per burst, trailing past the stamp window, so a
+        // false-positive suppression (external dir event under an ancestor stamp; external
+        // rewrite of a just-saved note) is healed a few seconds later instead of lost.
+        function scheduleVerify() {
+            if (timer) return; // a full run is already due sooner
+            if (verifyTimer) clearTimeout(verifyTimer);
+            verifyTimer = setTimeout(() => {
+                verifyTimer = null;
+                void run();
+            }, WATCH_SUPPRESSED_VERIFY_MS);
+        }
         async function run() {
             if (running) {
                 queued = true; // coalesce: at most one refresh running + one queued
+                return;
+            }
+            if (document.visibilityState === 'hidden') {
+                // Don't refresh a window the user can't see (minimized/occluded) — latch and
+                // replay on visibility. Checked at fire time so a timer armed while visible
+                // can't walk the store behind a window that hid meanwhile.
+                pendingWhileHidden = true;
                 return;
             }
             if (moveInProgressRef.current) {
@@ -1468,13 +1603,15 @@ export function useNotes(
         }
         const onChange = (relPaths: string[]) => {
             if (disposed) return;
-            // Skip pure echoes of our own writes. Empty = "many/unknown changes" — NEVER
-            // suppressible ([].every() is vacuously true).
-            if (relPaths.length > 0 && relPaths.every(isRecentLocalWrite)) return;
+            // Pure echoes of our own writes defer to the verify run. Empty = "many/unknown
+            // changes" — NEVER suppressible ([].every() is vacuously true).
+            if (relPaths.length > 0 && relPaths.every(isRecentLocalWrite)) {
+                scheduleVerify();
+                return;
+            }
             if (document.visibilityState === 'hidden') {
-                // Don't refresh a window the user can't see (minimized/occluded) — latch and
-                // replay on visibility. Becoming visible doesn't imply gaining focus, so the
-                // focus re-list above wouldn't cover it.
+                // Latch and replay on visibility: becoming visible doesn't imply gaining focus,
+                // so the focus re-list above wouldn't cover it.
                 pendingWhileHidden = true;
                 return;
             }
@@ -1494,13 +1631,19 @@ export function useNotes(
                 if (disposed) dispose();
                 else unwatch = dispose;
             },
-            () => {
-                // Watching is best-effort — the focus-driven refresh still covers external edits.
+            (err: unknown) => {
+                // Watching is best-effort — the focus-driven refresh still covers external
+                // edits — but leave a trace, or a failed watcher degrades the session silently.
+                console.warn(
+                    'Live folder watching unavailable; falling back to refresh on window focus.',
+                    err,
+                );
             },
         );
         return () => {
             disposed = true;
             if (timer) clearTimeout(timer);
+            if (verifyTimer) clearTimeout(verifyTimer);
             document.removeEventListener('visibilitychange', onVisible);
             unwatch?.();
         };
@@ -1541,6 +1684,8 @@ export function useNotes(
         edit,
         flushPending,
         refresh,
+        reload,
+        withBulkWrites,
         reloadDisk,
         keepMine,
         saveAsCopy,

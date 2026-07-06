@@ -34,19 +34,19 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 ## Editing
 
-| Keys             | Action                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)             |
-| `⌘⇧;`            | Toggle WYSIWYG / Markup                                                                     |
-| `⌘⇧P`            | Toggle read-only preview                                                                    |
-| `⌘⇧I`            | Note appearance — per-note font and text width                                              |
-| `⌘⇧K`            | Insert link (in the editor)                                                                 |
-| `[[`             | Open the wiki-link note picker (in the editor)                                              |
-| `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed) |
-| `F2`             | Rename the selected note, or the focused folder in the rail                                 |
-| `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's the heading shortcut) |
-| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it)       |
-| `⌘⇧⌫`            | Move the selected note to the Trash (asks to confirm; recoverable)                          |
+| Keys             | Action                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
+| `⌘⇧;`            | Toggle WYSIWYG / Markup                                                                                                                   |
+| `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
+| `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
+| `⌘⇧K`            | Insert link (in the editor)                                                                                                               |
+| `[[`             | Open the wiki-link note picker (in the editor)                                                                                            |
+| `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
+| `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
+| `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's the heading shortcut)                                               |
+| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it)                                                     |
+| `⌘⇧⌫`            | Move the selected note to the Trash (asks to confirm; recoverable)                                                                        |
 
 ## General
 
@@ -59,14 +59,14 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 With the folder rail open (`⌘⇧\`) and a folder focused:
 
-| Keys / mouse                | Action                                                      |
-| --------------------------- | ----------------------------------------------------------- |
-| Click a folder              | Scope the notes list to it (**All Notes** shows everything) |
-| `F2` / double-click         | Rename the folder                                           |
-| `n`                         | Create a subfolder                                          |
-| `⌫`                         | Remove an empty folder                                      |
-| Drag a note onto a folder   | File it there                                               |
-| Drag a folder onto a folder | Nest it (onto **All Notes** to move it back to the root)    |
+| Keys / mouse                | Action                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| Click a folder              | Scope the notes list to it (**All Notes** shows everything; search stays global) |
+| `F2` / double-click         | Rename the folder                                                                |
+| `n`                         | Create a subfolder                                                               |
+| `⌫`                         | Remove an empty folder                                                           |
+| Drag a note onto a folder   | File it there                                                                    |
+| Drag a folder onto a folder | Nest it (onto **All Notes** to move it back to the root)                         |
 
 With the rail closed, a small **folder chip** above the list names the active scope — click it to
 open the rail, `✕` to go back to All Notes. **New note** (`⌘N`) lands in the selected folder.

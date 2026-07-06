@@ -46,11 +46,20 @@ open folder, with per-window-label REFCOUNTED subscriptions — StrictMode makes
 unwatch` a legal wire order, so a set would break — emitting `notes:changed` `{dir, paths}` to each
 subscriber via `emit_to`; `dir` is the RAW path the frontend passed (strict-equals
 `TauriNoteStore.dir`) while `strip_prefix` runs against the canonicalized root — FSEvents resolves
-`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes `.md` leaves, existing DIRS
+`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes `.md` leaves (INCLUDING
+dot-named ones — the note walks list `.hidden.md`, only dot DIRS are skipped), existing DIRS
 (a Finder folder rename reports ONLY the dir paths), and vanished paths (unclassifiable → include),
-dropping dot-entries/`node_modules`/root-`Attachments/`/write temps; >64 paths or a watcher error →
-EMPTY `paths` = "refresh everything"; never drop a `WatcherEntry` under the mutex — Drop joins the
-debouncer thread), and the **window commands** — a
+dropping dot dirs/`node_modules`/root-`Attachments/`/write temps (the `WRITE_TMP_SUFFIX`/
+`RENAME_TMP_SUFFIX` consts — the TS stores mint `.rename-tmp`, mirror-commented there); >64 paths,
+a watcher error, or an event on the WATCH ROOT itself (FSEvents' queue-overflow rescan signal, all
+that survives the debouncer) → EMPTY `paths` = "refresh everything"; never drop a `WatcherEntry`
+under the mutex — Drop joins the debouncer thread, so `remove_window_subscriptions` returns the
+emptied entries for the caller to drop unlocked; subscriptions are drained on `Destroyed`, on
+`on_page_load` Started (a reload orphans the old JS context's disposers and fires no Destroyed —
+without the reset every crash-reload would leak refcounts and pin dead watchers alive), and by
+`reap_dead_window_subscriptions` after each `notes_watch` (the unlocked build gap can land a
+subscription for an already-destroyed window that nothing else would ever drain)), and the
+**window commands** — a
 label→workspace map plus a label→note map powering
 `window_workspace`/`set_window_workspace`/`focus_workspace_window`/`open_workspace_window` and
 `window_note`/`set_window_note`/`window_note_renamed`/`window_note_removed`/`open_note_window`, plus
@@ -247,16 +256,34 @@ Key modules:
   On desktop it also subscribes to `store.watch` (`ready`-gated): external changes push a
   300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN `refresh()`
   (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow the
-  deleted-conflict banner; the corpus follows the list signature for free). The hook's own writes
-  echo back through the watcher and are suppressed via `recentLocalWritesRef` (3 s window; every
-  mutation stamps its rel-path AND the `dirname()` ancestor chain — fs ops churn ancestor dirs; an
-  EMPTY `paths` event is NEVER suppressible, `[].every()` is vacuously true) — a perf guard only:
-  a save advances `baselineRef` before its echo lands, so correctness never depends on it.
+  deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
+  reason; the corpus follows the list signature for free). `checkOpenNoteConflict` RE-VALIDATES
+  after its `store.stat` await (same id, no conflict/pending/save, baseline unchanged) — a note
+  switch mid-stat would otherwise raise a phantom conflict for the WRONG note, whose banner
+  actions key off `conflict.id` and would cross-contaminate the two notes — and mirrors a raised
+  conflict into `conflictRef` synchronously (the effect mirror lags a render; flush's raise sites
+  do too), because `refresh()` reads the ref to KEEP a vanished `active` alive while its
+  deleted-conflict banner is up (nulling it would silently drop every keystroke typed under the
+  banner — `edit()` records nothing without an id). `refresh()` also merges newest-wins per row,
+  so a save landing mid-walk isn't clobbered back to a stale preview (`addNote` replaces-not-
+  appends for the same reason). The hook's own writes echo back through the watcher via
+  `recentLocalWritesRef` (3 s window; every mutation stamps its rel-path — store-returned, post-
+  sanitize — AND the `dirname()` ancestor chain, since fs ops churn ancestor dirs; an EMPTY
+  `paths` event is NEVER suppressible, `[].every()` is vacuously true): echo-only batches skip
+  the 300 ms cadence but are NEVER dropped — they defer ONE trailing verify run
+  (`WATCH_SUPPRESSED_VERIFY_MS`, past the stamp window, superseded by any sooner real run), so a
+  stamp false-positive (an external dir-only event under an ancestor stamp, an external rewrite
+  of a just-saved note) delays a refresh instead of losing it; correctness additionally never
+  rests on suppression because a save advances `baselineRef` before its echo lands.
   `saveInFlightRef` gates the conflict check (mid-save, `pendingRef` is already null and
   `baselineRef` stale → phantom conflict). Events while `hidden` latch and replay on
-  `visibilitychange` (visible ≠ focused, so the focus re-list wouldn't cover it).
-  Exposes `flushPending()` (teardown) and `refresh()` (re-list after import / the orb menu's
-  "Reload notes"). Takes a `NoteStore` — agnostic to which backend it is.
+  `visibilitychange` (visible ≠ focused, so the focus re-list wouldn't cover it; `run()` re-checks
+  visibility at fire time). A failed `watch()` subscription degrades to focus-refresh with a
+  `console.warn`. Exposes `flushPending()` (teardown), `refresh()` (plain re-list), `reload()`
+  (check-then-refresh — the orb menu's "Reload notes" and post-import path; a bare `refresh()`
+  there would swallow the deleted-conflict), and `withBulkWrites()` (holds the watcher/focus
+  pipelines off during import — bulk writes bypass the echo stamps). Takes a `NoteStore` —
+  agnostic to which backend it is.
 - `src/hooks/useCorpus.ts` — the **shared body corpus**, loaded once (lazily, while a query is live or a
   note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
   desktop) and every body is held once. Derives `contentById` (raw, for snippets), `lowerById`
