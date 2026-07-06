@@ -4,6 +4,26 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-07-06
+
+### Added
+
+- **Live file-watching (desktop)** — edits made to your notes folder outside the app (another
+  editor, a sync client, or a second Gravity Notes window) now show up automatically, with no manual
+  reload. If the note you're editing changes on disk or is deleted underneath you, the app detects it
+  and surfaces a conflict banner instead of silently clobbering or losing your work.
+- **Per-note windows (desktop)** — open any note in its own window, Apple-Notes style, with **⌘↵**,
+  ⌘-click on a list row, or the row's **⋯** menu. A note window opens with both side panels tucked
+  away and focus in the editor, and its title bar shows the note's name; **⌘0** (Window ▸ Main
+  Window) brings the full workspace window back to the front.
+
+### Fixed
+
+- A round of field-testing and code-review hardening: markup-mode undo no longer bleeds between
+  notes, typed URLs linkify more reliably, the wiki-link popups no longer get stuck while switching
+  notes, iCloud "dataless" files are handled more gracefully, and assorted multi-window rough edges
+  are smoothed out.
+
 ## [0.6.0] - 2026-07-05
 
 ### Added
