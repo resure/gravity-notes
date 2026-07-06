@@ -8,6 +8,11 @@ import {isTauri} from '../isTauri';
 // reached via dynamic `import()` so it never enters the browser bundle (mirrors the plugin-dialog
 // convention).
 
+// The manifest fetch has no timeout by default — a stalled connection (captive portal, half-open
+// socket) would otherwise hang the check forever, pinning the UI on "Checking for updates…" and the
+// `busyRef` latch with it (so no later check could run either). 15 s is generous for a small JSON.
+const CHECK_TIMEOUT_MS = 15_000;
+
 export type UpdaterStatus =
     | 'idle'
     | 'checking'
@@ -92,7 +97,7 @@ export function useAppUpdater(): AppUpdater {
             // resource); ignore close errors — a stale handle is harmless.
             await updateRef.current?.close().catch(() => {});
             updateRef.current = null;
-            const update = await runCheck();
+            const update = await runCheck({timeout: CHECK_TIMEOUT_MS});
             if (!update) {
                 setInfo(null);
                 // No Update handle means no version to read from it — ask the app shell directly so
@@ -157,6 +162,10 @@ export function useAppUpdater(): AppUpdater {
                     );
                 }
             });
+            // NOTE: no timeout on downloadAndInstall — the plugin maps DownloadOptions.timeout to
+            // reqwest's whole-request timeout (connect + full body read), so any fixed ceiling would
+            // abort a legitimately slow download of the multi-MB binary. The check() timeout above is
+            // safe because the manifest is a tiny JSON.
         } catch (err) {
             // Download/install failed — nothing was swapped in. The found handle is kept, so the
             // dialog can retry install() on it.

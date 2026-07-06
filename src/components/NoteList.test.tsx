@@ -556,6 +556,19 @@ describe('NoteList — open in new window (desktop)', () => {
         fireEvent.click(screen.getByRole('option', {name: /Beta/}), {metaKey: true});
         expect(props.onBrowse).toHaveBeenCalledWith('Beta.md');
     });
+
+    it('double-click on a row opens it in a new window', () => {
+        const onOpenInNewWindow = vi.fn();
+        setup({onOpenInNewWindow});
+        fireEvent.doubleClick(screen.getByRole('option', {name: /Beta/}));
+        expect(onOpenInNewWindow).toHaveBeenCalledWith('Beta.md');
+    });
+
+    it('double-click stays inert without the callback (web build)', () => {
+        setup();
+        // No throw, no crash — just nothing to open a window with.
+        fireEvent.doubleClick(screen.getByRole('option', {name: /Beta/}));
+    });
 });
 
 describe('NoteList — folder scope chip (rail closed)', () => {

@@ -193,12 +193,65 @@
     content: '';
 }
 
-/* Breathing room between a checklist checkbox and its label, plus vertical centering against
-   the first text line. */
+/* Tighten the gap between checklist rows — the editor gives each `.g-md-checkbox` a 15px bottom
+   margin (paragraph rhythm), which reads loose for a checklist; pull it in for a denser, more
+   Notion-like list. */
+.editor-pane .g-md-editor .g-md-checkbox {
+    margin-bottom: 6px;
+}
+
+/* Notion-style checkbox: a custom-drawn rounded square (native chrome stripped via
+   appearance:none) that fills with the app accent and shows a white check when ticked. The check is
+   a background SVG, not a pseudo-element — <input> is a replaced element and WebKit won't render
+   ::before/::after on it. Both the editor (here) and the read-only preview (NotePreview.css) share
+   the look; keep the two in sync. */
 .editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox'] {
-    margin-right: 10px;
-    margin-top: 0;
-    vertical-align: middle;
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    flex: none;
+    width: 17px;
+    height: 17px;
+    /* Vertical alignment: the plugin pins the box to the row's top (align-self:flex-start) and shifts
+       it 3px down with a positioned `top` — neutralize that, then center the box within ONE line via
+       margin-top. `1lh` (= the inherited text line-height) minus the box height, halved, centres the
+       17px box on the first text line at any font size (and keeps it on the FIRST line when the item
+       wraps, since flex-start still pins to the top). */
+    position: relative;
+    top: 0;
+    align-self: flex-start;
+    line-height: inherit;
+    margin: calc((1lh - 17px) / 2) 7px 0 0;
+    border: 1.5px solid var(--g-color-line-generic-hover);
+    border-radius: 5px;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px 12px;
+    cursor: pointer;
+    transition:
+        background-color 0.12s ease,
+        border-color 0.12s ease;
+}
+
+/* Hover on an unticked box: a faint accent-tinted fill + accent border, matching Notion's affordance. */
+.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:hover:not(:checked) {
+    border-color: var(--gn-orange);
+    background-color: rgba(var(--gn-accent-rgb), 0.12);
+}
+
+/* Ticked: accent fill + a white check glyph. */
+.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:checked {
+    border-color: var(--gn-orange);
+    background-color: var(--gn-orange);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
+
+/* Nudge the label text 1px down so it optically sits on the (centered) checkbox — the lowercase
+   x-height otherwise reads a hair high against the box. */
+.editor-pane .g-md-editor .g-md-checkbox__label {
+    position: relative;
+    top: 0px;
 }
 
 /* Checklist rows should indent like the dashed (bulleted) lists — the checkbox box adds extra

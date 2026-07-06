@@ -130,3 +130,52 @@
 .note-preview__body.yfm ul > li:has(input[type='checkbox'])::marker {
     content: '';
 }
+
+/* Notion-style checkbox, mirroring the editor (EditorPane.css) so the read-only render matches the
+   WYSIWYG one — a custom rounded square that fills with the accent + a white check when ticked. The
+   preview's checkboxes are `disabled` (read-only), so no hover affordance. Keep in sync with the
+   editor rule. The `.note-preview` prefix lifts specificity above diplodoc's own
+   `.yfm .checkbox > input[type=checkbox]` rule (yfm.css), which otherwise ties and could win on
+   source order — margin/alignment/`top` are all set here so nothing leaks through from it. */
+.note-preview .note-preview__body.yfm input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    flex: none;
+    /* Centre the box on the first text line — see EditorPane.css for the `1lh` reasoning. diplodoc
+       shifts the input down with a positioned `top`; neutralize it, then centre via margin-top. */
+    position: relative;
+    top: 0;
+    align-self: flex-start;
+    line-height: inherit;
+    width: 17px;
+    height: 17px;
+    margin: calc((1lh - 17px) / 2) 7px 0 0;
+    padding: 0;
+    border: 1.5px solid var(--g-color-line-generic-hover);
+    border-radius: 5px;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px 12px;
+    /* Read-only, but keep it looking un-disabled (full contrast, not the browser's greyed chrome). */
+    opacity: 1;
+}
+.note-preview .note-preview__body.yfm input[type='checkbox']:checked {
+    border-color: var(--gn-orange);
+    background-color: var(--gn-orange);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
+
+/* Nudge the label text 1px down so it optically sits on the (centered) checkbox — mirrors the
+   editor's .g-md-checkbox__label rule. */
+.note-preview .note-preview__body.yfm .checkbox > label {
+    position: relative;
+    top: 1px;
+}
+
+/* Tighten the gap between checklist rows to match the editor (its .g-md-checkbox rule) — diplodoc
+   gives each `.checkbox` a 15px bottom margin, looser than a checklist wants. */
+.note-preview .note-preview__body.yfm .checkbox {
+    margin-bottom: 6px;
+}

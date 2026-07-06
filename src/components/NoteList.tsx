@@ -194,6 +194,7 @@ interface NoteRowProps {
     onOpenIconPicker: (id: string, anchor: HTMLElement) => void;
     showIcons: boolean;
     onClickRow: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
+    onDoubleClickRow: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
     onKeyDownRow: (event: ReactKeyboardEvent<HTMLDivElement>, id: string) => void;
     onOpenMenu: (note: NoteMeta, anchor: HTMLElement) => void;
@@ -224,6 +225,7 @@ const NoteRow = memo(function NoteRow({
     onOpenIconPicker,
     showIcons,
     onClickRow,
+    onDoubleClickRow,
     onContextMenuRow,
     onKeyDownRow,
     onOpenMenu,
@@ -247,6 +249,7 @@ const NoteRow = memo(function NoteRow({
                 e.dataTransfer.setData('text/plain', note.id);
             }}
             onClick={(e) => onClickRow(note.id, e)}
+            onDoubleClick={(e) => onDoubleClickRow(note.id, e)}
             onMouseDown={(e) => {
                 // Right-click and ⌘-click act on a row WITHOUT selecting it — block the mousedown
                 // default so the focusable row doesn't grab DOM focus either (the context menu /
@@ -628,6 +631,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         [browseRow],
     );
 
+    // Double-click (desktop): open the note in its own window — Apple-Notes-style, matching ⌘↵ /
+    // ⌘-click / the ⋯ "Open in New Window" item. The preceding single click already browsed+selected
+    // it in this window, which is fine. No-op on web (no callback) — the browser's word-select on
+    // double-click is harmless there, so nothing to prevent.
+    const onDoubleClickRow = useCallback((id: string, event: ReactMouseEvent<HTMLDivElement>) => {
+        const {editingId: editing, onOpenInNewWindow: openInNew} = live.current;
+        if (editing === id || !openInNew) return;
+        // Suppress the accompanying word-selection so the row doesn't flash a highlighted title.
+        event.preventDefault();
+        openInNew(id);
+    }, []);
+
     // Deliberately NO browse here: right-click acts on the clicked note via the menu's own
     // `note` payload, without moving the selection/preview off whatever is open (same rule as
     // ⌘-click / ⌘↵ opening a new window).
@@ -915,6 +930,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                         onOpenIconPicker={onOpenIconPicker}
                                         showIcons={showIcons}
                                         onClickRow={onClickRow}
+                                        onDoubleClickRow={onDoubleClickRow}
                                         onContextMenuRow={onContextMenuRow}
                                         onKeyDownRow={onKeyDownRow}
                                         onOpenMenu={onOpenMenu}
