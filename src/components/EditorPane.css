@@ -251,7 +251,7 @@
    x-height otherwise reads a hair high against the box. */
 .editor-pane .g-md-editor .g-md-checkbox__label {
     position: relative;
-    top: 0px;
+    top: 1px;
 }
 
 /* Checklist rows should indent like the dashed (bulleted) lists — the checkbox box adds extra

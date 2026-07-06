@@ -13,7 +13,7 @@ The editor (`@gravity-ui/markdown-editor`) is a single reused instance; content 
 per note. There is **no** public API to serialize/restore history (the `history` plugin instance is
 private, so `EditorState.toJSON`/`fromJSON` with plugin fields is a dead end). The workable approach:
 **hold each note's live `EditorState` object in memory and restore it wholesale** — history travels
-with the object. This is exactly what the current reset already does, just with a *fresh* state:
+with the object. This is exactly what the current reset already does, just with a _fresh_ state:
 `view.updateState(EditorState.create({doc, plugins}))` (`EditorPane.tsx`, `resetHistory`). We swap the
 fresh state for the saved one.
 
