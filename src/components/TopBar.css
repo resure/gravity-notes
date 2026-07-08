@@ -34,11 +34,21 @@
     transform: translateY(-50%);
 }
 
+/* Mobile (web): viewport-fit=cover lets the page draw edge-to-edge, so pad the bar for the device
+   safe areas (notch / rounded corners / landscape sensor housing). max() keeps the normal 6/12px on
+   non-notched screens (inset = 0), so it's inert on desktop and the Tauri build. */
+.topbar_mobile {
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+}
+
 /* A NARROW Tauri window switches to the mobile layout, but the native overlay titlebar still floats
    the macOS traffic lights at the top-left. Undo the desktop command-center centering (left-align
    like the web build) and inset the bar's leading content past the lights so the orb / Back button
    clear them with a comfortable gap — sitting flush against the cluster made the round orb read as a
-   4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room. */
+   4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room.
+   Higher specificity than the web `.topbar_mobile` above, so this padding-left wins on desktop. */
 .tauri-app .topbar_mobile {
     justify-content: flex-start;
     padding-left: 96px;

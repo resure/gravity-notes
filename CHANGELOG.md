@@ -4,6 +4,16 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Mobile / narrow-window layout** — on viewports 700px and under (a phone, or a desktop window
+  dragged narrow) the app switches to a single-pane view: the note list fills the screen, tapping a
+  note slides to a full-width editor with a **‹ Notes** back button, and the folder picker opens as a
+  drawer over a dimmed backdrop. The desktop three-pane layout is unchanged above that width, and the
+  desktop app's minimum window size was lowered so it can be sized down to a narrow column.
+
 ## [0.7.0] - 2026-07-06
 
 ### Added

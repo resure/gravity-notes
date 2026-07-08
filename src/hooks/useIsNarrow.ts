@@ -1,8 +1,10 @@
 import {useSyncExternalStore} from 'react';
 
 /**
- * Viewport width (px) at/below which the app switches to the single-pane mobile layout. Kept in
- * sync with the `max-width: 700px` media queries in Workspace.css / NoteList.css / TopBar.css.
+ * Viewport width (px) at/below which the app switches to the single-pane mobile layout. This is the
+ * SOLE source of the breakpoint: the hook applies it via matchMedia, and Workspace / TopBar toggle
+ * the `workspace__body_mobile` / `topbar_mobile` classes off `isNarrow` — so the CSS reacts to those
+ * classes, not to its own `@media` queries (there are none for this breakpoint).
  */
 export const MOBILE_MAX_WIDTH = 700;
 

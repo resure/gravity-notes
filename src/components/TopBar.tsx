@@ -480,12 +480,7 @@ export function TopBar({
     ];
 
     return (
-        <header
-            className={`topbar${mobile ? ' topbar_mobile' : ''}${
-                mobileEditor ? ' topbar_mobile-editor' : ''
-            }`}
-            data-tauri-drag-region
-        >
+        <header className={`topbar${mobile ? ' topbar_mobile' : ''}`} data-tauri-drag-region>
             {mobileEditor ? (
                 // Mobile editor pane: a single Back button (left) that pops back to the notes list.
                 // The orb menu + search belong to the list pane, so they're hidden here; the note's

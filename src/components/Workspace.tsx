@@ -629,6 +629,21 @@ export function Workspace({
         }
     }, [isNarrow, mobilePane, notes.ready, notes.note]);
 
+    // Return to the list from the editor pane (Back button / Escape) and land keyboard focus on the
+    // selected row once the list is on screen — mirrors the desktop Esc-out-of-editor behavior. A
+    // one-shot flag gates the focus so the recovery effect above (note vanished) doesn't grab it.
+    const wantsListFocusRef = useRef(false);
+    const backToList = useCallback(() => {
+        wantsListFocusRef.current = true;
+        setMobilePane('list');
+    }, []);
+    useEffect(() => {
+        if (mobilePane === 'list' && wantsListFocusRef.current) {
+            wantsListFocusRef.current = false;
+            listRef.current?.focusSelected();
+        }
+    }, [mobilePane]);
+
     const nav = useNoteNavigation({
         activeId: notes.activeId,
         open: notes.open,
@@ -647,6 +662,7 @@ export function Workspace({
         (id: string) => {
             nav.commit(id);
             setPeeked(false);
+            setMobilePane('editor'); // mobile: ⌘[/⌘] can fire from the list pane — reveal the note
         },
         [nav],
     );
@@ -727,10 +743,10 @@ export function Workspace({
     // hidden) — then peek it open, which moves focus into the list.
     const handleEditorEscape = useCallback(() => {
         if (isNarrow)
-            setMobilePane('list'); // mobile: pop back to the notes list
+            backToList(); // mobile: pop back to the notes list (+ focus the selected row)
         else if (collapsed) setPeeked(true);
         else nav.escapeEditor();
-    }, [isNarrow, collapsed, nav]);
+    }, [isNarrow, backToList, collapsed, nav]);
 
     const notify = useCallback(
         (message: string) =>
@@ -951,6 +967,7 @@ export function Workspace({
             if (existing) {
                 nav.commit(existing);
                 setPeeked(false);
+                setMobilePane('editor');
                 return;
             }
             const ref = target.split('|', 1)[0].split('#', 1)[0].trim();
@@ -962,6 +979,7 @@ export function Workspace({
                     nav.setSelected(newId);
                     setPendingEditorFocus(true);
                     setPeeked(false);
+                    setMobilePane('editor');
                 }
             })();
         },
@@ -1243,7 +1261,7 @@ export function Workspace({
                     onMenuOpen={() => void onRefreshWorkspaces()}
                     mobile={isNarrow}
                     mobileEditor={isNarrow && mobilePane === 'editor'}
-                    onMobileBack={() => setMobilePane('list')}
+                    onMobileBack={backToList}
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={handleManageAttachments}
@@ -1466,6 +1484,7 @@ export function Workspace({
                                     onOpen={(id) => {
                                         nav.commit(id);
                                         setPeeked(false);
+                                        setMobilePane('editor');
                                     }}
                                 />
                             </>
