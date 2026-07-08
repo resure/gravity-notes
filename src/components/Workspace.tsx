@@ -8,6 +8,7 @@ import {useAppUpdater} from '../hooks/useAppUpdater';
 import {useBacklinks} from '../hooks/useBacklinks';
 import {useCorpus} from '../hooks/useCorpus';
 import {useDebouncedValue} from '../hooks/useDebouncedValue';
+import {useIsNarrow} from '../hooks/useIsNarrow';
 import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
 import {useNoteSearch} from '../hooks/useNoteSearch';
@@ -614,6 +615,20 @@ export function Workspace({
         return () => document.removeEventListener('pointerdown', onPointerDown);
     }, [peeked]);
 
+    // Mobile single-pane push navigation (≤700px): the sidebar (list) and the editor each fill the
+    // full body width, and exactly one is shown at a time. `mobilePane` chooses which — opening a
+    // note pushes to 'editor', the top bar's Back button returns to 'list'. Ignored on wider
+    // viewports, where the desktop multi-pane layout (collapsed/peeked overlay) applies instead.
+    const isNarrow = useIsNarrow();
+    const [mobilePane, setMobilePane] = useState<'list' | 'editor'>('list');
+    // When the open note goes away (deleted/discarded/externally removed) while on the editor pane,
+    // fall back to the list instead of stranding the user on the empty-editor placeholder.
+    useEffect(() => {
+        if (isNarrow && mobilePane === 'editor' && notes.ready && !notes.note) {
+            setMobilePane('list');
+        }
+    }, [isNarrow, mobilePane, notes.ready, notes.note]);
+
     const nav = useNoteNavigation({
         activeId: notes.activeId,
         open: notes.open,
@@ -711,9 +726,11 @@ export function Workspace({
     // Esc out of the editor: focus the selected row, unless the sidebar is collapsed (its rows are
     // hidden) — then peek it open, which moves focus into the list.
     const handleEditorEscape = useCallback(() => {
-        if (collapsed) setPeeked(true);
+        if (isNarrow)
+            setMobilePane('list'); // mobile: pop back to the notes list
+        else if (collapsed) setPeeked(true);
         else nav.escapeEditor();
-    }, [collapsed, nav]);
+    }, [isNarrow, collapsed, nav]);
 
     const notify = useCallback(
         (message: string) =>
@@ -897,6 +914,7 @@ export function Workspace({
 
     const handleCreate = useCallback(
         (title?: string, parentPath?: string) => {
+            setMobilePane('editor'); // no-op on desktop; on mobile, reveal the new note's editor
             nav.prepareCreate(); // arm the title to focus + select on the new note's mount
             // ⌘N / the New button create into the selected folder; an explicit parentPath (the
             // search box's root '') overrides that.
@@ -913,6 +931,7 @@ export function Workspace({
     // focus, so the user can immediately rename it.
     const handleDuplicate = useCallback(
         (id: string) => {
+            setMobilePane('editor'); // mobile: show the copy so its armed title can be renamed
             nav.prepareCreate();
             void (async () => {
                 const newId = await notes.duplicate(id);
@@ -971,11 +990,13 @@ export function Workspace({
     const handleSelectFolder = useCallback(
         (folder: string | null) => {
             setSelectedFolder(folder);
+            // Mobile: picking a folder dismisses the rail drawer so the filtered list is revealed.
+            if (isNarrow) setRailOpen(false);
             if (searching) return;
             const first = notesInFolder(orderedNotes, folder)[0];
             if (first) nav.browse(first.id);
         },
-        [searching, orderedNotes, nav],
+        [isNarrow, searching, orderedNotes, nav],
     );
 
     // ⌘J / ⌘K: browse to the next / previous note in the current list, from anywhere. Mirrors
@@ -1220,6 +1241,9 @@ export function Workspace({
                     onOpenFolderInNewWindow={handleOpenFolderInNewWindow}
                     onOpenSwitcher={openSwitcher}
                     onMenuOpen={() => void onRefreshWorkspaces()}
+                    mobile={isNarrow}
+                    mobileEditor={isNarrow && mobilePane === 'editor'}
+                    onMobileBack={() => setMobilePane('list')}
                     onExport={handleExport}
                     onImport={handleImportClick}
                     onManageAttachments={handleManageAttachments}
@@ -1268,6 +1292,7 @@ export function Workspace({
                         // focus moves to the editor, and the overlay has served its purpose.
                         nav.commit(id);
                         setPeeked(false);
+                        setMobilePane('editor');
                     }}
                     onCreate={(title) => handleCreate(title, '')}
                     onClose={nav.closeFromSearch}
@@ -1292,8 +1317,11 @@ export function Workspace({
                 <div
                     className={
                         'workspace__body' +
-                        (collapsed ? ' workspace__body_collapsed' : '') +
-                        (collapsed && peeked ? ' workspace__body_peeked' : '')
+                        (isNarrow
+                            ? ' workspace__body_mobile' +
+                              (mobilePane === 'editor' ? ' workspace__body_mobile-editor' : '')
+                            : (collapsed ? ' workspace__body_collapsed' : '') +
+                              (collapsed && peeked ? ' workspace__body_peeked' : ''))
                     }
                 >
                     <aside className="workspace__sidebar">
@@ -1316,6 +1344,16 @@ export function Workspace({
                                 onFocusList={() => listRef.current?.focusSelected()}
                             />
                         ) : null}
+                        {/* Mobile: a dimmed backdrop behind the rail drawer — tap it to dismiss the
+                            folder picker without changing the scope (picking a folder also closes
+                            it). Desktop keeps the rail docked inline, so no backdrop there. */}
+                        {isNarrow && railOpen ? (
+                            <div
+                                className="workspace__rail-backdrop"
+                                onClick={() => setRailOpen(false)}
+                                aria-hidden="true"
+                            />
+                        ) : null}
                         <NoteList
                             ref={listRef}
                             notes={listNotes}
@@ -1331,7 +1369,9 @@ export function Workspace({
                             onCommit={(id) => {
                                 nav.commit(id);
                                 setPeeked(false);
+                                setMobilePane('editor');
                             }}
+                            tapToOpen={isNarrow}
                             onEscapeList={() => {
                                 setPeeked(false);
                                 nav.escapeToSearch();

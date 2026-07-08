@@ -17,8 +17,8 @@
         "hiddenTitle": true,
         "width": 1100,
         "height": 740,
-        "minWidth": 680,
-        "minHeight": 480,
+        "minWidth": 300,
+        "minHeight": 380,
         "resizable": true,
         "fullscreen": false,
         "dragDropEnabled": false
