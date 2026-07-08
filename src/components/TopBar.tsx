@@ -9,6 +9,7 @@ import {
     ArrowDownToLine,
     ArrowUpFromLine,
     ArrowsRotateRight,
+    ChevronLeft,
     CircleArrowUp,
     CircleQuestion,
     ClockArrowRotateLeft,
@@ -59,6 +60,12 @@ export interface TopBarProps {
     onOpenSwitcher: () => void;
     /** The orb menu just opened — a chance to refresh the recents it shows. */
     onMenuOpen?: () => void;
+    /** Narrow (≤700px) single-pane layout is active — hides the note-appearance ⋯ on the list pane. */
+    mobile?: boolean;
+    /** Mobile + the editor pane is showing: swap the orb+search for a Back button back to the list. */
+    mobileEditor?: boolean;
+    /** Mobile: return from the editor pane to the notes list (the Back button). */
+    onMobileBack?: () => void;
     /** Export all notes as a .md zip. */
     onExport: () => void;
     /** Import .md files / a zip into the current store. */
@@ -160,6 +167,9 @@ export function TopBar({
     onReload,
     onOpenTrash,
     trashCount,
+    mobile,
+    mobileEditor,
+    onMobileBack,
     onOpenHelp,
     onOpenSettings,
     onCheckForUpdates,
@@ -470,47 +480,71 @@ export function TopBar({
     ];
 
     return (
-        <header className="topbar" data-tauri-drag-region>
-            <DropdownMenu
-                switcherWrapperClassName="topbar__menu-anchor"
-                onOpenToggle={(open) => {
-                    if (open) onMenuOpen?.();
-                }}
-                renderSwitcher={(props) => (
-                    <button
-                        {...props}
-                        type="button"
-                        className={`topbar__menu-orb topbar__menu-orb_${saveState}${
-                            orbPulsing ? ' topbar__menu-orb_pulsing' : ''
-                        }`}
-                        aria-label="Menu"
-                        aria-haspopup="true"
-                        title={STATUS_TEXT[saveState]}
-                        // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
-                        onAnimationIteration={() => {
-                            if (pulsePendingStopRef.current) {
-                                pulsePendingStopRef.current = false;
-                                setOrbPulsing(false);
-                            }
+        <header
+            className={`topbar${mobile ? ' topbar_mobile' : ''}${
+                mobileEditor ? ' topbar_mobile-editor' : ''
+            }`}
+            data-tauri-drag-region
+        >
+            {mobileEditor ? (
+                // Mobile editor pane: a single Back button (left) that pops back to the notes list.
+                // The orb menu + search belong to the list pane, so they're hidden here; the note's
+                // ⋯ appearance button stays at the right edge (see below).
+                <Button
+                    view="flat"
+                    size="l"
+                    className="topbar__back"
+                    onClick={onMobileBack}
+                    aria-label="Back to notes"
+                >
+                    <Icon data={ChevronLeft} size={18} />
+                    <span className="topbar__back-label">Notes</span>
+                </Button>
+            ) : (
+                <>
+                    <DropdownMenu
+                        switcherWrapperClassName="topbar__menu-anchor"
+                        onOpenToggle={(open) => {
+                            if (open) onMenuOpen?.();
                         }}
+                        renderSwitcher={(props) => (
+                            <button
+                                {...props}
+                                type="button"
+                                className={`topbar__menu-orb topbar__menu-orb_${saveState}${
+                                    orbPulsing ? ' topbar__menu-orb_pulsing' : ''
+                                }`}
+                                aria-label="Menu"
+                                aria-haspopup="true"
+                                title={STATUS_TEXT[saveState]}
+                                // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
+                                onAnimationIteration={() => {
+                                    if (pulsePendingStopRef.current) {
+                                        pulsePendingStopRef.current = false;
+                                        setOrbPulsing(false);
+                                    }
+                                }}
+                            />
+                        )}
+                        items={menuItems}
                     />
-                )}
-                items={menuItems}
-            />
-            <TextInput
-                className="topbar__search"
-                controlRef={searchInputRef}
-                value={displayValue}
-                onUpdate={onSearchUpdate}
-                placeholder="Search or create a note…"
-                // Placeholders aren't a reliable accessible name; name the field explicitly.
-                controlProps={{'aria-label': 'Search or create a note'}}
-                hasClear
-                onKeyDown={onSearchKeyDown}
-            />
+                    <TextInput
+                        className="topbar__search"
+                        controlRef={searchInputRef}
+                        value={displayValue}
+                        onUpdate={onSearchUpdate}
+                        placeholder="Search or create a note…"
+                        // Placeholders aren't a reliable accessible name; name the field explicitly.
+                        controlProps={{'aria-label': 'Search or create a note'}}
+                        hasClear
+                        onKeyDown={onSearchKeyDown}
+                    />
+                </>
+            )}
             {/* The open note's "⋯" appearance menu, pinned at the bar's right edge (always visible, so
-                no scroll-position juggling). Only present when a note is open. */}
-            {noteOpen ? (
+                no scroll-position juggling). Present when a note is open — but on mobile only on the
+                editor pane, not while browsing the list. */}
+            {noteOpen && (!mobile || mobileEditor) ? (
                 <>
                     <Button
                         ref={setAppearanceAnchor}

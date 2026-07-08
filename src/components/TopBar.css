@@ -34,6 +34,27 @@
     transform: translateY(-50%);
 }
 
+/* A NARROW Tauri window switches to the mobile layout, but the native overlay titlebar still floats
+   the macOS traffic lights at the top-left. Undo the desktop command-center centering (left-align
+   like the web build) and inset the bar's leading content past the lights so the orb / Back button
+   clear them with a comfortable gap — sitting flush against the cluster made the round orb read as a
+   4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room. */
+.tauri-app .topbar_mobile {
+    justify-content: flex-start;
+    padding-left: 96px;
+}
+
+/* On mobile the search is the hero again (full remaining width), not the desktop's fixed clamp. */
+.tauri-app .topbar_mobile .topbar__search {
+    flex: 1;
+    width: auto;
+}
+
+/* The inset already clears the lights, so drop the Back button's web nudge toward the edge. */
+.tauri-app .topbar_mobile .topbar__back {
+    margin-left: 0;
+}
+
 /* The search is the hero: it fills from the orb up to the right edge. */
 .topbar__search {
     flex: 1;
@@ -151,4 +172,19 @@
    the menu. */
 .topbar__menu-storage {
     max-width: 260px;
+}
+
+/* ── Mobile editor pane (≤700px) ────────────────────────────────────────────────────────────────
+   The Back button sits at the left; `margin-right: auto` pushes the note's ⋯ appearance button to
+   the right edge (it stays in the flex flow on web — the .tauri-app absolute-pin above doesn't
+   apply to the mobile web build). */
+.topbar__back {
+    flex-shrink: 0;
+    margin-right: auto;
+    /* -8px pulls the chevron toward the window edge so the label lines up with the content below. */
+    margin-left: -8px;
+}
+
+.topbar__back-label {
+    margin-left: 2px;
 }

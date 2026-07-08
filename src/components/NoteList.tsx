@@ -96,6 +96,11 @@ export interface NoteListProps {
     onBrowse: (id: string) => void;
     /** Open a note for editing (Enter on a row). */
     onCommit: (id: string) => void;
+    /**
+     * Mobile single-pane: a single tap on a row OPENS the note (commit) instead of just previewing
+     * it (browse) — there's no always-visible editor to preview into, so tap-to-open is the model.
+     */
+    tapToOpen?: boolean;
     /** Esc on a focused row: close the open note and return to search. */
     onEscapeList: () => void;
     /** Create a note in the currently-selected folder. */
@@ -384,6 +389,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         searchInputRef,
         onBrowse,
         onCommit,
+        tapToOpen,
         onEscapeList,
         onCreate,
         onRequestMove,
@@ -460,6 +466,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         iconPicker,
         onBrowse,
         onCommit,
+        tapToOpen,
         onEscapeList,
         onFocusRail,
         onOpenInNewWindow,
@@ -474,6 +481,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         iconPicker,
         onBrowse,
         onCommit,
+        tapToOpen,
         onEscapeList,
         onFocusRail,
         onOpenInNewWindow,
@@ -617,7 +625,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onClickRow = useCallback(
         (id: string, event: ReactMouseEvent<HTMLDivElement>) => {
-            const {editingId: editing, onOpenInNewWindow: openInNew} = live.current;
+            const {editingId: editing, onOpenInNewWindow: openInNew, tapToOpen: tap} = live.current;
             if (editing === id) return;
             // ⌘-click (desktop): open the note in its own window, leaving this window's selection
             // alone — the same modifier convention as ⌘↵ here and ⌘-click in the recents submenu.
@@ -626,7 +634,10 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 openInNew(id);
                 return;
             }
-            browseRow(id);
+            // Mobile single-pane: a plain tap OPENS the note (there's no side-by-side editor to
+            // preview into). On desktop it just browses (previews) — Enter/double-click open.
+            if (tap) live.current.onCommit(id);
+            else browseRow(id);
         },
         [browseRow],
     );

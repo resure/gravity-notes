@@ -130,3 +130,72 @@
             visibility 0s linear 0s;
     }
 }
+
+/* ── Mobile: single-pane push navigation (≤700px) ───────────────────────────────────────────────
+   On narrow viewports Workspace swaps the desktop collapsed/peeked overlay for these classes (see
+   the body className): the sidebar (folder rail + notes list) and the editor each fill the full
+   body width, and JS shows exactly one at a time via `mobilePane`. The editor is always full width
+   underneath (its flex:1 fills the body once the sidebar leaves the flow); the sidebar rides on top
+   as a full-width overlay, sliding off to the left when a note is open (`_mobile-editor`). The
+   breakpoint mirrors MOBILE_MAX_WIDTH in useIsNarrow.ts. */
+.workspace__body_mobile .workspace__sidebar {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    z-index: 5;
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+}
+
+/* The notes list fills the full-width overlay (overriding its fixed 280px desktop column). The
+   folder rail is taken out of the flow (a drawer, below), so the list is the sidebar's only
+   in-flow child and spans the whole width. */
+.workspace__body_mobile .note-list {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+}
+
+/* The folder rail opens as a left-anchored DRAWER over the list (rather than squeezing in beside
+   it), above a dimmed backdrop. Absolutely positioned, so the list fills the full width behind it;
+   z-index sits above the list but within the sidebar's own stacking context. It's shown in place
+   (no entrance animation) so it can never strand off-canvas. */
+.workspace__body_mobile .folder-rail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 82%);
+    z-index: 2;
+    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+}
+
+/* The scrim behind the drawer (mounted only on mobile while the rail is open) — a tap here closes
+   the picker. Covers the whole sidebar; the opaque drawer paints over its left portion. */
+.workspace__rail-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background-color: rgba(0, 0, 0, 0.32);
+}
+
+/* Editor pane showing: slide the list overlay off-screen and drop it from the tab order (the
+   visibility flip is delayed until the slide-out finishes, mirroring the desktop collapse). */
+.workspace__body_mobile.workspace__body_mobile-editor .workspace__sidebar {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+        transform 0.2s ease,
+        visibility 0s linear 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .workspace__body_mobile .workspace__sidebar {
+        transition: transform 0s;
+    }
+    .workspace__body_mobile.workspace__body_mobile-editor .workspace__sidebar {
+        transition:
+            transform 0s,
+            visibility 0s linear 0.2s;
+    }
+}
