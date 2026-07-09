@@ -24,7 +24,7 @@ import {
     useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
-import {isMainWindow, isNoteWindow, isTauri} from '../isTauri';
+import {isIos, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
@@ -49,6 +49,13 @@ import {WorkspaceSwitcherDialog} from './WorkspaceSwitcherDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
+
+/**
+ * Desktop Tauri (macOS) — i.e. the shell but NOT the iOS build. Gates the multi-window affordances
+ * (open a note / workspace / folder in its own window): iOS is single-window, so `open_*_window`
+ * would error there, and the affordances shouldn't be offered.
+ */
+const isDesktopTauri = isTauri && !isIos;
 
 interface WorkspaceProps {
     store: NoteStore;
@@ -1250,7 +1257,7 @@ export function Workspace({
                     storageLabel={storageLabel}
                     workspaces={workspaces}
                     activeWorkspaceId={workspaceId}
-                    isDesktop={isTauri}
+                    isDesktop={isDesktopTauri}
                     supportsFolders={supportsFolders}
                     onOpenWorkspace={handleOpenWorkspace}
                     onOpenWorkspaceInNewWindow={handleOpenWorkspaceInNewWindow}
@@ -1397,7 +1404,9 @@ export function Workspace({
                             onCreate={handleCreate}
                             onRequestMove={setMovingNoteId}
                             onDuplicate={handleDuplicate}
-                            onOpenInNewWindow={isTauri ? handleOpenNoteInNewWindow : undefined}
+                            onOpenInNewWindow={
+                                isDesktopTauri ? handleOpenNoteInNewWindow : undefined
+                            }
                             onReveal={handleReveal}
                             onRename={handleRename}
                             onDelete={handleDelete}
@@ -1558,7 +1567,7 @@ export function Workspace({
                     open={switcherOpen}
                     workspaces={workspaces}
                     currentId={workspaceId}
-                    isDesktop={isTauri}
+                    isDesktop={isDesktopTauri}
                     supportsFolders={supportsFolders}
                     onOpen={(id) => {
                         setSwitcherOpen(false);
