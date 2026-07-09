@@ -44,6 +44,17 @@ if (isTauri) {
     // safe-area padding instead of insetting past the (non-existent) traffic lights.
     if (isIos) {
         document.documentElement.classList.add('ios');
+        // WKWebView auto-zooms when focusing an input whose font-size is < 16px (the search box,
+        // inline rename, …) and allows pinch-zoom of the whole UI — neither of which a native app
+        // wants. Cap the scale. Done here (not in index.html) so it stays OUT of the web build,
+        // where disabling zoom is an accessibility regression and mobile Safari ignores it anyway;
+        // WKWebView, unlike Safari, honors maximum-scale/user-scalable.
+        document
+            .querySelector('meta[name="viewport"]')
+            ?.setAttribute(
+                'content',
+                'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
+            );
     }
 }
 
