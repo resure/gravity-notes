@@ -628,6 +628,13 @@ export function Workspace({
     // viewports, where the desktop multi-pane layout (collapsed/peeked overlay) applies instead.
     const isNarrow = useIsNarrow();
     const [mobilePane, setMobilePane] = useState<'list' | 'editor'>('list');
+    // Reveal-coordination state (see revealNote): the note the mobile pane should push to once it has
+    // loaded, plus stable reads of isNarrow / the open note for the callback.
+    const pendingMobileOpenRef = useRef<string | null>(null);
+    const isNarrowRef = useRef(isNarrow);
+    isNarrowRef.current = isNarrow;
+    const openNoteRef = useRef(notes.note);
+    openNoteRef.current = notes.note;
     // When the open note goes away (deleted/discarded/externally removed) while on the editor pane,
     // fall back to the list instead of stranding the user on the empty-editor placeholder.
     useEffect(() => {
@@ -636,11 +643,40 @@ export function Workspace({
         }
     }, [isNarrow, mobilePane, notes.ready, notes.note]);
 
+    // The single "open this note" funnel for mobile: push to the editor pane, but only once `id` is
+    // the actually-loaded note. Every open site calls this (with the note's id) instead of a bare
+    // setMobilePane('editor'), so the synchronous pane flip never races the async load — which used
+    // to leave the first tap on the list (the note loading behind it), blink the pane, or slide the
+    // list away before the note had switched. No-op on desktop, where the pane is unused.
+    const revealNote = useCallback((id: string) => {
+        if (!isNarrowRef.current) return;
+        if (openNoteRef.current?.id === id) {
+            setMobilePane('editor'); // already the loaded note → reveal immediately
+        } else {
+            pendingMobileOpenRef.current = id; // reveal once it finishes loading (effect below)
+        }
+    }, []);
+
+    // Complete a pending reveal once its note has loaded (notes.note caught up to the request).
+    useEffect(() => {
+        if (
+            isNarrow &&
+            pendingMobileOpenRef.current !== null &&
+            notes.note?.id === pendingMobileOpenRef.current
+        ) {
+            pendingMobileOpenRef.current = null;
+            setMobilePane('editor');
+        }
+    }, [isNarrow, notes.note]);
+
     // Return to the list from the editor pane (Back button / Escape) and land keyboard focus on the
     // selected row once the list is on screen — mirrors the desktop Esc-out-of-editor behavior. A
     // one-shot flag gates the focus so the recovery effect above (note vanished) doesn't grab it.
     const wantsListFocusRef = useRef(false);
     const backToList = useCallback(() => {
+        // Cancel any in-flight reveal — the user chose the list, so a note still loading must not
+        // push the editor pane back over it when it lands.
+        pendingMobileOpenRef.current = null;
         wantsListFocusRef.current = true;
         setMobilePane('list');
     }, []);
@@ -669,9 +705,9 @@ export function Workspace({
         (id: string) => {
             nav.commit(id);
             setPeeked(false);
-            setMobilePane('editor'); // mobile: ⌘[/⌘] can fire from the list pane — reveal the note
+            revealNote(id); // mobile: ⌘[/⌘] can fire from the list pane — reveal the note
         },
-        [nav],
+        [nav, revealNote],
     );
     const history = useNoteHistory({
         activeId: notes.activeId,
@@ -937,31 +973,35 @@ export function Workspace({
 
     const handleCreate = useCallback(
         (title?: string, parentPath?: string) => {
-            setMobilePane('editor'); // no-op on desktop; on mobile, reveal the new note's editor
             nav.prepareCreate(); // arm the title to focus + select on the new note's mount
             // ⌘N / the New button create into the selected folder; an explicit parentPath (the
             // search box's root '') overrides that.
             const dest = parentPath ?? selectedFolder ?? '';
             void (async () => {
                 const id = await notes.create(title, dest);
-                if (id) nav.setSelected(id);
+                if (id) {
+                    nav.setSelected(id);
+                    revealNote(id); // mobile: reveal the new note's editor once it's created + loaded
+                }
             })();
         },
-        [notes, nav, selectedFolder],
+        [notes, nav, selectedFolder, revealNote],
     );
 
     // Duplicate a note: copy it (shared attachments), then select the copy with its title armed for
     // focus, so the user can immediately rename it.
     const handleDuplicate = useCallback(
         (id: string) => {
-            setMobilePane('editor'); // mobile: show the copy so its armed title can be renamed
             nav.prepareCreate();
             void (async () => {
                 const newId = await notes.duplicate(id);
-                if (newId) nav.setSelected(newId);
+                if (newId) {
+                    nav.setSelected(newId);
+                    revealNote(newId); // mobile: show the copy so its armed title can be renamed
+                }
             })();
         },
-        [notes, nav],
+        [notes, nav, revealNote],
     );
 
     // Follow a [[wiki link]] (⌘/Ctrl-click in the editor): resolve the title to a note and open it.
@@ -974,7 +1014,7 @@ export function Workspace({
             if (existing) {
                 nav.commit(existing);
                 setPeeked(false);
-                setMobilePane('editor');
+                revealNote(existing);
                 return;
             }
             const ref = target.split('|', 1)[0].split('#', 1)[0].trim();
@@ -986,11 +1026,11 @@ export function Workspace({
                     nav.setSelected(newId);
                     setPendingEditorFocus(true);
                     setPeeked(false);
-                    setMobilePane('editor');
+                    revealNote(newId);
                 }
             })();
         },
-        [notes, nav],
+        [notes, nav, revealNote],
     );
 
     // Land focus in the editor body after a wiki link created + opened a new note (its session bumped).
@@ -1195,7 +1235,10 @@ export function Workspace({
             if (peeked) {
                 // Second press mirrors Enter on a focused row: commit the selected note
                 // (opens it + moves focus to the editor), then close the overlay.
-                if (nav.selectedId) nav.commit(nav.selectedId);
+                if (nav.selectedId) {
+                    nav.commit(nav.selectedId);
+                    revealNote(nav.selectedId);
+                }
                 setPeeked(false);
             } else {
                 setPeeked(true);
@@ -1317,7 +1360,7 @@ export function Workspace({
                         // focus moves to the editor, and the overlay has served its purpose.
                         nav.commit(id);
                         setPeeked(false);
-                        setMobilePane('editor');
+                        revealNote(id);
                     }}
                     onCreate={(title) => handleCreate(title, '')}
                     onClose={nav.closeFromSearch}
@@ -1394,7 +1437,7 @@ export function Workspace({
                             onCommit={(id) => {
                                 nav.commit(id);
                                 setPeeked(false);
-                                setMobilePane('editor');
+                                revealNote(id);
                             }}
                             tapToOpen={isNarrow}
                             onEscapeList={() => {
@@ -1493,7 +1536,7 @@ export function Workspace({
                                     onOpen={(id) => {
                                         nav.commit(id);
                                         setPeeked(false);
-                                        setMobilePane('editor');
+                                        revealNote(id);
                                     }}
                                 />
                             </>
