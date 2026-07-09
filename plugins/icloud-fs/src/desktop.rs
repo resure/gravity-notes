@@ -26,4 +26,12 @@ impl<R: Runtime> IcloudFs<R> {
   ) -> crate::Result<ResolveBookmarkResponse> {
     Err(crate::Error::Unsupported)
   }
+
+  pub fn read_note(&self, _payload: ReadNoteRequest) -> crate::Result<ReadNoteResponse> {
+    Err(crate::Error::Unsupported)
+  }
+
+  pub fn write_note(&self, _payload: WriteNoteRequest) -> crate::Result<WriteNoteResponse> {
+    Err(crate::Error::Unsupported)
+  }
 }

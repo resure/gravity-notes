@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-write-note"
+description = "Enables the write_note command without any pre-configured scope."
+commands.allow = ["write_note"]
+
+[[permission]]
+identifier = "deny-write-note"
+description = "Denies the write_note command without any pre-configured scope."
+commands.deny = ["write_note"]

@@ -40,3 +40,40 @@ pub struct ResolveBookmarkResponse {
     /// True when the OS reported the bookmark as stale and a fresh one was minted.
     pub stale: bool,
 }
+
+/// Read a single note relative to the workspace folder, `NSFileCoordinator`-coordinated and
+/// materializing the file first if iCloud has evicted its content (`dir`/`name` mirror the Rust
+/// `notes_*` command args — an absolute folder path and a POSIX rel-path within it).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadNoteRequest {
+    pub dir: String,
+    pub name: String,
+}
+
+/// Coordinated-read result. `exists: false` (empty content) is the "no such file" signal — the
+/// frontend maps it to a not-found/deleted conflict, matching `notes_read_opt` returning null.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadNoteResponse {
+    pub exists: bool,
+    pub content: String,
+    pub modified_ms: f64,
+}
+
+/// Write a single note relative to the workspace folder, `NSFileCoordinator`-coordinated and atomic
+/// (creating parent folders like `notes_write`'s `create_dir_all`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteNoteRequest {
+    pub dir: String,
+    pub name: String,
+    pub contents: String,
+}
+
+/// Coordinated-write result: the file's new mtime in epoch ms (re-seeds the autosave baseline).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteNoteResponse {
+    pub modified_ms: f64,
+}

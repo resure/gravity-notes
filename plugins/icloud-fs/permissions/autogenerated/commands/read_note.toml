@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-read-note"
+description = "Enables the read_note command without any pre-configured scope."
+commands.allow = ["read_note"]
+
+[[permission]]
+identifier = "deny-read-note"
+description = "Denies the read_note command without any pre-configured scope."
+commands.deny = ["read_note"]

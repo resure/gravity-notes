@@ -37,7 +37,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
   Builder::new("icloud-fs")
     .invoke_handler(tauri::generate_handler![
       commands::pick_folder,
-      commands::resolve_bookmark
+      commands::resolve_bookmark,
+      commands::read_note,
+      commands::write_note
     ])
     .setup(|app, api| {
       #[cfg(mobile)]
