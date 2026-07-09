@@ -1,6 +1,6 @@
 name: app
 options:
-  bundleIdPrefix: com.gravitynotes.desktop
+  bundleIdPrefix: net.resure.gravitynotes.app
   deploymentTarget:
     iOS: 14.0
 fileGroups: [../../src]
@@ -11,7 +11,7 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: Gravity Notes
-      PRODUCT_BUNDLE_IDENTIFIER: com.gravitynotes.desktop
+      PRODUCT_BUNDLE_IDENTIFIER: net.resure.gravitynotes.app
 targetTemplates:
   app:
     type: application
