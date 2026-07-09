@@ -4,6 +4,7 @@ import {Database, Folder} from '@gravity-ui/icons';
 import {Button, Card, Icon, Loader, Text} from '@gravity-ui/uikit';
 
 import type {NotesStorage} from '../hooks/useNotesStorage';
+import {isIos} from '../isTauri';
 
 import './FolderGate.css';
 
@@ -97,17 +98,18 @@ function Content({storage}: {storage: NotesStorage}) {
                         Open a folder…
                     </Button>
                 ) : null}
-                {/* In-browser storage is a WEB option (a fallback where folder access is patchy);
-                    the desktop app always uses a real folder. */}
-                {storage.isTauri ? null : (
+                {/* In-app / in-browser storage: a WEB fallback where folder access is patchy, and —
+                    until iCloud folder picking lands — the working on-device option on iOS. The
+                    macOS desktop app is folder-first and never offers it. */}
+                {!storage.isTauri || isIos ? (
                     <Button
                         view={storage.supportsFolders ? 'outlined' : 'action'}
                         size="l"
                         onClick={() => void storage.useBrowserStorage()}
                     >
-                        Store in this browser
+                        {isIos ? 'Store on this device' : 'Store in this browser'}
                     </Button>
-                )}
+                ) : null}
             </div>
             {!storage.supportsFolders ? (
                 <Text variant="caption-2" color="secondary">
