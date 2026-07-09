@@ -1634,6 +1634,11 @@ pub fn run() {
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
             }
+            // iOS-only: native security-scoped folder access (Files picker + bookmark). Lets the
+            // "Open a folder" gate reach an iCloud Drive folder whose `.md` files the shared `notes_*`
+            // commands then read/write directly (access is held for the app's lifetime).
+            #[cfg(target_os = "ios")]
+            app.handle().plugin(tauri_plugin_icloud_fs::init())?;
             if let Some(window) = app.get_webview_window("main") {
                 apply_macos_chrome(&window);
             }

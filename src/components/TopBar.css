@@ -48,9 +48,14 @@
    like the web build) and inset the bar's leading content past the lights so the orb / Back button
    clear them with a comfortable gap — sitting flush against the cluster made the round orb read as a
    4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room.
-   Higher specificity than the web `.topbar_mobile` above, so this padding-left wins on desktop. */
+   Higher specificity than the web `.topbar_mobile` above, so this padding-left wins on desktop.
+   Scoped to :not(.ios): iOS is also a Tauri build but has no traffic lights, so it keeps the plain
+   safe-area padding from `.topbar_mobile` and left-aligns without the 96px inset. */
 .tauri-app .topbar_mobile {
     justify-content: flex-start;
+}
+
+.tauri-app:not(.ios) .topbar_mobile {
     padding-left: 96px;
 }
 
@@ -60,8 +65,9 @@
     width: auto;
 }
 
-/* The inset already clears the lights, so drop the Back button's web nudge toward the edge. */
-.tauri-app .topbar_mobile .topbar__back {
+/* macOS only: the traffic-light inset already clears the lights, so drop the Back button's web
+   nudge toward the edge. On iOS there's no inset, so the nudge (from `.topbar__back`) stays. */
+.tauri-app:not(.ios) .topbar_mobile .topbar__back {
     margin-left: 0;
 }
 

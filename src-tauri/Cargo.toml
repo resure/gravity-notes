@@ -39,6 +39,12 @@ notify-debouncer-mini = "0.7"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# iOS-only: our in-tree plugin for native security-scoped folder access (Files picker + bookmark).
+# The desktop app opens a plain folder path via the `notes_*` commands, so this is compiled only for
+# iOS, where the folder must be a user-picked, bookmark-persisted, security-scoped URL.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-icloud-fs = { path = "../plugins/icloud-fs" }
+
 # The tall-titlebar toolbar trick in apply_macos_chrome (already in the tree via tao/wry).
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2 = "0.6"

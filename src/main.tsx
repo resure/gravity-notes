@@ -27,7 +27,7 @@ import './fonts/pt-serif.css';
 import './index.css';
 
 import {App} from './App';
-import {isTauri} from './isTauri';
+import {isIos, isTauri} from './isTauri';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
@@ -39,6 +39,12 @@ if (!rootEl) {
 // whole strip becomes a window drag handle (see TopBar.tsx / TopBar.css). No-op in the web build.
 if (isTauri) {
     document.documentElement.classList.add('tauri-app');
+    // iOS is also a Tauri build but has no overlay title bar or traffic lights (that's a
+    // macOS-desktop concern), so flag it separately: the mobile top bar then keeps its normal
+    // safe-area padding instead of insetting past the (non-existent) traffic lights.
+    if (isIos) {
+        document.documentElement.classList.add('ios');
+    }
 }
 
 // The dev build is distinguished by its blue "supernova" app icon alone (set in tauri.dev.conf.json);
