@@ -1,5 +1,7 @@
 import {invoke} from '@tauri-apps/api/core';
 
+import {isIos} from '../isTauri';
+
 import {METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     ATTACHMENTS_DIR,
@@ -45,6 +47,15 @@ interface NoteHead {
 interface AttachmentEntry {
     name: string;
     size: number;
+    modifiedMs: number;
+}
+/** Results of the icloud-fs plugin's coordinated per-note read/write (iOS only). */
+interface ReadNoteResponse {
+    exists: boolean;
+    content: string;
+    modifiedMs: number;
+}
+interface WriteNoteResponse {
     modifiedMs: number;
 }
 /**
@@ -102,7 +113,7 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async get(id: string): Promise<Note> {
-        const entry = await invoke<NoteFull | null>('notes_read_opt', {dir: this.dir, name: id});
+        const entry = await this.readNote(id);
         if (!entry) throw notFound(id);
         return {
             id,
@@ -386,10 +397,7 @@ export class TauriNoteStore implements NoteStore {
 
     async readMetadata(): Promise<NotesMetadata> {
         try {
-            const entry = await invoke<NoteFull | null>('notes_read_opt', {
-                dir: this.dir,
-                name: METADATA_FILENAME,
-            });
+            const entry = await this.readNote(METADATA_FILENAME);
             if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
             return parseMetadata(JSON.parse(entry.content));
         } catch {
@@ -404,8 +412,34 @@ export class TauriNoteStore implements NoteStore {
         await this.write(METADATA_FILENAME, JSON.stringify(meta, null, 2));
     }
 
-    /** Atomic write (temp + rename, Rust side); returns the file's new mtime in epoch ms. */
+    /**
+     * Read one note's content + mtime. On iOS this goes through the icloud-fs plugin's coordinated
+     * read (NSFileCoordinator + download-on-demand for an evicted iCloud file, so opening a not-yet-
+     * synced note works and never reads a mid-sync partial); elsewhere it's the plain std::fs
+     * notes_read_opt. `null` means the file is absent (→ a not-found/deleted conflict).
+     */
+    private async readNote(name: string): Promise<{content: string; modifiedMs: number} | null> {
+        if (isIos) {
+            const res = await invoke<ReadNoteResponse>('plugin:icloud-fs|read_note', {
+                payload: {dir: this.dir, name},
+            });
+            return res.exists ? {content: res.content, modifiedMs: res.modifiedMs} : null;
+        }
+        const entry = await invoke<NoteFull | null>('notes_read_opt', {dir: this.dir, name});
+        return entry ? {content: entry.content, modifiedMs: entry.modifiedMs} : null;
+    }
+
+    /**
+     * Atomic write returning the file's new mtime in epoch ms. On iOS the icloud-fs plugin does an
+     * NSFileCoordinator-coordinated atomic write (safe against iCloud sync racing the file); on the
+     * desktop it's the Rust notes_write (temp + rename).
+     */
     private write(name: string, content: string): Promise<number> {
+        if (isIos) {
+            return invoke<WriteNoteResponse>('plugin:icloud-fs|write_note', {
+                payload: {dir: this.dir, name, contents: content},
+            }).then((r) => r.modifiedMs);
+        }
         return invoke<number>('notes_write', {dir: this.dir, name, content});
     }
 

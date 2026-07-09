@@ -41,4 +41,21 @@ impl<R: Runtime> IcloudFs<R> {
       .run_mobile_plugin("resolveBookmark", payload)
       .map_err(Into::into)
   }
+
+  /// Coordinated + download-on-demand read of one note (the open-note path, where iCloud eviction
+  /// and mid-sync partial reads actually bite; the bulk walk stays on the Rust `notes_*` commands).
+  pub fn read_note(&self, payload: ReadNoteRequest) -> crate::Result<ReadNoteResponse> {
+    self
+      .0
+      .run_mobile_plugin("readNote", payload)
+      .map_err(Into::into)
+  }
+
+  /// Coordinated + atomic write of one note (autosave / create / metadata sidecar).
+  pub fn write_note(&self, payload: WriteNoteRequest) -> crate::Result<WriteNoteResponse> {
+    self
+      .0
+      .run_mobile_plugin("writeNote", payload)
+      .map_err(Into::into)
+  }
 }

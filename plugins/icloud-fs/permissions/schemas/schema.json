@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the pick_folder command without any pre-configured scope."
         },
         {
+          "description": "Enables the read_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-note",
+          "markdownDescription": "Enables the read_note command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-note",
+          "markdownDescription": "Denies the read_note command without any pre-configured scope."
+        },
+        {
           "description": "Enables the resolve_bookmark command without any pre-configured scope.",
           "type": "string",
           "const": "allow-resolve-bookmark",
@@ -319,10 +331,22 @@
           "markdownDescription": "Denies the resolve_bookmark command without any pre-configured scope."
         },
         {
-          "description": "Allows picking an iOS folder and resolving its saved security-scoped bookmark.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`",
+          "description": "Enables the write_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-note",
+          "markdownDescription": "Enables the write_note command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-note",
+          "markdownDescription": "Denies the write_note command without any pre-configured scope."
+        },
+        {
+          "description": "Allows picking an iOS folder, resolving its saved bookmark, and coordinated per-note read/write.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows picking an iOS folder and resolving its saved security-scoped bookmark.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`"
+          "markdownDescription": "Allows picking an iOS folder, resolving its saved bookmark, and coordinated per-note read/write.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`"
         }
       ]
     }

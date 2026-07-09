@@ -20,3 +20,21 @@ pub(crate) async fn resolve_bookmark<R: Runtime>(
 ) -> Result<ResolveBookmarkResponse> {
     app.icloud_fs().resolve_bookmark(payload)
 }
+
+/// Coordinated read of one note (downloads it first if iCloud evicted its content).
+#[command]
+pub(crate) async fn read_note<R: Runtime>(
+    app: AppHandle<R>,
+    payload: ReadNoteRequest,
+) -> Result<ReadNoteResponse> {
+    app.icloud_fs().read_note(payload)
+}
+
+/// Coordinated + atomic write of one note.
+#[command]
+pub(crate) async fn write_note<R: Runtime>(
+    app: AppHandle<R>,
+    payload: WriteNoteRequest,
+) -> Result<WriteNoteResponse> {
+    app.icloud_fs().write_note(payload)
+}

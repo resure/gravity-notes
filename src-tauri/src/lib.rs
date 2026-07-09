@@ -166,9 +166,16 @@ fn modified_ms(meta: &fs::Metadata) -> f64 {
 /// walks (list previews, the search corpus) must skip their content instead of stalling the whole
 /// app on a folder that isn't downloaded — its metadata (name, mtime) is always local. An explicit
 /// single-note open still reads (and thereby downloads) the file.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn is_dataless(meta: &fs::Metadata) -> bool {
+    // iOS is Darwin too, so the same `st_flags`/SF_DATALESS check applies to its iCloud Drive files;
+    // the platform-specific `MetadataExt` differs only by module. On iOS an evicted file is
+    // materialized on open by the icloud-fs plugin's coordinated read (`read_note`), which triggers
+    // the download; the walks below still skip its content so the list/corpus don't stall.
+    #[cfg(target_os = "macos")]
     use std::os::macos::fs::MetadataExt;
+    #[cfg(target_os = "ios")]
+    use std::os::ios::fs::MetadataExt;
     // SF_DATALESS ("file is dataless object") from `<sys/stat.h>` — a super-user/system flag in the
     // high half of `st_flags`, defined there as `0x40000000`. Hand-coded because libc doesn't expose
     // it. Verified against the macOS 26.5 SDK header; if a future SDK ever moves it, the worst case
@@ -177,7 +184,7 @@ fn is_dataless(meta: &fs::Metadata) -> bool {
     meta.st_flags() & SF_DATALESS != 0
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn is_dataless(_meta: &fs::Metadata) -> bool {
     false
 }
