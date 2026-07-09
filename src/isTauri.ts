@@ -7,6 +7,16 @@
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /**
+ * Running in the **iOS** build of the shell (WKWebView on iPhone/iPad), as opposed to the macOS
+ * desktop app or a plain browser. Distinguishes the two Tauri targets so mobile-only behavior can
+ * branch on it: the on-device storage option in the gate, and (later) suppressing the menu-bar /
+ * multi-window / traffic-light-inset chrome that only makes sense on the desktop. Computed once
+ * from the WKWebView user agent; false on desktop and web.
+ */
+export const isIos =
+    isTauri && typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent);
+
+/**
  * The label of the app's primary window. THE single source of truth for the "main vs workspace
  * window" distinction, which is load-bearing across three places that must agree: the Rust shell
  * hides (not closes) this label on ⌘W (`src-tauri/src/lib.rs`, macOS convention), `useNotes`'s

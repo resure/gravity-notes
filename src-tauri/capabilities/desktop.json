@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Desktop-only permissions: the in-app updater and process (relaunch) plugins, which aren't compiled for the iOS/Android targets. Scoped via `platforms` so the mobile capability resolver doesn't reject `updater:default`/`process:default` as unknown.",
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": ["main", "ws-*", "note-*"],
+  "permissions": ["updater:default", "process:default"]
+}

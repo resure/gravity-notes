@@ -1124,7 +1124,8 @@ fn focus_workspace_window(
             // Don't hold the lock across window ops — they may hop to the main thread.
             drop(st);
             // Unminimize first — set_focus on a miniaturized window only takes keyboard focus
-            // in the Dock (see show_main_window).
+            // in the Dock (see show_main_window). Desktop-only method; there's no minimize on iOS.
+            #[cfg(desktop)]
             let _ = target.unminimize();
             let _ = target.show();
             let _ = target.set_focus();
@@ -1163,7 +1164,8 @@ async fn open_workspace_window(
             if let Some(target) = app.get_webview_window(&existing) {
                 drop(st);
                 // Unminimize first — set_focus alone leaves a minimized window in the Dock
-                // (see show_main_window).
+                // (see show_main_window). Desktop-only method; there's no minimize on iOS.
+                #[cfg(desktop)]
                 let _ = target.unminimize();
                 let _ = target.show();
                 let _ = target.set_focus();
@@ -1273,7 +1275,8 @@ async fn open_note_window(
             if let Some(target) = app.get_webview_window(&found) {
                 drop(st);
                 // Unminimize first — set_focus alone leaves a minimized window in the Dock
-                // (see show_main_window).
+                // (see show_main_window). Desktop-only method; there's no minimize on iOS.
+                #[cfg(desktop)]
                 let _ = target.unminimize();
                 let _ = target.show();
                 let _ = target.set_focus();
@@ -1332,6 +1335,7 @@ async fn open_note_window(
 /// comes forward instead of just taking keyboard focus in the Dock.
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
+        #[cfg(desktop)]
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
@@ -1472,6 +1476,10 @@ fn apply_macos_chrome(window: &tauri::WebviewWindow) {
 /// `about`) that emits `menu:about` to the frontend (opening our own about dialog with clickable
 /// links); the rest mirrors Tauri's default menu so Edit (copy/paste/undo), View and Window keep
 /// working. On other platforms we fall back to the stock default menu.
+///
+/// Desktop-only: `tauri::menu` (and `Builder::menu`) don't exist on iOS/Android, which have no menu
+/// bar — the mobile builder simply omits the menu (see `run`).
+#[cfg(desktop)]
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     #[cfg(target_os = "macos")]
     {
@@ -1544,58 +1552,56 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        // Custom menu so the macOS "About Gravity Notes" item opens our own dialog (with clickable
-        // links) instead of the default native panel — muda renders the panel's credits as plain text
-        // and ignores `website`, so links can't be clickable there. Everything else mirrors the
-        // default menu (Edit's copy/paste/undo, Window, View) so nothing is lost.
-        .menu(build_menu)
-        .on_menu_event(|app, event| {
-            if event.id() == "main-window" {
-                // ⌘0 is WORKSPACE-scoped: tell the focused window, and its frontend focuses (or
-                // creates) the full workspace window for its own workspace via
-                // `open_workspace_window` — so a note window returns to ITS workspace's list
-                // view, never dragging forward a main window parked on some other workspace.
-                // Target selection mirrors the About item below; with no window to ask at all,
-                // fall back to plainly re-showing the hidden main.
-                let windows = app.webview_windows();
-                let target = windows
-                    .values()
-                    .find(|window| window.is_focused().unwrap_or(false))
-                    .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
-                if let Some(window) = target {
-                    let _ = app.emit_to(window.label(), "menu:main-window", ());
-                } else {
-                    show_main_window(app);
-                }
-            } else if event.id() == "about" {
-                // The frontend (Workspace) listens for this and opens <AboutDialog>. Target one
-                // window — a broadcast would pop the dialog in every open workspace window at once.
-                // Prefer the focused window; if none is focused (the app is backgrounded, or main
-                // was hidden with ⌘W), fall back to any VISIBLE window before re-showing the hidden
-                // main — otherwise picking About while a ws-N window is visible-but-unfocused would
-                // yank the hidden main forward and open About on the wrong window.
-                let windows = app.webview_windows();
-                let target = windows
-                    .values()
-                    .find(|window| window.is_focused().unwrap_or(false))
-                    .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
-                if let Some(window) = target {
-                    let _ = window.set_focus();
-                    let _ = app.emit_to(window.label(), "menu:about", ());
-                } else if let Some(main) = app.get_webview_window("main") {
-                    // Nothing visible at all — re-show main and tell it.
-                    let _ = main.show();
-                    let _ = main.set_focus();
-                    let _ = app.emit_to("main", "menu:about", ());
-                }
+    let builder = tauri::Builder::default();
+    // Custom app menu (desktop only — iOS/Android have no menu bar, and `Builder::menu`/`tauri::menu`
+    // aren't compiled there): the macOS "About Gravity Notes" item opens our own dialog (with
+    // clickable links) instead of the default native panel — muda renders the panel's credits as
+    // plain text and ignores `website`, so links can't be clickable there. Everything else mirrors
+    // the default menu (Edit's copy/paste/undo, Window, View) so nothing is lost.
+    #[cfg(desktop)]
+    let builder = builder.menu(build_menu).on_menu_event(|app, event| {
+        if event.id() == "main-window" {
+            // ⌘0 is WORKSPACE-scoped: tell the focused window, and its frontend focuses (or
+            // creates) the full workspace window for its own workspace via
+            // `open_workspace_window` — so a note window returns to ITS workspace's list
+            // view, never dragging forward a main window parked on some other workspace.
+            // Target selection mirrors the About item below; with no window to ask at all,
+            // fall back to plainly re-showing the hidden main.
+            let windows = app.webview_windows();
+            let target = windows
+                .values()
+                .find(|window| window.is_focused().unwrap_or(false))
+                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
+            if let Some(window) = target {
+                let _ = app.emit_to(window.label(), "menu:main-window", ());
+            } else {
+                show_main_window(app);
             }
-        })
+        } else if event.id() == "about" {
+            // The frontend (Workspace) listens for this and opens <AboutDialog>. Target one
+            // window — a broadcast would pop the dialog in every open workspace window at once.
+            // Prefer the focused window; if none is focused (the app is backgrounded, or main
+            // was hidden with ⌘W), fall back to any VISIBLE window before re-showing the hidden
+            // main — otherwise picking About while a ws-N window is visible-but-unfocused would
+            // yank the hidden main forward and open About on the wrong window.
+            let windows = app.webview_windows();
+            let target = windows
+                .values()
+                .find(|window| window.is_focused().unwrap_or(false))
+                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
+            if let Some(window) = target {
+                let _ = window.set_focus();
+                let _ = app.emit_to(window.label(), "menu:about", ());
+            } else if let Some(main) = app.get_webview_window("main") {
+                // Nothing visible at all — re-show main and tell it.
+                let _ = main.show();
+                let _ = main.set_focus();
+                let _ = app.emit_to("main", "menu:about", ());
+            }
+        }
+    });
+    builder
         .plugin(tauri_plugin_dialog::init())
-        // In-app auto-update (macOS) via GitHub Releases: the updater downloads + verifies the
-        // signed `.app.tar.gz` against the pubkey in tauri.conf.json; `process` provides relaunch().
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .manage(WindowWorkspaces::default())
         .manage(Watchers::default())
         // A page (re)load without a window teardown — WKWebView's default content-process-crash
@@ -1617,6 +1623,16 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+            // In-app auto-update (desktop only) via GitHub Releases: the updater downloads + verifies
+            // the signed `.app.tar.gz` against the pubkey in tauri.conf.json; `process` provides
+            // relaunch(). Registered here under #[cfg(desktop)] — not in the shared builder chain —
+            // so the iOS build, where these crates aren't compiled at all, still links.
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
             }
             if let Some(window) = app.get_webview_window("main") {
                 apply_macos_chrome(&window);

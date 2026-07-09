@@ -24,11 +24,20 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
-# Live watching of the notes folder (FSEvents on macOS), for external-edit refresh.
+# Live watching of the notes folder (FSEvents on macOS), for external-edit refresh. The watcher is
+# never invoked on mobile (the frontend doesn't call `notes_watch` there), but the crates compile
+# cross-platform so they stay in the shared dep set rather than forcing every watcher site behind a
+# `#[cfg]`.
 notify = "8.2"
 notify-debouncer-mini = "0.7"
+
+# Desktop-only plugins. The updater has no iOS/Android support (App Store / Play own updates) and
+# `process` (relaunch after an in-place update) rides along with it. Neither is registered on mobile
+# (see the `#[cfg(desktop)]` block in `run`'s setup); gated here so they aren't compiled for the iOS
+# target, where the updater crate doesn't build.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # The tall-titlebar toolbar trick in apply_macos_chrome (already in the tree via tao/wry).
 [target."cfg(target_os = \"macos\")".dependencies]
