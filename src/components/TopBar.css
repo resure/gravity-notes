@@ -34,6 +34,15 @@
     transform: translateY(-50%);
 }
 
+/* …but on the mobile editor pane the bar is a plain flex row (Back button ← → ⋯), not the
+   command-center. Keep the ⋯ in the flex flow so it's vertically centered WITH the Back button
+   instead of absolute-centered against the whole safe-area-padded header (which floated it up into
+   the notch area, out of line with Back). The Back button's `margin-right: auto` still pins it right. */
+.tauri-app .topbar_mobile .topbar__note-actions {
+    position: static;
+    transform: none;
+}
+
 /* Mobile (web): viewport-fit=cover lets the page draw edge-to-edge, so pad the bar for the device
    safe areas (notch / rounded corners / landscape sensor housing). max() keeps the normal 6/12px on
    non-notched screens (inset = 0), so it's inert on desktop and the Tauri build. */
