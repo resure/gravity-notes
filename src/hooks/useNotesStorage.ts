@@ -1,8 +1,9 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-import {isMainWindow, isNoteWindow, isTauri} from '../isTauri';
+import {isIos, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
+import {pickIosFolder, resolveIosBookmark} from '../storage/iosFolder';
 import {TauriNoteStore} from '../storage/tauriStore';
 import type {NoteStore} from '../storage/types';
 import {
@@ -278,8 +279,29 @@ export function useNotesStorage(): NotesStorage {
     const openTauriEntry = useCallback(
         async (entry: WorkspaceEntry, opts: OpenOpts): Promise<boolean> => {
             const {seq, isBootstrap = false} = opts;
-            if (!entry.path) return false;
-            const tauriStore = new TauriNoteStore(entry.path);
+            // iOS folders are security-scoped: re-resolve the saved bookmark to re-grant sandbox
+            // access and get the folder's CURRENT path (an iCloud folder can move between launches)
+            // before opening it. A failure means access was revoked or the folder is gone — surface
+            // it like a failed probe. Desktop entries carry no bookmark and skip this untouched.
+            let resolvedEntry = entry;
+            if (entry.bookmark) {
+                try {
+                    const resolved = await resolveIosBookmark(entry.bookmark);
+                    if (isStale(seq)) return false;
+                    resolvedEntry = {...entry, path: resolved.path, bookmark: resolved.bookmark};
+                } catch (err) {
+                    if (isStale(seq)) return false;
+                    if (isBootstrap) await clearLastActive().catch(() => {});
+                    if (isStale(seq)) return false;
+                    setError(
+                        err instanceof Error ? err.message : 'That folder is no longer available.',
+                    );
+                    if (isBootstrap) setState('choosing');
+                    return false;
+                }
+            }
+            if (!resolvedEntry.path) return false;
+            const tauriStore = new TauriNoteStore(resolvedEntry.path);
             // Probe that the folder still exists/reads before landing in the workspace: if it
             // was moved/deleted/unmounted, every fs call there would fail. A failed probe on
             // bootstrap surfaces the error and routes to the choice screen so the user can
@@ -308,7 +330,7 @@ export function useNotesStorage(): NotesStorage {
                 }
                 if (isStale(seq)) return false;
             }
-            activate(entry, tauriStore, seq);
+            activate(resolvedEntry, tauriStore, seq);
             return true;
         },
         [activate, isStale],
@@ -440,8 +462,34 @@ export function useNotesStorage(): NotesStorage {
         const seq = beginOp();
         setError(null);
         if (isTauri) {
+            if (isIos) {
+                // iOS: the native Files folder picker via the icloud-fs plugin, which also returns a
+                // security-scoped bookmark to persist. From there the folder's `.md` files are
+                // read/written by the same TauriNoteStore/`notes_*` commands as on the desktop.
+                try {
+                    const folder = await pickIosFolder();
+                    if (!folder) return; // dismissed
+                    if (isStale(seq)) return;
+                    activate(
+                        {
+                            id: workspaceIdForPath(folder.path),
+                            backend: 'tauri-fs',
+                            name: folder.name,
+                            lastOpenedAt: Date.now(),
+                            path: folder.path,
+                            bookmark: folder.bookmark,
+                        },
+                        new TauriNoteStore(folder.path),
+                        seq,
+                    );
+                } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Could not open the folder.');
+                }
+                return;
+            }
             try {
-                // Native folder picker (the File System Access API is unavailable in WKWebView).
+                // Native folder picker (macOS desktop; the File System Access API is unavailable in
+                // WKWebView).
                 const {open} = await import('@tauri-apps/plugin-dialog');
                 const selected = await open({
                     directory: true,

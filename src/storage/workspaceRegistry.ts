@@ -46,8 +46,18 @@ export interface WorkspaceEntry {
     /** Display name: the folder's leaf name (UI supplies its own label for `indexeddb`). */
     name: string;
     lastOpenedAt: number;
-    /** The folder path (`tauri-fs` only). */
+    /**
+     * The folder path (`tauri-fs`). On iOS this is the LAST-known path — the live one comes from
+     * re-resolving the bookmark, since the provider may move an iCloud folder between launches.
+     */
     path?: string;
+    /**
+     * iOS only: a base64 security-scoped bookmark for the picked folder (see `icloud-fs` plugin).
+     * Its presence on a `tauri-fs` entry marks it as an iOS folder that must be re-resolved (to
+     * re-grant sandbox access + get the current path) before the store is opened. A plain string,
+     * so it structured-clones into IndexedDB like the rest of the entry.
+     */
+    bookmark?: string;
     /** The folder handle (`filesystem` only; structured-clones into IndexedDB). */
     handle?: FileSystemDirectoryHandle;
 }

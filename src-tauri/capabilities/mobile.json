@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "iOS-only permissions: the in-tree icloud-fs plugin (Files-picker folder access + bookmark resolve). Scoped via `platforms` so the desktop capability resolver doesn't reject the unknown permission.",
+  "platforms": ["iOS"],
+  "windows": ["main"],
+  "permissions": ["icloud-fs:default"]
+}
