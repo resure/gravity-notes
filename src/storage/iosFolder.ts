@@ -7,6 +7,8 @@
  * normal path — see `useNotesStorage`.
  */
 
+import {folderNameFromPath} from './workspaceRegistry';
+
 interface PickFolderResult {
     path: string | null;
     bookmark: string | null;
@@ -35,7 +37,9 @@ export async function pickIosFolder(): Promise<IosFolder | null> {
     const {invoke} = await import('@tauri-apps/api/core');
     const res = await invoke<PickFolderResult>('plugin:icloud-fs|pick_folder');
     if (res.cancelled || !res.path || !res.bookmark) return null;
-    return {path: res.path, bookmark: res.bookmark, name: res.name ?? res.path};
+    // Fall back to the folder's leaf name (matching the desktop pick path), never the whole POSIX
+    // path — a full path as a workspace label would diverge from every other backend's naming.
+    return {path: res.path, bookmark: res.bookmark, name: res.name ?? folderNameFromPath(res.path)};
 }
 
 /**

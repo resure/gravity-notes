@@ -1,10 +1,13 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "Allows picking an iOS folder, resolving its saved bookmark, and coordinated per-note read/write."
+description = "Allows picking an iOS folder, resolving its saved bookmark, coordinated per-note and per-attachment read/write, and opening external URLs."
 permissions = [
   "allow-pick-folder",
   "allow-resolve-bookmark",
   "allow-read-note",
   "allow-write-note",
+  "allow-read-attachment",
+  "allow-write-attachment",
+  "allow-open-url",
 ]

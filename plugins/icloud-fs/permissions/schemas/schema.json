@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the open_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-url",
+          "markdownDescription": "Enables the open_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-url",
+          "markdownDescription": "Denies the open_url command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pick_folder command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pick-folder",
@@ -305,6 +317,18 @@
           "type": "string",
           "const": "deny-pick-folder",
           "markdownDescription": "Denies the pick_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_attachment command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-attachment",
+          "markdownDescription": "Enables the read_attachment command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_attachment command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-attachment",
+          "markdownDescription": "Denies the read_attachment command without any pre-configured scope."
         },
         {
           "description": "Enables the read_note command without any pre-configured scope.",
@@ -331,6 +355,18 @@
           "markdownDescription": "Denies the resolve_bookmark command without any pre-configured scope."
         },
         {
+          "description": "Enables the write_attachment command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-attachment",
+          "markdownDescription": "Enables the write_attachment command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_attachment command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-attachment",
+          "markdownDescription": "Denies the write_attachment command without any pre-configured scope."
+        },
+        {
           "description": "Enables the write_note command without any pre-configured scope.",
           "type": "string",
           "const": "allow-write-note",
@@ -343,10 +379,10 @@
           "markdownDescription": "Denies the write_note command without any pre-configured scope."
         },
         {
-          "description": "Allows picking an iOS folder, resolving its saved bookmark, and coordinated per-note read/write.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`",
+          "description": "Allows picking an iOS folder, resolving its saved bookmark, coordinated per-note and per-attachment read/write, and opening external URLs.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`\n- `allow-read-attachment`\n- `allow-write-attachment`\n- `allow-open-url`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows picking an iOS folder, resolving its saved bookmark, and coordinated per-note read/write.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`"
+          "markdownDescription": "Allows picking an iOS folder, resolving its saved bookmark, coordinated per-note and per-attachment read/write, and opening external URLs.\n#### This default permission set includes:\n\n- `allow-pick-folder`\n- `allow-resolve-bookmark`\n- `allow-read-note`\n- `allow-write-note`\n- `allow-read-attachment`\n- `allow-write-attachment`\n- `allow-open-url`"
         }
       ]
     }

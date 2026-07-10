@@ -35,6 +35,9 @@ Markdown files, and they are yours.
   single note — in its own window
 - **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
   per workspace, or per note
+- **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
+  desktop window); an **iOS app** opens an iCloud Drive (or on-device) folder of `.md` files through
+  the native Files picker
 - **Autosave**, visited-note history (`⌘[` / `⌘]`), and automatic signed updates in the macOS app
 
 ## Getting started
@@ -94,5 +97,3 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 
 - Auto-empty the Trash and clean unused attachments (after 30 days?)
 - Metadata storage approach review
-- Mobile view
-- Mobile app

@@ -34,4 +34,22 @@ impl<R: Runtime> IcloudFs<R> {
   pub fn write_note(&self, _payload: WriteNoteRequest) -> crate::Result<WriteNoteResponse> {
     Err(crate::Error::Unsupported)
   }
+
+  pub fn read_attachment(
+    &self,
+    _payload: ReadAttachmentRequest,
+  ) -> crate::Result<ReadAttachmentResponse> {
+    Err(crate::Error::Unsupported)
+  }
+
+  pub fn write_attachment(
+    &self,
+    _payload: WriteAttachmentRequest,
+  ) -> crate::Result<WriteAttachmentResponse> {
+    Err(crate::Error::Unsupported)
+  }
+
+  pub fn open_url(&self, _payload: OpenUrlRequest) -> crate::Result<OpenUrlResponse> {
+    Err(crate::Error::Unsupported)
+  }
 }

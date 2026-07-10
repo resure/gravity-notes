@@ -63,6 +63,29 @@ panels tucked away, focus-if-open, with `⌘0` bringing back the workspace's mai
 ↔ workspace/note assignments live in the Rust shell, so new windows boot straight into the right
 folder.
 
+## Mobile & iOS
+
+At ≤700px the layout collapses to a **single-pane push** model (`src/hooks/useIsNarrow.ts`,
+`MOBILE_MAX_WIDTH`): the list and the editor each fill the body and exactly one shows at a time —
+opening a note pushes to the editor pane, the Back button returns to the list. The folder rail
+becomes a slide-over drawer with a dimmed backdrop. This applies on phones and on any desktop/iOS
+window narrowed below the breakpoint; above it the multi-pane layout is unchanged. There is **no
+CSS `@media`** for this breakpoint — the JS hook flips the `workspace__body_mobile` class and the
+CSS reacts to that.
+
+The same codebase ships an **iOS app** (Tauri 2, a separate bundle id/identifier). The sandbox
+blocks plain folder paths, so an iCloud Drive (or on-device) folder is opened through the native
+Files picker in the in-tree [`icloud-fs`](../plugins/icloud-fs) plugin, which mints a
+security-scoped **bookmark** persisted on the workspace entry. Access is held for the app's
+lifetime, so the ordinary `TauriNoteStore` / `notes_*` commands read/write the folder as a normal
+path; the per-note **and per-attachment** open/save go through a coordinated `NSFileCoordinator`
+path in Swift ([`IcloudFsPlugin.swift`](../plugins/icloud-fs/ios/Sources/IcloudFsPlugin.swift)) that
+materializes an evicted iCloud file before reading and writes atomically against a sync race (the
+bulk list/corpus walks stay on the plain `notes_*` commands and skip evicted content). External note
+links, which the desktop opens via a macOS-only `open` shell-out, route through the same plugin's
+`open_url` (UIApplication) on iOS. The desktop multi-window affordances and the in-app updater are
+iOS-absent.
+
 ## Live file-watching (desktop)
 
 The desktop shell runs one debounced FSEvents watcher per open folder
@@ -110,8 +133,9 @@ macOS materializes them.
   multi-window editing of the same note can miss or over-report changes.
 - **In-browser storage is per-browser and per-origin.** It isn't synced across devices, and
   clearing the browser's site data erases it — use **Export** to keep a `.md` backup.
-- **External changes are live only in the desktop app** (the folder watcher). In the browser
-  they're detected when you return focus to the tab — or via **Reload notes** in the storage menu.
+- **External changes are live only in the desktop app** (the folder watcher). In the browser and
+  on iOS they're detected when you return focus to the window — or via **Reload notes** in the
+  storage menu.
 - **A selected image shows a faint caret line** beside it in the editor — the browser's native
   object-selection caret, which resists CSS hiding. Cosmetic only.
 - **Auto-update starts from the release that introduced it.** A build without the updater

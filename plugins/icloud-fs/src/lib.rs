@@ -39,7 +39,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::pick_folder,
       commands::resolve_bookmark,
       commands::read_note,
-      commands::write_note
+      commands::write_note,
+      commands::read_attachment,
+      commands::write_attachment,
+      commands::open_url
     ])
     .setup(|app, api| {
       #[cfg(mobile)]

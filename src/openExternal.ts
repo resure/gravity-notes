@@ -1,6 +1,6 @@
 import {invoke} from '@tauri-apps/api/core';
 
-import {isTauri} from './isTauri';
+import {isIos, isTauri} from './isTauri';
 
 /**
  * Schemes a note's link may open. Mirrors the Rust `open_external` allow-list (`src-tauri/src/lib.rs`)
@@ -22,13 +22,18 @@ export function isExternallyOpenable(url: string): boolean {
 }
 
 /**
- * Open an external link the way the host expects: the OS default browser on the desktop (via the
- * native `open_external` command — WKWebView won't navigate away on its own), or a new tab on the
- * web. Used for ⌘/Ctrl-click on links in the editor; failures are swallowed (a dead link shouldn't
- * surface a toast). A URL outside the allow-list is refused outright on both backends.
+ * Open an external link the way the host expects: the OS default browser/app on the desktop (via
+ * the native `open_external` command — WKWebView won't navigate away on its own), the same via the
+ * icloud-fs plugin's `open_url` on iOS (the desktop command shells out to macOS `open`, which iOS
+ * lacks), or a new tab on the web. Used for ⌘/Ctrl-click / tap on links in the editor; failures are
+ * swallowed (a dead link shouldn't surface a toast). A URL outside the allow-list is refused on all.
  */
 export function openExternalUrl(url: string): void {
     if (!isExternallyOpenable(url)) return;
+    if (isIos) {
+        void invoke('plugin:icloud-fs|open_url', {payload: {url}}).catch(() => {});
+        return;
+    }
     if (isTauri) {
         void invoke('open_external', {url}).catch(() => {});
         return;

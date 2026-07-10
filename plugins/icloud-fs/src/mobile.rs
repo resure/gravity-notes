@@ -58,4 +58,31 @@ impl<R: Runtime> IcloudFs<R> {
       .run_mobile_plugin("writeNote", payload)
       .map_err(Into::into)
   }
+
+  /// Coordinated + download-on-demand read of one attachment (evicted iCloud images materialize).
+  pub fn read_attachment(
+    &self,
+    payload: ReadAttachmentRequest,
+  ) -> crate::Result<ReadAttachmentResponse> {
+    self
+      .0
+      .run_mobile_plugin("readAttachment", payload)
+      .map_err(Into::into)
+  }
+
+  /// Coordinated + atomic write of one attachment.
+  pub fn write_attachment(
+    &self,
+    payload: WriteAttachmentRequest,
+  ) -> crate::Result<WriteAttachmentResponse> {
+    self
+      .0
+      .run_mobile_plugin("writeAttachment", payload)
+      .map_err(Into::into)
+  }
+
+  /// Open an external URL in the system default app.
+  pub fn open_url(&self, payload: OpenUrlRequest) -> crate::Result<OpenUrlResponse> {
+    self.0.run_mobile_plugin("openUrl", payload).map_err(Into::into)
+  }
 }
