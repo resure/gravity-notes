@@ -19,6 +19,22 @@ class WriteNoteArgs: Decodable {
   let contents: String
 }
 
+class ReadAttachmentArgs: Decodable {
+  let dir: String
+  let name: String
+}
+
+class WriteAttachmentArgs: Decodable {
+  let dir: String
+  let name: String
+  /// Base64 of the raw attachment bytes (binary can't ride as a UTF-8 string like a note body).
+  let data: String
+}
+
+class OpenUrlArgs: Decodable {
+  let url: String
+}
+
 /// Native folder access for the iOS build. The user picks a folder (typically inside iCloud Drive)
 /// with the system Files picker; we start *security-scoped* access to it and hand back a bookmark.
 /// Because access is held process-wide, the app's ordinary POSIX file commands (`notes_*`, plain
@@ -195,11 +211,111 @@ class IcloudFsPlugin: Plugin {
     }
   }
 
-  /// File mtime in epoch ms (matches the Rust `notes_*` commands' `f64` contract).
+  /// Coordinated + download-on-demand read of one attachment (an image under `Attachments/`). Mirrors
+  /// `readNote` but returns the raw bytes base64-encoded — the note body rides as UTF-8, attachments
+  /// are binary. `exists: false` is the "no such file" signal, like `readNote`.
+  @objc public func readAttachment(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(ReadAttachmentArgs.self)
+    guard let url = Self.resolveWithin(dir: args.dir, name: args.name) else {
+      invoke.reject("Invalid attachment path")
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      Self.ensureDownloaded(url)
+      var coordError: NSError?
+      var payload: [String: Any] = ["exists": false, "data": ""]
+      var readFailure: String?
+      NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordError) {
+        (readingURL) in
+        if !FileManager.default.fileExists(atPath: readingURL.path) {
+          return  // leaves exists:false
+        }
+        do {
+          let data = try Data(contentsOf: readingURL)
+          payload = ["exists": true, "data": data.base64EncodedString()]
+        } catch {
+          readFailure = error.localizedDescription
+        }
+      }
+      DispatchQueue.main.async {
+        if let coordError = coordError {
+          invoke.reject("Coordinated read failed: \(coordError.localizedDescription)")
+        } else if let readFailure = readFailure {
+          invoke.reject(readFailure)
+        } else {
+          invoke.resolve(payload)
+        }
+      }
+    }
+  }
+
+  /// Coordinated + atomic write of one attachment (creating `Attachments/` like `notes_write`'s
+  /// `create_dir_all`). Input bytes arrive base64-encoded.
+  @objc public func writeAttachment(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(WriteAttachmentArgs.self)
+    guard let url = Self.resolveWithin(dir: args.dir, name: args.name) else {
+      invoke.reject("Invalid attachment path")
+      return
+    }
+    guard let data = Data(base64Encoded: args.data) else {
+      invoke.reject("Invalid attachment data")
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      try? FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      var coordError: NSError?
+      var writeFailure: String?
+      NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordError)
+      {
+        (writingURL) in
+        do {
+          try data.write(to: writingURL, options: .atomic)
+        } catch {
+          writeFailure = error.localizedDescription
+        }
+      }
+      DispatchQueue.main.async {
+        if let coordError = coordError {
+          invoke.reject("Coordinated write failed: \(coordError.localizedDescription)")
+        } else if let writeFailure = writeFailure {
+          invoke.reject(writeFailure)
+        } else {
+          invoke.resolve([:])
+        }
+      }
+    }
+  }
+
+  /// Open an external link in the system default app (Safari / Mail / Phone). WKWebView won't
+  /// navigate to external origins on its own, and the desktop `open_external` command shells out to
+  /// macOS `open`, which doesn't exist on iOS — so ⌘/tap on a note link routes here on iOS. Restricted
+  /// to the same web/mail/tel allow-list as the Rust command so a crafted note can't hand the OS a
+  /// `file:`/`javascript:`/app URL.
+  @objc public func openUrl(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(OpenUrlArgs.self)
+    let allowed = ["http://", "https://", "mailto:", "tel:"]
+    guard allowed.contains(where: { args.url.hasPrefix($0) }), let url = URL(string: args.url) else {
+      invoke.reject("refusing to open \(args.url)")
+      return
+    }
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url, options: [:]) { success in
+        invoke.resolve(["opened": success])
+      }
+    }
+  }
+
+  /// File mtime in epoch ms, FLOORED to a whole millisecond. The Rust `notes_*` commands report
+  /// mtime as `Duration::as_millis() as f64` (integer ms — `modified_ms` in lib.rs), and the store's
+  /// optimistic-concurrency check compares this value (seeded via the coordinated read/write) against
+  /// `notes_stat` with strict `!==`. A fractional `timeIntervalSince1970 * 1000` would never equal the
+  /// truncated Rust value for the same file, so every autosave would raise a phantom `ConflictError`.
+  /// `.rounded(.down)` matches `as_millis()`'s truncation for these (positive) epoch timestamps.
   private static func modifiedMs(_ url: URL) -> Double {
     let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
     let date = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-    return date * 1000
+    return (date * 1000).rounded(.down)
   }
 
   /// Join `name` (a POSIX rel-path) onto `dir`, rejecting any result that escapes `dir` — the

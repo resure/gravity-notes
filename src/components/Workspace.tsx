@@ -24,7 +24,7 @@ import {
     useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
-import {isIos, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
+import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
@@ -49,13 +49,6 @@ import {WorkspaceSwitcherDialog} from './WorkspaceSwitcherDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
-
-/**
- * Desktop Tauri (macOS) — i.e. the shell but NOT the iOS build. Gates the multi-window affordances
- * (open a note / workspace / folder in its own window): iOS is single-window, so `open_*_window`
- * would error there, and the affordances shouldn't be offered.
- */
-const isDesktopTauri = isTauri && !isIos;
 
 interface WorkspaceProps {
     store: NoteStore;
@@ -223,7 +216,10 @@ export function Workspace({
     // to reveal). `undefined` here hides the affordance in the note/folder menus. Takes a store id,
     // folder path, or `Attachments/<name>` ref.
     const handleReveal = useMemo(() => {
-        if (!store.reveal) return undefined;
+        // Reveal-in-Finder is macOS-only (`reveal_path` errors on iOS), so gate on the DESKTOP shell —
+        // `TauriNoteStore.reveal` is defined on the iOS build too, so `!store.reveal` alone would leak
+        // the affordance onto iPhone/iPad where tapping it just raises an error toast.
+        if (!isDesktopTauri || !store.reveal) return undefined;
         // Bind to the store: a bare `store.reveal` reference would lose `this` when invoked, and
         // TauriNoteStore.reveal reads `this.dir`.
         const reveal = store.reveal.bind(store);
@@ -652,6 +648,7 @@ export function Workspace({
         if (!isNarrowRef.current) return;
         if (openNoteRef.current?.id === id) {
             setMobilePane('editor'); // already the loaded note → reveal immediately
+            setRailOpen(false); // dismiss any open folder drawer (see the completer effect)
         } else {
             pendingMobileOpenRef.current = id; // reveal once it finishes loading (effect below)
         }
@@ -659,13 +656,21 @@ export function Workspace({
 
     // Complete a pending reveal once its note has loaded (notes.note caught up to the request).
     useEffect(() => {
+        // Leaving narrow mode (e.g. an iPad rotate to a wide layout) abandons any in-flight reveal:
+        // drop it so it can't re-fire and yank the user onto a stale note when narrow mode returns.
+        if (!isNarrow) {
+            pendingMobileOpenRef.current = null;
+            return;
+        }
         if (
-            isNarrow &&
             pendingMobileOpenRef.current !== null &&
             notes.note?.id === pendingMobileOpenRef.current
         ) {
             pendingMobileOpenRef.current = null;
             setMobilePane('editor');
+            // Opening a note dismisses any open folder drawer too — otherwise it + its dimmed
+            // backdrop would slide back in over the list when the user taps Back to it.
+            setRailOpen(false);
         }
     }, [isNarrow, notes.note]);
 
@@ -1051,13 +1056,15 @@ export function Workspace({
 
     // Selecting a folder previews its first note in the editor (nvALT-style), without taking focus
     // off the rail — so arrowing through folders flips through their leads. Skipped while searching
-    // (the list is global then); an empty folder leaves the editor as-is.
+    // (the list is global then); an empty folder leaves the editor as-is. On mobile the preview is
+    // skipped too: `browse` mounts the editor for a note the user can't see (the list re-scopes to
+    // the folder on its own), wasting a body read and a hidden editor remount.
     const handleSelectFolder = useCallback(
         (folder: string | null) => {
             setSelectedFolder(folder);
             // Mobile: picking a folder dismisses the rail drawer so the filtered list is revealed.
             if (isNarrow) setRailOpen(false);
-            if (searching) return;
+            if (searching || isNarrow) return;
             const first = notesInFolder(orderedNotes, folder)[0];
             if (first) nav.browse(first.id);
         },
@@ -1385,7 +1392,11 @@ export function Workspace({
                 <div
                     className={
                         'workspace__body' +
-                        (isNarrow
+                        // A single-note window always shows one note with both panels tucked away,
+                        // never the list↔editor push nav — so even when it's dragged ≤700px it keeps
+                        // the collapsed desktop layout (whose `_collapsed` class hides the sidebar)
+                        // instead of overlaying the whole vault.
+                        (isNarrow && !noteWindow
                             ? ' workspace__body_mobile' +
                               (mobilePane === 'editor' ? ' workspace__body_mobile-editor' : '')
                             : (collapsed ? ' workspace__body_collapsed' : '') +

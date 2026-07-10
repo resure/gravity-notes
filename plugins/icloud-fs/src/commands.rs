@@ -38,3 +38,30 @@ pub(crate) async fn write_note<R: Runtime>(
 ) -> Result<WriteNoteResponse> {
     app.icloud_fs().write_note(payload)
 }
+
+/// Coordinated read of one attachment (downloads it first if iCloud evicted its content).
+#[command]
+pub(crate) async fn read_attachment<R: Runtime>(
+    app: AppHandle<R>,
+    payload: ReadAttachmentRequest,
+) -> Result<ReadAttachmentResponse> {
+    app.icloud_fs().read_attachment(payload)
+}
+
+/// Coordinated + atomic write of one attachment.
+#[command]
+pub(crate) async fn write_attachment<R: Runtime>(
+    app: AppHandle<R>,
+    payload: WriteAttachmentRequest,
+) -> Result<WriteAttachmentResponse> {
+    app.icloud_fs().write_attachment(payload)
+}
+
+/// Open an external URL in the system default app (iOS counterpart of the desktop `open_external`).
+#[command]
+pub(crate) async fn open_url<R: Runtime>(
+    app: AppHandle<R>,
+    payload: OpenUrlRequest,
+) -> Result<OpenUrlResponse> {
+    app.icloud_fs().open_url(payload)
+}

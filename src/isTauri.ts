@@ -9,12 +9,30 @@ export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
 /**
  * Running in the **iOS** build of the shell (WKWebView on iPhone/iPad), as opposed to the macOS
  * desktop app or a plain browser. Distinguishes the two Tauri targets so mobile-only behavior can
- * branch on it: the on-device storage option in the gate, and (later) suppressing the menu-bar /
- * multi-window / traffic-light-inset chrome that only makes sense on the desktop. Computed once
- * from the WKWebView user agent; false on desktop and web.
+ * branch on it: the on-device storage option in the gate, and suppressing the menu-bar / multi-window
+ * / traffic-light-inset chrome that only makes sense on the desktop. Computed once from the WKWebView
+ * user agent; false on desktop and web.
+ *
+ * iPadOS 13+ can report a DESKTOP ("Macintosh") user agent, so the `iP…` regex alone would miss iPad
+ * and misclassify it as the macOS desktop app (offering multi-window / the desktop folder dialog,
+ * both of which fail on iOS). A Mac UA with a touch screen (`maxTouchPoints > 1`) is an iPad — real
+ * Macs report 0, so this never mis-flags the desktop build, and the `isTauri` gate keeps the web
+ * build (Safari on iPad) unaffected.
  */
 export const isIos =
-    isTauri && typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent);
+    isTauri &&
+    typeof navigator !== 'undefined' &&
+    (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+
+/**
+ * Running in the **desktop** (macOS) Tauri shell specifically — the native app but NOT the iOS build.
+ * The canonical predicate for the desktop-only affordances (menu bar, multi-window `open_*_window`,
+ * the auto-updater, traffic-light chrome): iOS is single-window and doesn't compile those, so they
+ * must be gated off there. Note it's `isTauri && !isIos`, NOT bare `!isIos` — the latter is also true
+ * on the web build, which would wrongly enable native-only features there.
+ */
+export const isDesktopTauri = isTauri && !isIos;
 
 /**
  * The label of the app's primary window. THE single source of truth for the "main vs workspace

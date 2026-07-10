@@ -58,6 +58,31 @@ interface ReadNoteResponse {
 interface WriteNoteResponse {
     modifiedMs: number;
 }
+/** Coordinated per-attachment read (iOS only); `data` is base64 of the raw bytes, `exists:false`=absent. */
+interface ReadAttachmentResponse {
+    exists: boolean;
+    data: string;
+}
+
+/**
+ * Base64 ⇄ bytes for the iOS attachment bridge (binary can't ride as a UTF-8 string like a note
+ * body). Chunked so `String.fromCharCode(...bytes)` can't blow the call-stack arg limit on a large
+ * image. `btoa`/`atob` are available in WKWebView.
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
 /**
  * Payload of the Rust `notes:changed` watcher event. `dir` is the raw folder path (strict-equal
  * to this store's `dir`); empty `paths` means "many/unknown changes".
@@ -274,33 +299,31 @@ export class TauriNoteStore implements NoteStore {
         await invoke('notes_remove_dir_all', {dir: this.dir, path: TRASH_DIR});
     }
 
-    // Perf/memory ceiling: attachment bytes cross the IPC boundary as a JSON `number[]` (one JS
-    // number per byte in `attachment_write`/`attachment_read`), so a large image is briefly held
-    // several times over (typed array → number[] → serialized JSON) on each side. Acceptable for
-    // typical note images; a raw-bytes transport (`tauri::ipc::Response` on the Rust side) would be
-    // needed to lift the ceiling, but that's a cross-cutting Rust change out of scope for this store.
+    // Perf/memory ceiling: on the desktop path attachment bytes cross the IPC boundary as a JSON
+    // `number[]` (one JS number per byte in `attachment_write`/`attachment_read`), so a large image
+    // is briefly held several times over (typed array → number[] → serialized JSON) on each side.
+    // Acceptable for typical note images; a raw-bytes transport (`tauri::ipc::Response`) would be
+    // needed to lift the ceiling. The iOS path rides base64 through the coordinated plugin instead.
     async writeAttachment(file: File): Promise<string> {
         const leaf = await uniqueAttachmentName(file.name, (name) =>
             this.exists(joinPath(ATTACHMENTS_DIR, name)),
         );
         const path = joinPath(ATTACHMENTS_DIR, leaf);
-        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-        await invoke('attachment_write', {dir: this.dir, path, bytes});
+        await this.writeAttachmentBytes(path, new Uint8Array(await file.arrayBuffer()));
         return path;
     }
 
     async writeAttachmentAt(ref: string, blob: Blob): Promise<void> {
-        // attachment_write already writes at an exact path (creating parent folders), so reuse it.
-        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
-        await invoke('attachment_write', {dir: this.dir, path: ref, bytes});
+        // writeAttachmentBytes writes at an exact path (creating parent folders), so reuse it.
+        await this.writeAttachmentBytes(ref, new Uint8Array(await blob.arrayBuffer()));
     }
 
     async readAttachment(ref: string): Promise<Blob> {
-        const bytes = await invoke<number[] | null>('attachment_read', {dir: this.dir, name: ref});
+        const bytes = await this.readAttachmentBytes(ref);
         if (bytes === null) throw notFound(ref);
-        // The Rust side returns raw bytes without a MIME type; tag the Blob from the extension so
-        // SVGs (which need an explicit type to render in <img>) and the like display correctly.
-        return new Blob([new Uint8Array(bytes)], {type: mimeFromName(ref)});
+        // The backend returns raw bytes without a MIME type; tag the Blob from the extension so SVGs
+        // (which need an explicit type to render in <img>) and the like display correctly.
+        return new Blob([bytes], {type: mimeFromName(ref)});
     }
 
     async listAttachments(): Promise<AttachmentMeta[]> {
@@ -396,14 +419,19 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async readMetadata(): Promise<NotesMetadata> {
+        // The READ is deliberately OUTSIDE the try: a read *failure* must propagate, not degrade to
+        // defaults. On iOS `readNote` goes through the coordinated plugin, whose transient
+        // NSFileCoordinator/iCloud errors reject (vs. `exists:false` for a genuinely absent file) —
+        // swallowing that into empty defaults would let a subsequent `writeMetadata` overwrite the
+        // real sidecar and permanently lose pins / per-note appearance / the trash registry. A
+        // genuinely missing file (`null`) still yields fresh defaults, which is safe (nothing to lose).
+        const entry = await this.readNote(METADATA_FILENAME);
+        if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
         try {
-            const entry = await this.readNote(METADATA_FILENAME);
-            if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
             return parseMetadata(JSON.parse(entry.content));
         } catch {
-            // Corrupt JSON, or — now that notes_read_opt decodes strict UTF-8 — a sidecar with invalid
-            // bytes: degrade to fresh defaults rather than failing store init, matching the FS/IDB
-            // backends (the invoke read is inside the try so a strict-decode rejection is caught too).
+            // Present but unparseable (corrupt JSON): degrade to fresh defaults, matching the FS/IDB
+            // backends — the bytes were readable and are genuinely malformed, so resetting is correct.
             return parseMetadata({});
         }
     }
@@ -441,6 +469,38 @@ export class TauriNoteStore implements NoteStore {
             }).then((r) => r.modifiedMs);
         }
         return invoke<number>('notes_write', {dir: this.dir, name, content});
+    }
+
+    /**
+     * Read one attachment's raw bytes (`null` if absent). On iOS this goes through the icloud-fs
+     * plugin's coordinated read + download-on-demand — mirroring `readNote`, so an evicted iCloud
+     * image materializes on open instead of reading a placeholder — carried as base64; elsewhere it's
+     * the plain Rust `attachment_read` (`number[]`).
+     */
+    private async readAttachmentBytes(ref: string): Promise<Uint8Array<ArrayBuffer> | null> {
+        if (isIos) {
+            const res = await invoke<ReadAttachmentResponse>('plugin:icloud-fs|read_attachment', {
+                payload: {dir: this.dir, name: ref},
+            });
+            return res.exists ? base64ToBytes(res.data) : null;
+        }
+        const bytes = await invoke<number[] | null>('attachment_read', {dir: this.dir, name: ref});
+        return bytes === null ? null : new Uint8Array(bytes);
+    }
+
+    /**
+     * Write one attachment's raw bytes (creating `Attachments/`). On iOS the icloud-fs plugin does an
+     * NSFileCoordinator-coordinated atomic write (safe against iCloud sync) with base64 transport; on
+     * the desktop it's the Rust `attachment_write` (`number[]`).
+     */
+    private async writeAttachmentBytes(ref: string, bytes: Uint8Array): Promise<void> {
+        if (isIos) {
+            await invoke('plugin:icloud-fs|write_attachment', {
+                payload: {dir: this.dir, name: ref, data: bytesToBase64(bytes)},
+            });
+            return;
+        }
+        await invoke('attachment_write', {dir: this.dir, path: ref, bytes: Array.from(bytes)});
     }
 
     private exists(name: string): Promise<boolean> {

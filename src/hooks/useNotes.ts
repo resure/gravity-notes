@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-import {isMainWindow, isTauri} from '../isTauri';
+import {isIos, isMainWindow, isTauri} from '../isTauri';
 import {
     DEFAULT_METADATA,
     reconcile,
@@ -1520,8 +1520,17 @@ export function useNotes(
                     // A transient read failure keeps the current list; the next focus retries.
                 });
         };
+        // Also on visibilitychange (not just window 'focus'): a return-to-foreground reliably fires
+        // visibilitychange but not always 'focus', and on iOS this re-list is the ONLY external-change
+        // refresh (the folder watcher below is disabled there), so notes synced by iCloud on another
+        // device would otherwise never appear until a manual switch. `onFocus`'s visibility guard keeps
+        // it a no-op when hidden; mirrors the open-note conflict-check effect above.
         window.addEventListener('focus', onFocus);
-        return () => window.removeEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onFocus);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onFocus);
+        };
     }, [ready, refresh, checkOpenNoteConflict]);
 
     // Desktop live watching: the store pushes external on-disk changes (another window, another
@@ -1533,6 +1542,11 @@ export function useNotes(
     // guard that can only delay a refresh, never lose one).
     useEffect(() => {
         if (!ready) return undefined;
+        // The native folder watcher is a desktop-only capability (a per-folder FSEvents stream). On
+        // iOS it isn't registered at all — and even if `notes_watch` were reachable it wouldn't
+        // function in the app sandbox — so don't arm the effect there. iOS falls back to the
+        // focus-driven refresh above, like the web build.
+        if (isIos) return undefined;
         const watch = store.watch?.bind(store);
         if (!watch) return undefined;
         let disposed = false;

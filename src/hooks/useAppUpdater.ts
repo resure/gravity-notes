@@ -2,11 +2,13 @@ import {useCallback, useRef, useState} from 'react';
 
 import type {Update} from '@tauri-apps/plugin-updater';
 
-import {isTauri} from '../isTauri';
+import {isIos, isTauri} from '../isTauri';
 
-// The whole feature no-ops outside the native shell (isTauri === false); every Tauri API below is
-// reached via dynamic `import()` so it never enters the browser bundle (mirrors the plugin-dialog
-// convention).
+// The whole feature no-ops outside the DESKTOP native shell; every Tauri API below is reached via
+// dynamic `import()` so it never enters the browser bundle (mirrors the plugin-dialog convention).
+// iOS is excluded (see `supported` below): the updater/process plugins are registered only under
+// `#[cfg(desktop)]` in the Rust shell, so on iOS `plugin:updater|check` doesn't exist and advertising
+// the feature would surface an error when the user picks "Check for Updates…".
 
 // Neither the manifest fetch nor the binary download has a timeout by default, so a stalled
 // connection (captive portal, half-open socket, a download that never leaves 0 B) hangs the flow
@@ -195,7 +197,9 @@ export function useAppUpdater(): AppUpdater {
     }, []);
 
     return {
-        supported: isTauri,
+        // Desktop shell only — the updater/process plugins aren't compiled on iOS (see the note
+        // atop this file), so `isTauri && !isIos` gates out the iOS build where invoking them fails.
+        supported: isTauri && !isIos,
         status,
         upToDate,
         currentVersion,

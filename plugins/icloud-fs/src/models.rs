@@ -77,3 +77,52 @@ pub struct WriteNoteRequest {
 pub struct WriteNoteResponse {
     pub modified_ms: f64,
 }
+
+/// Read one attachment (an image under `Attachments/`) relative to the workspace folder,
+/// `NSFileCoordinator`-coordinated + download-on-demand like `read_note`. Binary, so the bytes ride
+/// back base64-encoded rather than as a UTF-8 string.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAttachmentRequest {
+    pub dir: String,
+    pub name: String,
+}
+
+/// Coordinated-read result. `exists: false` (empty `data`) is the "no such file" signal, matching
+/// `attachment_read` returning null. `data` is base64 of the raw bytes.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAttachmentResponse {
+    pub exists: bool,
+    pub data: String,
+}
+
+/// Write one attachment relative to the workspace folder, `NSFileCoordinator`-coordinated + atomic
+/// (creating `Attachments/` like `attachment_write`). `data` is base64 of the raw bytes.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteAttachmentRequest {
+    pub dir: String,
+    pub name: String,
+    pub data: String,
+}
+
+/// Coordinated-write ack (no payload — attachments don't feed an mtime baseline like notes do).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteAttachmentResponse {}
+
+/// Open an external URL in the system default app (the iOS counterpart of the macOS-only
+/// `open_external` command). Same web/mail/tel allow-list, re-checked native-side.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenUrlRequest {
+    pub url: String,
+}
+
+/// Result of an external-open: whether the system accepted the URL.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenUrlResponse {
+    pub opened: bool,
+}
