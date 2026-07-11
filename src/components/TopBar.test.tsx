@@ -417,3 +417,19 @@ describe('TopBar — orb save-pulse', () => {
         }
     });
 });
+
+describe('TopBar — narrow panes', () => {
+    it('keeps note appearance visible when narrow chrome has no mobile push pane', () => {
+        setup({mobile: true, mobilePane: undefined, noteOpen: true});
+        expect(screen.getByRole('button', {name: 'Note appearance'})).toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: 'Back to notes'})).not.toBeInTheDocument();
+    });
+
+    it('shows note appearance only on the mobile editor pane', () => {
+        const {props, view} = setup({mobile: true, mobilePane: 'list', noteOpen: true});
+        expect(screen.queryByRole('button', {name: 'Note appearance'})).not.toBeInTheDocument();
+        view.rerender(<TopBar {...({...props, mobilePane: 'editor'} as TopBarProps)} />);
+        expect(screen.getByRole('button', {name: 'Back to notes'})).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: 'Note appearance'})).toBeInTheDocument();
+    });
+});

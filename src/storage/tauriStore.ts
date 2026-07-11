@@ -64,6 +64,12 @@ interface ReadAttachmentResponse {
     data: string;
 }
 
+/** Rust `read_to_string`'s stable invalid-data message for a present non-UTF-8 sidecar. */
+function isInvalidUtf8Read(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return message.toLowerCase().includes('valid utf-8');
+}
+
 /**
  * Base64 ⇄ bytes for the iOS attachment bridge (binary can't ride as a UTF-8 string like a note
  * body). Chunked so `String.fromCharCode(...bytes)` can't blow the call-stack arg limit on a large
@@ -425,7 +431,19 @@ export class TauriNoteStore implements NoteStore {
         // swallowing that into empty defaults would let a subsequent `writeMetadata` overwrite the
         // real sidecar and permanently lose pins / per-note appearance / the trash registry. A
         // genuinely missing file (`null`) still yields fresh defaults, which is safe (nothing to lose).
-        const entry = await this.readNote(METADATA_FILENAME);
+        let entry: {content: string; modifiedMs: number} | null;
+        try {
+            entry = await this.readNote(METADATA_FILENAME);
+        } catch (err) {
+            // Preserve the desktop store's tolerant-corruption contract: Rust's strict
+            // read_to_string rejects a present sidecar with invalid UTF-8 before JSON.parse can
+            // classify it as corrupt. Treat ONLY that known invalid-data case as fresh defaults.
+            // iOS coordinated-read failures (including its explicit invalid-UTF-8 rejection) still
+            // propagate, so a transient iCloud error can never be mistaken for an absent sidecar and
+            // overwritten by a later metadata write.
+            if (!isIos && isInvalidUtf8Read(err)) return parseMetadata({});
+            throw err;
+        }
         if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
         try {
             return parseMetadata(JSON.parse(entry.content));
