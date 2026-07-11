@@ -79,6 +79,10 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 
 ## Backlog
 
+- Copy pasting wysiwyg should copy markdown, not formatted text
+- Tune line-height
+- Setting for disabling spellcheck
+
 - iCloud dataless files: not-yet-downloaded files list by name/mtime with an empty preview/search
   body, and recover once macOS materializes them (a focus refresh picks up the filled-in preview).
   Consider `startDownloadingUbiquitousItemAtURL` to kick off downloads in the background + a
