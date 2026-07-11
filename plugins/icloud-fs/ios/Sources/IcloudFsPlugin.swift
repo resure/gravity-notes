@@ -324,7 +324,26 @@ class IcloudFsPlugin: Plugin {
     let base = URL(fileURLWithPath: dir, isDirectory: true).standardizedFileURL
     let target = base.appendingPathComponent(name).standardizedFileURL
     let basePrefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
-    return target.path == base.path || target.path.hasPrefix(basePrefix) ? target : nil
+    guard target.path == base.path || target.path.hasPrefix(basePrefix) else { return nil }
+
+    // `standardizedFileURL` removes `.` / `..`, but deliberately does NOT resolve symlinks. Match
+    // the Rust backend's `confine_to_root`: resolve the deepest existing target ancestor (the target
+    // itself for reads, a parent for a not-yet-created write) and require its real path to remain
+    // inside the real workspace root. Without this, `Attachments/Escape -> /outside` would let a
+    // coordinated read/write leave the user-picked folder despite the lexical check above.
+    let realBase = base.resolvingSymlinksInPath()
+    let realBasePrefix = realBase.path.hasSuffix("/") ? realBase.path : realBase.path + "/"
+    var probe = target
+    while !FileManager.default.fileExists(atPath: probe.path) {
+      let parent = probe.deletingLastPathComponent()
+      if parent.path == probe.path { return nil }
+      probe = parent
+    }
+    let realProbe = probe.resolvingSymlinksInPath()
+    guard realProbe.path == realBase.path || realProbe.path.hasPrefix(realBasePrefix) else {
+      return nil
+    }
+    return target
   }
 
   /// If `url` is an iCloud item whose content is evicted, start its download and wait (bounded) for

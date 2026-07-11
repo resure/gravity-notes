@@ -60,10 +60,13 @@ export interface TopBarProps {
     onOpenSwitcher: () => void;
     /** The orb menu just opened — a chance to refresh the recents it shows. */
     onMenuOpen?: () => void;
-    /** Narrow (≤700px) single-pane layout is active — hides the note-appearance ⋯ on the list pane. */
+    /** Narrow (≤700px) chrome is active — full-width search and safe-area/traffic-light insets. */
     mobile?: boolean;
-    /** Mobile + the editor pane is showing: swap the orb+search for a Back button back to the list. */
-    mobileEditor?: boolean;
+    /**
+     * Active mobile push-navigation pane. Undefined keeps the narrow chrome without list↔editor
+     * semantics (notably a narrow single-note desktop window, whose editor is always visible).
+     */
+    mobilePane?: 'list' | 'editor';
     /** Mobile: return from the editor pane to the notes list (the Back button). */
     onMobileBack?: () => void;
     /** Export all notes as a .md zip. */
@@ -168,7 +171,7 @@ export function TopBar({
     onOpenTrash,
     trashCount,
     mobile,
-    mobileEditor,
+    mobilePane,
     onMobileBack,
     onOpenHelp,
     onOpenSettings,
@@ -481,7 +484,7 @@ export function TopBar({
 
     return (
         <header className={`topbar${mobile ? ' topbar_mobile' : ''}`} data-tauri-drag-region>
-            {mobileEditor ? (
+            {mobilePane === 'editor' ? (
                 // Mobile editor pane: a single Back button (left) that pops back to the notes list.
                 // The orb menu + search belong to the list pane, so they're hidden here; the note's
                 // ⋯ appearance button stays at the right edge (see below).
@@ -539,7 +542,7 @@ export function TopBar({
             {/* The open note's "⋯" appearance menu, pinned at the bar's right edge (always visible, so
                 no scroll-position juggling). Present when a note is open — but on mobile only on the
                 editor pane, not while browsing the list. */}
-            {noteOpen && (!mobile || mobileEditor) ? (
+            {noteOpen && mobilePane !== 'list' ? (
                 <>
                     <Button
                         ref={setAppearanceAnchor}

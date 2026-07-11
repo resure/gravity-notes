@@ -1317,7 +1317,7 @@ export function Workspace({
                     onOpenSwitcher={openSwitcher}
                     onMenuOpen={() => void onRefreshWorkspaces()}
                     mobile={isNarrow}
-                    mobileEditor={isNarrow && mobilePane === 'editor'}
+                    mobilePane={isNarrow && !noteWindow ? mobilePane : undefined}
                     onMobileBack={backToList}
                     onExport={handleExport}
                     onImport={handleImportClick}

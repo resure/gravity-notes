@@ -156,6 +156,18 @@
     min-width: 0;
 }
 
+/* `viewport-fit=cover` extends the whole webview beneath iOS's landscape sensor housing and home
+   indicator. The top bar owns the top inset; keep BOTH mobile panes' interactive content inside the
+   remaining lateral/bottom safe area. Padding the opaque pane surfaces (rather than the body) keeps
+   the slide animation + backdrop edge-to-edge while the content itself stays reachable. */
+.workspace__body_mobile .note-list,
+.workspace__body_mobile .workspace__editor {
+    box-sizing: border-box;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* The folder rail opens as a left-anchored DRAWER over the list (rather than squeezing in beside
    it), above a dimmed backdrop. Absolutely positioned, so the list fills the full width behind it;
    z-index sits above the list but within the sidebar's own stacking context. It's shown in place
@@ -167,6 +179,10 @@
     bottom: 0;
     width: min(300px, 82%);
     z-index: 2;
+    box-sizing: border-box;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
     box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
 }
 

@@ -50,6 +50,7 @@ class FakeFs {
     watchCalls: Array<{dir: string; listenersAtCall: number}> = [];
     unwatchCalls: string[] = [];
     failWatch = false;
+    readOptError: Error | null = null;
 
     private files = new Map<string, {name: string; content: string; mtime: number}>();
     private clock = 1000;
@@ -64,6 +65,7 @@ class FakeFs {
             case 'notes_read_all':
                 return this.readAll();
             case 'notes_read_opt':
+                if (this.readOptError) throw this.readOptError;
                 return this.readOpt(name);
             case 'notes_write':
                 return this.write(name, args.content as string);
@@ -500,6 +502,25 @@ describe('TauriNoteStore', () => {
             active: null,
             trashed: [],
         });
+    });
+
+    it('falls back to default metadata when the desktop sidecar is not valid UTF-8', async () => {
+        fs.readOptError = new Error('stream did not contain valid UTF-8');
+        expect(await store.readMetadata()).toEqual({
+            version: 1,
+            sort: 'updated',
+            pinned: [],
+            created: {},
+            icons: {},
+            appearances: {},
+            active: null,
+            trashed: [],
+        });
+    });
+
+    it('propagates non-corruption metadata read failures', async () => {
+        fs.readOptError = new Error('permission denied');
+        await expect(store.readMetadata()).rejects.toThrow('permission denied');
     });
 
     describe('trash', () => {
