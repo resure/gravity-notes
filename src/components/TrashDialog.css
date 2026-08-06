@@ -34,8 +34,11 @@
     border-radius: 6px;
 }
 
-.trash__row:hover {
-    background: var(--g-color-base-generic);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .trash__row:hover {
+        background: var(--g-color-base-generic);
+    }
 }
 
 .trash__meta {

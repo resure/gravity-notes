@@ -37,9 +37,18 @@
 /* …but on the mobile editor pane the bar is a plain flex row (Back button ← → ⋯), not the
    command-center. Keep the ⋯ in the flex flow so it's vertically centered WITH the Back button
    instead of absolute-centered against the whole safe-area-padded header (which floated it up into
-   the notch area, out of line with Back). The Back button's `margin-right: auto` still pins it right. */
+   the notch area, out of line with Back). The Back button's `margin-right: auto` still pins it right.
+
+   `relative` (NOT `static`) is load-bearing: Gravity's Button paints its hover/focus layers as
+   `position: absolute; inset: 0` pseudo-elements, which resolve against the nearest POSITIONED
+   ancestor. A static button hands them to `.topbar` (position: relative) instead, so they stretch
+   across the ENTIRE header and swallow every tap in it — tapping Back then opened this ⋯ popover.
+   `relative` with `inset: auto` lays out identically to static while keeping the layers on the
+   button. (`inset: auto` clears the `right`/`top` the desktop rule above sets, which `relative`
+   would otherwise apply as a visual offset.) */
 .tauri-app .topbar_mobile .topbar__note-actions {
-    position: static;
+    position: relative;
+    inset: auto;
     transform: none;
 }
 
@@ -100,8 +109,11 @@
     opacity: 0.6;
     transition: opacity 0.12s ease;
 }
-.topbar__note-actions:hover {
-    opacity: 1;
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .topbar__note-actions:hover {
+        opacity: 1;
+    }
 }
 
 /* The orange orb = the app mark and the menu trigger: a small, flat disc in the app icon's orange —

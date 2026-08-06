@@ -27,13 +27,22 @@
     user-select: none;
 }
 
-.folder-rail__row:hover {
-    background-color: var(--g-color-base-simple-hover);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .folder-rail__row:hover {
+        background-color: var(--g-color-base-simple-hover);
+    }
 }
 
-.folder-rail__row_selected,
-.folder-rail__row_selected:hover {
+.folder-rail__row_selected {
     background-color: var(--note-list-selected-bg);
+}
+
+@media (hover: hover) {
+    /* Re-assert over the hover fill above (same specificity → later wins). */
+    .folder-rail__row_selected:hover {
+        background-color: var(--note-list-selected-bg);
+    }
 }
 
 /* The focused (cursor) row reuses the notes-pane focus wash so an *actually focused* folder reads
@@ -73,9 +82,11 @@
     color: var(--g-color-text-hint);
 }
 
-.folder-rail__caret_button:hover {
-    color: var(--g-color-text-primary);
-    background-color: var(--g-color-base-generic-hover);
+@media (hover: hover) {
+    .folder-rail__caret_button:hover {
+        color: var(--g-color-text-primary);
+        background-color: var(--g-color-base-generic-hover);
+    }
 }
 
 .folder-rail__icon {
@@ -119,9 +130,15 @@
     opacity: 0;
 }
 
-.folder-rail__row:hover .folder-rail__actions,
 .folder-rail__row:focus-within .folder-rail__actions {
     opacity: 1;
+}
+
+/* Hover-reveal, pointer-only: on touch this revealed content is what swallowed the tap. */
+@media (hover: hover) {
+    .folder-rail__row:hover .folder-rail__actions {
+        opacity: 1;
+    }
 }
 
 /* Inline name field for the new-folder and rename editors: borderless (view="clear") with no leading

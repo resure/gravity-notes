@@ -27,6 +27,7 @@ import {Button, DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import type {NoteAppearance} from '../hooks/useSettings';
+import {isDesktopTauri} from '../isTauri';
 import {isOpenInNewWindowChord} from '../shortcuts';
 import type {NoteMeta} from '../storage/types';
 
@@ -437,12 +438,20 @@ export function TopBar({
             },
         ],
         [
-            {
-                text: 'Toggle sidebar',
-                iconStart: <Icon data={LayoutSideContent} />,
-                iconEnd: <span className="topbar__menu-kbd">{'⌘\\'}</span>,
-                action: onToggleCollapsed,
-            },
+            // Sidebar collapse is a MULTI-PANE affordance: the mobile layout is a single pane that
+            // pushes list↔editor, so there's no sidebar to collapse there (and no ⌘\ to press) —
+            // the item would toggle invisible state. Hidden rather than disabled: it's not a
+            // temporarily-unavailable action, it simply doesn't exist in this layout.
+            ...(mobile
+                ? []
+                : [
+                      {
+                          text: 'Toggle sidebar',
+                          iconStart: <Icon data={LayoutSideContent} />,
+                          iconEnd: <span className="topbar__menu-kbd">{'⌘\\'}</span>,
+                          action: onToggleCollapsed,
+                      },
+                  ]),
             {
                 text: 'Theme',
                 iconStart: <Icon data={themeIcon} />,
@@ -483,7 +492,13 @@ export function TopBar({
     ];
 
     return (
-        <header className={`topbar${mobile ? ' topbar_mobile' : ''}`} data-tauri-drag-region>
+        // `data-tauri-drag-region` makes the empty strip a window-drag handle — a macOS-desktop
+        // concept (iOS has no draggable windows). Omitted on iOS so the shell's drag-region pointer
+        // handling can't sit between a tap and the controls inside this bar (Back, ⋯, the orb).
+        <header
+            className={`topbar${mobile ? ' topbar_mobile' : ''}`}
+            data-tauri-drag-region={isDesktopTauri ? true : undefined}
+        >
             {mobilePane === 'editor' ? (
                 // Mobile editor pane: a single Back button (left) that pops back to the notes list.
                 // The orb menu + search belong to the list pane, so they're hidden here; the note's

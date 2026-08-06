@@ -23,8 +23,12 @@
     text-align: left;
     cursor: pointer;
 }
-.backlinks__header:hover {
-    color: var(--g-color-text-primary);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this header is the
+   collapse toggle, so a swallowed tap reads as "the panel won't open". */
+@media (hover: hover) {
+    .backlinks__header:hover {
+        color: var(--g-color-text-primary);
+    }
 }
 
 .backlinks__list {
@@ -53,9 +57,11 @@
 .backlinks__title {
     color: var(--g-color-text-link);
 }
-.backlinks__source:hover .backlinks__title {
-    color: var(--g-color-text-link-hover);
-    text-decoration: underline;
+@media (hover: hover) {
+    .backlinks__source:hover .backlinks__title {
+        color: var(--g-color-text-link-hover);
+        text-decoration: underline;
+    }
 }
 
 .backlinks__context {

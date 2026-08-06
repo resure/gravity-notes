@@ -71,7 +71,20 @@ opening a note pushes to the editor pane, the Back button returns to the list. T
 becomes a slide-over drawer with a dimmed backdrop. This applies on phones and on any desktop/iOS
 window narrowed below the breakpoint; above it the multi-pane layout is unchanged. There is **no
 CSS `@media`** for this breakpoint — the JS hook flips the `workspace__body_mobile` class and the
-CSS reacts to that.
+CSS reacts to that. From the editor pane, **swiping right goes back** to the list
+(`src/hooks/useSwipeBack.ts`) — the touch counterpart of the top bar's Back button. It's an
+_interactive_ gesture: the list tracks the finger and, on release, either completes or springs back
+(past ~35% of the width, or on a fast flick). The swipe starts anywhere on the pane rather than in an
+edge strip, so what keeps it from stealing real interactions is the DIRECTION of the movement — it's
+claimed only once the drag is clearly horizontal and rightward, and a touch beginning inside a
+horizontally-scrolled block (a wide table, a code fence) is left alone. Both outcomes animate off the
+drag position with no timer, so a backgrounded tab (where timers are throttled) can't strand it.
+
+Touch input has two rules the whole UI depends on. Every `:hover` rule is wrapped in
+`@media (hover: hover)`, because on a touch screen WebKit spends the first tap applying `:hover` and
+**suppresses the click** when that reveals content (the note row's ⋯ button was doing exactly this,
+so opening a note took two taps). And tap targets carry `touch-action: manipulation` (`index.css`)
+so no tap waits on a possible double-tap-zoom. Keep new hover rules gated the same way.
 
 The same codebase ships an **iOS app** (Tauri 2, a separate bundle id/identifier). The sandbox
 blocks plain folder paths, so an iCloud Drive (or on-device) folder is opened through the native

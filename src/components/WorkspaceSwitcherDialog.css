@@ -83,14 +83,21 @@
     opacity: 0;
 }
 
-.ws-switch__row:hover .ws-switch__remove,
 .ws-switch__row_active .ws-switch__remove {
     opacity: 1;
 }
 
-.ws-switch__remove:hover {
-    color: var(--g-color-text-primary);
-    background-color: var(--g-color-base-generic-hover);
+/* Hover-reveal + hover tint, pointer-only (see NoteList.css): on touch, :hover eats the first tap —
+   worst where it reveals hidden content, as this remove button does. */
+@media (hover: hover) {
+    .ws-switch__row:hover .ws-switch__remove {
+        opacity: 1;
+    }
+
+    .ws-switch__remove:hover {
+        color: var(--g-color-text-primary);
+        background-color: var(--g-color-base-generic-hover);
+    }
 }
 
 .ws-switch__match {

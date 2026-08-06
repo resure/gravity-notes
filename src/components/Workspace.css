@@ -61,12 +61,17 @@
     display: none;
 }
 
-.workspace__preview-badge:hover .workspace__preview-badge-idle {
-    display: none;
-}
+/* The label swap ("Preview" → "Exit preview") is pointer-only (see NoteList.css): on touch, :hover
+   eats the first tap, and swapping the label is exactly the content change that triggers it. Touch
+   users keep the idle label and the tap exits preview on the first try. */
+@media (hover: hover) {
+    .workspace__preview-badge:hover .workspace__preview-badge-idle {
+        display: none;
+    }
 
-.workspace__preview-badge:hover .workspace__preview-badge-hover {
-    display: inline;
+    .workspace__preview-badge:hover .workspace__preview-badge-hover {
+        display: inline;
+    }
 }
 
 .editor-pane {

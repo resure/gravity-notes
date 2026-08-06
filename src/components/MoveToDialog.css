@@ -55,9 +55,12 @@
     color: var(--g-color-text-hint);
 }
 
-.move-to__caret_button:hover {
-    color: var(--g-color-text-primary);
-    background-color: var(--g-color-base-generic-hover);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .move-to__caret_button:hover {
+        color: var(--g-color-text-primary);
+        background-color: var(--g-color-base-generic-hover);
+    }
 }
 
 .move-to__icon {
