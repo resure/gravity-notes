@@ -2,6 +2,7 @@ import type {ReactNode} from 'react';
 
 import {Dialog, Label, Switch, Text} from '@gravity-ui/uikit';
 
+import {useIsNarrow} from '../hooks/useIsNarrow';
 import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
 
 import {
@@ -43,6 +44,11 @@ export function SettingsDialog({
     const workspaceDescription = `Override the app appearance for ${
         workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
     }. “Default” inherits it.`;
+    // The `row` layout spends a fixed 150px column on the label, which leaves a phone-width dialog
+    // too little room for the segmented pickers — their last options ("Gray", "Unlimited") were
+    // clipped off the edge. Narrow screens reuse the `stack` layout the note-appearance popover
+    // already uses: label above, control across the full width.
+    const rowLayout = useIsNarrow() ? 'stack' : 'row';
     return (
         // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
         // size="m" is 720px — a touch wide for these rows; cap it via --g-dialog-width (see CSS).
@@ -73,21 +79,21 @@ export function SettingsDialog({
 
                     <Section title="Appearance">
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Editor font"
                             options={FONT_OPTIONS}
                             value={settings.editorFont}
                             onUpdate={(value) => setSetting('editorFont', value)}
                         />
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Accent color"
                             options={ACCENT_OPTIONS}
                             value={settings.accentColor}
                             onUpdate={(value) => setSetting('accentColor', value)}
                         />
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Text width"
                             options={WIDTH_OPTIONS}
                             value={settings.textWidth}
@@ -97,21 +103,21 @@ export function SettingsDialog({
 
                     <Section title="This workspace" description={workspaceDescription}>
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Editor font"
                             options={FONT_OPTIONS_WS}
                             value={workspaceSettings.editorFont}
                             onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
                         />
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Accent color"
                             options={ACCENT_OPTIONS_WS}
                             value={workspaceSettings.accentColor}
                             onUpdate={(value) => setWorkspaceSetting('accentColor', value)}
                         />
                         <AppearanceChoiceRow
-                            layout="row"
+                            layout={rowLayout}
                             label="Text width"
                             options={WIDTH_OPTIONS_WS}
                             value={workspaceSettings.textWidth}

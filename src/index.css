@@ -231,3 +231,34 @@ body,
     margin-inline: auto;
     box-sizing: border-box;
 }
+
+/* ── Touch input ────────────────────────────────────────────────────────────────────────────────
+   `manipulation` drops the double-tap-to-zoom gesture on the app's tap targets, so WebKit delivers
+   their click immediately instead of holding it to see whether a second tap follows. Scoped to the
+   controls (not the document) so the editor body keeps its normal text-interaction gestures.
+   The companion half of this is the `@media (hover: hover)` gating on every :hover rule — see
+   NoteList.css: on a touch screen a hover style would otherwise consume the first tap outright. */
+button,
+[role='button'],
+[role='option'],
+.note-list__item,
+.folder-rail__row {
+    touch-action: manipulation;
+}
+
+/* ── Dialogs on narrow screens ──────────────────────────────────────────────────────────────────
+   Gravity sizes a Dialog with a FIXED width (`.g-dialog { width: var(--g-dialog-width, …) }`, where
+   size s/m/l = 480/720/900px) and sets no max-width, so on a phone every dialog — the Trash confirm,
+   Move to…, Settings — ran off the screen edge, clipping its text and its primary button.
+
+   Cap it against the viewport instead of adding a breakpoint: this is inert whenever the dialog
+   already fits, so it needs no MOBILE_MAX_WIDTH duplicate and covers every size preset at once.
+   (A media query would also be the wrong tool here — dialogs render in a portal outside the
+   workspace tree, so the `workspace__body_mobile` class the rest of the mobile layout keys off
+   can't reach them.) The safe-area terms keep it clear of the notch/home indicator in landscape. */
+.g-dialog {
+    box-sizing: border-box;
+    max-width: calc(
+        100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
+}

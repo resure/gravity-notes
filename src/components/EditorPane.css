@@ -235,9 +235,13 @@
 }
 
 /* Hover on an unticked box: a faint accent-tinted fill + accent border, matching Notion's affordance. */
-.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:hover:not(:checked) {
-    border-color: var(--gn-orange);
-    background-color: rgba(var(--gn-accent-rgb), 0.12);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this is a checkbox the
+   user taps to tick, so the affordance must not cost the tap that toggles it. */
+@media (hover: hover) {
+    .editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:hover:not(:checked) {
+        border-color: var(--gn-orange);
+        background-color: rgba(var(--gn-accent-rgb), 0.12);
+    }
 }
 
 /* Ticked: accent fill + a white check glyph. */

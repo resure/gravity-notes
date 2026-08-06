@@ -42,8 +42,11 @@
     cursor: pointer;
 }
 
-.note-appearance__reset:hover {
-    color: var(--g-color-text-link-hover);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .note-appearance__reset:hover {
+        color: var(--g-color-text-link-hover);
+    }
 }
 
 /* The pickers are the shared AppearanceChoiceRow (`appearance-choice_stack`, appearanceControls.css). */

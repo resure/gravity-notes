@@ -35,8 +35,11 @@
     line-height: 0;
 }
 
-.attachments__thumb-btn:hover {
-    opacity: 0.85;
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
+@media (hover: hover) {
+    .attachments__thumb-btn:hover {
+        opacity: 0.85;
+    }
 }
 
 .attachments__thumb-btn:focus-visible {
@@ -52,8 +55,10 @@
     border-radius: 6px;
 }
 
-.attachments__row:hover {
-    background: var(--g-color-base-generic);
+@media (hover: hover) {
+    .attachments__row:hover {
+        background: var(--g-color-base-generic);
+    }
 }
 
 .attachments__thumb {

@@ -70,6 +70,10 @@
     cursor: pointer;
 }
 
-.lightbox__close:hover {
-    background: rgba(255, 255, 255, 0.3);
+/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this is the button that
+   closes the full-screen image, so a swallowed tap traps the user in the overlay. */
+@media (hover: hover) {
+    .lightbox__close:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
 }

@@ -24,6 +24,7 @@ import {
     useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
+import {useSwipeBack} from '../hooks/useSwipeBack';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
@@ -674,6 +675,11 @@ export function Workspace({
         }
     }, [isNarrow, notes.note]);
 
+    // The body + list-overlay elements, for the swipe-back gesture below (state, not refs: the hook
+    // must re-run once the nodes mount).
+    const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+    const [sidebarEl, setSidebarEl] = useState<HTMLElement | null>(null);
+
     // Return to the list from the editor pane (Back button / Escape) and land keyboard focus on the
     // selected row once the list is on screen — mirrors the desktop Esc-out-of-editor behavior. A
     // one-shot flag gates the focus so the recovery effect above (note vanished) doesn't grab it.
@@ -691,6 +697,12 @@ export function Workspace({
             listRef.current?.focusSelected();
         }
     }, [mobilePane]);
+
+    // Swipe right to go back — the touch equivalent of the Back button, and what a phone user
+    // reaches for first. The list overlay tracks the finger and springs back if the drag doesn't
+    // commit. Armed only on the mobile EDITOR pane (on the list there's nothing to go back to, and
+    // a note window keeps the desktop layout).
+    useSwipeBack(bodyEl, sidebarEl, isNarrow && !noteWindow && mobilePane === 'editor', backToList);
 
     const nav = useNoteNavigation({
         activeId: notes.activeId,
@@ -1390,6 +1402,7 @@ export function Workspace({
                 />
 
                 <div
+                    ref={setBodyEl}
                     className={
                         'workspace__body' +
                         // A single-note window always shows one note with both panels tucked away,
@@ -1403,7 +1416,7 @@ export function Workspace({
                               (collapsed && peeked ? ' workspace__body_peeked' : ''))
                     }
                 >
-                    <aside className="workspace__sidebar">
+                    <aside ref={setSidebarEl} className="workspace__sidebar">
                         {railOpen ? (
                             <FolderRail
                                 ref={railRef}

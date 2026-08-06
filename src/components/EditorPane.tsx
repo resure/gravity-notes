@@ -709,6 +709,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             <div
                 ref={bodyWrapRef}
                 className="editor-pane__body"
+                // No red squiggles under a note's prose. `spellcheck` INHERITS, so setting it on the
+                // wrapper covers the editor's contenteditable (and the markup-mode CodeMirror) without
+                // reaching into the editor instance — and it's the only way to reach a DOM the editor
+                // owns. Notes are full of names, code and shorthand that a dictionary flags anyway;
+                // the title (NoteTitle) already opts out the same way.
+                spellCheck={false}
                 onMouseDown={(event) => {
                     // Preview mode is read-only — no click handling.
                     if (preview) return;
