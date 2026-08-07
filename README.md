@@ -91,8 +91,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
 
-- Resizable left panel
-
 - Preserve cmd+z between notes
 - Cmd+z for undoing deleting of notes and moves between folders?
 

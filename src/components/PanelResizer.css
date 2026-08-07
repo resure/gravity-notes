@@ -1,0 +1,52 @@
+/* A 7px hit strip straddling the 1px border-right the panel to its left already draws: 4px over
+   the panel (its border is the strip's center), 3px over the neighbor — net zero layout width, so
+   adding/removing a divider never shifts the panes. Sits above both neighbors to win the pointer. */
+.panel-resizer {
+    flex: 0 0 7px;
+    margin-inline: -4px -3px;
+    position: relative;
+    z-index: 2;
+    cursor: col-resize;
+    /* Pointer-capture drags own the gesture — no scroll/zoom fallback on touch. */
+    touch-action: none;
+    /* Keyboard focus is shown by the ::after line (below), not an outline box around a 7px sliver. */
+    outline: none;
+    /* WebKit needs the prefix; the unprefixed form is for everyone else. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* The grab affordance: a 2px line centered on the underlying 1px border — one shade up from it
+   (generic-active), a nudge rather than a highlight. Appears on hover (delayed — casual mouse
+   travel across the app must not flash it), instantly while dragging or focused via keyboard. */
+.panel-resizer::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 3px;
+    width: 2px;
+    background-color: var(--g-color-line-generic-active);
+    opacity: 0;
+    transition: opacity 0.1s ease;
+}
+
+.panel-resizer:hover::after {
+    opacity: 1;
+    transition-delay: 0.25s;
+}
+
+.panel-resizer_dragging::after,
+.panel-resizer:focus-visible::after {
+    opacity: 1;
+    transition-delay: 0s;
+}
+
+/* Live drag, set on <body> by PanelResizer: the pointer strays off the 7px strip between capture
+   updates, so the whole app keeps the resize cursor and gives up text selection until release.
+   (Second line of defense — the pointerdown preventDefault is what actually stops WebKit from
+   starting a selection; this class lands an effect-tick too late to do that by itself.) */
+body.panel-resizing {
+    cursor: col-resize;
+    -webkit-user-select: none;
+    user-select: none;
+}
