@@ -24,6 +24,7 @@ import {
 } from '@gravity-ui/icons';
 import {Button, DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
 
+import {useHasHover} from '../hooks/useIsNarrow';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import type {NoteAppearance} from '../hooks/useSettings';
@@ -335,6 +336,8 @@ export function TopBar({
 
     const themeIcon = (THEME_OPTIONS.find((o) => o.value === themePref) ?? THEME_OPTIONS[2]).icon;
     const needsAttention = saveState === 'error' || saveState === 'conflict';
+    // Drives the keyboard-only menu entries below (see the "Keyboard shortcuts" item).
+    const hasHover = useHasHover();
 
     // One menu, in groups (dividers between): read-only status · storage · sidebar / theme / help.
     const menuItems = [
@@ -468,12 +471,19 @@ export function TopBar({
                 iconEnd: <span className="topbar__menu-kbd">⌘,</span>,
                 action: onOpenSettings,
             },
-            {
-                text: 'Keyboard shortcuts',
-                iconStart: <Icon data={CircleQuestion} />,
-                iconEnd: <span className="topbar__menu-kbd">⌘/</span>,
-                action: onOpenHelp,
-            },
+            // A sheet of keyboard chords is dead weight with no keyboard to press them on. Gated on
+            // the POINTER, not the width: a narrow desktop window still has a keyboard and would
+            // lose its only entry point to this dialog, whereas a full-screen phone has neither.
+            ...(hasHover
+                ? [
+                      {
+                          text: 'Keyboard shortcuts',
+                          iconStart: <Icon data={CircleQuestion} />,
+                          iconEnd: <span className="topbar__menu-kbd">⌘/</span>,
+                          action: onOpenHelp,
+                      },
+                  ]
+                : []),
         ],
         // The native shell can self-update; the web build omits the handler, hiding this group.
         ...(onCheckForUpdates
