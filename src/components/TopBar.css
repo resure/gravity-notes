@@ -217,16 +217,21 @@
 }
 
 /* ── Mobile editor pane (≤700px) ────────────────────────────────────────────────────────────────
-   The Back button sits at the left; `margin-right: auto` pushes the note's ⋯ appearance button to
-   the right edge (it stays in the flex flow on web — the .tauri-app absolute-pin above doesn't
-   apply to the mobile web build). */
+   An icon-only Back leading the one-row bar (‹ · orb · search · ⋯). No `margin-right: auto` here:
+   the search's `flex: 1` already takes the slack and pins the ⋯ to the right edge, and pushing from
+   here would instead shove the orb and search away from the chevron. */
 .topbar__back {
     flex-shrink: 0;
-    margin-right: auto;
-    /* -8px pulls the chevron toward the window edge so the label lines up with the content below. */
+    /* -8px pulls the chevron toward the window edge, past the button's own padding. */
     margin-left: -8px;
 }
 
-.topbar__back-label {
-    margin-left: 2px;
+/* A control that belongs to the OTHER pane: still laid out (so the orb and search keep exactly the
+   same position and width in both), but invisible and inert. `visibility: hidden` rather than
+   `display: none` is the whole point — it reserves the slot. Paired with `aria-hidden` +
+   `tabIndex={-1}` in TopBar.tsx so it's equally absent from the accessibility tree and tab order. */
+.topbar__back_placeholder,
+.topbar__note-actions_placeholder {
+    visibility: hidden;
+    pointer-events: none;
 }

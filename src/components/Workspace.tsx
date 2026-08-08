@@ -675,6 +675,31 @@ export function Workspace({
         }
     }, [isNarrow, notes.note]);
 
+    // The mobile counterpart of the auto-peek above. The search box lives in BOTH panes now, so a
+    // query typed from inside a note would otherwise filter a list the user can't see — show the
+    // list while a query is live, and hand the note back when it clears. The box itself is mounted
+    // in the shared bar, so the pane swap never costs it focus. Keyed on QUERY TRANSITIONS only
+    // (its own prev-ref), and the return leg is gated on having made the outbound switch, so
+    // clearing a search the user started ON the list doesn't teleport them into a note.
+    const mobileSearchSwitchRef = useRef(false);
+    const prevMobileQueryRef = useRef(query);
+    useEffect(() => {
+        const prev = prevMobileQueryRef.current;
+        prevMobileQueryRef.current = query;
+        if (query === prev || !isNarrow || noteWindow) return;
+        const has = query.trim().length > 0;
+        if (has && mobilePane === 'editor') {
+            mobileSearchSwitchRef.current = true;
+            // A live query supersedes an in-flight reveal; otherwise the note it was waiting on
+            // would push the editor back over the results the moment it loaded.
+            pendingMobileOpenRef.current = null;
+            setMobilePane('list');
+        } else if (!has && prev.trim().length > 0 && mobileSearchSwitchRef.current) {
+            mobileSearchSwitchRef.current = false;
+            if (openNoteRef.current) setMobilePane('editor');
+        }
+    }, [query, isNarrow, noteWindow, mobilePane]);
+
     // The body + list-overlay elements, for the swipe-back gesture below (state, not refs: the hook
     // must re-run once the nodes mount).
     const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);

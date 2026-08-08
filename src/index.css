@@ -251,14 +251,21 @@ button,
    size s/m/l = 480/720/900px) and sets no max-width, so on a phone every dialog — the Trash confirm,
    Move to…, Settings — ran off the screen edge, clipping its text and its primary button.
 
-   Cap it against the viewport instead of adding a breakpoint: this is inert whenever the dialog
-   already fits, so it needs no MOBILE_MAX_WIDTH duplicate and covers every size preset at once.
-   (A media query would also be the wrong tool here — dialogs render in a portal outside the
-   workspace tree, so the `workspace__body_mobile` class the rest of the mobile layout keys off
-   can't reach them.) The safe-area terms keep it clear of the notch/home indicator in landscape. */
+   Cap it by SIZE rather than by a breakpoint: this is inert whenever the dialog already fits, so it
+   needs no MOBILE_MAX_WIDTH duplicate and covers every size preset at once. (A media query would
+   also be the wrong tool here — dialogs render in a portal outside the workspace tree, so the
+   `workspace__body_mobile` class the rest of the mobile layout keys off can't reach them.)
+
+   Subtract Gravity's OWN `--g-modal-margin` (which `.g-modal__content` already reserves on each
+   side) rather than an invented inset: a dialog even slightly wider than that box makes
+   `.g-modal__content` (overflow-x: auto) show a horizontal scrollbar. Not `100%` either — the
+   content box shrink-wraps its child, so a percentage cap feeds back on itself and collapses the
+   dialog far narrower than the screen allows. The safe-area terms keep it clear of the notch in
+   landscape, where the inset can exceed that margin. */
 .g-dialog {
     box-sizing: border-box;
     max-width: calc(
-        100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+        100vw - 2 * var(--g-modal-margin, 20px) - env(safe-area-inset-left, 0px) -
+            env(safe-area-inset-right, 0px)
     );
 }

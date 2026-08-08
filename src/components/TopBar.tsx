@@ -509,87 +509,107 @@ export function TopBar({
             className={`topbar${mobile ? ' topbar_mobile' : ''}`}
             data-tauri-drag-region={isDesktopTauri ? true : undefined}
         >
-            {mobilePane === 'editor' ? (
-                // Mobile editor pane: a single Back button (left) that pops back to the notes list.
-                // The orb menu + search belong to the list pane, so they're hidden here; the note's
-                // ⋯ appearance button stays at the right edge (see below).
+            {/* ONE bar in both mobile panes (orb · search, plus the controls below) rather than two
+                layouts that swap: the menu and search stay reachable from inside a note, and nothing
+                shifts or resizes when you open one. On the editor pane a compact icon-only Back leads
+                the row — the "Notes" label it used to carry cost width the search needs here.
+
+                On the LIST pane the button is still laid out, just hidden (see `_placeholder`): its
+                slot has to stay reserved or the orb and the search box would slide and resize on
+                every pane change. Same for the ⋯ below — together they make the bar's geometry
+                identical in both panes by construction rather than by arithmetic. */}
+            {mobile ? (
                 <Button
                     view="flat"
                     size="l"
-                    className="topbar__back"
+                    className={`topbar__back${mobilePane === 'editor' ? '' : ' topbar__back_placeholder'}`}
                     onClick={onMobileBack}
                     aria-label="Back to notes"
+                    aria-hidden={mobilePane !== 'editor'}
+                    tabIndex={mobilePane === 'editor' ? undefined : -1}
                 >
                     <Icon data={ChevronLeft} size={18} />
-                    <span className="topbar__back-label">Notes</span>
                 </Button>
-            ) : (
-                <>
-                    <DropdownMenu
-                        switcherWrapperClassName="topbar__menu-anchor"
-                        onOpenToggle={(open) => {
-                            if (open) onMenuOpen?.();
+            ) : null}
+            <DropdownMenu
+                switcherWrapperClassName="topbar__menu-anchor"
+                onOpenToggle={(open) => {
+                    if (open) onMenuOpen?.();
+                }}
+                renderSwitcher={(props) => (
+                    <button
+                        {...props}
+                        type="button"
+                        className={`topbar__menu-orb topbar__menu-orb_${saveState}${
+                            orbPulsing ? ' topbar__menu-orb_pulsing' : ''
+                        }`}
+                        aria-label="Menu"
+                        aria-haspopup="true"
+                        title={STATUS_TEXT[saveState]}
+                        // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
+                        onAnimationIteration={() => {
+                            if (pulsePendingStopRef.current) {
+                                pulsePendingStopRef.current = false;
+                                setOrbPulsing(false);
+                            }
                         }}
-                        renderSwitcher={(props) => (
-                            <button
-                                {...props}
-                                type="button"
-                                className={`topbar__menu-orb topbar__menu-orb_${saveState}${
-                                    orbPulsing ? ' topbar__menu-orb_pulsing' : ''
-                                }`}
-                                aria-label="Menu"
-                                aria-haspopup="true"
-                                title={STATUS_TEXT[saveState]}
-                                // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
-                                onAnimationIteration={() => {
-                                    if (pulsePendingStopRef.current) {
-                                        pulsePendingStopRef.current = false;
-                                        setOrbPulsing(false);
-                                    }
-                                }}
-                            />
-                        )}
-                        items={menuItems}
                     />
-                    <TextInput
-                        className="topbar__search"
-                        controlRef={searchInputRef}
-                        value={displayValue}
-                        onUpdate={onSearchUpdate}
-                        placeholder="Search or create a note…"
-                        // Placeholders aren't a reliable accessible name; name the field explicitly.
-                        controlProps={{'aria-label': 'Search or create a note'}}
-                        hasClear
-                        onKeyDown={onSearchKeyDown}
-                    />
-                </>
-            )}
+                )}
+                items={menuItems}
+            />
+            <TextInput
+                className="topbar__search"
+                // Match the mobile editor pane's Back button (size "l", 36px) so the bar is
+                // the SAME height in both panes — otherwise it grew by 8px when a note
+                // opened and the whole header visibly jumped. A 36px field is also a far
+                // better touch target than the 28px default.
+                size={mobile ? 'l' : 'm'}
+                controlRef={searchInputRef}
+                value={displayValue}
+                onUpdate={onSearchUpdate}
+                placeholder="Search or create a note…"
+                // Placeholders aren't a reliable accessible name; name the field explicitly.
+                controlProps={{'aria-label': 'Search or create a note'}}
+                hasClear
+                onKeyDown={onSearchKeyDown}
+            />
             {/* The open note's "⋯" appearance menu, pinned at the bar's right edge (always visible, so
-                no scroll-position juggling). Present when a note is open — but on mobile only on the
-                editor pane, not while browsing the list. */}
-            {noteOpen && mobilePane !== 'list' ? (
+                no scroll-position juggling). Active when a note is open — but on mobile only on the
+                editor pane, not while browsing the list. On mobile it's rendered even when inactive,
+                as a hidden placeholder, so the bar's layout doesn't change between panes (see the
+                Back button above); elsewhere it's simply absent. */}
+            {mobile || (noteOpen && mobilePane !== 'list') ? (
                 <>
                     <Button
                         ref={setAppearanceAnchor}
                         view="flat"
                         size="m"
-                        className="topbar__note-actions"
+                        className={`topbar__note-actions${
+                            noteOpen && mobilePane !== 'list'
+                                ? ''
+                                : ' topbar__note-actions_placeholder'
+                        }`}
                         aria-label="Note appearance"
                         aria-haspopup="dialog"
                         aria-expanded={appearanceOpen}
+                        aria-hidden={!(noteOpen && mobilePane !== 'list')}
+                        tabIndex={noteOpen && mobilePane !== 'list' ? undefined : -1}
                         onClick={onToggleAppearance}
                     >
                         <Icon data={Ellipsis} />
                     </Button>
-                    <NoteAppearancePopover
-                        open={appearanceOpen}
-                        anchor={appearanceAnchor}
-                        onClose={onCloseAppearance}
-                        noteAppearance={noteAppearance}
-                        onSet={onSetNoteAppearance}
-                        onReset={onResetNoteAppearance}
-                        workspaceLabel={storageLabel}
-                    />
+                    {/* Only ever anchored to a REAL (visible) button — never to a placeholder. */}
+                    {noteOpen && mobilePane !== 'list' ? (
+                        <NoteAppearancePopover
+                            open={appearanceOpen}
+                            anchor={appearanceAnchor}
+                            onClose={onCloseAppearance}
+                            noteAppearance={noteAppearance}
+                            onSet={onSetNoteAppearance}
+                            onReset={onResetNoteAppearance}
+                            workspaceLabel={storageLabel}
+                        />
+                    ) : null}
                 </>
             ) : null}
         </header>

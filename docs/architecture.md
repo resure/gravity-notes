@@ -80,6 +80,16 @@ claimed only once the drag is clearly horizontal and rightward, and a touch begi
 horizontally-scrolled block (a wide table, a code fence) is left alone. Both outcomes animate off the
 drag position with no timer, so a backgrounded tab (where timers are throttled) can't strand it.
 
+The top bar is **one row that never swaps layouts**: orb · search in both panes, with a compact
+icon-only Back leading it on the editor pane and the note's ⋯ at the right edge. Keeping the search
+mounted in both panes is what makes searching from inside a note work — a query typed there switches
+to the list so the results are visible (and clearing it hands the note back), without the box ever
+losing focus, since it is the same element throughout. The bar's geometry is _identical_ in the two
+panes — same height, same orb position, same search width — because the pane-specific controls keep
+their slots when they don't apply (`visibility: hidden`, not unmounted) instead of the layout being
+recomputed around them. Height parity needs one more thing: the search is sized to match the Back
+button, which otherwise made the header jump by 8px when a note opened.
+
 Affordances are hidden by the thing they actually depend on, which is not always the width:
 "Toggle sidebar" goes with the _layout_ (`mobile`, since a single pane has no sidebar to collapse),
 while the keyboard-shortcuts sheet goes with the _input_ (`useHasHover`, since a narrow desktop
