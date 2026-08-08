@@ -164,6 +164,17 @@ macOS materializes them.
 - **External changes are live only in the desktop app** (the folder watcher). In the browser and
   on iOS they're detected when you return focus to the window — or via **Reload notes** in the
   storage menu.
+- **On iOS, only note and attachment _content_ is coordinated with iCloud**, not relocation:
+  opening and saving go through `NSFileCoordinator`, but rename / move / trash / restore still use
+  the plain `notes_rename` command. Relocating a note while iCloud is mid-sync can therefore lose
+  the race and leave a conflict copy. Coordinating them means reimplementing that command's
+  empty-ancestor pruning and no-clobber rename in Swift; done carelessly it strands ghost folders
+  in the tree, which is why it hasn't been.
+- **An evicted iCloud file can stall the iOS app for up to 15s.** Opening a note whose content
+  iCloud has evicted starts the download and polls for it, and the metadata sidecar is read the
+  same way during startup — so a fresh device restore, where everything is still a placeholder,
+  can show a blank screen for ~15–30s. Wants an `NSMetadataQuery` observer and a bootstrap that
+  reads whatever is local instead of blocking on the download.
 - **A selected image shows a faint caret line** beside it in the editor — the browser's native
   object-selection caret, which resists CSS hiding. Cosmetic only.
 - **Auto-update starts from the release that introduced it.** A build without the updater
