@@ -43,12 +43,17 @@
    `position: absolute; inset: 0` pseudo-elements, which resolve against the nearest POSITIONED
    ancestor. A static button hands them to `.topbar` (position: relative) instead, so they stretch
    across the ENTIRE header and swallow every tap in it — tapping Back then opened this ⋯ popover.
-   `relative` with `inset: auto` lays out identically to static while keeping the layers on the
-   button. (`inset: auto` clears the `right`/`top` the desktop rule above sets, which `relative`
-   would otherwise apply as a visual offset.) */
+   `relative` lays out identically to static while keeping the layers on the button, once the
+   `right`/`top` the desktop rule above sets are cleared — under `relative` those would otherwise
+   apply as a visual OFFSET rather than a position. Longhands, not the `inset` shorthand: the app's
+   iOS deployment target is 14.0 and `inset` only landed in WebKit 14.1, where the dropped
+   declaration would leave the ⋯ shifted by exactly that offset. */
 .tauri-app .topbar_mobile .topbar__note-actions {
     position: relative;
-    inset: auto;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
     transform: none;
 }
 

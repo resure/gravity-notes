@@ -80,6 +80,11 @@ claimed only once the drag is clearly horizontal and rightward, and a touch begi
 horizontally-scrolled block (a wide table, a code fence) is left alone. Both outcomes animate off the
 drag position with no timer, so a backgrounded tab (where timers are throttled) can't strand it.
 
+Affordances are hidden by the thing they actually depend on, which is not always the width:
+"Toggle sidebar" goes with the _layout_ (`mobile`, since a single pane has no sidebar to collapse),
+while the keyboard-shortcuts sheet goes with the _input_ (`useHasHover`, since a narrow desktop
+window still has a keyboard and would otherwise lose its only way in).
+
 Touch input has two rules the whole UI depends on. Every `:hover` rule is wrapped in
 `@media (hover: hover)`, because on a touch screen WebKit spends the first tap applying `:hover` and
 **suppresses the click** when that reveals content (the note row's ⋯ button was doing exactly this,

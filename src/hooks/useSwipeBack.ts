@@ -18,6 +18,21 @@ const COMMIT_VELOCITY = 0.45;
 const SETTLE_MS = 200;
 
 /**
+ * The settle duration to actually use. An INLINE transition beats the stylesheet, so it would
+ * override the `prefers-reduced-motion` rule that snaps this very pane (Workspace.css) — read the
+ * preference here and settle instantly instead. Read per gesture, so toggling the OS setting takes
+ * effect without a reload. Dragging itself stays 1:1 with the finger either way: that's direct
+ * manipulation, not motion the user didn't ask for.
+ */
+function settleMs(): number {
+    return typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 0
+        : SETTLE_MS;
+}
+
+/**
  * Interactive **swipe-to-go-back** for the mobile editor pane: the notes list tracks the finger as
  * it drags in from the left, and on release either completes the back or springs back — the same
  * feel as iOS's interactive pop, rather than a gesture that merely triggers the Back button.
@@ -149,7 +164,7 @@ export function useSwipeBack(
                 // the effect's own cleanup (this hook disables on the list pane) drops the inline
                 // style afterwards. Setting the transform BEFORE onBack matters — clearing first
                 // would park the pane back at -100% for a frame while React re-renders.
-                sheet.style.transition = `transform ${SETTLE_MS}ms ease`;
+                sheet.style.transition = `transform ${settleMs()}ms ease`;
                 sheet.style.transform = 'translateX(0)';
                 onBack();
             } else {
