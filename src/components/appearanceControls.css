@@ -13,6 +13,15 @@
     justify-self: start;
 }
 
+/* The label column can carry an "Experimental" chip beside its text (mirrors the toggle rows), so
+   let the two sit on one line with a gap and wrap only if the column truly runs out. */
+.appearance-choice__label {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
 .appearance-choice_stack {
     display: flex;
     flex-direction: column;

@@ -580,6 +580,18 @@ export function useNotes(
             setSaveState('saved');
             stampLocalWrite(pending.id); // re-stamp at completion — a slow save outlives the entry stamp
             bumpInList(pending.id, meta.updatedAt, pending.content);
+            // Keep the OPEN note's in-state content in step with what we just wrote. It is otherwise
+            // the text as of the last load, which is invisible until something remounts the body
+            // mid-session — switching Settings › Editor between the Markdown and Blocks engines does
+            // exactly that. The new body then mounted from the stale snapshot, silently rewinding the
+            // session's typing, and the next keystroke autosaved the rewound text over the file with
+            // no conflict raised (the baseline had already advanced). The rich body's swap effect
+            // early-returns on this update: its own value already equals what we saved.
+            setNote((prev) =>
+                prev && prev.id === pending.id
+                    ? {...prev, content: pending.content, updatedAt: meta.updatedAt}
+                    : prev,
+            );
             return false; // saved cleanly — no conflict
         } catch (err) {
             // A timed-out save still settles in the background: if it eventually succeeds, the disk

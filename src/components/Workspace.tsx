@@ -204,13 +204,26 @@ export function Workspace({
         prevAttachmentCacheRef.current = attachmentCache;
     }
     // Persist a dropped/pasted/inserted image, then seed its object URL so it renders instantly.
+    // Report the failure HERE rather than leaving it to each editor engine. `writeAttachment` throws
+    // by contract (a read-only folder, a full disk, a lapsed FSA grant), and the two bodies handle a
+    // rejection differently — the block editor skips the file, so a dropped image simply vanished
+    // with no toast and no trace, and the user reads that as the drop not registering. Toasting at
+    // the boundary that owns `onError` covers both engines; the rethrow keeps each one free to decide
+    // what to do about the missing reference.
     const handleUploadFile = useCallback(
         async (file: File): Promise<string> => {
-            const ref = await store.writeAttachment(file);
-            attachmentCache.seed(ref, file);
-            return ref;
+            try {
+                const ref = await store.writeAttachment(file);
+                attachmentCache.seed(ref, file);
+                return ref;
+            } catch (err) {
+                onError(
+                    `Couldn't attach ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+                throw err;
+            }
         },
-        [store, attachmentCache],
+        [store, attachmentCache, onError],
     );
 
     // "Reveal in Finder" — present only on the native desktop backend (the others have no real file
@@ -1578,6 +1591,7 @@ export function Workspace({
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
+                                        engine={settings.editorEngine}
                                     />
                                 </div>
                                 <BacklinksPanel

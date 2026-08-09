@@ -1,0 +1,1175 @@
+:root {
+    /* Notion's ink, as raw channels so every rgba() below can be re-tinted for a dark theme in
+       one place (see the .g-root_theme_dark block at the end of this file). */
+    --n-ink: 55, 53, 47;
+    --n-text: rgb(var(--n-ink));
+    --n-text-light: rgba(var(--n-ink), 0.65);
+    --n-text-lighter: rgba(var(--n-ink), 0.5);
+    --n-placeholder: rgba(var(--n-ink), 0.4);
+    --n-icon: rgba(var(--n-ink), 0.45);
+    --n-hover: rgba(var(--n-ink), 0.08);
+    --n-border: rgba(var(--n-ink), 0.16);
+    /* The interaction accent — selection wash, drop indicator, focus rings, checked to-do box,
+       active toolbar button. Notion's blue is only the fallback: the app's accent-color setting
+       publishes its hue as the channel triple `--gn-accent-rgb` on :root (index.css, swapped by
+       `data-accent`), so an amber- or gray-accented app no longer paints a blue marquee over its
+       own notes. Channels rather than a color because each of these needs its own alpha. Unlike
+       the rest of the palette these need NO dark-theme remap — the accent is theme-independent. */
+    --n-accent-rgb: var(--gn-accent-rgb, 35, 131, 226);
+    --n-blue: rgb(var(--n-accent-rgb));
+    --n-blue-selection: rgba(var(--n-accent-rgb), 0.28);
+    --n-blue-overlay: rgba(var(--n-accent-rgb), 0.14);
+    --n-blue-drop: rgba(var(--n-accent-rgb), 0.4);
+    --n-blue-marquee-border: rgba(var(--n-accent-rgb), 0.55);
+    --n-blue-marquee-fill: rgba(var(--n-accent-rgb), 0.12);
+    --n-code-red: #eb5757;
+    --n-code-bg: rgba(135, 131, 120, 0.15);
+    --n-gray-bg: rgb(247, 246, 243);
+    --n-callout-bg: rgb(241, 241, 239);
+    --n-overlay-shadow:
+        rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px,
+        rgba(15, 15, 15, 0.2) 0px 9px 24px;
+    --n-mono: 'SFMono-Regular', Menlo, Consolas, 'PT Mono', 'Liberation Mono', Courier, monospace;
+}
+
+.gn-block-editor {
+    position: relative;
+    cursor: text;
+}
+
+/* Same gutter as the note title above (the host widens `--editor-gutter` while this editor is
+   mounted — see EditorPane.css), so the two share one left edge and the hover handles live inside
+   that gutter instead of pushing the text right. The column WIDTH comes from `--gn-text-width` via
+   the shared centering rule in index.css. */
+.gn-block-editor .page {
+    padding: 4px var(--editor-gutter, 16px) 30vh;
+    /* Follow the app's editor-font setting (Settings › Appearance, plus the per-workspace and
+       per-note overrides) — the same `--gn-editor-*` metrics the Gravity engine's `.yfm` body and
+       the note title read. Set HERE rather than on `.content` so the whole document column follows
+       it: the headings size themselves in `em` off this, and the list markers / table cells inherit
+       the family. Without it the title switched to PT Serif while the body stayed system sans.
+       The fallbacks are the values this stylesheet carried as a standalone app. Code blocks keep
+       their own mono family, as they do in the other engine. */
+    font-family: var(--gn-editor-font, inherit);
+    font-size: var(--gn-editor-font-size, 16px);
+}
+
+@media (hover: none) {
+    .gn-block-editor .handles {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gn-block-editor .handles,
+    .gn-block-editor .toggle-button span,
+    .gn-block-editor .todo-box {
+        transition: none;
+    }
+}
+
+/* ---------- blocks ---------- */
+
+.gn-block-editor .block {
+    position: relative;
+    margin-top: 1px;
+}
+
+.gn-block-editor .blocks > .block:first-child {
+    margin-top: 0;
+}
+
+.gn-block-editor .block[data-type='heading1'] {
+    margin-top: 32px;
+}
+.gn-block-editor .block[data-type='heading2'] {
+    margin-top: 22px;
+}
+.gn-block-editor .block[data-type='heading3'] {
+    margin-top: 14px;
+}
+.gn-block-editor .block[data-type='quote'],
+.gn-block-editor .block[data-type='callout'],
+.gn-block-editor .block[data-type='code'] {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.gn-block-editor .content {
+    padding: 3px 2px;
+    outline: none;
+    /* Size is inherited from `.page` (see above); only the leading is set here, per editor font. */
+    line-height: var(--gn-editor-line-height, 1.5);
+    word-break: break-word;
+    white-space: pre-wrap;
+    caret-color: var(--n-text);
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* Lists carry their own per-font rhythm — a touch more leading plus a gap between items — exactly
+   as the Gravity engine's `<li>` rules do (EditorPane.css / NotePreview.css). Here each item is a
+   block of its own, so the gap is a block margin rather than a list-item margin. */
+.gn-block-editor .block[data-type='bulleted'] .content,
+.gn-block-editor .block[data-type='numbered'] .content,
+.gn-block-editor .block[data-type='todo'] .content {
+    line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.5));
+}
+
+.gn-block-editor .block[data-type='bulleted'],
+.gn-block-editor .block[data-type='numbered'],
+.gn-block-editor .block[data-type='todo'] {
+    margin-bottom: var(--gn-editor-list-gap, 0px);
+}
+
+.gn-block-editor .content[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--n-placeholder);
+    pointer-events: none;
+    float: left;
+    height: 0;
+}
+
+.gn-block-editor .block[data-type='heading1'] .content {
+    font-size: 1.875em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.gn-block-editor .block[data-type='heading2'] .content {
+    font-size: 1.5em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.gn-block-editor .block[data-type='heading3'] .content {
+    font-size: 1.25em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+/* inline formatting */
+
+.gn-block-editor .content b,
+.gn-block-editor .content strong {
+    font-weight: 600;
+}
+
+.gn-block-editor .content code {
+    font-family: var(--n-mono);
+    font-size: 85%;
+    color: var(--n-code-red);
+    background: var(--n-code-bg);
+    border-radius: 4px;
+    padding: 0.2em 0.4em;
+}
+
+.gn-block-editor .content a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(var(--n-ink), 0.4);
+    transition: text-decoration-color 100ms ease-in;
+}
+
+.gn-block-editor .content a:hover {
+    text-decoration-color: rgba(var(--n-ink), 0.8);
+}
+
+/* A link inside the body is text you can edit; ⌘/Ctrl-click is what OPENS it (Editor.tsx toggles
+   this class while the modifier is down, mirroring the Gravity engine's
+   `.g-prosemirror_mod-pressed` — see EditorPane.css). The bare `cursor: pointer` this replaces
+   promised a plain click would do something, and back when nothing handled that click the promise
+   was kept by the webview navigating away from the app entirely. */
+.gn-block-editor_mod-pressed .content a,
+.gn-block-editor_mod-pressed .table-cell-content a {
+    cursor: pointer;
+}
+
+/* ---------- hover handles ---------- */
+
+/* Block furniture sits in the margins on BOTH sides: the drag handle on the left (so the left
+   gutter only has to be as wide as one 18px button) and the add button on the right. */
+.gn-block-editor .handles {
+    position: absolute;
+    top: 3px;
+    display: flex;
+    gap: 1px;
+    opacity: 0;
+    transition: opacity 100ms ease-in;
+    user-select: none;
+}
+
+.gn-block-editor .handle-slot_left {
+    left: -26px;
+}
+
+.gn-block-editor .handle-slot_right {
+    right: -30px;
+}
+
+.gn-block-editor .block:hover .handles,
+.gn-block-editor .block:focus-within .handles {
+    opacity: 1;
+}
+
+.gn-block-editor .handle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    color: var(--n-icon);
+    cursor: pointer;
+    padding: 0;
+}
+
+.gn-block-editor .handle-btn:hover {
+    background: var(--n-hover);
+}
+
+.gn-block-editor .handle-btn:focus-visible {
+    opacity: 1;
+    outline: 2px solid rgba(35, 131, 226, 0.35);
+    outline-offset: -2px;
+}
+
+.gn-block-editor .plus-btn {
+    width: 24px;
+    height: 24px;
+}
+
+.gn-block-editor .drag-btn {
+    width: 18px;
+    height: 24px;
+    cursor: grab;
+}
+
+.gn-block-editor .drag-btn:active {
+    cursor: grabbing;
+}
+
+.gn-block-editor .block[data-type='heading1'] .handles {
+    top: 11px;
+}
+.gn-block-editor .block[data-type='heading2'] .handles {
+    top: 7px;
+}
+.gn-block-editor .block[data-type='heading3'] .handles {
+    top: 5px;
+}
+.gn-block-editor .block[data-type='callout'] .handles {
+    top: 16px;
+}
+.gn-block-editor .block[data-type='table'] .handles {
+    top: 8px;
+}
+.gn-block-editor .block[data-type='code'] .handles {
+    top: 32px;
+}
+.gn-block-editor .block[data-type='divider'] .handles {
+    top: -5px;
+}
+
+/* ---------- block selection / drag states ---------- */
+
+.gn-block-editor .block.selected .block-body {
+    background: var(--n-blue-overlay) !important;
+    border-radius: 4px;
+}
+
+.gn-block-editor .block.selected .content {
+    user-select: none;
+}
+
+.gn-block-editor .block.selected .table-cell-content {
+    user-select: none;
+}
+
+.gn-block-editor .block.selected .simple-table td {
+    background: var(--n-blue-overlay) !important;
+}
+
+/* ---------- block colors ---------- */
+
+.gn-block-editor .block[data-color='gray'] > .block-body {
+    color: #787774;
+}
+.gn-block-editor .block[data-color='brown'] > .block-body {
+    color: #976d57;
+}
+.gn-block-editor .block[data-color='orange'] > .block-body {
+    color: #cc782f;
+}
+.gn-block-editor .block[data-color='yellow'] > .block-body {
+    color: #c29343;
+}
+.gn-block-editor .block[data-color='green'] > .block-body {
+    color: #548164;
+}
+.gn-block-editor .block[data-color='blue'] > .block-body {
+    color: #487ca5;
+}
+.gn-block-editor .block[data-color='purple'] > .block-body {
+    color: #8a67ab;
+}
+.gn-block-editor .block[data-color='pink'] > .block-body {
+    color: #b35488;
+}
+.gn-block-editor .block[data-color='red'] > .block-body {
+    color: #c4554d;
+}
+
+.gn-block-editor .block[data-color='gray_background'] > .block-body {
+    background: #f1f1ef;
+}
+.gn-block-editor .block[data-color='brown_background'] > .block-body {
+    background: #f4eeee;
+}
+.gn-block-editor .block[data-color='orange_background'] > .block-body {
+    background: #fbecdd;
+}
+.gn-block-editor .block[data-color='yellow_background'] > .block-body {
+    background: #fbf3db;
+}
+.gn-block-editor .block[data-color='green_background'] > .block-body {
+    background: #edf3ec;
+}
+.gn-block-editor .block[data-color='blue_background'] > .block-body {
+    background: #e7f3f8;
+}
+.gn-block-editor .block[data-color='purple_background'] > .block-body {
+    background: #f4f0f7;
+}
+.gn-block-editor .block[data-color='pink_background'] > .block-body {
+    background: #f9eef3;
+}
+.gn-block-editor .block[data-color='red_background'] > .block-body {
+    background: #fdebec;
+}
+
+.gn-block-editor .block[data-color$='_background'] > .block-body {
+    border-radius: 3px;
+}
+
+.gn-block-editor .block[data-color$='_background'] .callout-wrap {
+    background: transparent;
+}
+
+.gn-block-editor .block[data-color='gray_background'] .simple-table td {
+    background: #f1f1ef;
+}
+.gn-block-editor .block[data-color='brown_background'] .simple-table td {
+    background: #f4eeee;
+}
+.gn-block-editor .block[data-color='orange_background'] .simple-table td {
+    background: #fbecdd;
+}
+.gn-block-editor .block[data-color='yellow_background'] .simple-table td {
+    background: #fbf3db;
+}
+.gn-block-editor .block[data-color='green_background'] .simple-table td {
+    background: #edf3ec;
+}
+.gn-block-editor .block[data-color='blue_background'] .simple-table td {
+    background: #e7f3f8;
+}
+.gn-block-editor .block[data-color='purple_background'] .simple-table td {
+    background: #f4f0f7;
+}
+.gn-block-editor .block[data-color='pink_background'] .simple-table td {
+    background: #f9eef3;
+}
+.gn-block-editor .block[data-color='red_background'] .simple-table td {
+    background: #fdebec;
+}
+
+.gn-block-editor .block.dragging {
+    opacity: 0.4;
+}
+
+.gn-block-editor .block.drop-before::before,
+.gn-block-editor .block.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: 1px;
+    background: var(--n-blue-drop);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.gn-block-editor .block.drop-before::before {
+    top: -3px;
+}
+
+.gn-block-editor .block.drop-after::after {
+    bottom: -3px;
+}
+
+.gn-block-editor .selection-rect {
+    position: fixed;
+    z-index: 40;
+    pointer-events: none;
+    border: 1px solid var(--n-blue-marquee-border);
+    border-radius: 2px;
+    background: var(--n-blue-marquee-fill);
+}
+
+/* ---------- lists / to-dos ---------- */
+
+.gn-block-editor .block-row {
+    display: flex;
+    align-items: flex-start;
+}
+
+.gn-block-editor .list-marker {
+    width: 24px;
+    min-width: 24px;
+    user-select: none;
+    padding-top: 3px;
+    /* Share the list leading (and, through inheritance, the size) of the text it sits beside, so the
+       marker stays on the first line's baseline whichever editor font is active. The fallback
+       resolves to the same 24px this rule used to hard-code. */
+    line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.5));
+    text-align: center;
+}
+
+/* The marker is an en dash rather than a bullet (see Block.tsx); it sits on the text baseline at
+   the body size instead of needing a bullet's optical size bump. */
+.gn-block-editor .bullet-marker {
+    font-size: inherit;
+}
+
+.gn-block-editor .number-marker {
+    font-size: inherit;
+    text-align: left;
+    padding-left: 2px;
+}
+
+.gn-block-editor .todo-col {
+    width: 24px;
+    min-width: 24px;
+    padding-top: 7px;
+    user-select: none;
+}
+
+.gn-block-editor .todo-box {
+    width: 16px;
+    height: 16px;
+    margin-left: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: 1.5px solid var(--n-text);
+    background: transparent;
+    transition:
+        background 80ms ease-out,
+        border-color 80ms ease-out;
+    padding: 0;
+}
+
+.gn-block-editor .todo-box.checked {
+    background: var(--n-blue);
+    border-color: var(--n-blue);
+}
+
+.gn-block-editor .content.todo-checked {
+    text-decoration: line-through;
+    color: rgba(var(--n-ink), 0.375);
+}
+
+/* ---------- toggles / nesting ---------- */
+
+.gn-block-editor .toggle-col {
+    width: 24px;
+    min-width: 24px;
+    padding-top: 4px;
+    user-select: none;
+}
+
+.gn-block-editor .toggle-button {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--n-text-light);
+    cursor: pointer;
+}
+
+.gn-block-editor .toggle-button:hover,
+.gn-block-editor .toggle-button:focus-visible {
+    background: var(--n-hover);
+    outline: none;
+}
+
+.gn-block-editor .toggle-button span {
+    display: block;
+    font-size: 15px;
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: transform 120ms ease;
+}
+
+.gn-block-editor .toggle-button.collapsed span {
+    transform: rotate(-90deg);
+}
+
+/* ---------- quote ---------- */
+
+.gn-block-editor .quote-wrap {
+    display: flex;
+    border-left: 3px solid currentColor;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+/* ---------- callout ---------- */
+
+.gn-block-editor .callout-wrap {
+    display: flex;
+    align-items: flex-start;
+    background: var(--n-callout-bg);
+    border-radius: 6px;
+    padding: 16px 16px 16px 12px;
+}
+
+.gn-block-editor .callout-emoji {
+    font-size: 20px;
+    line-height: 24px;
+    margin-right: 8px;
+    user-select: none;
+}
+
+.gn-block-editor .callout-wrap .content {
+    padding: 0 2px;
+}
+
+/* ---------- code ---------- */
+
+.gn-block-editor .code-wrap {
+    position: relative;
+    background: var(--n-gray-bg);
+    border-radius: 4px;
+}
+
+.gn-block-editor .code-wrap .content {
+    font-family: var(--n-mono);
+    font-size: 85%;
+    line-height: 1.5;
+    padding: 34px 16px 32px 32px;
+    tab-size: 2;
+}
+
+.gn-block-editor .code-wrap .content code {
+    all: unset;
+}
+
+.gn-block-editor .code-lang {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 12px;
+    color: var(--n-text-lighter);
+    opacity: 0;
+    transition: opacity 100ms ease-in;
+    user-select: none;
+    pointer-events: none;
+}
+
+.gn-block-editor .code-wrap:hover .code-lang {
+    opacity: 1;
+}
+
+/* ---------- divider ---------- */
+
+.gn-block-editor .divider-wrap {
+    padding: 6px 0;
+    cursor: pointer;
+}
+
+.gn-block-editor .divider-wrap hr {
+    border: none;
+    height: 1px;
+    background: var(--n-border);
+    margin: 0;
+}
+
+/* ---------- simple tables ---------- */
+
+.gn-block-editor .block[data-type='table'] {
+    margin-top: 14px;
+    margin-bottom: 18px;
+}
+
+.gn-block-editor .table-block-shell {
+    position: relative;
+    padding: 0 20px 20px 0;
+    cursor: default;
+}
+
+.gn-block-editor .table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.gn-block-editor .simple-table {
+    width: max-content;
+    min-width: 100%;
+    border-spacing: 0;
+    border-collapse: separate;
+    table-layout: fixed;
+}
+
+.gn-block-editor .simple-table td {
+    width: 180px;
+    min-width: 120px;
+    max-width: 280px;
+    height: 34px;
+    padding: 0;
+    border-right: 1px solid rgba(var(--n-ink), 0.16);
+    border-bottom: 1px solid rgba(var(--n-ink), 0.16);
+    background: #fff;
+    vertical-align: top;
+}
+
+.gn-block-editor .simple-table tr:first-child td {
+    border-top: 1px solid rgba(var(--n-ink), 0.16);
+}
+
+.gn-block-editor .simple-table td:first-child {
+    border-left: 1px solid rgba(var(--n-ink), 0.16);
+}
+
+.gn-block-editor .simple-table .table-header-cell {
+    background: var(--n-gray-bg);
+    font-weight: 600;
+}
+
+.gn-block-editor .table-cell-content {
+    min-height: 34px;
+    padding: 7px 9px;
+    outline: none;
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    cursor: text;
+}
+
+.gn-block-editor .table-cell-content:focus {
+    box-shadow: inset 0 0 0 2px var(--n-blue);
+}
+
+.gn-block-editor .table-cell-content code {
+    font-family: var(--n-mono);
+    font-size: 85%;
+    color: var(--n-code-red);
+    background: var(--n-code-bg);
+    border-radius: 4px;
+    padding: 0.15em 0.35em;
+}
+
+.gn-block-editor .table-cell-content a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(var(--n-ink), 0.4);
+}
+
+.gn-block-editor .table-add {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(var(--n-ink), 0.06);
+    color: var(--n-text-light);
+    opacity: 0;
+    cursor: pointer;
+    transition:
+        opacity 100ms ease,
+        background 100ms ease;
+}
+
+.gn-block-editor .table-block-shell:hover .table-add,
+.gn-block-editor .table-block-shell:focus-within .table-add {
+    opacity: 1;
+}
+
+.gn-block-editor .table-add:hover,
+.gn-block-editor .table-add:focus-visible {
+    background: rgba(var(--n-ink), 0.12);
+    outline: none;
+}
+
+.gn-block-editor .table-add-column {
+    top: 0;
+    right: 0;
+    width: 16px;
+    height: calc(100% - 20px);
+}
+
+.gn-block-editor .table-add-row {
+    left: 0;
+    right: 20px;
+    bottom: 0;
+    height: 16px;
+}
+
+.gn-block-editor .table-toolbar {
+    position: absolute;
+    z-index: 5;
+    right: 20px;
+    top: -38px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: var(--n-overlay-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+        opacity 100ms ease,
+        transform 100ms ease;
+    white-space: nowrap;
+}
+
+.gn-block-editor .table-block-shell:hover .table-toolbar,
+.gn-block-editor .table-block-shell:focus-within .table-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.gn-block-editor .table-toolbar button {
+    height: 26px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--n-text-light);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.gn-block-editor .table-toolbar button:hover:not(:disabled),
+.gn-block-editor .table-toolbar button.active {
+    background: var(--n-hover);
+    color: var(--n-text);
+}
+
+.gn-block-editor .table-toolbar button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.gn-block-editor .table-toolbar-divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 2px;
+    background: rgba(var(--n-ink), 0.12);
+}
+
+@media (max-width: 720px) {
+    .gn-block-editor .simple-table td {
+        width: 150px;
+    }
+
+    .gn-block-editor .table-toolbar {
+        left: 0;
+        right: auto;
+        max-width: calc(100vw - 82px);
+        overflow-x: auto;
+    }
+}
+
+@media (hover: none) {
+    .gn-block-editor .table-add {
+        opacity: 1;
+    }
+}
+
+/* ---------- overlay menus ---------- */
+
+.gn-block-editor .overlay-menu {
+    /* Fixed, not absolute: the host pane scrolls, clips its overflow, and carries a `transform`,
+       so a root-relative overlay landed off-target and got cut off. Coordinates come in as
+       viewport values (Editor.tsx). */
+    position: fixed;
+    z-index: 999;
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: var(--n-overlay-shadow);
+    padding: 6px 0;
+    max-height: 320px;
+    overflow-y: auto;
+    cursor: default;
+}
+
+.gn-block-editor .slash-menu {
+    width: 324px;
+}
+
+.gn-block-editor .block-menu {
+    width: 265px;
+}
+
+.gn-block-editor .menu-section {
+    padding: 6px 14px 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--n-text-lighter);
+    user-select: none;
+}
+
+.gn-block-editor .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    /* Clamp the row to the menu (minus its own margins). Without this the row takes its max-content
+       width and the shortcut hint at its right end is pushed outside the rounded box. */
+    box-sizing: border-box;
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 5px 10px;
+    min-height: 30px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+    width: calc(100% - 8px);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    text-align: left;
+}
+
+.gn-block-editor .slash-menu .menu-item {
+    min-height: 54px;
+}
+
+.gn-block-editor .menu-item.active,
+.gn-block-editor .menu-item:hover,
+.gn-block-editor .menu-item:focus-visible {
+    background: var(--n-hover);
+    outline: none;
+}
+
+.gn-block-editor .menu-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    color: rgba(var(--n-ink), 0.85);
+    flex-shrink: 0;
+}
+
+.gn-block-editor .menu-item-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gn-block-editor .menu-item-copy {
+    /* `1 1 0` (not `flex: 1 auto`) so the label/description column is sized by the space LEFT OVER
+       after the icon and the hint, rather than by its own text — that is what lets it ellipsize. */
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.gn-block-editor .menu-item-description {
+    margin-top: 1px;
+    color: var(--n-text-lighter);
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gn-block-editor .menu-color-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(var(--n-ink), 0.16);
+    border-radius: 4px;
+    color: var(--n-text);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.gn-block-editor .menu-back {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.gn-block-editor .block-menu > span {
+    display: contents;
+}
+
+.gn-block-editor .color-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    padding: 3px 10px 8px;
+}
+
+.gn-block-editor .color-swatch {
+    width: 38px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--n-text);
+    cursor: pointer;
+}
+
+.gn-block-editor .color-swatch:hover,
+.gn-block-editor .color-swatch:focus-visible,
+.gn-block-editor .color-swatch.selected {
+    background: var(--n-hover);
+    outline: none;
+}
+
+.gn-block-editor .color-swatch.selected {
+    box-shadow: inset 0 0 0 1.5px var(--n-blue);
+}
+
+.gn-block-editor .color-swatch span {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(var(--n-ink), 0.14);
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.gn-block-editor .menu-item-hint {
+    color: var(--n-placeholder);
+    font-size: 12px;
+    flex-shrink: 0;
+    /* Pinned to the right edge even when the copy column is narrower than the space available. */
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+.gn-block-editor .menu-empty {
+    padding: 8px 14px;
+    font-size: 14px;
+    color: var(--n-text-lighter);
+}
+
+.gn-block-editor .menu-divider {
+    height: 1px;
+    background: rgba(var(--n-ink), 0.09);
+    margin: 6px 0;
+}
+
+/* ---------- selection toolbar ---------- */
+
+.gn-block-editor .sel-toolbar {
+    /* Viewport-fixed, like .overlay-menu above. */
+    position: fixed;
+    z-index: 1000;
+    transform: translateY(calc(-100% - 8px));
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: var(--n-overlay-shadow);
+    padding: 4px;
+    cursor: default;
+}
+
+.gn-block-editor .tb-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--n-text);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.gn-block-editor .tb-btn:hover {
+    background: var(--n-hover);
+}
+
+.gn-block-editor .tb-btn.active {
+    color: var(--n-blue);
+}
+
+.gn-block-editor .tb-b {
+    font-weight: 700;
+}
+
+.gn-block-editor .tb-i {
+    font-style: italic;
+    font-family: Georgia, 'Times New Roman', serif;
+}
+
+.gn-block-editor .tb-u {
+    text-decoration: underline;
+}
+
+.gn-block-editor .tb-s {
+    text-decoration: line-through;
+}
+
+.gn-block-editor .tb-code {
+    font-family: var(--n-mono);
+    font-size: 12px;
+}
+
+.gn-block-editor .tb-divider {
+    width: 1px;
+    height: 20px;
+    background: rgba(var(--n-ink), 0.09);
+    margin: 0 3px;
+}
+
+.gn-block-editor .tb-link-input {
+    border: none;
+    outline: none;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--n-text);
+    padding: 4px 8px;
+    width: 220px;
+    background: transparent;
+}
+
+.gn-block-editor .tb-link-input::placeholder {
+    color: var(--n-placeholder);
+}
+
+/* ---------- feedback ---------- */
+
+.gn-block-editor .toast {
+    position: fixed;
+    z-index: 2000;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: rgb(55, 53, 47);
+    color: #fff;
+    box-shadow: rgba(15, 15, 15, 0.18) 0 4px 12px;
+    font-size: 13px;
+    line-height: 1.3;
+    pointer-events: none;
+    animation: toast-in 120ms ease-out;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 4px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gn-block-editor .toast {
+        animation: none;
+    }
+}
+
+/* ---------- image blocks ---------- */
+
+.gn-block-editor .image-wrap {
+    margin: 4px 0;
+    padding: 0;
+}
+
+.gn-block-editor .image-wrap img {
+    display: block;
+    max-width: 100%;
+    border-radius: 3px;
+    cursor: default;
+}
+
+.gn-block-editor .image-wrap figcaption {
+    padding: 6px 2px 0;
+    color: var(--n-text-lighter);
+    font-size: 13px;
+}
+
+.gn-block-editor .image-broken {
+    padding: 14px;
+    border-radius: 3px;
+    background: var(--n-code-bg);
+    color: var(--n-text-lighter);
+    font-size: 13px;
+}
+
+/* ---------- theming ---------- */
+
+/* The palette above is Notion's, and hard-coded light. In the dark theme remap the tokens onto
+   Gravity's own color variables rather than inventing a second palette: the editor then follows the
+   app's theme (and any future theme) for free, at the cost of looking like Gravity rather than like
+   Notion in the dark — the right trade for a surface embedded in someone else's app. */
+.g-root_theme_dark {
+    /* Re-tint the ink channels first: every rgba(var(--n-ink), α) in the rules above — strike-through
+       text, table borders, selection washes, hover fills — flips with this single line. */
+    --n-ink: 235, 235, 235;
+    --n-text: var(--g-color-text-primary);
+    --n-text-light: var(--g-color-text-secondary);
+    --n-text-lighter: var(--g-color-text-hint);
+    --n-placeholder: var(--g-color-text-hint);
+    --n-icon: var(--g-color-text-secondary);
+    --n-hover: var(--g-color-base-simple-hover);
+    --n-border: var(--g-color-line-generic);
+    --n-code-red: var(--g-color-text-danger);
+    --n-code-bg: var(--g-color-base-generic);
+    --n-gray-bg: var(--g-color-base-generic);
+    --n-callout-bg: var(--g-color-base-generic);
+    --n-overlay-shadow: 0 0 0 1px var(--g-color-line-generic), 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.g-root_theme_dark .gn-block-editor .simple-table td {
+    background: var(--g-color-base-background);
+}
+
+/* Overlay portal host (see OverlayPortal.tsx): carries the scope class so the rules above still
+   match the overlays after they are portaled out of the editor, while generating no box itself. */
+.gn-block-editor.gn-block-editor_portal {
+    display: contents;
+}

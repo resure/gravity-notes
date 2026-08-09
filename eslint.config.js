@@ -41,4 +41,25 @@ export default [
             'import/order': 'off',
         },
     },
+    {
+        // The block editor is ported from a standalone project (see docs/architecture.md) and is a
+        // contentEditable-per-block surface, which the jsx-a11y heuristics read as unfocusable
+        // static elements: a `contentEditable` div IS focusable and IS a textbox, but the rules
+        // can't see that, and the editor drives focus/keyboard itself (caret.ts + Editor.tsx).
+        // Scoped to the ported directory so the rest of the app keeps the checks.
+        files: ['src/components/blockEditor/**'],
+        rules: {
+            'jsx-a11y/interactive-supports-focus': 'off',
+            'jsx-a11y/click-events-have-key-events': 'off',
+            'jsx-a11y/no-static-element-interactions': 'off',
+            'jsx-a11y/no-noninteractive-element-interactions': 'off',
+            'jsx-a11y/no-autofocus': 'off',
+        },
+    },
+    {
+        // One-shot Node codemods, not app code: they run under `node`, not the browser.
+        files: ['scripts/**/*.mjs'],
+        languageOptions: {globals: {process: 'readonly', console: 'readonly'}},
+        rules: {'no-console': 'off'},
+    },
 ];
