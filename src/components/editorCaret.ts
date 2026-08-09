@@ -1,9 +1,8 @@
 /**
  * True when the current DOM selection's caret sits on the first visual line of `container`.
- * Decides whether ArrowUp in the body should hand off to the title. Works for both the
- * WYSIWYG (ProseMirror) and Markup (CodeMirror) contenteditables since it measures the live
- * DOM selection. Layout-based (getBoundingClientRect), so it's covered by manual/Chromium
- * testing rather than jsdom; EditorPane tests mock this module.
+ * Decides whether ArrowUp in the body should hand off to the title. Engine-agnostic — it measures
+ * the live DOM selection rather than any editor's model. Layout-based (getBoundingClientRect), so
+ * it's covered by manual/Chromium testing rather than jsdom; EditorPane tests mock this module.
  */
 export function isCaretOnFirstLine(container: HTMLElement): boolean {
     const win = container.ownerDocument.defaultView;
@@ -38,11 +37,11 @@ export function isCaretOnFirstLine(container: HTMLElement): boolean {
         // between the block start and the caret; comparePoint((node, 0)) < 0 ⇔ the node starts
         // strictly before the caret.
         for (const br of firstBlock.querySelectorAll('br')) {
-            // Each block's trailing placeholder marks the END of the caret's own line, never an
-            // earlier one: a caret can only sit past it at the same ProseMirror position
-            // (`<p><br>|</p>`, still line 1), while a placeholder of an earlier line always
-            // comes with its block closing before the caret — caught by the block scan below.
-            if (br.classList.contains('ProseMirror-trailingBreak')) continue;
+            // A block's TRAILING <br> is the browser's rendering placeholder, not a line break the
+            // user typed: it marks the END of the caret's own line, never an earlier one (a caret
+            // can only sit past it at the same document position — `text<br>|`, still that line).
+            // Every real soft break has content after it, so this only ever skips the placeholder.
+            if (br.parentElement?.lastChild === br) continue;
             if (caret.comparePoint(br, 0) < 0) return false;
         }
         for (const el of firstBlock.querySelectorAll(LINE_BREAKING_BLOCKS)) {

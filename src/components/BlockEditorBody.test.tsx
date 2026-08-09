@@ -29,6 +29,7 @@ describe('BlockEditorBody — the raw-Markdown escape hatch', () => {
             onChange,
             onUploadFile: async () => '',
             onOpenWikiLink: () => {},
+            wikiNotes: [],
         };
 
         const {rerender} = render(

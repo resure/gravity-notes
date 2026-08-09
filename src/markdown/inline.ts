@@ -48,7 +48,15 @@ export function escapeHtml(text: string): string {
 }
 
 /** Characters that would otherwise be read back as inline Markdown syntax. */
-const ESCAPABLE = /[\\`*~[\]]/g;
+const ESCAPABLE = /[\\`*[\]]/g;
+
+/**
+ * Two or more `~` in a row — the strikethrough delimiter, and the only form of `~` that carries
+ * meaning (a lone tilde is literal in CommonMark, exactly like an intra-word `_`). Escaping every
+ * `~` rewrote `~4 min` and `~$117` on disk to `\~4 min` / `\~$117` the first time such a note was
+ * saved, which is both ugly and a difference the round-trip guard then held against the file.
+ */
+const STRIKE_RUN = /~{2,}/g;
 
 /** A `[[wiki link]]`, which must reach the file verbatim. */
 const WIKI_LINK = /\[\[[^[\]\n]+\]\]/g;
@@ -64,9 +72,14 @@ const WIKI_LINK = /\[\[[^[\]\n]+\]\]/g;
  * - **`_` is not escaped.** CommonMark ignores intra-word underscores, so escaping them would turn
  *   every `snake_case` identifier into `snake\_case` on disk for no gain. A `_` that genuinely opens
  *   emphasis is re-read as emphasis — a rare, accepted loss in exchange for readable files.
+ * - **A lone `~` is not escaped**, for the same reason: only `~~` opens strikethrough, so `~4 min`
+ *   is already literal. See {@link STRIKE_RUN}.
  */
 export function escapeMarkdownText(text: string): string {
-    const escape = (run: string) => run.replace(ESCAPABLE, (char) => `\\${char}`);
+    const escape = (run: string) =>
+        run
+            .replace(ESCAPABLE, (char) => `\\${char}`)
+            .replace(STRIKE_RUN, (tildes) => tildes.replace(/~/g, '\\~'));
     let out = '';
     let last = 0;
     for (const match of text.matchAll(WIKI_LINK)) {
@@ -115,6 +128,18 @@ function parseTag(raw: string): Tag | null {
     };
 }
 
+/**
+ * The class the editor puts on a `[[wiki link]]`'s styling wrapper.
+ *
+ * The wrapper is STYLE-ONLY: its text content stays the literal `[[Title]]` bytes, so serializing it
+ * back is just "drop the tag, keep the text" — which the scanner below already does for any tag it
+ * has no Markdown spelling for. That is the whole reason the wrapper is safe: the block engine
+ * re-serializes the entire document from the live DOM on every keystroke, so a decoration that HID
+ * the brackets would rewrite every `[[Title]]` in the file to a bare `Title` on the first edit
+ * anywhere in it. (`NotePreview` hides them because it is read-only and never writes back.)
+ */
+export const WIKI_LINK_CLASS = 'wiki-link';
+
 /** Markdown delimiters for the tags that have one. */
 const WRAPPERS: Record<string, string> = {
     strong: '**',
@@ -142,9 +167,12 @@ export function inlineHtmlToMarkdown(html: string): string {
     let codeDepth = 0;
     // The delimiter the open <code> chose, held so the matching close can repeat it.
     let codeFence = '`';
-    const openTags: string[] = [];
+    const openLinks: {href: string; autolink: boolean}[] = [];
 
     const pushText = (text: string) => {
+        // An autolink's label IS its destination, written back as `<href>` when the anchor closes —
+        // so the text between the tags carries no information and must not be emitted twice.
+        if (openLinks[openLinks.length - 1]?.autolink) return;
         const decoded = decodeEntities(text);
         out += codeDepth > 0 ? decoded : escapeMarkdownText(decoded);
     };
@@ -202,11 +230,19 @@ export function inlineHtmlToMarkdown(html: string): string {
         }
         if (tag.name === 'a') {
             if (tag.closing) {
-                const href = openTags.pop() ?? '';
-                out += `](${encodeLinkDestination(href)})`;
+                const link = openLinks.pop();
+                // `<https://…>` — the autolink form, flagged on the anchor at parse time so the two
+                // spellings never trade places on disk. Without the flag every autolink would
+                // re-serialize as `[url](url)`, which is a different (and uglier) file than the one
+                // that was opened, on a surface that rewrites the whole note per keystroke.
+                if (link?.autolink) out += `<${link.href}>`;
+                else out += `](${encodeLinkDestination(link?.href ?? '')})`;
             } else {
-                openTags.push(tag.attrs.href ?? '');
-                out += '[';
+                openLinks.push({
+                    href: tag.attrs.href ?? '',
+                    autolink: tag.attrs['data-autolink'] !== undefined,
+                });
+                if (!openLinks[openLinks.length - 1].autolink) out += '[';
             }
             continue;
         }
@@ -237,6 +273,12 @@ function hasBalancedParens(text: string): boolean {
     }
     return depth === 0;
 }
+
+/**
+ * A CommonMark autolink whose scheme is one `openExternalUrl` will actually follow. Anything else
+ * (`file:`, `javascript:`, a bare domain) stays literal text, exactly as before.
+ */
+const AUTOLINK = /^<((?:https?|mailto|tel):[^<>\s]+)>/i;
 
 /** Inline Markdown → the editor's inner HTML. Inverse of {@link inlineHtmlToMarkdown}. */
 export function inlineMarkdownToHtml(markdown: string): string {
@@ -290,11 +332,20 @@ function parseInline(text: string): string {
             continue;
         }
 
-        // A wiki link is opaque: its brackets are content, not link syntax.
+        // A wiki link is opaque: its brackets are content, not link syntax. It gets a style-only
+        // wrapper (see WIKI_LINK_CLASS) whose text is still the literal `[[Title]]`, so the editor
+        // can colour it without the serializer having anything to undo.
         if (char === '[' && text[i + 1] === '[') {
             const end = text.indexOf(']]', i + 2);
             if (end !== -1) {
-                plain += text.slice(i, end + 2);
+                const raw = text.slice(i, end + 2);
+                // `[[]]` / `[[a]b]]` aren't links (same rule as wikiLinks.ts) — leave them as text.
+                if (/^\[\[[^[\]\n]+\]\]$/.test(raw)) {
+                    flush();
+                    out += `<span class="${WIKI_LINK_CLASS}">${escapeHtml(raw)}</span>`;
+                } else {
+                    plain += raw;
+                }
                 i = end + 2;
                 continue;
             }
@@ -324,6 +375,18 @@ function parseInline(text: string): string {
                 flush();
                 out += match[2].toLowerCase() === 'br' ? '<br>' : match[1] ? '</u>' : '<u>';
                 i += match[0].length;
+                continue;
+            }
+            // CommonMark autolink: `<https://example.com>` renders as a real link. Restricted to the
+            // schemes the app will actually open, so the editor's sanitizer can never strip the href
+            // out from under a link the round-trip guard already blessed (a stripped href would
+            // serialize back as `[text]()` and rewrite the file on the first keystroke).
+            const autolink = AUTOLINK.exec(text.slice(i));
+            if (autolink) {
+                flush();
+                const href = escapeHtml(autolink[1]);
+                out += `<a href="${href}" data-autolink="" rel="noopener noreferrer">${href}</a>`;
+                i += autolink[0].length;
                 continue;
             }
         }

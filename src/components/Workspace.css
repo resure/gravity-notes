@@ -32,13 +32,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* The horizontal gutter shared by the editor body (via --g-md-editor-padding, read by both
-       the WYSIWYG and markup panes) and the note title, so their left edges line up. */
+    /* The horizontal gutter shared by the editor body, the source view, and the note title, so
+       their left edges line up. `.editor-pane` widens it to fit the block editor's drag handles;
+       this is the fallback for anything mounted outside the pane. */
     --editor-gutter: 16px;
-    /* Small gap above the first line; left/right use the shared gutter; ~300px bottom room so
-       you can write near the end and scroll past the last line (the padding is inside the
-       editor content, so clicking it lands the caret at the end). */
-    --g-md-editor-padding: 4px var(--editor-gutter) 300px var(--editor-gutter);
 }
 
 .workspace__panes {

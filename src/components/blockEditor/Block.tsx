@@ -6,12 +6,17 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {stripZeroWidth} from './caret';
 import {CheckIcon, DragIcon, PlusIcon} from './icons';
-import type {Block as BlockData} from './types';
+import type {Block as BlockData, ImageData} from './types';
 
 export interface BlockHandlers {
     onContentRef: (id: string, el: HTMLDivElement | null) => void;
     onNormalize: (id: string, html: string) => void;
     onInput: (id: string) => void;
+    /** IME composition brackets: the editor must not rewrite a block's markup while one is open. */
+    onCompositionStart: (id: string) => void;
+    onCompositionEnd: (id: string) => void;
+    /** Resize / alt-text edits on an image block. */
+    onUpdateImage: (id: string, image: Partial<ImageData>) => void;
     onKeyDown: (e: KeyboardEvent<HTMLDivElement>, id: string) => void;
     onPaste: (e: ClipboardEvent<HTMLDivElement>, id: string) => void;
     /** ⌘-click, for following a `[[wiki link]]` under the pointer. */
@@ -117,6 +122,8 @@ function Block({
             data-block-type={block.type}
             data-placeholder={placeholder}
             onInput={() => handlers.onInput(block.id)}
+            onCompositionStart={() => handlers.onCompositionStart(block.id)}
+            onCompositionEnd={() => handlers.onCompositionEnd(block.id)}
             onMouseDown={(e) => handlers.onContentMouseDown(e, block.id)}
             onKeyDown={(e) => handlers.onKeyDown(e, block.id)}
             onPaste={(e) => handlers.onPaste(e, block.id)}
@@ -238,7 +245,11 @@ function Block({
             break;
         case 'image':
             body = (
-                <AttachmentImage block={block} onSelect={() => handlers.onSelectBlock(block.id)} />
+                <AttachmentImage
+                    block={block}
+                    onSelect={() => handlers.onSelectBlock(block.id)}
+                    onUpdate={(image) => handlers.onUpdateImage(block.id, image)}
+                />
             );
             break;
         default:

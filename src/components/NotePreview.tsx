@@ -14,6 +14,10 @@ import transform from '@diplodoc/transform';
 // subpath import resolves). `module.exports = fn`, so it's dug out with resolveCjsExport like the
 // others below.
 import * as checkboxExtension from '@diplodoc/transform/lib/plugins/checkbox';
+// Same deal for imsize (`![alt](src =600x)`), the size suffix a drag-resized image carries — see
+// markdown/toMarkdown.ts. Without it markdown-it can't parse the destination at all and the whole
+// image degrades to literal text in preview.
+import * as imsizeExtension from '@diplodoc/transform/lib/plugins/imsize';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
@@ -24,10 +28,10 @@ import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
 import './NotePreview.css';
 import '@diplodoc/cut-extension/runtime/styles.css';
 
-// The preview renders via @diplodoc/transform (markdown-it), a DIFFERENT engine from the WYSIWYG
-// editor (@gravity-ui/markdown-editor / ProseMirror). To keep the two surfaces consistent, the
-// transform must mirror the editor's YFM feature set — otherwise editor-only syntax leaks through as
-// literal text in preview:
+// The preview renders full CommonMark via @diplodoc/transform (markdown-it) — deliberately a wider
+// grammar than the block editor's own parser, since a note the block model can't hold still has to
+// preview correctly. The plugin set below is what the editor's own surfaces can produce, so nothing
+// leaks through as literal text:
 //   • colorPlugin — `{red}(text)` → <span class="yfm-colorify yfm-colorify--red">. Class-based (the
 //     plugin's default, matching the editor's ColorSpecs toDOM); the colors come from yc-colors.css,
 //     already loaded app-wide (main.tsx), so no inline styles needed.
@@ -36,7 +40,8 @@ import '@diplodoc/cut-extension/runtime/styles.css';
 //   • disableCommonAnchors — the editor shows no `#` anchor buttons beside headings; diplodoc adds
 //     them by default, so turn them off to match.
 //   • checkbox — `- [ ] item` / `- [x] item` → a real (read-only) <input type=checkbox> + label,
-//     matching the editor's WYSIWYG checkboxes. Without it the raw `[ ]`/`[x]` markup shows through.
+//     matching the editor's checkboxes. Without it the raw `[ ]`/`[x]` markup shows through.
+//   • imsize — the ` =WxH` suffix on a resized image.
 // Both packages are CJS, and bundlers expose their shape inconsistently: under Node the named export
 // binds directly, but Vite pre-bundles them so the export sits nested under `default` (the whole
 // `module.exports` object) — a bare named/default import resolves to `undefined` in one env or the
@@ -55,6 +60,7 @@ type PluginFactory = (options?: unknown) => unknown;
 const colorPlugin = resolveCjsExport(colorExtension, 'colorPlugin');
 const cutTransform = resolveCjsExport(cutExtension, 'transform') as PluginFactory;
 const checkboxPlugin = resolveCjsExport(checkboxExtension, 'checkbox');
+const imsizePlugin = resolveCjsExport(imsizeExtension, 'imsize');
 
 /**
  * markdown-it plugin: keep linkify to EXPLICIT schemes only (https://…, mailto:…). Fuzzy matching
@@ -74,6 +80,7 @@ const TRANSFORM_PLUGINS = [
     colorPlugin,
     cutTransform({bundle: false}),
     checkboxPlugin,
+    imsizePlugin,
     noFuzzyLinkify,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ].filter(Boolean) as any[];

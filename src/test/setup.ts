@@ -46,6 +46,26 @@ if (!('ResizeObserver' in globalThis)) {
     } as unknown as typeof ResizeObserver;
 }
 
+// jsdom implements Range but not its layout methods (there is no layout to report). The block
+// editor anchors its caret-following overlays — the slash menu, the `[[` picker — off exactly those,
+// so without a stub merely typing a trigger character throws. Empty/zeroed is the honest answer, and
+// it is the branch `caretLineRect` already handles: it falls back to the element's own rect.
+if (!Range.prototype.getClientRects) {
+    Range.prototype.getClientRects = function getClientRects() {
+        return Object.assign([], {item: () => null}) as unknown as DOMRectList;
+    };
+}
+// Same story for `scrollIntoView`, which every keyboard-navigable popup calls to keep the
+// highlighted row visible.
+if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+}
+if (!Range.prototype.getBoundingClientRect) {
+    Range.prototype.getBoundingClientRect = function getBoundingClientRect() {
+        return new DOMRect(0, 0, 0, 0);
+    };
+}
+
 afterEach(() => {
     cleanup();
 });

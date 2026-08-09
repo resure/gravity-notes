@@ -7,17 +7,15 @@ import {createRoot} from 'react-dom/client';
 // bundled font is the opt-in serif note-content face imported below — self-hosted, not a CDN fetch.)
 import '@gravity-ui/uikit/styles/styles.css';
 
-// Markdown-editor / YFM content styles. The concatenated bundle isn't exported,
-// so we pull in the individual stylesheets that compose it.
-import '@gravity-ui/markdown-editor/styles/styles.css';
-import '@gravity-ui/markdown-editor/styles/markdown.css';
-import '@gravity-ui/markdown-editor/styles/list.css';
-import '@gravity-ui/markdown-editor/styles/yc-colors.css';
-import '@gravity-ui/markdown-editor/styles/yc-file.css';
-import '@gravity-ui/markdown-editor/styles/yc-table.css';
-import '@gravity-ui/markdown-editor/styles/yc-table-cell-bg.css';
-import '@gravity-ui/markdown-editor/styles/yfm-overrides.css';
-import '@gravity-ui/markdown-editor/styles/yfm-themes.css';
+// YFM content styles for the read-only preview (NotePreview, and the release notes in
+// UpdateDialog), straight from the renderer that produces that HTML. These used to arrive with
+// `@gravity-ui/markdown-editor`'s nine stylesheets, which also carried the WYSIWYG editor's whole
+// chrome; the editor is gone, so only the content styles are left. The `--yfm-*` variable maps they
+// filled in are vendored beside them (see yfm-tokens.css).
+import '@diplodoc/transform/dist/css/base.css';
+import '@diplodoc/transform/dist/css/_yfm-only.css';
+
+import './yfm-tokens.css';
 
 // PT Serif — the face behind Settings › Editor font › Serif. Self-hosted (woff2-only @font-face
 // rules over @fontsource's font files — see the rationale in fonts/pt-serif.css), so unlike a

@@ -16,12 +16,10 @@ import {
 } from './useSettings';
 
 const APP: Settings = {
-    showEditorToolbar: false,
     showNoteIcons: false,
     editorFont: 'serif',
     accentColor: 'blue',
     textWidth: 'wide',
-    editorEngine: 'rich',
 };
 
 const WS_DEFAULT: WorkspaceSettings = {
@@ -117,9 +115,9 @@ describe('useSettings', () => {
         // Another window persists an accent change after this window mounted — this window's
         // in-memory copy is now stale (same-document writes fire no storage event).
         localStorage.setItem('gravity-notes:settings', JSON.stringify({accentColor: 'blue'}));
-        act(() => result.current.setSetting('showEditorToolbar', true));
+        act(() => result.current.setSetting('showNoteIcons', true));
         const stored = JSON.parse(localStorage.getItem('gravity-notes:settings') ?? '{}');
-        expect(stored.showEditorToolbar).toBe(true);
+        expect(stored.showNoteIcons).toBe(true);
         expect(stored.accentColor).toBe('blue'); // NOT clobbered back to this window's stale amber
     });
 

@@ -164,6 +164,20 @@ export const DuplicateIcon = ({size = 18}: IconProps) => (
     </svg>
 );
 
+/** Corner-to-corner arrows — "view this image full size". */
+export const ExpandIcon = ({size = 14}: IconProps) => (
+    <svg {...svgProps(size)}>
+        <path d="M12 3h5v5M17 3l-6 6M8 17H3v-5M3 17l6-6" />
+    </svg>
+);
+
+/** A pencil — "edit this image's alt text". */
+export const PencilIcon = ({size = 14}: IconProps) => (
+    <svg {...svgProps(size)}>
+        <path d="M13.5 3.5a1.77 1.77 0 0 1 2.5 2.5L7 15l-3.5 1L4.5 12l9-8.5Z" />
+    </svg>
+);
+
 export const LinkIcon = ({size = 16}: IconProps) => (
     <svg
         width={size}

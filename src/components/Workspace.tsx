@@ -1589,9 +1589,7 @@ export function Workspace({
                                         onOpenWikiLink={handleOpenWikiLink}
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
-                                        showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
-                                        engine={settings.editorEngine}
                                     />
                                 </div>
                                 <BacklinksPanel

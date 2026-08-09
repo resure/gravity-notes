@@ -4,84 +4,61 @@ import {fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-const {
-    fakeEditor,
-    editorState,
-    portalState,
-    setEditorMode,
-    focus,
-    moveCursor,
-    isCaretOnFirstLine,
-    openLineAbove,
-    atEmptyFirstLine,
-    removeEmptyFirstLine,
-} = vi.hoisted(() => {
-    const setEditorMode = vi.fn();
-    const focus = vi.fn();
-    const moveCursor = vi.fn();
-    const isCaretOnFirstLine = vi.fn(() => true);
-    const openLineAbove = vi.fn(() => true);
-    const atEmptyFirstLine = vi.fn(() => false);
-    const removeEmptyFirstLine = vi.fn();
-    // Controllable editor value + captured 'change' handler, so tests can simulate edits.
-    const editorState = {value: '', changeHandler: null as null | (() => void)};
-    // When enabled, the mocked editor view renders a portal button (to document.body) standing in
-    // for the real selection formatting toolbar, which is a portaled Gravity Popup.
-    const portalState = {enabled: false};
-    return {
-        setEditorMode,
-        focus,
-        moveCursor,
-        isCaretOnFirstLine,
-        openLineAbove,
-        atEmptyFirstLine,
-        removeEmptyFirstLine,
-        editorState,
-        portalState,
-        fakeEditor: {
-            currentMode: 'wysiwyg' as 'wysiwyg' | 'markup',
-            setEditorMode,
-            focus,
-            moveCursor,
-            // Mimic the real editor: replace() re-parses + re-serializes, so the value it emits can
-            // differ from the markup passed in (trailing newline, etc.) — and it fires 'change'.
-            replace: vi.fn((markup: string) => {
-                editorState.value = `${markup}\n`;
-                editorState.changeHandler?.();
-            }),
-            getValue: () => editorState.value,
-            on: (event: string, cb: () => void) => {
-                if (event === 'change') editorState.changeHandler = cb;
-            },
-            off: () => {
-                editorState.changeHandler = null;
-            },
-        },
-    };
-});
+/**
+ * The pane's own contracts are what this suite is about — the focus ladder, the Esc exit, the
+ * title ↔ body handoffs, the empty-area click, and which surface a note opens on. The body itself
+ * is stubbed: what it does with a keystroke is `blockEditor/Editor.test.tsx`'s business, and driving
+ * a real contentEditable through jsdom would only test jsdom.
+ */
+const {bodyProps, focus, toggleMode, moveCursorToStart, moveCursorEnd, openLineAbove, atEmpty} =
+    vi.hoisted(() => ({
+        /** The props of the most recent body render, so the pane's wiring can be asserted. */
+        bodyProps: {current: null as null | Record<string, unknown>},
+        focus: vi.fn(),
+        toggleMode: vi.fn(),
+        moveCursorToStart: vi.fn(),
+        moveCursorEnd: vi.fn(),
+        openLineAbove: vi.fn(() => true),
+        atEmpty: vi.fn(() => false),
+    }));
 
-vi.mock('@gravity-ui/markdown-editor', async () => {
-    const {createElement} = await import('react');
-    const {createPortal} = await import('react-dom');
-    return {
-        useMarkdownEditor: () => fakeEditor,
-        // The selection-toolbar config EditorPane derives at module load (only needs `.full` to map over).
-        wSelectionMenuConfigByPreset: {full: []},
-        // Renders nothing by default. With the portal enabled, it emits a button into document.body
-        // (a React portal child of this view) to mimic the selection toolbar's DOM placement.
-        MarkdownEditorView: () =>
-            portalState.enabled
-                ? createPortal(
-                      createElement('button', {'data-testid': 'sel-toolbar-btn'}, 'Bold'),
-                      document.body,
-                  )
-                : null,
-    };
-});
+const removeEmptyFirstLine = vi.fn();
+const focusPreview = vi.fn();
+const isCaretOnFirstLine = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('./editorCaret', () => ({isCaretOnFirstLine}));
 
-vi.mock('./editorBody', () => ({openLineAbove, atEmptyFirstLine, removeEmptyFirstLine}));
+vi.mock('./BlockEditorBody', async () => {
+    const {forwardRef, useImperativeHandle} = await import('react');
+    const {createPortal} = await import('react-dom');
+    return {
+        BlockEditorBody: forwardRef(function FakeBody(props: Record<string, unknown>, ref) {
+            bodyProps.current = props;
+            useImperativeHandle(ref, () => ({
+                focus,
+                toggleMode,
+                moveCursorToStart,
+                moveCursorEnd,
+                openLineAbove,
+                atEmptyFirstLine: atEmpty,
+                removeEmptyFirstLine,
+                focusPreview,
+            }));
+            return (
+                <div className="gn-block-editor" data-testid="fake-body">
+                    {/* Stands in for the slash menu / selection toolbar, which are `position: fixed`
+                        and portaled to <body> — see OverlayPortal. */}
+                    {createPortal(
+                        <button type="button" data-testid="fake-overlay">
+                            Bold
+                        </button>,
+                        document.body,
+                    )}
+                </div>
+            );
+        }),
+    };
+});
 
 import {EditorPane, type EditorPaneHandle} from './EditorPane';
 
@@ -105,29 +82,52 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
     );
 }
 
-describe('EditorPane — toggleMode', () => {
-    beforeEach(() => {
-        fakeEditor.currentMode = 'wysiwyg';
-        setEditorMode.mockClear();
+beforeEach(() => {
+    vi.clearAllMocks();
+    openLineAbove.mockReturnValue(true);
+    atEmpty.mockReturnValue(false);
+    isCaretOnFirstLine.mockReturnValue(true);
+});
+
+describe('EditorPane — the surface a note opens on', () => {
+    it('hands the body a plain note as blocks', () => {
+        renderPane();
+        expect(bodyProps.current?.forceSource).toBe(false);
     });
 
-    it('switches to markup when currently in wysiwyg', () => {
+    /**
+     * The safety property (see markdown/roundTrip.ts): the block engine re-serializes the whole note
+     * on every keystroke, so a note whose Markdown it cannot reproduce byte-for-byte must never
+     * reach it. Frontmatter is the everyday case — an Obsidian vault is full of it.
+     */
+    it('forces source mode for a note the block model cannot hold', () => {
+        renderPane({
+            note: {...NOTE, content: '---\ntags: [a]\n---\n\n# Title\n\n#### Deep heading'},
+        });
+        expect(bodyProps.current?.forceSource).toBe(true);
+    });
+
+    it('passes the notes list through for [[wiki link]] resolution', () => {
+        const wikiNotes = [{id: 'b.md', title: 'b', preview: '', updatedAt: 1}];
+        renderPane({wikiNotes});
+        expect(bodyProps.current?.wikiNotes).toBe(wikiNotes);
+    });
+
+    it('forwards ⌘⇧; to the body', () => {
         const ref = createRef<EditorPaneHandle>();
         renderPane({ref});
         ref.current?.toggleMode();
-        expect(setEditorMode).toHaveBeenCalledWith('markup');
+        expect(toggleMode).toHaveBeenCalled();
     });
 });
 
 describe('EditorPane — focus', () => {
-    beforeEach(() => focus.mockClear());
-
     it('focuses the body on mount when autofocus is "body"', () => {
         renderPane({autofocus: 'body'});
         expect(focus).toHaveBeenCalled();
     });
 
-    it('does not focus the body on mount when autofocus is null (a preview open)', () => {
+    it('does not focus the body on mount when autofocus is null (a browse)', () => {
         renderPane({autofocus: null});
         expect(focus).not.toHaveBeenCalled();
     });
@@ -156,12 +156,18 @@ describe('EditorPane — escape', () => {
         fireEvent.keyDown(pane, {key: 'Escape'});
         expect(onEscape).toHaveBeenCalledTimes(1);
     });
+
+    it('hands the body its own onEscape, for the two-step block-selection ladder', () => {
+        const onEscape = vi.fn();
+        renderPane({onEscape});
+        expect(bodyProps.current?.onEscape).toBe(onEscape);
+    });
 });
 
 describe('EditorPane — preview', () => {
-    it('renders the read-only preview when preview is true', () => {
-        const {container} = renderPane({preview: true});
-        expect(container.querySelector('.note-preview')).toBeTruthy();
+    it('tells the body to render read-only', () => {
+        renderPane({preview: true});
+        expect(bodyProps.current?.preview).toBe(true);
     });
 
     it('goes to the list (keeping preview) on Escape while previewing', () => {
@@ -172,43 +178,40 @@ describe('EditorPane — preview', () => {
         fireEvent.keyDown(pane, {key: 'Escape'});
         expect(onEscape).toHaveBeenCalledTimes(1);
     });
+
+    it('sends the title ↔ body handoffs to the preview surface instead', () => {
+        renderPane({preview: true});
+        fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'ArrowDown'});
+        expect(focusPreview).toHaveBeenCalled();
+        expect(moveCursorToStart).not.toHaveBeenCalled();
+    });
 });
 
 describe('EditorPane — title ↔ body handoff', () => {
-    beforeEach(() => {
-        focus.mockClear();
-        moveCursor.mockClear();
-        isCaretOnFirstLine.mockReturnValue(true);
-        openLineAbove.mockClear().mockReturnValue(true);
-        atEmptyFirstLine.mockClear().mockReturnValue(false);
-        removeEmptyFirstLine.mockClear();
-    });
-
-    it('Enter in the title opens a line at the top of the body', () => {
+    it('Enter in the title opens a block at the top of the body', () => {
         renderPane();
         fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'Enter'});
         expect(openLineAbove).toHaveBeenCalled();
         // openLineAbove handled it (returned true) → no plain move-to-start fallback.
-        expect(moveCursor).not.toHaveBeenCalled();
+        expect(moveCursorToStart).not.toHaveBeenCalled();
     });
 
-    it('Enter falls back to the body start when the view is unreachable', () => {
+    it('Enter falls back to the body start when the body cannot open one (source mode)', () => {
         openLineAbove.mockReturnValue(false);
         renderPane();
         fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'Enter'});
-        expect(moveCursor).toHaveBeenCalledWith('start');
+        expect(moveCursorToStart).toHaveBeenCalled();
         expect(focus).toHaveBeenCalled();
     });
 
-    it('ArrowDown in the title moves the caret to the body start (no new line)', () => {
+    it('ArrowDown in the title moves the caret to the body start (no new block)', () => {
         renderPane();
         fireEvent.keyDown(screen.getByLabelText('Note title'), {key: 'ArrowDown'});
-        expect(moveCursor).toHaveBeenCalledWith('start');
+        expect(moveCursorToStart).toHaveBeenCalled();
         expect(openLineAbove).not.toHaveBeenCalled();
     });
 
     it('ArrowUp on the first body line focuses the title', () => {
-        isCaretOnFirstLine.mockReturnValue(true);
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
@@ -228,7 +231,6 @@ describe('EditorPane — title ↔ body handoff', () => {
     it('ArrowUp with a modifier (e.g. ⌘↑/⇧↑) does not hand off to the title', () => {
         // Even on the first line, a modified ArrowUp is the editor's own navigation/selection —
         // it must not be hijacked into the title.
-        isCaretOnFirstLine.mockReturnValue(true);
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
@@ -236,8 +238,8 @@ describe('EditorPane — title ↔ body handoff', () => {
         expect(screen.getByLabelText('Note title')).not.toHaveFocus();
     });
 
-    it('Backspace on the empty first line removes it and focuses the title', () => {
-        atEmptyFirstLine.mockReturnValue(true);
+    it('Backspace on the empty first block removes it and focuses the title', () => {
+        atEmpty.mockReturnValue(true);
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
@@ -247,13 +249,18 @@ describe('EditorPane — title ↔ body handoff', () => {
     });
 
     it('Backspace elsewhere in the body is left to the editor', () => {
-        atEmptyFirstLine.mockReturnValue(false);
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
         fireEvent.keyDown(body, {key: 'Backspace'});
         expect(removeEmptyFirstLine).not.toHaveBeenCalled();
         expect(screen.getByLabelText('Note title')).not.toHaveFocus();
+    });
+
+    it('ArrowUp off the top of the BODY is handed back by the body itself', () => {
+        renderPane();
+        (bodyProps.current?.onLeaveTop as () => void)();
+        expect(screen.getByLabelText('Note title')).toHaveFocus();
     });
 
     it('commits a title edit on blur, tagged with the note id', async () => {
@@ -269,209 +276,38 @@ describe('EditorPane — title ↔ body handoff', () => {
 });
 
 describe('EditorPane — empty-area click', () => {
-    beforeEach(() => {
-        moveCursor.mockClear();
-        focus.mockClear();
-    });
-
     it('drops the caret at the end when clicking the empty body padding', () => {
         const {container} = renderPane();
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
-        // A mousedown on the body wrapper itself (its padding/empty space) moves the caret to the end.
         fireEvent.mouseDown(body);
-        expect(moveCursor).toHaveBeenCalledWith('end');
+        expect(moveCursorEnd).toHaveBeenCalled();
         expect(focus).toHaveBeenCalled();
     });
 
-    it('ignores a mousedown from the portaled selection toolbar (keeps the selection intact)', () => {
-        portalState.enabled = true;
-        try {
-            renderPane();
-            // The toolbar button is portaled to document.body; its mousedown bubbles to the body
-            // handler via React's portal propagation. The handler must NOT moveCursor('end') — doing
-            // so would collapse the selection and the formatting command would apply to nothing.
-            const toolbarButton = screen.getByTestId('sel-toolbar-btn');
-            moveCursor.mockClear();
-            fireEvent.mouseDown(toolbarButton);
-            expect(moveCursor).not.toHaveBeenCalled();
-        } finally {
-            portalState.enabled = false;
-        }
+    it('leaves a mousedown inside the editor content to the editor (no caret yank)', () => {
+        // The block editor owns its own empty-space click (clicking under the last block appends
+        // one there). Without `.gn-block-editor` in the guard, EVERY click inside it fell through
+        // here and pinned the caret to the first block — the surface was unusable with a mouse.
+        renderPane();
+        fireEvent.mouseDown(screen.getByTestId('fake-body'));
+        expect(moveCursorEnd).not.toHaveBeenCalled();
     });
 
-    /** The real editor DOM the guard must discriminate: wrapper → per-mode content hosts. */
-    function mountEditorDom(body: Element) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'g-md-editor-component';
-        const pmContent = document.createElement('div');
-        pmContent.className = 'g-md-editor ProseMirror';
-        const cmEditor = document.createElement('div');
-        cmEditor.className = 'cm-editor';
-        const cmContent = document.createElement('div');
-        cmContent.className = 'cm-content';
-        cmEditor.appendChild(cmContent);
-        wrapper.appendChild(pmContent);
-        wrapper.appendChild(cmEditor);
-        body.appendChild(wrapper);
-        return {wrapper, pmContent, cmContent};
-    }
+    it('ignores a mousedown from a portaled overlay (keeps the selection intact)', () => {
+        // The slash menu / selection toolbar portal to <body>, but their mousedown still bubbles
+        // here through React's portal propagation. Collapsing the selection then would make every
+        // formatting button a no-op.
+        renderPane();
+        fireEvent.mouseDown(screen.getByTestId('fake-overlay'));
+        expect(moveCursorEnd).not.toHaveBeenCalled();
+    });
 
-    it('leaves a mousedown on either mode’s editor content to the editor (no caret yank)', () => {
-        // Regression (f7c3484): the guard once matched only `.g-md-editor`, which misses Markup
-        // mode — a mousedown on `.cm-content` fell through to moveCursorEnd() + preventDefault,
-        // killing click-to-place-caret and double-click word-select there. `.cm-editor` is in the
-        // guard for exactly that.
-        const {container} = renderPane();
+    it('does nothing in preview mode (it is read-only)', () => {
+        const {container} = renderPane({preview: true});
         const body = container.querySelector('.editor-pane__body');
         if (!body) throw new Error('body not rendered');
-        const {pmContent, cmContent} = mountEditorDom(body);
-        moveCursor.mockClear();
-        fireEvent.mouseDown(cmContent);
-        expect(moveCursor).not.toHaveBeenCalled();
-        fireEvent.mouseDown(pmContent);
-        expect(moveCursor).not.toHaveBeenCalled();
-    });
-
-    it('still drops the caret at the end for blank space inside the editor wrapper', () => {
-        // Regression of the regression-fix: broadening the guard to `.g-md-editor-component` (the
-        // full-height wrapper) swallowed every blank-area click — the 300px bottom padding strip and
-        // the margins beside a capped text column are inside the wrapper but OUTSIDE the per-mode
-        // content hosts, and clicking them must still append-and-focus, not blur the editor.
-        const {container} = renderPane();
-        const body = container.querySelector('.editor-pane__body');
-        if (!body) throw new Error('body not rendered');
-        const {wrapper} = mountEditorDom(body);
-        moveCursor.mockClear();
-        focus.mockClear();
-        fireEvent.mouseDown(wrapper);
-        expect(moveCursor).toHaveBeenCalledWith('end');
-        expect(focus).toHaveBeenCalled();
-    });
-});
-
-describe('EditorPane — change emission', () => {
-    beforeEach(() => {
-        editorState.value = '';
-        editorState.changeHandler = null;
-    });
-
-    it('suppresses only the initial load no-op, then emits every change — including a revert', () => {
-        const onChange = vi.fn();
-        renderPane({onChange}); // NOTE.content === 'hello'
-
-        // The first emit just echoes the loaded content (the open-time no-op): suppressed.
-        editorState.value = 'hello';
-        editorState.changeHandler?.();
-        expect(onChange).not.toHaveBeenCalled();
-
-        // A real edit flows through.
-        editorState.value = 'hellox';
-        editorState.changeHandler?.();
-        expect(onChange).toHaveBeenLastCalledWith('hellox');
-
-        // Undoing back to the original within the session must STILL emit, so the autosave writes
-        // 'hello' (matching the screen) rather than leaving the stale 'hellox' in the buffer.
-        editorState.value = 'hello';
-        editorState.changeHandler?.();
-        expect(onChange).toHaveBeenLastCalledWith('hello');
-    });
-});
-
-describe('EditorPane — note switch', () => {
-    it('re-homes scroll to the top on a switch to a different note with an IDENTICAL body', () => {
-        // Regression: the content-swap used to be keyed on `note.content` alone, so switching between
-        // two DIFFERENT notes whose bodies are byte-identical (two empty notes, a duplicate, a
-        // template) never ran — the incoming note kept the OUTGOING one's scroll position. Keying on
-        // `sessionId` (bumped on a real switch, never on a rename) fires the swap even when the body
-        // string is unchanged. We assert the real user-facing effect (scroll re-homed to the top of a
-        // first-time-opened note) AND that the byte-identical body is NOT needlessly re-`replace()`d.
-        editorState.value = '';
-        editorState.changeHandler = null;
-        const {container, rerender} = renderPane(); // a.md / 'hello'
-        const pane = container.querySelector('.editor-pane') as HTMLElement;
-        pane.scrollTop = 120; // the user scrolled note A down
-        // Make the editor buffer byte-identical to the incoming note so this exercises the
-        // identical-content path (contentChanged === false → replace() is skipped), the exact case
-        // the old `[note.content]` key silently ignored.
-        editorState.value = 'hello';
-        fakeEditor.replace.mockClear();
-
-        rerender(
-            <EditorPane
-                note={{id: 'b.md', title: 'b', content: 'hello', updatedAt: 2}} // SAME body, new id + session
-                autofocus={null}
-                sessionId={1}
-                onChange={() => {}}
-                onRename={() => {}}
-                onEscape={() => {}}
-                onUploadFile={async () => 'Attachments/x.png'}
-                wikiNotes={[]}
-                onOpenWikiLink={() => {}}
-                onSetIcon={() => {}}
-            />,
-        );
-        // The swap fired on the session bump and re-homed the (first-time-opened) note to the top…
-        expect(pane.scrollTop).toBe(0);
-        // …without rebuilding an identical doc.
-        expect(fakeEditor.replace).not.toHaveBeenCalled();
-    });
-
-    it('does NOT fire the content swap on an in-place rename (id changes, session + body do not)', () => {
-        // A rename/move re-keys the open note WITHOUT bumping the session or touching the body, so the
-        // swap effect (keyed on [sessionId, note.content]) must stay dormant — no replace(), no history
-        // reset. (The re-key effect carries the saved view-state to the new id instead.) Firing the swap
-        // on a rename would wipe the undo stack every rename and re-emit the body as a load echo. The
-        // swap and re-key effects share `prevNoteIdRef`, so this also pins that they cooperate without
-        // a spurious swap on an id-only change.
-        editorState.value = 'hello';
-        editorState.changeHandler = null;
-        const {rerender} = renderPane(); // a.md / 'hello', sessionId 0
-        fakeEditor.replace.mockClear(); // ignore the mount-time load
-
-        rerender(
-            <EditorPane
-                note={
-                    {id: 'a-renamed.md', title: 'a-renamed', content: 'hello', updatedAt: 1} // rename: new id, SAME body + session
-                }
-                autofocus={null}
-                sessionId={0} // unchanged — that's what makes it a rename, not a switch
-                onChange={() => {}}
-                onRename={() => {}}
-                onEscape={() => {}}
-                onUploadFile={async () => 'Attachments/x.png'}
-                wikiNotes={[]}
-                onOpenWikiLink={() => {}}
-                onSetIcon={() => {}}
-            />,
-        );
-        // No swap fired: the editor buffer is untouched (no replace) on a rename.
-        expect(fakeEditor.replace).not.toHaveBeenCalled();
-    });
-
-    it('does not emit a change when switching notes, even though replace() round-trips the content', () => {
-        // Regression: editor.replace() re-parses + re-serializes, so the 'change' it fires can carry a
-        // value that differs from the on-disk content (trailing newline, &nbsp;, …). That load echo
-        // must be suppressed — otherwise it reaches the autosave, re-serializing the note to disk AND
-        // bumping its updatedAt, which reorders the note list under the "Updated" sort.
-        const onChange = vi.fn();
-        const {rerender} = renderPane({onChange});
-        onChange.mockClear(); // ignore any mount-time activity
-
-        rerender(
-            <EditorPane
-                note={{id: 'b.md', title: 'b', content: 'world', updatedAt: 2}}
-                autofocus={null}
-                sessionId={1}
-                onChange={onChange}
-                onRename={() => {}}
-                onEscape={() => {}}
-                onUploadFile={async () => 'Attachments/x.png'}
-                wikiNotes={[]}
-                onOpenWikiLink={() => {}}
-                onSetIcon={() => {}}
-            />,
-        );
-        expect(onChange).not.toHaveBeenCalled();
+        fireEvent.mouseDown(body);
+        expect(moveCursorEnd).not.toHaveBeenCalled();
     });
 });

@@ -151,21 +151,24 @@ GitHub Releases (signature-verified). Bulk listings skip iCloud **dataless** fil
 not-yet-downloaded vault doesn't block on the network; such notes list by name and fill in once
 macOS materializes them.
 
-## Two editors
+## The editor
 
-The note body can be edited by either of two surfaces (**Settings › Editor**); both read and write
-the same `.md` files, so switching is safe at any time.
+The note body is a **Notion-style block editor**, vendored into this repo and developed here: every
+block is its own `contentEditable`, with a slash menu, drag-to-reorder, block selection, tables,
+to-dos, images, and `[[wiki links]]`. It has no page chrome of its own — the pane above supplies the
+title, the read-only preview, the Esc ladder, and the backlinks panel.
 
-- **Markdown** (default) — `@gravity-ui/markdown-editor`: WYSIWYG plus a raw Markup mode (⌘⇧;), the
-  `[[` link picker and link tooltips, KaTeX, syntax highlighting, and the attachment image NodeView.
-- **Blocks** — a Notion-style block editor (vendored into this repo, and developed here): every
-  block is its own `contentEditable`, with a slash menu, drag-to-reorder, block selection, tables,
-  and to-dos. Its own page chrome was removed — the pane supplies the title, icon, and save state.
+⌘⇧; swaps the blocks for the **raw Markdown** behind them: a plain textarea over the note's source,
+deliberately dependency-free. It is also where a note lands when the block model can't hold it (see
+below), so it is a real editing surface rather than a viewer.
 
-They plug into the same pane behind one imperative contract, so the title, icon, read-only preview,
-Esc ladder, and backlinks are shared. What differs is how a note becomes a document: the Markdown
-editor is a long-lived instance whose content is swapped on a note switch (it saves and restores
-scroll itself), while the block editor parses Markdown into blocks once per session and remounts.
+A note becomes a document once per editing session: the editor parses the file into blocks at mount
+and is remounted per note. The pane carries the per-note scroll and caret across a switch, so
+returning to a note lands where you left it.
+
+Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, full CommonMark. That is
+deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get
+right, so the preview must understand more Markdown than the editor does, not the same amount.
 
 ### How blocks map to Markdown
 
@@ -185,11 +188,11 @@ literal bytes Obsidian writes, which is also what the backlink scan reads), and 
 inside a block is written as a plain newline rather than a backslash, so files don't sprout
 punctuation on first save.
 
-Intent isn't proof, so the block editor **checks** instead of assuming. On load it parses the file
-into blocks, writes those back out, and compares the result to the bytes it started from. If they
-differ — the file holds something the block model can't reproduce — that note opens in the
-**Markdown** editor instead, even with Blocks selected. You keep a fully editable surface and the
-file is left exactly as it was.
+Intent isn't proof, so the editor **checks** instead of assuming. On load it parses the file into
+blocks, writes those back out, and compares the result to the bytes it started from. If they differ
+— the file holds something the block model can't reproduce — that note opens on its **raw Markdown**
+instead, with a one-line notice saying so. You keep a fully editable surface, and because nothing
+re-serializes the file, it is left exactly as it was.
 
 That check is the safety property the whole mapping rests on, and it is what makes the parser's
 incompleteness survivable. The block editor has no incremental edit model: every keystroke
@@ -198,25 +201,32 @@ what you touched. Without the check, any construct it read imperfectly was rewri
 entire note the first time a single character changed anywhere in it. With it, a construct nobody
 anticipated costs you the block surface for that one note rather than the note's contents.
 
+The same reasoning shapes how a `[[wiki link]]` is styled. It gets a wrapper element whose text is
+still the literal `[[Title]]` bytes — never a decoration that hides the brackets, however much
+better that reads. The editor re-serializes from the live DOM, so a bracket-hiding decoration would
+rewrite every link in the file to a bare title the first time any character changed anywhere in it.
+
 Editing a note in the block editor **does** rewrite the parts you touch into its own canonical form —
 that is what any structured editor does, and it is why the mapping favours plain, widely-understood
 Markdown over anything clever.
 
 ## Known limitations
 
-- **The block editor is not feature-equal with the Markdown one.** Choosing **Blocks** in Settings
-  gives up the `[[` autocomplete picker and link tooltips, KaTeX, and code syntax highlighting
-  (⌘-click and ⌘↵ still follow a `[[wiki link]]`). Its raw-Markdown mode (⌘⇧;, same shortcut as the
-  other engine) is a plain textarea rather than a CodeMirror surface, so it has no highlighting or
-  Markdown-aware editing of its own. Two of its own features have no Markdown spelling and are
-  dropped when it saves: block **colors** and a table's **header-column** flag.
-- **A note Blocks can't represent opens in Markdown instead.** The block model is smaller than
+- **A note the block model can't hold opens as raw Markdown.** The block model is smaller than
   Markdown — headings stop at H3, a fenced code block has nowhere to keep its language, a callout
   has nowhere to keep its kind, a table has nowhere to keep column alignment, and YAML frontmatter
   isn't a block at all — and the parser is line-oriented rather than full CommonMark. Any file
-  holding such a construct fails the load-time check and simply opens in the Markdown editor. The
-  price is the occasional note Blocks won't take, which is also why Markdown stays the default:
-  Blocks is an alternative surface, not a replacement.
+  holding such a construct fails the load-time check and opens on its source instead. Widening the
+  model (fence languages first) shrinks that population; the check stays either way.
+- **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
+  deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
+- **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
+  (read-only preview highlights them). Two block features have no Markdown spelling and are dropped
+  on save: block **colors** and a table's **header-column** flag.
+- **Bare URLs are not linkified as you type.** `<https://example.com>` (a CommonMark autolink) and
+  `[text](url)` render as real links; a bare `https://example.com` stays plain text until you wrap
+  it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a
+  typing-time rule that can round-trip.
 - **Two windows on one store can clobber each other's _metadata_.** The sidecar (sort, pins,
   icons, per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
   workspace assignments and note _bodies_ (the live watcher + conflict banner) through the shell,

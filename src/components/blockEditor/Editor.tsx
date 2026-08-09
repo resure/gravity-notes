@@ -15,8 +15,10 @@ import type {
     PointerEvent as ReactPointerEvent,
 } from 'react';
 
-import {blocksToMarkdown, markdownToBlocks} from '../../markdown';
+import {WIKI_LINK_CLASS, blocksToMarkdown, markdownToBlocks} from '../../markdown';
 import {openExternalUrl} from '../../openExternal';
+import type {NoteMeta} from '../../storage/types';
+import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
 
 import Block from './Block';
 import type {BlockHandlers} from './Block';
@@ -26,6 +28,8 @@ import SelectionToolbar from './SelectionToolbar';
 import SlashMenu from './SlashMenu';
 import type {MenuAnchor} from './SlashMenu';
 import {tableCellId} from './TableBlock';
+import type {WikiSuggestItem} from './WikiSuggestMenu';
+import WikiSuggestMenu from './WikiSuggestMenu';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
 import type {CaretPos} from './caret';
@@ -63,6 +67,7 @@ import {
 } from './documentModel';
 import {isEditableType, newBlock, newTableData, uid} from './types';
 import type {BlockColor, Block as BlockData, BlockType, TableData} from './types';
+import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
 
 import './editor.css';
 
@@ -71,6 +76,15 @@ interface SlashState {
     /** Character offset of the '/' (or of the insertion point for the + button). */
     anchor: number;
     slashLen: 0 | 1;
+    query: string;
+    rect: MenuAnchor;
+}
+
+/** The `[[` note picker's live state: where it was triggered and what has been typed since. */
+interface WikiState {
+    blockId: string;
+    /** Character offset of the first `[` of the trigger. */
+    anchor: number;
     query: string;
     rect: MenuAnchor;
 }
@@ -153,6 +167,16 @@ function sameIds(a: Set<string>, b: Set<string>): boolean {
     return true;
 }
 
+/**
+ * The only `class` values a `<span>` may keep: the editor's own style-only `[[wiki link]]` wrapper
+ * (see wikiDecorate.ts). Every other span is unwrapped, so nothing outside this file can smuggle
+ * styling — or, worse, structure — into a block's html.
+ */
+const WIKI_SPAN_CLASSES = new Set([
+    WIKI_LINK_CLASS,
+    `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`,
+]);
+
 function sanitizeInlineHtml(html: string): string {
     const template = document.createElement('template');
     template.innerHTML = html;
@@ -169,6 +193,7 @@ function sanitizeInlineHtml(html: string): string {
         'BR',
         'DIV',
         'P',
+        'SPAN',
     ]);
     const elements = [...template.content.querySelectorAll('*')];
     for (const element of elements) {
@@ -177,14 +202,22 @@ function sanitizeInlineHtml(html: string): string {
             continue;
         }
         const href = element.tagName === 'A' ? (element.getAttribute('href') ?? '') : '';
+        // `<https://…>` autolinks are flagged so they can be written back in the same spelling
+        // (see inline.ts); losing the flag would silently rewrite them to `[url](url)` on disk.
+        const autolink = element.tagName === 'A' && element.hasAttribute('data-autolink');
+        const className = element.getAttribute('class') ?? '';
         for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name);
         if (element.tagName === 'A') {
             // Relative destinations are the common case in a vault, so the test is for schemes that
             // EXECUTE, not for absolute-ness — see isSafeLinkHref.
             if (href !== '' && isSafeLinkHref(href)) {
                 element.setAttribute('href', href);
+                if (autolink) element.setAttribute('data-autolink', '');
                 element.setAttribute('rel', 'noopener noreferrer');
             }
+        } else if (element.tagName === 'SPAN') {
+            if (WIKI_SPAN_CLASSES.has(className)) element.setAttribute('class', className);
+            else element.replaceWith(...element.childNodes);
         }
     }
     return template.innerHTML;
@@ -241,8 +274,10 @@ function normalizeParsedBlocks(blocks: BlockData[]): BlockData[] {
 }
 
 /** Parse a note's Markdown into the editor's blocks (an empty note still gets one block to type in). */
-function documentFromMarkdown(markdown: string): BlockData[] {
-    const blocks = normalizeParsedBlocks(markdownToBlocks(markdown));
+function documentFromMarkdown(markdown: string, decorate: (html: string) => string): BlockData[] {
+    const blocks = normalizeParsedBlocks(markdownToBlocks(markdown)).map((block) =>
+        block.html ? {...block, html: decorate(block.html)} : block,
+    );
     return blocks.length ? blocks : [newBlock()];
 }
 
@@ -251,9 +286,23 @@ function blockToMarkdown(block: BlockData): string {
     return blocksToMarkdown([{...block, depth: 0}]);
 }
 
+/**
+ * Where the caret sits, in terms that survive the editor being torn down and rebuilt: block ids are
+ * minted per parse, so a note switch and back cannot address a block by id. An INDEX can, as long as
+ * the document hasn't been restructured meanwhile — and if it has, the restore simply clamps.
+ */
+export interface EditorCaret {
+    block: number;
+    offset: number;
+}
+
 export interface EditorHandle {
     /** Put the caret back in the body (the shell's focus ladder). */
     focus(): void;
+    /** Open a fresh empty block above everything and land on it (Enter from the note title). */
+    insertBlockAtTop(): void;
+    /** The caret's current position, or null when focus isn't in an editable block. */
+    getCaret(): EditorCaret | null;
 }
 
 export interface EditorProps {
@@ -261,6 +310,15 @@ export interface EditorProps {
     value: string;
     /** Focus the body on mount (a committed note); the host owns title focus. */
     autofocus?: 'body' | 'title' | null;
+    /** Where to put the caret when `autofocus` is 'body' — a position saved before a note switch. */
+    initialCaret?: EditorCaret | null;
+    /**
+     * Every note (id + title), for `[[wiki link]]` resolution: the broken-link styling and the `[[`
+     * picker's ranking both read it. Empty is safe — every link then simply renders unbroken.
+     */
+    notes?: NoteMeta[];
+    /** The open note's id, so a link never resolves to (or suggests) the note it's written in. */
+    noteId?: string;
     /** Fires on every edit with the note's full Markdown; the shell debounces the actual write. */
     onChange(markdown: string): void;
     /** Follow a `[[wiki link]]`; the shell resolves the target title to a note. */
@@ -279,16 +337,56 @@ export interface EditorProps {
     onLeaveTop?(): void;
 }
 
+const EMPTY_NOTES: NoteMeta[] = [];
+
 const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-    {value, autofocus, onChange, onWikiLinkNavigate, onLeaveTop, onAttachFile, onEscape},
+    {
+        value,
+        autofocus,
+        initialCaret,
+        notes = EMPTY_NOTES,
+        noteId = '',
+        onChange,
+        onWikiLinkNavigate,
+        onLeaveTop,
+        onAttachFile,
+        onEscape,
+    },
     ref,
 ) {
-    const [blocks, setBlockState] = useState<BlockData[]>(() => documentFromMarkdown(value));
+    // Resolution is rebuilt only when the note SET changes (a create/rename/move/delete), never on a
+    // plain autosave: `notes` gets a fresh array identity on every re-list, so keying on the array
+    // itself would rebuild the index — and re-decorate the whole document — after every keystroke's
+    // save. The signature is the cheap invariant.
+    const wikiSignature = useMemo(() => notes.map((note) => note.id).join('\n'), [notes]);
+    const isWikiLinkBroken = useMemo(() => {
+        const resolve = createWikiLinkResolver(notes);
+        return (target: string) => resolve(target, noteId) === null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- `notes` only matters by signature
+    }, [wikiSignature, noteId]);
+    const decorate = useMemo(
+        () => (html: string) => decorateWikiLinks(html, isWikiLinkBroken),
+        [isWikiLinkBroken],
+    );
+    // Read live from event handlers and from the imperative handle, which are captured per render
+    // but may run against a later one.
+    const decorateRef = useRef(decorate);
+    decorateRef.current = decorate;
+    const notesRef = useRef(notes);
+    notesRef.current = notes;
+    const noteIdRef = useRef(noteId);
+    noteIdRef.current = noteId;
+
+    const [blocks, setBlockState] = useState<BlockData[]>(() =>
+        documentFromMarkdown(value, decorate),
+    );
     const [toast, setToast] = useState<string | null>(null);
     const [focusedId, setFocusedId] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [slash, setSlash] = useState<SlashState | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
+    const [wiki, setWiki] = useState<WikiState | null>(null);
+    const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
     const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -326,6 +424,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     blocksRef.current = blocks;
     const slashRef = useRef(slash);
     slashRef.current = slash;
+    const wikiRef = useRef(wiki);
+    wikiRef.current = wiki;
+    /** True between compositionstart/end — see commitHtml, which must not rewrite the DOM then. */
+    const composingRef = useRef(false);
     const selectedIdsRef = useRef(selectedIds);
     selectedIdsRef.current = selectedIds;
 
@@ -338,6 +440,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     }>({onKeyDown: () => {}, onClipboard: () => {}, onMouseDown: () => {}});
 
     const filteredItems = useMemo(() => filterMenuItems(slash?.query ?? ''), [slash?.query]);
+
+    /**
+     * The `[[` picker's rows. Per the spec the LAST row is always `Create "<query>"` unless the
+     * query already names an existing note — which is also what keeps the popup open on a query
+     * that matches nothing (the Markdown engine's picker closed there, stranding the user
+     * mid-link).
+     */
+    const wikiItems: WikiSuggestItem[] = useMemo(() => {
+        if (!wiki) return [];
+        const query = wiki.query.trim();
+        const matches = suggestWikiTargets(wiki.query, notesRef.current, noteIdRef.current);
+        const items: WikiSuggestItem[] = matches.map((note) => ({kind: 'note', note}));
+        const exact = matches.some((note) => note.title.toLowerCase() === query.toLowerCase());
+        if (query !== '' && !exact) items.push({kind: 'create', title: query});
+        return items;
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- notes are read live; the signature is the real input
+    }, [wiki?.query, wiki?.blockId, wikiSignature, noteId]);
 
     const showToast = (message: string) => {
         if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
@@ -416,10 +535,47 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onChange(markdown);
     }, [blocks, onChange]);
 
+    /**
+     * Re-run the wiki decoration when the note SET changes — a link goes broken when its target is
+     * deleted, and unbroken when it's created. Silent, and a no-op for the vast majority of edits:
+     * the wrappers carry no text, so `blocksToMarkdown` is byte-identical either way and the change
+     * effect above never fires — nothing is autosaved, the document just repaints.
+     */
+    useEffect(() => {
+        setBlocks((current) => {
+            let changed = false;
+            const next = current.map((block) => {
+                if (!block.html) return block;
+                const html = decorate(block.html);
+                if (html === block.html) return block;
+                changed = true;
+                return {...block, html};
+            });
+            return changed ? next : current;
+        }, 'silent');
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- setBlocks is a stable closure over refs
+    }, [decorate]);
+
     useImperativeHandle(ref, () => ({
         focus() {
             const target = blocksRef.current.find((block) => isEditableType(block.type));
             if (target) focusNow(target.id, 'end');
+        },
+        insertBlockAtTop() {
+            const block = newBlock('text');
+            setBlocks((current) => [block, ...current]);
+            focusReq.current = {id: block.id, pos: 'start'};
+        },
+        getCaret() {
+            const active = document.activeElement;
+            const el =
+                active instanceof HTMLElement
+                    ? active.closest<HTMLElement>('[data-block-id]')
+                    : null;
+            const id = el?.dataset.blockId;
+            if (!el || !id) return null;
+            const block = blocksRef.current.findIndex((candidate) => candidate.id === id);
+            return block < 0 ? null : {block, offset: getCaretOffset(el)};
         },
     }));
 
@@ -428,6 +584,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     // — a later render must never steal the caret back.
     useEffect(() => {
         if (autofocus !== 'body') return;
+        // A caret saved before the last switch away from this note, when there is one — the block
+        // editor is rebuilt per note, so this is what makes switching back land where you left off.
+        const saved = initialCaret ? blocksRef.current[initialCaret.block] : undefined;
+        if (saved && isEditableType(saved.type)) {
+            focusNow(saved.id, initialCaret!.offset);
+            return;
+        }
         const target = blocksRef.current.find((block) => isEditableType(block.type));
         if (target) focusNow(target.id, 'end');
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -470,6 +633,28 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const updateHtml = (id: string, html: string) => {
         const clean = stripZeroWidth(html);
         setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, html: clean} : b)), 'input', id);
+    };
+
+    /**
+     * Commit a block's live DOM into state, (re)decorating its `[[wiki links]]` on the way.
+     *
+     * The decoration adds and removes wrapper ELEMENTS but never a character of text, so the caret's
+     * plain-text offset is invariant across the rewrite — which is the only reason it is safe to do
+     * this on a keystroke: read the offset, swap the markup, put the caret back. Skipped mid-IME
+     * composition, where replacing the element's markup would cancel the composition outright.
+     */
+    const commitHtml = (id: string, el: HTMLElement) => {
+        const raw = el.innerHTML;
+        if (!composingRef.current) {
+            const decorated = decorateRef.current(raw);
+            if (decorated !== raw) {
+                const focused = document.activeElement === el;
+                const offset = focused ? getCaretOffset(el) : 0;
+                el.innerHTML = decorated;
+                if (focused) setCaret(el, offset);
+            }
+        }
+        updateHtml(id, el.innerHTML);
     };
 
     const normalizeHtml = (id: string, html: string) => {
@@ -638,6 +823,68 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         focusReq.current = isTable
             ? {id: tableCellId(s.blockId, 0, 0), pos: 'end'}
             : {id: s.blockId, pos: Math.min(s.anchor, htmlToText(rest).length)};
+    };
+
+    // ----- [[ note picker -----
+
+    const openWikiMenu = (blockId: string, anchor: number) => {
+        const el = refs.current.get(blockId);
+        if (!el) return;
+        // VIEWPORT coordinates, like every other overlay here — see openSlashMenu.
+        const line = caretLineRect(el);
+        setWiki({
+            blockId,
+            anchor,
+            query: '',
+            rect: {x: line.left, top: line.top, bottom: line.bottom},
+        });
+        setWikiIndex(0);
+    };
+
+    /**
+     * Keep the picker in step with what has been typed since the `[[`, or dismiss it. A `]` or a
+     * newline in the query means the link is finished (or abandoned), and a caret that has moved
+     * back before the trigger means the user is editing elsewhere.
+     */
+    const syncWikiMenu = (state: WikiState, el: HTMLElement) => {
+        const text = el.textContent ?? '';
+        const offset = getCaretOffset(el);
+        if (text.slice(state.anchor, state.anchor + 2) !== '[[' || offset < state.anchor + 2) {
+            setWiki(null);
+            return;
+        }
+        const query = text.slice(state.anchor + 2, offset);
+        if (/[[\]\n]/.test(query)) {
+            setWiki(null);
+            return;
+        }
+        if (query !== state.query) {
+            setWiki({...state, query});
+            setWikiIndex(0);
+        }
+    };
+
+    /** Commit a picked note (or the "Create …" row, D19: insert-only) as a literal `[[target]]`. */
+    const applyWikiItem = (item: WikiSuggestItem) => {
+        const state = wikiRef.current;
+        if (!state) return;
+        setWiki(null);
+        const el = refs.current.get(state.blockId);
+        if (!el) return;
+        let target = item.kind === 'note' ? item.note.title : item.title;
+        if (item.kind === 'note') {
+            // Two notes sharing a title need the explicit `Folder/Note` form, or the link would
+            // resolve by the same-folder/shallowest tiebreak rather than to the note that was
+            // picked.
+            const ambiguous =
+                notesRef.current.filter((note) => note.title.toLowerCase() === target.toLowerCase())
+                    .length > 1;
+            if (ambiguous) target = item.note.id.replace(/\.md$/i, '');
+        }
+        deleteTextRange(el, state.anchor, getCaretOffset(el));
+        if (el.innerHTML === '<br>') el.innerHTML = '';
+        insertPlainTextAtCaret(`[[${target}]]`);
+        commitHtml(state.blockId, el);
     };
 
     // ----- block operations -----
@@ -1128,6 +1375,29 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
 
+        // `[[` note picker — same keyboard contract as the slash menu above.
+        if (wiki && wiki.blockId === id) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const n = wikiItems.length;
+                if (n > 0)
+                    setWikiIndex((i) => (e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n));
+                return;
+            }
+            if ((e.key === 'Enter' || e.key === 'Tab') && wikiItems.length > 0) {
+                e.preventDefault();
+                applyWikiItem(wikiItems[Math.min(wikiIndex, wikiItems.length - 1)]);
+                return;
+            }
+            if (e.key === 'Escape') {
+                // Dismissing the picker is the whole action — see the slash menu's Escape.
+                e.preventDefault();
+                e.stopPropagation();
+                setWiki(null);
+                return;
+            }
+        }
+
         const mod = e.metaKey || e.ctrlKey;
 
         // ⌘↵ on a `[[wiki link]]` follows it (⌘-click does the same with the pointer). Shift is
@@ -1154,7 +1424,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 if (block.type !== 'code') {
                     document.execCommand('styleWithCSS', false, 'false');
                     document.execCommand(k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline');
-                    updateHtml(id, el.innerHTML);
+                    commitHtml(id, el);
                 }
                 return;
             }
@@ -1173,7 +1443,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 if (block.type !== 'code') {
                     document.execCommand('styleWithCSS', false, 'false');
                     document.execCommand('strikeThrough');
-                    updateHtml(id, el.innerHTML);
+                    commitHtml(id, el);
                 }
                 return;
             }
@@ -1181,7 +1451,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 claimChord(e);
                 if (block.type !== 'code') {
                     toggleInlineCode();
-                    updateHtml(id, el.innerHTML);
+                    commitHtml(id, el);
                 }
                 return;
             }
@@ -1250,7 +1520,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             e.preventDefault();
             if (block.type === 'code') {
                 insertPlainTextAtCaret('\n');
-                updateHtml(id, el.innerHTML);
+                commitHtml(id, el);
                 return;
             }
             handleEnter(block, el);
@@ -1275,7 +1545,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             e.preventDefault();
             if (block.type === 'code') {
                 insertPlainTextAtCaret('  ');
-                updateHtml(id, el.innerHTML);
+                commitHtml(id, el);
             } else {
                 changeDepth(id, e.shiftKey ? -1 : 1);
             }
@@ -1348,8 +1618,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         for (const match of text.matchAll(/\[\[([^[\]\n]+)\]\]/g)) {
             const start = match.index ?? 0;
             if (offset >= start && offset <= start + match[0].length) {
-                // `|alias` and `#heading` are display/anchor sugar; the note is named by what precedes them.
-                return match[1].split(/[|#]/)[0].trim();
+                // `|alias` and `#heading` are display/anchor sugar; the note is named by what
+                // precedes them. Read through wikiLinks.ts so this surface and the resolver can
+                // never disagree about what a target means.
+                return normalizeTarget(match[1]) || null;
             }
         }
         return null;
@@ -1444,6 +1716,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if ((el.textContent ?? '')[pending.anchor] === '/') {
                 openSlashMenu(id, pending.anchor, 1);
             }
+        } else if (wikiRef.current && wikiRef.current.blockId === id) {
+            syncWikiMenu(wikiRef.current, el);
         } else if (slashRef.current && slashRef.current.blockId === id) {
             const s = slashRef.current;
             const text = el.textContent ?? '';
@@ -1463,6 +1737,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         } else if (block.type !== 'code') {
             tryInlineMarkdown(el);
+            // `[[` opens the note picker. Checked after the inline-Markdown pass (which can rewrite
+            // the run the caret sits in) and never inside code, where brackets are content.
+            const caret = getCaretOffset(el);
+            if (caret >= 2 && (el.textContent ?? '').slice(caret - 2, caret) === '[[') {
+                openWikiMenu(id, caret - 2);
+            }
         }
 
         const text = (el.textContent ?? '').replace(/\u200B/g, '');
@@ -1496,7 +1776,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
 
-        updateHtml(id, el.innerHTML);
+        commitHtml(id, el);
     };
 
     /**
@@ -1605,13 +1885,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             block.type !== 'code'
         ) {
             document.execCommand('createLink', false, text.trim());
-            updateHtml(id, el.innerHTML);
+            commitHtml(id, el);
             return;
         }
 
         if (block.type === 'code' || !text.includes('\n')) {
             insertPlainTextAtCaret(text);
-            updateHtml(id, el.innerHTML);
+            commitHtml(id, el);
             return;
         }
 
@@ -1993,6 +2273,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         },
         onNormalize: normalizeHtml,
         onInput,
+        onCompositionStart: () => {
+            composingRef.current = true;
+        },
+        onCompositionEnd: (id) => {
+            composingRef.current = false;
+            // The composed text landed while decoration was suppressed; catch it up now.
+            const el = refs.current.get(id);
+            if (el) commitHtml(id, el);
+        },
+        onUpdateImage: (id, image) =>
+            setBlocks((current) =>
+                current.map((block) =>
+                    block.id === id && block.image
+                        ? {...block, image: {...block.image, ...image}}
+                        : block,
+                ),
+            ),
         onKeyDown,
         onPaste,
         onFocus: (id) => setFocusedId(id),
@@ -2093,6 +2390,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     onHover={setSlashIndex}
                     onSelect={applySlashItem}
                     onClose={() => setSlash(null)}
+                />
+            )}
+            {wiki && wikiItems.length > 0 && (
+                <WikiSuggestMenu
+                    anchor={wiki.rect}
+                    items={wikiItems}
+                    activeIndex={Math.min(wikiIndex, wikiItems.length - 1)}
+                    onHover={setWikiIndex}
+                    onSelect={applyWikiItem}
+                    onClose={() => setWiki(null)}
                 />
             )}
             {blockMenu && menuBlock && (

@@ -7,7 +7,6 @@ import {
     type AccentColor,
     type AccentColorPref,
     EDITOR_FONTS,
-    type EditorEngine,
     type EditorFont,
     type EditorFontPref,
     TEXT_WIDTHS,
@@ -112,12 +111,6 @@ export const WIDTH_OPTIONS: {value: TextWidth; content: string}[] = TEXT_WIDTHS.
 }));
 
 const DEFAULT_OPTION = {value: 'default' as const, content: 'Default'};
-
-/** Editing surface (Settings › General). Labels name the surface, not the library behind it. */
-export const ENGINE_OPTIONS: {value: EditorEngine; content: string}[] = [
-    {value: 'rich', content: 'Markdown'},
-    {value: 'blocks', content: 'Blocks'},
-];
 
 export const FONT_OPTIONS_WS: {value: EditorFontPref; content: ReactNode}[] = [
     DEFAULT_OPTION,

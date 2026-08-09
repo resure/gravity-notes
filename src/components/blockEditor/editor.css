@@ -26,6 +26,11 @@
     --n-code-bg: rgba(135, 131, 120, 0.15);
     --n-gray-bg: rgb(247, 246, 243);
     --n-callout-bg: rgb(241, 241, 239);
+    /* Every floating surface's fill — the slash menu, the `[[` picker, the block menu, the
+       selection toolbar, a table cell. Notion's paper white, and a variable rather than a literal
+       because the dark theme has to move it: the overlays PORTAL to <body>, so a hard-coded white
+       there painted white text on a white card (the ink channel below is remapped, the fill wasn't). */
+    --n-surface: #ffffff;
     --n-overlay-shadow:
         rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px,
         rgba(15, 15, 15, 0.2) 0px 9px 24px;
@@ -637,7 +642,7 @@
     padding: 0;
     border-right: 1px solid rgba(var(--n-ink), 0.16);
     border-bottom: 1px solid rgba(var(--n-ink), 0.16);
-    background: #fff;
+    background: var(--n-surface);
     vertical-align: top;
 }
 
@@ -737,7 +742,7 @@
     gap: 2px;
     padding: 4px;
     border-radius: 7px;
-    background: #fff;
+    background: var(--n-surface);
     box-shadow: var(--n-overlay-shadow);
     opacity: 0;
     pointer-events: none;
@@ -811,7 +816,7 @@
        viewport values (Editor.tsx). */
     position: fixed;
     z-index: 999;
-    background: #ffffff;
+    background: var(--n-surface);
     border-radius: 10px;
     box-shadow: var(--n-overlay-shadow);
     padding: 6px 0;
@@ -1000,7 +1005,7 @@
     display: flex;
     align-items: center;
     gap: 1px;
-    background: #ffffff;
+    background: var(--n-surface);
     border-radius: 8px;
     box-shadow: var(--n-overlay-shadow);
     padding: 4px;
@@ -1140,6 +1145,120 @@
     font-size: 13px;
 }
 
+/* The frame is what the resize handle and the hover controls are positioned against, so it has to
+   shrink-wrap the image rather than fill the block. */
+.gn-block-editor .image-frame {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.gn-block-editor .image-controls {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+@media (hover: hover) {
+    .gn-block-editor .image-frame:hover .image-controls {
+        opacity: 1;
+    }
+}
+
+/* Touch has no hover to reveal them with, so they stay visible there. */
+@media (hover: none) {
+    .gn-block-editor .image-controls {
+        opacity: 1;
+    }
+}
+
+.gn-block-editor .image-btn {
+    display: flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.gn-block-editor .image-btn:hover {
+    background: rgba(0, 0, 0, 0.75);
+}
+
+/* A wide grab strip on the right edge, like the Markdown engine's image NodeView had. */
+.gn-block-editor .image-resize {
+    position: absolute;
+    top: 20%;
+    right: -3px;
+    width: 10px;
+    height: 60%;
+    border-radius: 4px;
+    cursor: ew-resize;
+    opacity: 0;
+    background: rgba(var(--n-ink), 0.35);
+    transition: opacity 120ms ease;
+}
+
+@media (hover: hover) {
+    .gn-block-editor .image-frame:hover .image-resize {
+        opacity: 1;
+    }
+}
+
+.gn-block-editor .image-alt-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 7px;
+    border: 1px solid var(--n-border);
+    border-radius: 4px;
+    margin-top: 6px;
+    background: var(--n-bg);
+    color: var(--n-text);
+    font-family: inherit;
+    font-size: 13px;
+}
+
+/* ---------- [[wiki links]] ---------- */
+
+/* The wrapper is style-only: the brackets are still there, because they are what reaches the file
+   (see wikiDecorate.ts). Coloured like a link, but with a text cursor — a plain click edits the
+   title, ⌘/Ctrl-click follows it (`.gn-block-editor_mod-pressed` flips the cursor). */
+.gn-block-editor .wiki-link {
+    color: var(--n-blue);
+    cursor: text;
+}
+
+.gn-block-editor_mod-pressed .wiki-link {
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* A link whose target doesn't exist yet — dimmed, with a dashed underline, so a typo or a
+   yet-to-be-created note stands out. ⌘-clicking it still works (it creates the note). */
+.gn-block-editor .wiki-link_broken {
+    color: var(--n-text-lighter);
+    text-decoration: underline;
+    text-decoration-color: var(--n-code-red);
+    text-decoration-style: dashed;
+}
+
+/* The `[[` note picker reuses the slash menu's material; it only needs its own measure. */
+.gn-block-editor .wiki-suggest-menu {
+    min-width: 240px;
+    max-width: 380px;
+    padding: 4px;
+}
+
 /* ---------- theming ---------- */
 
 /* The palette above is Notion's, and hard-coded light. In the dark theme remap the tokens onto
@@ -1161,6 +1280,9 @@
     --n-code-bg: var(--g-color-base-generic);
     --n-gray-bg: var(--g-color-base-generic);
     --n-callout-bg: var(--g-color-base-generic);
+    /* Gravity's floating-surface colour — the same fill its own popups use, so the editor's menus
+       read as part of the app rather than as a light-theme card left behind in the dark. */
+    --n-surface: var(--g-color-base-float);
     --n-overlay-shadow: 0 0 0 1px var(--g-color-line-generic), 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 

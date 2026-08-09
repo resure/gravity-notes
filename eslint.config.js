@@ -10,7 +10,18 @@ export default [
     // `eslint .` grind for 40+ minutes inside prettier/scope-analysis before anyone saw output.
     // '.claude' holds machine-local settings + isolation-mode worktrees (full repo copies) — linting
     // those duplicates the whole tree and reports phantom errors; nothing tracked there is JS/TS.
-    {ignores: ['dist', 'coverage', 'src-tauri', '.vite', '.claude']},
+    // 'design_handoff_notes_base_ui' is a vendored design bundle (a self-contained spec page and
+    // its support script) — a reference artefact, not source we own or lint.
+    {
+        ignores: [
+            'dist',
+            'coverage',
+            'src-tauri',
+            '.vite',
+            '.claude',
+            'design_handoff_notes_base_ui',
+        ],
+    },
     ...baseConfig,
     ...clientConfig,
     ...importOrderConfig,

@@ -1,0 +1,69 @@
+/* YFM variable maps for the read-only preview (NotePreview, UpdateDialog's release notes).
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   The preview renders through `@diplodoc/transform`, whose stylesheet (`dist/css/base.css` +
+   `_yfm-only.css`, imported in main.tsx) styles `.yfm` content but leaves every colour as a
+   `--yfm-color-*` variable for the host to fill in.
+
+   Those maps used to arrive with `@gravity-ui/markdown-editor`'s stylesheets — nine imports that
+   also dragged in the whole WYSIWYG editor's chrome. The editor is gone; only the maps are still
+   needed, so they are vendored here, trimmed to what this app actually renders (no high-contrast
+   themes, no term/modal/tabs variables for extensions we don't load).
+
+   Everything still points at Gravity tokens, so a theme switch keeps working unchanged. */
+
+.yfm {
+    --yfm-color-base: var(--g-color-base-background);
+    --yfm-color-text: var(--g-color-text-primary);
+    --yfm-color-link: var(--g-color-text-link);
+    --yfm-color-link-hover: var(--g-color-text-link-hover);
+    --yfm-color-border: var(--g-color-line-generic);
+    --yfm-color-accent: var(--g-color-line-brand);
+    --yfm-color-inline-code: var(--g-color-text-misc);
+    --yfm-color-inline-code-background: var(--g-color-base-misc-light);
+    --yfm-color-code-background: var(--g-color-base-misc-light);
+    --yfm-color-note-tip: var(--g-color-text-positive);
+    --yfm-color-note-tip-background: var(--g-color-base-positive-light);
+    --yfm-color-note-warning: var(--g-color-text-warning);
+    --yfm-color-note-warning-background: var(--g-color-base-warning-light);
+    --yfm-color-note-important: var(--g-color-text-danger);
+    --yfm-color-note-important-background: var(--g-color-base-danger-light);
+    --yfm-color-note-info: var(--g-color-text-info);
+    --yfm-color-note-info-background: var(--g-color-base-info-light);
+    --yfm-color-table: var(--g-color-text-primary);
+    --yfm-color-table-row-background: var(--g-color-base-generic);
+    --yfm-color-table-border: var(--g-color-line-generic);
+    --yfm-color-table-background: var(--g-color-base-background);
+    --yfm-color-table-head-background: var(--g-color-base-generic);
+    --yfm-color-table-stripe-row-background: var(--g-color-base-generic);
+
+    /* From the package's `yfm-overrides.css` — a chunkier rule than YFM's own default. */
+    --yfm-hr-height: 4px;
+    --yfm-hr-margin: 24px 0;
+}
+
+/* The colour palette `{red}(text)` (the @diplodoc/color-extension, wired up in NotePreview) renders
+   against. Was `yc-colors.css`. */
+.g-root {
+    --yfm-color-text-gray: var(--g-color-text-secondary);
+    --yfm-color-text-yellow: var(--g-color-private-yellow-600-solid);
+    --yfm-color-text-orange: var(--g-color-private-orange-500-solid);
+    --yfm-color-text-red: var(--g-color-text-danger);
+    --yfm-color-text-green: var(--g-color-text-positive);
+    --yfm-color-text-blue: var(--g-color-text-info);
+    --yfm-color-text-violet: var(--g-color-text-utility);
+
+    --yfm-colorify-black: var(--g-color-text-primary);
+    --yfm-colorify-gray: var(--yfm-color-text-gray);
+    --yfm-colorify-yellow: var(--yfm-color-text-yellow);
+    --yfm-colorify-orange: var(--yfm-color-text-orange);
+    --yfm-colorify-red: var(--yfm-color-text-red);
+    --yfm-colorify-green: var(--yfm-color-text-green);
+    --yfm-colorify-blue: var(--yfm-color-text-blue);
+    --yfm-colorify-violet: var(--yfm-color-text-violet);
+}
+
+/* The collapse chevron `.yfm-cut` draws is a black SVG baked into the extension's stylesheet, so it
+   disappears on a dark background; the package shipped this same swap in `yfm-themes.css`. */
+.g-root_theme_dark .yfm .yfm-cut-title::before {
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHBhdGggc3Ryb2tlPSJyZ2JhKDI1NSwgMjU1LCAyNTUsIDAuNykiIGZpbGw9Im5vbmUiIGQ9Ik0zIDZsNSA1IDUtNSI+PC9wYXRoPjwvc3ZnPg==');
+}
