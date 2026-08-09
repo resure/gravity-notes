@@ -34,22 +34,19 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 ## Editing
 
-Rows tagged **Markdown** or **Blocks** apply to that editing surface only (Settings › Editor).
-
 | Keys             | Action                                                                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
-| `⌘⇧;`            | Toggle WYSIWYG / Markup — in **Blocks**, the raw Markdown behind the blocks (a plain textarea)                                            |
+| `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, in a plain textarea                                                     |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
-| `⌘⇧K`            | Insert link — **Markdown**                                                                                                                |
-| `⌘K`             | Insert link over the selected text — **Blocks** (with nothing selected it still steps notes)                                              |
-| `[[`             | Open the wiki-link note picker — **Markdown**                                                                                             |
+| `⌘K`             | Insert a link over the selected text (with nothing selected it still steps notes)                                                         |
+| `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
-| `⌘Enter`         | Follow the `[[wiki link]]` under the caret — **Blocks** (⌘-click does the same; URLs stay preview-only)                                   |
+| `⌘Enter`         | Follow the `[[wiki link]]` under the caret (⌘-click does the same)                                                                        |
 | `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
-| `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's the heading shortcut)                                               |
-| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in a **Blocks** body it duplicates the block      |
+| `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's a typing chord)                                                     |
+| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in the body it duplicates the block               |
 | `⌘⇧⌫`            | Move the selected note to the Trash (asks to confirm; recoverable)                                                                        |
 
 ## General

@@ -23,8 +23,6 @@ export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'u
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
 export interface Settings {
-    /** Show the markdown editor's formatting toolbar (the surface is markdown-first, so off by default). */
-    showEditorToolbar: boolean;
     /** Show a per-note icon in the list + the note title (experimental; the IconPicker feature). */
     showNoteIcons: boolean;
     /** Font for the editor + preview + title (note content only). Default `sans` (the system font). */
@@ -33,31 +31,13 @@ export interface Settings {
     accentColor: AccentColor;
     /** Editor/preview text column width. Default `normal` (a readable measure). */
     textWidth: TextWidth;
-    /** Which editing surface the note body uses. Default `rich` (the Markdown editor). */
-    editorEngine: EditorEngine;
 }
 
-/**
- * The editing surface for a note's body:
- * - `rich` — `@gravity-ui/markdown-editor`: WYSIWYG + a raw Markup mode, the wiki-link picker,
- *   KaTeX, syntax highlighting, and the attachment NodeView;
- * - `blocks` — the Notion-style block editor (`components/blockEditor`), where each block is its
- *   own contentEditable and the document is serialized to Markdown on every edit.
- *
- * Both read and write the same `.md` files, so the setting is switchable at any time — but they are
- * not feature-equal (see docs/architecture.md), which is why `rich` stays the default.
- */
-export type EditorEngine = 'rich' | 'blocks';
-
-export const EDITOR_ENGINES: readonly EditorEngine[] = ['rich', 'blocks'];
-
 const DEFAULTS: Settings = {
-    showEditorToolbar: false,
     showNoteIcons: false,
     editorFont: 'sans',
     accentColor: 'amber',
     textWidth: 'normal',
-    editorEngine: 'rich',
 };
 
 /** Per-workspace overrides of the appearance settings; `'default'` inherits the app-wide value. */
@@ -112,12 +92,10 @@ function loadSettings(key: string): Settings {
     try {
         const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings>;
         return {
-            showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
             accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),
             textWidth: oneOf(raw.textWidth, TEXT_WIDTHS, DEFAULTS.textWidth),
-            editorEngine: oneOf(raw.editorEngine, EDITOR_ENGINES, DEFAULTS.editorEngine),
         };
     } catch {
         return DEFAULTS;

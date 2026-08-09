@@ -65,6 +65,22 @@ describe('inline HTML → Markdown', () => {
         expect(inlineHtmlToMarkdown('a [b] c')).toBe('a \\[b\\] c');
     });
 
+    it('leaves a lone ~ alone, but escapes the ~~ that would open strikethrough', () => {
+        // A tilde only means something doubled, so escaping every one of them rewrote `~4 min` and
+        // `~$20` on disk the first time such a note was saved.
+        expect(inlineHtmlToMarkdown('about ~4 min, ~$20')).toBe('about ~4 min, ~$20');
+        expect(inlineMarkdownToHtml('about ~4 min, ~$20')).toBe('about ~4 min, ~$20');
+        expect(inlineHtmlToMarkdown('literal ~~tildes~~ here')).toBe(
+            'literal \\~\\~tildes\\~\\~ here',
+        );
+        expect(inlineMarkdownToHtml('literal \\~\\~tildes\\~\\~ here')).toBe(
+            'literal ~~tildes~~ here',
+        );
+        // …and a real strikethrough still round-trips as one.
+        expect(inlineHtmlToMarkdown('<s>gone</s>')).toBe('~~gone~~');
+        expect(inlineMarkdownToHtml('~~gone~~')).toBe('<s>gone</s>');
+    });
+
     it('leaves snake_case alone (CommonMark ignores intra-word underscores)', () => {
         expect(inlineHtmlToMarkdown('some_long_name')).toBe('some_long_name');
         expect(inlineMarkdownToHtml('some_long_name')).toBe('some_long_name');
@@ -82,13 +98,39 @@ describe('inline HTML → Markdown', () => {
 
     it('writes [[wiki links]] verbatim so other tools (and the backlink scan) still see them', () => {
         expect(inlineHtmlToMarkdown('see [[Other Note]] now')).toBe('see [[Other Note]] now');
-        expect(inlineMarkdownToHtml('see [[Other Note]] now')).toBe('see [[Other Note]] now');
-        // Brackets that are NOT a wiki link are still escaped.
+        // The style-only wrapper keeps the literal bytes as its text, so it costs the serializer
+        // nothing (an unknown tag is dropped, its text kept) — see WIKI_LINK_CLASS.
+        expect(inlineMarkdownToHtml('see [[Other Note]] now')).toBe(
+            'see <span class="wiki-link">[[Other Note]]</span> now',
+        );
+        expect(inlineHtmlToMarkdown('see <span class="wiki-link">[[Other Note]]</span> now')).toBe(
+            'see [[Other Note]] now',
+        );
+        // Brackets that are NOT a wiki link are still escaped, and get no wrapper.
         expect(inlineHtmlToMarkdown('an [aside] here')).toBe('an \\[aside\\] here');
+        expect(inlineMarkdownToHtml('empty \\[\\[\\]\\] brackets')).toBe('empty [[]] brackets');
         // …and an escaped form written by an older build still reads back as the literal link.
         expect(inlineMarkdownToHtml('see \\[\\[Other Note\\]\\] now')).toBe(
             'see [[Other Note]] now',
         );
+    });
+
+    it('renders <url> autolinks as links, and writes them back in the same spelling', () => {
+        expect(inlineMarkdownToHtml('see <https://example.com/a> now')).toBe(
+            'see <a href="https://example.com/a" data-autolink="" rel="noopener noreferrer">https://example.com/a</a> now',
+        );
+        expect(
+            inlineHtmlToMarkdown(
+                'see <a href="https://example.com/a" data-autolink="" rel="noopener noreferrer">https://example.com/a</a> now',
+            ),
+        ).toBe('see <https://example.com/a> now');
+        // An ordinary link keeps the `[label](href)` spelling — the two never trade places.
+        expect(inlineHtmlToMarkdown('<a href="https://x.dev">https://x.dev</a>')).toBe(
+            '[https://x.dev](https://x.dev)',
+        );
+        // Schemes the app won't open stay literal text (an autolink whose href the editor's
+        // sanitizer would strip would serialize back as `[text]()` — a silent file rewrite).
+        expect(inlineMarkdownToHtml('<javascript:alert(1)>')).toBe('&lt;javascript:alert(1)&gt;');
     });
 
     it('parses nested emphasis', () => {
@@ -319,9 +361,34 @@ describe('round trips', () => {
         expectRoundTrip([
             block('text', '2 * 3 * 4 = 24'),
             block('text', 'a [bracketed] word'),
-            block('text', 'a link to [[Another Note]] and to [[Folder/Deep Note|an alias]]'),
+            // Wiki links come back wearing their style-only wrapper (WIKI_LINK_CLASS), which the
+            // serializer drops again — the bytes on disk are the literal Obsidian form either way.
+            block(
+                'text',
+                'a link to <span class="wiki-link">[[Another Note]]</span> and to <span class="wiki-link">[[Folder/Deep Note|an alias]]</span>',
+            ),
             block('text', 'backtick ` and tilde ~ and hash # here'),
             block('text', 'snake_case_name'),
+        ]);
+    });
+
+    it('survives wiki links in the awkward inline positions', () => {
+        expectRoundTrip([
+            block('text', '<strong>bold <span class="wiki-link">[[Target]]</span> word</strong>'),
+            block('text', '<em><span class="wiki-link">[[Target]]</span></em>'),
+            // Adjacent to a code span: the link keeps its wrapper, the code span keeps its text.
+            block(
+                'text',
+                '<code>[[Not a link]]</code> but <span class="wiki-link">[[Target]]</span>',
+            ),
+        ]);
+    });
+
+    it('survives a resized image (the YFM =WxH suffix)', () => {
+        expectRoundTrip([
+            block('image', '', {image: {src: 'Attachments/a.png', alt: 'A', width: 600}}),
+            block('image', '', {image: {src: 'Attachments/b.png', width: 320, height: 240}}),
+            block('image', '', {image: {src: 'Attachments/c.png'}}),
         ]);
     });
 

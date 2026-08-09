@@ -7,7 +7,7 @@ Guidance for working in this repository.
 **Gravity Notes** — a local-first Markdown note-taking app, shipping as both a **web app** and a
 **macOS desktop app** (Tauri 2). On first run the user chooses where notes live: a **folder** of
 plain `.md` files or **in-browser** (IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/)
-ecosystem, with `@gravity-ui/markdown-editor` as the WYSIWYG/Markdown editor.
+ecosystem, with a vendored Notion-style **block editor** as the note body.
 
 **Targets / folder backends.** The folder-of-`.md` backend is served two ways behind one `NoteStore`
 seam:
@@ -318,17 +318,23 @@ Key modules:
   design intent — a load/save cycle must not rewrite a file) and degrade everything else to
   paragraphs. Degrading is only SAFE because the fixed point is **verified, not assumed**:
   `isRoundTripStable` (`roundTrip.ts`) checks `blocksToMarkdown(markdownToBlocks(text)) === text` and
-  `EditorPane` consults it per session, falling back to the `rich` engine for THAT note when it fails
-  (`activeEngine`, not `engine`, drives the body and the CSS modifier). This is load-bearing, not
+  `EditorPane` consults it per session, forcing THAT note onto the raw-source surface when it fails
+  (`forceSource` on `BlockEditorBody`). This is load-bearing, not
   belt-and-braces: the block engine re-serializes the WHOLE document on every keystroke, so anything
   the parser reads imperfectly is rewritten across the whole note on the first edit anywhere in it —
   frontmatter, an H4, a fence's language, a callout's kind, a table's alignment. Anything that widens
   the parser must keep that check as the backstop, and `markdown.test.ts` pins both halves (the
   regression corpus of notes this once corrupted, and the constructs the guard is expected to reject).
-  `inline.ts` is a hand-rolled scanner for the span level; two rules matter — a `[[wiki link]]` is
+  Measured against the demo vault, 36/65 notes currently open in blocks; the biggest remaining
+  causes are fence languages and table cell padding.
+  `inline.ts` is a hand-rolled scanner for the span level; four rules matter — a `[[wiki link]]` is
   NEVER escaped (it reaches disk as the literal bytes Obsidian writes, which is what the backlink
-  scan looks for), and a `<br>` is written as a plain newline, not a backslash hard break, so a
-  soft-wrapped paragraph survives a save without the file sprouting punctuation.
+  scan looks for) but DOES get a style-only wrapper (`WIKI_LINK_CLASS`, whose text is still the
+  literal brackets, so the serializer has nothing to undo); a `<br>` is written as a plain newline,
+  not a backslash hard break, so a soft-wrapped paragraph survives a save without the file sprouting
+  punctuation; a lone `~` is not escaped (only `~~` opens strikethrough, and escaping every tilde
+  rewrote `~4 min` to `\~4 min` on disk); and a `<url>` autolink carries `data-autolink` so it is
+  written back in the SAME spelling instead of becoming `[url](url)`.
 - `src/components/blockEditor/` — the **Notion-style block editor**: each block is its own
   `contentEditable` (no ProseMirror), with a slash menu, drag handles, block selection, tables, and
   its own undo history. It began life as a standalone app and is now **vendored — this is its home**,
@@ -344,23 +350,29 @@ Key modules:
   portal host re-applies the `.gn-block-editor` scope class (with `display: contents`) so the scoped
   rules still match once the overlay leaves the subtree. Block furniture is SPLIT across both
   margins — drag handle left, add button right — so the left gutter only has to fit one 18px button
-  (`.editor-pane_blocks` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
-  too, so title and body keep one left edge).
+  (`.editor-pane` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
+  too, so title and body keep one left edge). `[[wiki links]]` are authored here: `wikiDecorate.ts`
+  wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
+  the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
+  re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
+  autosave), and `[[` opens `WikiSuggestMenu` — same portal/positioning machinery as the slash menu,
+  with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
+  Every floating surface's fill is `--n-surface`, remapped in the dark block: the overlays portal to
+  `<body>`, so a hard-coded white there painted white text on a white card.
   ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
   and IS a textbox; the rules can't tell, and the editor drives focus itself).
-- `src/components/BlockEditorBody.tsx` — the **adapter** that makes the block editor a drop-in for
-  `EditorPane`'s Gravity-markdown body: same props, same imperative handle, so the pane (title,
-  icon, preview badge, Esc ladder, backlinks) is unaware of which engine is mounted. `focus()` is
-  deliberately caret-PRESERVING (a no-op when focus is already in the body) — the pane calls it on
+- `src/components/BlockEditorBody.tsx` — the **adapter** between `EditorPane` and the block editor:
+  it owns the ⌘⇧; blocks↔source flip (a plain textarea; `forceSource` pins it there for a note that
+  fails the round-trip guard, and `toggleMode` is then a no-op) and the per-note scroll + caret
+  restore. The editor is keyed on `sessionId`, so a note switch REMOUNTS it — the outgoing note's
+  scroll and caret are therefore captured in RENDER, before the keyed child unmounts, which is the
+  last moment `editorRef` still points at the old instance. Block ids are minted per parse, so the
+  caret is saved as a block INDEX (`EditorCaret`), not an id. `focus()` is deliberately
+  caret-PRESERVING (a no-op when focus is already in the body) — the pane calls it on
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
-  made the surface unusable with a mouse. The engines
-  differ structurally — the Gravity editor is one long-lived instance whose CONTENT is swapped on a
-  note switch (hence its `scrollContainerRef` + scroll save/restore), while the block editor reads
-  its document once per session and is simply keyed on `sessionId`, so a switch is a remount.
+  made the surface unusable with a mouse.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
-  text width + the toolbar/icons toggles + `editorEngine`, which picks the body surface —
-  `rich` = `@gravity-ui/markdown-editor` (default), `blocks` = the block editor above; both read and
-  write the same `.md`, so it is switchable at any time), `WorkspaceSettings` (per-workspace `'default'`-able
+  text width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
   overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
   deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
   and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
@@ -414,46 +426,27 @@ Key modules:
   keyboard-focused row and any open row popover's anchor row (⋯ menu / icon picker) mounted; rows
   render only an `IconPickerButton` glyph and share ONE `IconPickerPopup` — like the one shared row
   menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
-  list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut; shares
+  list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays a typing chord; shares
   `useListboxNav` with the workspace switcher),
-  `EditorPane` (wraps the note body — the Gravity markdown editor, or the block editor when
-  Settings › Editor is `blocks`, behind one imperative contract; re-created per editing session via a stable
-  `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
-  switch — the reused editor would otherwise carry the previous note's scrollTop; a note switch also
-  hard-resets BOTH undo histories — ProseMirror via a fresh `EditorState`, and markup-mode CodeMirror
-  via `editor/markupHistory.ts` (a pristine CM state snapshotted at mount becomes the template for
-  fresh per-note states — `replace()` is a history-recorded dispatch and `addToHistory:false` only
-  REMAPS old events, so without the template reset ⌘Z in markup mode walked into the previous note's
-  content); **linkify**: `md: {linkify: true}` with fuzzy matching OFF via `configureMd`
-  (`fuzzyLink/fuzzyEmail: false` — `.md` is a real TLD, so fuzzy would rewrite a `Notes.md` mention
-  on disk; bare URLs normalize once to `<url>` on save) plus `editor/linkifyTypedUrls.ts`, an
-  InputRule that linkifies a just-typed URL on trailing whitespace with the `raw-link` attr (typed
-  links round-trip as the BARE url); the wiki tooltip/suggest popups are gated by `swappingRef`
-  (exposed as `isSwapping` to the extension) which starts TRUE at mount and brackets every content
-  swap — mid-swap anchors get detached by the swap's own redraw (a popup pinned to a detached element
-  renders stuck at the viewport's top-left), and a restored caret inside a `[[link]]` must not pop UI
-  unasked (the caret at a link's LEFT edge doesn't count as inside it, matching `inclusive: false`);
+  `EditorPane` (the note title above the block editor body; the pane does NOT remount on a switch —
+  `BlockEditorBody` is keyed on `useNotes.sessionId` internally, so a rename doesn't rebuild
+  anything and a real switch rebuilds only the body. It runs `isRoundTripStable` once per session
+  and passes `forceSource` down; it is also the scroll container the body saves/restores per note.
   `.editor-pane` carries `transform: translateZ(0)` — its own compositing layer — because WKWebView
   otherwise occasionally leaves a stale paint of the caret line behind after a swap/resize (a ghost
-  "doubled" line); the floating
-  **selection toolbar is a vendored fixed copy** (`editor/selectionContextFix.ts` — the stock plugin
-  never re-arms its flags after the plugin-view recreation every note switch triggers, going
-  permanently dead; the bundle's own is disabled via `selectionContext: {config: []}` and the fixed
-  one registered at High priority so Escape still reaches it — drop the file when upstream fixes it,
-  and keep `@gravity-ui/markdown-editor` pinned exact meanwhile). Its `SELECTION_MENU_CONFIG` swaps
-  the block-type "Text"/H1–H6 Select for a local `SelectionHeadingSelect` — the bundle's
-  `ToolbarSelect` wires `onOpenChange` to the editor `focus()`, which re-closes the dropdown the
-  instant it opens inside the floating toolbar; the local version omits that wiring so the menu
-  opens) with `NoteTitle` and
-  `NotePreview` (read-only render via `@diplodoc/transform`, mirroring the editor's linkify +
-  fuzzy-off config; every link click routes through `openExternalUrl` instead of navigating the
+  "doubled" line) — and widens `--editor-gutter` to 36px for the block editor's drag handles) with
+  `NoteTitle` and
+  `NotePreview` (read-only render via `@diplodoc/transform` — deliberately a WIDER grammar than the
+  block editor's own parser, since the notes blocks can't hold are exactly the ones a preview must
+  get right; linkify with fuzzy matching OFF (`.md` is a real TLD, so fuzzy would turn a `Notes.md`
+  mention into a link); every link click routes through `openExternalUrl` instead of navigating the
   surface), `AttachmentsDialog` (manage attachments — list/usage/sort/
   delete + full-size view; virtualized list), `Lightbox` (shared full-size image overlay with
-  pinch/scroll zoom + drag-pan), the editor's custom image NodeView (`editor/attachmentImageView` +
-  `attachmentImageExtension`: resize, caption, click-to-zoom, broken state), the `[[wiki link]]` editor
-  pieces (`editor/wikiLinkExtension` — a mark with `escape: false` so it round-trips — plus the
-  `WikiLinkSuggest` `[[` picker and `WikiLinkTooltip`), `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — General toggles +
+  pinch/scroll zoom + drag-pan; the block editor's `AttachmentImage` opens it on click, and also
+  carries drag-resize — persisted as the YFM ` =600x` suffix, which `NotePreview`'s `imsize` plugin
+  understands — plus alt/caption editing and explicit loading/broken states),
+  `BacklinksPanel` (the "linked references" list
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
   Appearance for the app and workspace layers), `NoteAppearancePopover` (the per-note font/width
   popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
   `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
@@ -471,7 +464,10 @@ Key modules:
   ⌘0 for several workspaces at once). It reads the live workspace/state via a ref and calls
   `openInNewWindow(activeWorkspaceId)` (fallback `focus_main_window` when no workspace is mounted —
   bootstrapping, or parked on the gate).
-- `src/main.tsx` — app-shell + Gravity/markdown-editor stylesheet imports.
+- `src/main.tsx` — app-shell stylesheet imports, in cascade order (the one file where `import/order`
+  is off). The YFM content styles come straight from `@diplodoc/transform`; the small `--yfm-*`
+  variable maps that used to arrive with `@gravity-ui/markdown-editor` are vendored in
+  `src/yfm-tokens.css`.
 
 ## Conventions
 

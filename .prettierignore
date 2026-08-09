@@ -16,3 +16,7 @@ plugins/icloud-fs/ios/.build
 .claude/settings.local.json
 # Isolation-mode worktrees are gitignored full-repo copies — don't format duplicated sources.
 .claude/worktrees
+
+# Vendored design bundle (the Base UI handoff spec + its support script): a reference artefact,
+# not source this repo owns.
+design_handoff_notes_base_ui

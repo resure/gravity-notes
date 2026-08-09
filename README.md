@@ -1,10 +1,9 @@
 # Gravity Notes
 
-A simple note-taking app built on the [Gravity UI](https://gravity-ui.com/) ecosystem,
-using [`@gravity-ui/markdown-editor`](https://github.com/gravity-ui/markdown-editor) as the
-WYSIWYG/Markdown editor. Runs as a **web app** and a **macOS desktop app** (Tauri). On first run you
-choose where notes live: a **folder on your computer** (plain `.md` files), or **in-browser / in-app**
-— and you can **export/import** `.md` files either way.
+A simple note-taking app built on the [Gravity UI](https://gravity-ui.com/) ecosystem, with a
+Notion-style block editor for the note body. Runs as a **web app** and a **macOS desktop app**
+(Tauri). On first run you choose where notes live: a **folder on your computer** (plain `.md`
+files), or **in-browser / in-app** — and you can **export/import** `.md` files either way.
 
 ## Philosophy
 
@@ -24,10 +23,11 @@ Markdown files, and they are yours.
   a zip either way
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
-- **Gravity Markdown editor**: WYSIWYG and markup modes, read-only preview, live URLs
-- **Or a Notion-style block editor** (Settings › Editor, experimental): slash menu, drag-to-reorder,
-  block selection — writing the same plain `.md` files, and stepping aside for the Markdown editor on
-  a note it can't represent exactly, so your file is never rewritten to fit it
+- **A block editor** for the body: slash menu, drag-to-reorder, block selection, tables, to-dos,
+  images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them, and a note
+  the block model can't represent exactly opens on that source instead, so your file is never
+  rewritten to fit the editor
+- **Read-only preview** (`⌘⇧P`), rendering full CommonMark
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible
 - **Full-text search** across titles and bodies, ranked, with match snippets
 - **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**

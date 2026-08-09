@@ -58,6 +58,12 @@ export interface ImageData {
     alt?: string;
     /** Rendered width in pixels; unset means the natural/default width. */
     width?: number;
+    /**
+     * Rendered height in pixels. Never written by the editor (a drag-resize sets width and clears
+     * this, letting the aspect ratio follow), but parsed and re-serialized so a `=WxH` written by
+     * another tool survives a save untouched.
+     */
+    height?: number;
 }
 
 export interface TableData {

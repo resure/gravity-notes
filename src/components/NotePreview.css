@@ -1,6 +1,6 @@
 /* NOT a scroll container. The pane's scroller is `.editor-pane` (EditorPane.css) — it owns the
-   per-note scroll save/restore (EditorBody's scrollContainerRef = paneRef) for BOTH the editor and
-   the preview. If `.note-preview` also scrolls (its own `overflow-y:auto` + `height:100%` turns it
+   per-note scroll save/restore (BlockEditorBody's scrollContainerRef = paneRef) for BOTH the editor
+   and the preview. If `.note-preview` also scrolls (its own `overflow-y:auto` + `height:100%` turns it
    into a scroller whenever the flex parent resolves a definite height — which macOS's always-on
    native scrollbars trigger), it gets a SECOND scrollbar inside `.editor-pane`'s, narrowing the
    preview text column by one scrollbar-width vs the editor (and quietly breaking scroll-restore).
@@ -11,9 +11,8 @@
 }
 
 /* Match the editor's text column exactly so toggling edit/preview doesn't shift/re-wrap the text.
-   The editor insets its content by the --editor-gutter (16px, on .g-md-wysiwyg-editor__editor) PLUS
-   the ProseMirror node's own 4px padding (.g-md-editor.ProseMirror). The preview HTML has no
-   ProseMirror node, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
+   The block editor insets its document by the --editor-gutter plus its own 4px padding; the preview
+   HTML has neither, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
    the two columns don't line up. */
 .note-preview__body {
     padding: 12px calc(var(--editor-gutter, 16px) + 8px) 16px calc(var(--editor-gutter, 16px) + 4px);
@@ -31,15 +30,11 @@
     color: var(--g-color-text-link);
 }
 
-/* Mirror the editor's Apple-Notes rhythm (see EditorPane.css) onto the diplodoc-rendered preview
-   HTML so read-only preview looks like the WYSIWYG surface. Both are `.yfm` content; the editor
-   overrides live on its ProseMirror node, so the same rules are duplicated here for the static
-   HTML. KEEP THE MARGIN VALUES IDENTICAL to the matching block in EditorPane.css — they are the same
-   typographic rhythm, just re-scoped from the ProseMirror node to the static preview container. (The
-   body line-height is NOT hand-mirrored: both blocks read the per-font `--gn-editor-line-height` var
-   from index.css, so it stays in sync per font automatically.) The doubled `.note-preview__body.yfm`
-   outranks the base `.yfm` typography without !important; `:where(...)` keeps element specificity at
-   zero so these win. */
+/* Mirror the editor's Apple-Notes rhythm onto the diplodoc-rendered preview HTML, so toggling into
+   read-only preview doesn't reflow the note. (The body line-height is NOT hand-mirrored: this and
+   the block editor both read the per-font `--gn-editor-line-height` var from index.css, so it stays
+   in sync per font automatically.) The doubled `.note-preview__body.yfm` outranks the base `.yfm`
+   typography without !important; `:where(...)` keeps element specificity at zero so these win. */
 .note-preview__body.yfm {
     line-height: 1.2;
 }
@@ -61,9 +56,8 @@
 
 /* YFM's own base rule `.yfm li:first-child, .yfm li + li { margin-block: 0.33em 0 }` carries element
    specificity (`li` + `:first-child`/`+ li`) that OUTRANKS the zero-element `:where(p, li)` rule above,
-   so preview list items would inherit a ~5px top gap. The editor doesn't show it: its selector
-   (`.g-md-editor.ProseMirror.yfm …`) carries extra classes and wins. Re-assert the per-font list
-   rhythm here at matching specificity so lists line up with the editor (mirrors its `li` margin). */
+   so preview list items would inherit a ~5px top gap. Re-assert the per-font list rhythm here at
+   matching specificity so lists line up with the editor. */
 .note-preview__body.yfm li:first-child,
 .note-preview__body.yfm li + li {
     margin-top: 0;
@@ -167,7 +161,7 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
 }
 
-/* Tighten the gap between checklist rows to match the editor (its .g-md-checkbox rule) — diplodoc
+/* Tighten the gap between checklist rows to match the editor — diplodoc
    gives each `.checkbox` a 15px bottom margin, looser than a checklist wants. */
 .note-preview .note-preview__body.yfm .checkbox {
     margin-bottom: 6px;

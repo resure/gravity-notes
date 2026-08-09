@@ -201,3 +201,126 @@ describe('the block menu', () => {
         expect(document.querySelectorAll('.block')).toHaveLength(5);
     });
 });
+
+describe('[[wiki links]] in the body', () => {
+    const NOTES = [
+        {id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3},
+        {id: 'Work/Spec.md', title: 'Spec', preview: '', updatedAt: 2},
+    ];
+
+    function renderWithNotes(value: string, onChange = vi.fn()) {
+        render(<Editor value={value} notes={NOTES} noteId="Home.md" onChange={onChange} />);
+        return onChange;
+    }
+
+    /**
+     * jsdom has no `document.execCommand`, which is how the editor inserts text at the caret
+     * (`insertPlainTextAtCaret`). A minimal `insertText` over the live Range is enough to exercise
+     * the commit path.
+     */
+    beforeEach(() => {
+        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
+            if (command !== 'insertText') return false;
+            const selection = window.getSelection();
+            if (!selection?.rangeCount) return false;
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            const node = document.createTextNode(value);
+            range.insertNode(node);
+            range.setStartAfter(node);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        }) as typeof document.execCommand;
+    });
+
+    /**
+     * Replace a block's text and fire the input the editor listens for, with the caret parked at the
+     * end — which is what the `[[` trigger reads. jsdom keeps no caret of its own, so a test that
+     * only sets `textContent` looks to the editor like a caret at offset 0.
+     */
+    function type(el: HTMLElement, text: string) {
+        el.textContent = text;
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        act(() => {
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+    }
+
+    it('wraps a link for styling without changing a byte of the text', () => {
+        renderWithNotes('Look at [[Daily log]].');
+        const link = document.querySelector<HTMLElement>('.content .wiki-link')!;
+        expect(link.textContent).toBe('[[Daily log]]');
+        expect(link.classList.contains('wiki-link_broken')).toBe(false);
+    });
+
+    it('marks a link with no target broken', () => {
+        renderWithNotes('Look at [[Nothing here]].');
+        expect(document.querySelector('.content .wiki-link_broken')).toBeInTheDocument();
+    });
+
+    /**
+     * The trap the whole design exists to avoid: the editor re-serializes the WHOLE note on every
+     * keystroke, so a decoration that changed the text would rewrite every link in the file the
+     * first time any character changed. Type one character; the links must come back untouched.
+     */
+    it('does not rewrite links when an unrelated character is typed', () => {
+        const onChange = renderWithNotes('See [[Daily log]] and [[Nothing here]].');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            paragraph.innerHTML = `${paragraph.innerHTML}!`;
+            paragraph.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('See [[Daily log]] and [[Nothing here]].!');
+    });
+
+    it('decorates a link the moment it is completed, keeping the caret where it was', () => {
+        renderWithNotes('See ');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            paragraph.innerHTML = 'See [[Daily log]]';
+            paragraph.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(document.querySelector('.content .wiki-link')?.textContent).toBe('[[Daily log]]');
+    });
+
+    it('opens the picker on `[[` and commits the picked note as a literal link', () => {
+        const onChange = renderWithNotes('');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        paragraph.focus();
+        type(paragraph, '[[');
+
+        const picker = screen.getByRole('listbox', {name: 'Link to a note'});
+        expect(picker).toBeInTheDocument();
+        act(() => {
+            fireEvent.click(screen.getByText('Daily log'));
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('[[Daily log]]');
+    });
+
+    /** §06: the last row always offers to link a note that doesn't exist yet (D19: insert-only). */
+    it('always offers a "Create …" row for a query that names no note', () => {
+        renderWithNotes('');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        paragraph.focus();
+        type(paragraph, '[[');
+        type(paragraph, '[[Brand new');
+        expect(screen.getByText('Create “Brand new”')).toBeInTheDocument();
+    });
+
+    it('closes the picker once the link is closed', () => {
+        renderWithNotes('');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        paragraph.focus();
+        type(paragraph, '[[');
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).toBeInTheDocument();
+        type(paragraph, '[[Daily log]]');
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
+    });
+});

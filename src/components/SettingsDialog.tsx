@@ -9,7 +9,6 @@ import {
     ACCENT_OPTIONS,
     ACCENT_OPTIONS_WS,
     AppearanceChoiceRow,
-    ENGINE_OPTIONS,
     FONT_OPTIONS,
     FONT_OPTIONS_WS,
     WIDTH_OPTIONS,
@@ -66,23 +65,10 @@ export function SettingsDialog({
                 <div className="settings-dialog">
                     <Section title="General">
                         <ToggleRow
-                            title="Show editor toolbar"
-                            checked={settings.showEditorToolbar}
-                            onUpdate={(value) => setSetting('showEditorToolbar', value)}
-                        />
-                        <ToggleRow
                             title="Show note icons"
                             experimental
                             checked={settings.showNoteIcons}
                             onUpdate={(value) => setSetting('showNoteIcons', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Editor"
-                            experimental
-                            options={ENGINE_OPTIONS}
-                            value={settings.editorEngine}
-                            onUpdate={(value) => setSetting('editorEngine', value)}
                         />
                     </Section>
 

@@ -158,7 +158,7 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
             // `photo [1].png`) closes the label early and degrades the whole block to plain text.
             const src = encodeLinkDestination(block.image?.src ?? '');
             const alt = escapeMarkdownText(block.image?.alt ?? '');
-            return [`${indent}![${alt}](${src})`];
+            return [`${indent}![${alt}](${src}${imageSize(block)})`];
         }
 
         case 'heading1':
@@ -204,6 +204,17 @@ function prefixed(content: string, indent: string, marker: string): string[] {
     // to-do into a bullet containing a literal `[ ]`). The parser accepts the bare marker instead.
     const head = first === '' ? `${indent}${marker.trimEnd()}` : `${indent}${marker}${first}`;
     return [head, ...rest.map((line) => (line ? `${hanging}${line}` : ''))];
+}
+
+/**
+ * A resized image's ` =WxH` suffix — the YFM/diplodoc "imsize" spelling, which is what the app's
+ * own preview understands and what other Markdown tools degrade to a plain image. Absent when the
+ * image is at its natural size, so an untouched note never grows the suffix.
+ */
+function imageSize(block: Block): string {
+    const {width, height} = block.image ?? {};
+    if (!width && !height) return '';
+    return ` =${width ?? ''}x${height ?? ''}`;
 }
 
 function longestBacktickRun(text: string): number {

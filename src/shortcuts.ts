@@ -61,7 +61,7 @@ export interface GlobalBinding {
     /**
      * Handle in the capture phase and `stopPropagation`, so the key never reaches the editor. Needed
      * when the chord collides with an editor binding we must override — e.g. ⌘[/⌘] (history) shadow
-     * the markdown editor's list outdent/indent (still reachable via Tab/⇧Tab).
+     * the editor's own list outdent/indent (still reachable via Tab/⇧Tab).
      */
     capture?: boolean;
 }
@@ -208,7 +208,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+shift+;',
-        description: 'Toggle WYSIWYG / Markup',
+        description: 'Toggle blocks / Markdown source',
         group: 'Editing',
         // Match the physical Semicolon key: with Shift held, event.key is ':' on US/UK layouts,
         // so a key-based match would never fire.
@@ -233,7 +233,6 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         // 'i' is a letter, so the shifted event.key ('I') matches case-insensitively — no code needed.
         global: {trigger: 'mod', key: 'i', action: 'openNoteAppearance', shift: true},
     },
-    {keys: 'mod+shift+k', description: 'Insert link (in the editor)', group: 'Editing'},
     {
         keys: 'f2',
         description: 'Rename selected note',
@@ -245,8 +244,8 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         description: 'Move selected note to a folder (from the list)',
         group: 'Editing',
         // 'm' is a letter, so the shifted event.key ('M') matches case-insensitively — no code needed.
-        // inTyping:false scopes this to the list: in the editor ⌘⇧M is the markdown-editor's own
-        // heading chord, so firing the move dialog there too opened both at once (see the gotcha memory).
+        // inTyping:false scopes this to the list: the chord is a typing-surface chord elsewhere, so
+        // firing the move dialog from the editor too opened both at once (see the gotcha memory).
         global: {trigger: 'mod', key: 'm', action: 'moveSelected', shift: true, inTyping: false},
     },
     {

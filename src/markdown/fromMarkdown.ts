@@ -159,11 +159,23 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         }
 
         // ---- standalone image --------------------------------------------------------------
-        const image = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|(\S+?))\s*\)$/.exec(line.text);
-        if (image) {
+        // The optional ` =WxH` tail is the YFM "imsize" suffix a resized image carries; either half
+        // may be blank (` =600x` is the common form the editor writes after a drag-resize).
+        const image = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|(\S+?))(?:\s+=(\d*)x(\d*))?\s*\)$/.exec(
+            line.text,
+        );
+        // A degenerate ` =x` carries no size, so accepting it would drop the suffix on the way back
+        // out — i.e. rewrite the line. Refuse the match instead: the note then fails the round-trip
+        // guard and opens as source, which is the correct outcome for markup we can't reproduce.
+        if (image && !(image[4] === '' && image[5] === '')) {
             const block = newBlock('image');
             block.depth = depth;
-            block.image = {src: image[2] ?? image[3] ?? '', alt: image[1] || undefined};
+            block.image = {
+                src: image[2] ?? image[3] ?? '',
+                alt: image[1] || undefined,
+                width: image[4] ? Number(image[4]) : undefined,
+                height: image[5] ? Number(image[5]) : undefined,
+            };
             push(block, line.indent);
             open = null;
             continue;
