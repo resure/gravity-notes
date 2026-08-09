@@ -1,0 +1,153 @@
+/* Sol — foundations.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   The design bundle's §03 values, verbatim. This file is the ONLY place a colour, radius, shadow,
+   type step or duration is defined; everything else in the app reads a token from here.
+
+   Two things to know before editing:
+
+   • **The neutral is warm and the hue never changes.** Every surface and every ink shares hue 75,
+     which is what makes the greys read as paper rather than as slate. Light and dark are the same
+     ramp walked in opposite directions — and in BOTH, the paper the editor sits on is the extreme
+     of the stack: the brightest surface in light, the LIGHTEST dark surface in dark. Panels are
+     separated from paper by the tint step plus one hairline, never by a border.
+
+   • **The accent is amber and it is fixed** — not a setting; there is no picker. Its permitted uses
+     on desktop are exactly five: the focus ring, the active segment of a toggle group, a hyperlink,
+     the sync dot, and the text selection. Menu and popover highlights are deliberately NEUTRAL:
+     accent marks persistent state, and a menu highlight is only where the keyboard happens to be.
+     Destructive red is not an accent — it is `--danger`, and it never stands in for one.
+
+   Theme comes from `data-theme` on `<html>` (App stamps it, resolving System through `matchMedia`).
+   While Gravity UI is still mounted the dark block is ALSO scoped under `.g-root_theme_dark`, so
+   the two theming systems agree during the transition; that half goes with the last Gravity import. */
+
+:root {
+    /* ── Surfaces ──────────────────────────────────────────────────────────────────────────── */
+    --bg-desk: oklch(0.94 0.008 75);
+    --bg-panel: oklch(0.968 0.006 75);
+    --bg-panel-2: oklch(0.982 0.004 75);
+    --bg-paper: oklch(1 0 0);
+
+    /* ── Ink ───────────────────────────────────────────────────────────────────────────────── */
+    --text-1: oklch(0.24 0.014 75);
+    --text-2: oklch(0.45 0.014 75);
+    --text-3: oklch(0.62 0.011 75);
+    --text-4: oklch(0.74 0.009 75);
+
+    /* ── Washes ────────────────────────────────────────────────────────────────────────────── */
+    --line: rgba(62, 54, 42, 0.08);
+    --bg-hover: rgba(62, 54, 42, 0.04);
+    --bg-selected: rgba(62, 54, 42, 0.065);
+
+    /* ── Accent + danger ───────────────────────────────────────────────────────────────────── */
+    --accent: oklch(0.7 0.14 62);
+    --accent-soft: oklch(0.7 0.14 62 / 0.14);
+    --danger: oklch(0.58 0.2 26);
+
+    /* ── Radii ─────────────────────────────────────────────────────────────────────────────── */
+    --r-xs: 4px; /* chips */
+    --r-sm: 6px; /* buttons, fields */
+    --r-md: 8px; /* menu + list rows */
+    --r-lg: 12px; /* menus, popovers, dialogs */
+    --r-xl: 16px; /* iOS sheets */
+
+    /* ── Shadows ───────────────────────────────────────────────────────────────────────────────
+       Every FLOATING surface (3 and 4) also carries the inset top highlight. That single line is
+       most of what reads as "raised" — drop it and the card goes flat, however deep the shadow. */
+    --shadow-1: 0 1px 2px rgba(52, 44, 32, 0.05); /* inline chip */
+    --shadow-2:
+        0 2px 6px -1px rgba(52, 44, 32, 0.1), 0 1px 2px rgba(52, 44, 32, 0.06); /* tooltip */
+    --shadow-3:
+        0 12px 32px -8px rgba(52, 44, 32, 0.18), 0 2px 6px -1px rgba(52, 44, 32, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9); /* menu, popover */
+    --shadow-4:
+        0 32px 64px -16px rgba(52, 44, 32, 0.28), 0 8px 20px -8px rgba(52, 44, 32, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9); /* dialog, sheet */
+
+    /* ── Type ──────────────────────────────────────────────────────────────────────────────────
+       Size / line-height pairs. Chrome is the system font; only the note title, the editor's H1/H2,
+       and the serif body option are PT Serif (self-hosted, cyrillic-complete — see fonts/).
+       Anything at or above 13.5px carries `letter-spacing: -0.003em`; counts and dates are
+       `tabular-nums` so a column of them doesn't shimmer as it updates. */
+    --fs-label: 9.5px; /* mono, 0.13em tracking, caps — "Pinned", "Today", "Library" */
+    --lh-label: 14px;
+    --fs-meta: 11px;
+    --lh-meta: 14px;
+    --fs-ui-sm: 12px;
+    --lh-ui-sm: 16px;
+    --fs-time: 12px; /* tabular */
+    --lh-time: 16px;
+    --fs-preview: 12.5px;
+    --lh-preview: 17px;
+    --fs-menu: 13.5px;
+    --lh-menu: 18px;
+    --fs-ui: 14px; /* 500 at rest, 600 selected */
+    --lh-ui: 19px;
+    --fs-body: 15px;
+    --lh-body: 24px;
+    --fs-h2: 20px; /* PT Serif 400 */
+    --lh-h2: 27px;
+    --fs-h1: 28px; /* PT Serif 400 */
+    --lh-h1: 34px;
+
+    --font-ui:
+        -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, 'Helvetica Neue', arial, sans-serif;
+    --font-serif: 'PT Serif', georgia, 'Times New Roman', serif;
+    --font-mono: ui-monospace, 'SF Mono', sfmono-regular, menlo, consolas, monospace;
+
+    /* ── Motion ────────────────────────────────────────────────────────────────────────────────
+       Selection NEVER animates: picking a row must feel like it was already selected. Only three
+       moments move — a note-switch crossfade, a block-drag tilt, a pane collapse. */
+    --dur-0: 0ms;
+    --dur-1: 110ms;
+    --dur-2: 170ms;
+    --dur-3: 240ms;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Dark — ink, not slate. Same hue, walked the other way; the paper the editor sits on is the
+   LIGHTEST dark surface, mirroring its role as the brightest light one. The ink's chroma runs
+   about 1.7× the light ramp's, which is what keeps it warm instead of grey at low lightness.
+
+   Scoped under BOTH selectors during the Gravity transition: `[data-theme]` is what the app stamps,
+   `.g-root_theme_dark` is what Gravity's own ThemeProvider still emits. Drop the second one with the
+   last uikit import. */
+[data-theme='dark'],
+.g-root_theme_dark {
+    --bg-desk: oklch(0.15 0.006 75);
+    --bg-panel: oklch(0.19 0.007 75);
+    --bg-panel-2: oklch(0.21 0.007 75);
+    --bg-paper: oklch(0.235 0.008 75);
+
+    --text-1: oklch(0.94 0.008 75);
+    --text-2: oklch(0.72 0.011 75);
+    --text-3: oklch(0.58 0.011 75);
+    --text-4: oklch(0.46 0.011 75);
+
+    --line: rgba(255, 255, 255, 0.09);
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-selected: rgba(255, 255, 255, 0.08);
+
+    --accent: oklch(0.78 0.13 68);
+    --accent-soft: oklch(0.78 0.13 68 / 0.14);
+
+    /* The alphas deepen and the inset highlight drops to 6% — a bright hairline on a dark card
+       reads as a scratch, not as a lit edge. */
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 2px 6px -1px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-3:
+        0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 2px 6px -1px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --shadow-4:
+        0 32px 64px -16px rgba(0, 0, 0, 0.6), 0 8px 20px -8px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* The focus ring, app-wide: 2px of accent, 2px off the control, and `:focus-visible` only — a
+   mouse click on a button must not leave a ring behind. */
+.focus-ring:focus-visible,
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}

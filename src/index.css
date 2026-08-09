@@ -12,72 +12,85 @@ body,
     overscroll-behavior: none;
 }
 
-/* The app icon's orange (mid-tone of the disc gradient). Single source of truth for the menu orb
-   and the saving status dot; theme-independent, so it lives on :root. The orb's luminous halo is
-   derived from the same hue. */
+/* The legacy accent names, kept as ALIASES of the one true `--accent` (tokens.css) while the old
+   chrome is still on screen — 26 usages across 7 files read them. There is no accent SETTING any
+   more: amber is fixed, so nothing swaps these at runtime.
+
+   `--gn-accent-rgb` has to stay a channel triple: several washes build their own alpha with
+   `rgba(var(--gn-accent-rgb), α)`, which no `color-mix` on an oklch value can replace. It is the
+   sRGB rendering of the light accent, restated by hand — retune it if `--accent` moves. */
 :root {
-    /* One hex per accent — the single source for each hue, consumed by the [data-accent] blocks
-       below AND the picker swatch dots (appearanceControls.css). The halo/rgb variants restate a
-       hue numerically (rgba/channel forms CSS can't derive from a hex) — keep those in sync by
-       hand when tuning one of these. */
-    --gn-accent-amber: #ea892b;
-    --gn-accent-blue: #1f81ff;
-    --gn-accent-gray: #8a8a8a;
-    --gn-orange: var(--gn-accent-amber);
-    --gn-orb-halo: rgba(238, 152, 46, 0.55);
-    /* RGB channels of the warmer accent the list-selection wash shares with the orb halo. Exposed as
-       channels (not a color) so the wash can keep its own per-theme alpha via rgba(var(--gn-accent-rgb), α),
-       and so the accent-color setting can recolor the wash too (it overrides these below). */
-    --gn-accent-rgb: 238, 152, 46;
+    --gn-orange: var(--accent);
+    --gn-orb-halo: rgba(219, 136, 51, 0.55);
+    --gn-accent-rgb: 219, 136, 51;
 }
 
-/* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
-   must flip with the theme, so it's set per theme root (matching Gravity's own selectors,
-   and loaded after uikit so it wins). text-brand-contrast keeps button labels readable on
-   the inverted fill. --note-list-selected-bg / --note-list-focus-bg give the active note in the
-   list a faint warm amber wash (close to the logo orange; the keyboard-focused row a clear step
-   stronger so focus reads distinctly from mere selection), kept list-local so Gravity's
-   other selection surfaces stay monochrome. (Visual — smoke-tested.) */
-.g-root_theme_light {
-    --g-color-base-brand: var(--g-color-private-black-600-solid);
-    --g-color-base-brand-hover: var(--g-color-private-black-700-solid);
-    --g-color-base-selection: var(--g-color-private-black-150);
-    --g-color-base-selection-hover: var(--g-color-private-black-200);
-    --g-color-line-brand: var(--g-color-private-black-900-solid);
-    --g-color-text-brand: var(--g-color-private-black-900-solid);
-    --g-color-text-brand-heavy: var(--g-color-private-black-1000-solid);
-    --g-color-text-brand-contrast: var(--g-color-private-white-1000-solid);
-    /* Links follow the accent (--gn-orange, swapped by data-accent): darkened off the accent hue for
-       contrast on the light surface. color-mix keeps one source of truth, so a new accent needs no
-       link tuning. Amber (the default) lands close to the previous hand-picked #c2650f. */
-    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #000 20%);
-    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #000 38%);
-    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 48%);
-    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.1);
-    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.22);
-}
+/* ── The Gravity bridge (temporary) ──────────────────────────────────────────────────────────────
+   Everything Gravity UI still renders — menus, dialogs, buttons, the note list, the folder rail —
+   reads `--g-color-*` from the uikit stylesheet. This block re-points those at the Sol tokens, so
+   the whole app takes the new palette in one step while its SHAPE is still the old one.
 
-.g-root_theme_dark {
-    --g-color-base-brand: var(--g-color-private-white-1000-solid);
-    --g-color-base-brand-hover: var(--g-color-private-white-850-solid);
-    --g-color-base-selection: var(--g-color-private-white-150);
-    --g-color-base-selection-hover: var(--g-color-private-white-200);
-    --g-color-line-brand: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand-heavy: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand-contrast: var(--g-color-private-black-1000-solid);
-    /* Links follow the accent (--gn-orange): lifted off the accent hue for legibility on the dark
-       surface, hover brighter, visited slightly dimmed. See the light block for the rationale. */
-    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #fff 12%);
-    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #fff 30%);
-    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 12%);
-    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.13);
-    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.26);
-    /* A very subtle warm/orange cast on the dark base surfaces (a hint, not a tint you'd name).
-       Tuned live. */
-    --g-color-base-background: #211e1a;
-    --g-color-base-generic: #2a2723;
-    --g-color-base-generic-hover: #332f29;
+   It is scoped to BOTH theming systems on purpose: `.g-root_theme_*` is what Gravity's own
+   ThemeProvider emits today, `[data-theme]` is what the app stamps on `<html>` and what everything
+   built from here on reads. The two agree until the last uikit import goes, and this whole block
+   goes with it.
+
+   Only the variables the app's own surfaces actually consume are mapped. Mapping the whole uikit
+   palette would be busywork with no visible effect and a lot of ways to be subtly wrong. */
+.g-root,
+:root {
+    /* Text ramp — Gravity's four ink levels onto ours, in order. */
+    --g-color-text-primary: var(--text-1);
+    --g-color-text-secondary: var(--text-2);
+    --g-color-text-hint: var(--text-3);
+    --g-color-text-complementary: var(--text-4);
+    --g-color-text-misc: var(--text-2);
+
+    /* Surfaces. `base-background` is the desk the panes sit on; `base-float` is what every popup and
+       dialog fills with, so it takes the paper value — a floating surface must read as the top of
+       the stack, not as another pane. */
+    --g-color-base-background: var(--bg-desk);
+    --g-color-base-float: var(--bg-paper);
+    --g-color-base-modal: var(--bg-paper);
+    --g-color-base-generic: var(--bg-panel);
+    --g-color-base-generic-hover: var(--bg-hover);
+    --g-color-base-simple-hover: var(--bg-hover);
+    --g-color-base-selection: var(--bg-selected);
+    --g-color-base-selection-hover: var(--bg-selected);
+
+    /* Lines. Gravity distinguishes a resting hairline from a hovered one; Sol has one `--line`, so
+       the hover step is the same hairline at a touch more presence. */
+    --g-color-line-generic: var(--line);
+    --g-color-line-generic-hover: var(--line);
+    --g-color-line-generic-active: var(--text-4);
+    --g-color-line-brand: var(--accent);
+
+    /* Danger is not an accent — it is its own colour, and it never stands in for one. */
+    --g-color-base-danger: var(--danger);
+    --g-color-base-danger-light: color-mix(in srgb, var(--danger) 12%, transparent);
+    --g-color-text-danger: var(--danger);
+    --g-color-text-danger-heavy: var(--danger);
+
+    /* The brand stays monochrome ink: a filled Gravity button is a shape, not an accent use (the
+       five permitted accent uses are listed in tokens.css, and "a button" isn't one of them). */
+    --g-color-base-brand: var(--text-1);
+    --g-color-base-brand-hover: var(--text-2);
+    --g-color-text-brand: var(--text-1);
+    --g-color-text-brand-heavy: var(--text-1);
+    --g-color-text-brand-contrast: var(--bg-paper);
+
+    /* Hyperlink IS one of the five. */
+    --g-color-text-link: var(--accent);
+    --g-color-text-link-hover: color-mix(in srgb, var(--accent), var(--text-1) 25%);
+    --g-color-text-link-visited: color-mix(in srgb, var(--accent), var(--text-1) 40%);
+
+    --g-font-family-sans: var(--font-ui);
+
+    /* The note list's own washes: neutral, like every other row highlight in the spec. The
+       keyboard-focused row is a clear step darker than a merely selected one, so focus reads
+       distinctly from selection without either of them borrowing the accent. */
+    --note-list-selected-bg: var(--bg-selected);
+    --note-list-focus-bg: color-mix(in srgb, var(--bg-selected) 180%, transparent);
 }
 
 /* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in
@@ -174,25 +187,6 @@ body,
     --yfm-color-hljs-literal: #d19a66; /* literals: true / false / null */
     --yfm-color-hljs-addition: #61afef; /* built-ins (print), bullets, inline code */
     --yfm-color-hljs-meta: #c678dd; /* decorators / meta */
-}
-
-/* ── Accent-color setting ───────────────────────────────────────────────────────────────────────
-   Swaps the accent trio the orb / saving dot / list-selection wash read (see `--gn-orange` etc.
-   above). `amber` is the `:root` default, so `Workspace` stamps `data-accent` on <html> only for
-   blue/gray — leaving amber off falls through to that default. `:root[data-accent]` out-ranks the
-   base `:root` on specificity, so an explicit choice always wins. Hues come from the `--gn-accent-*`
-   constants on `:root` above (shared with the picker swatch dots in appearanceControls.css); only
-   the halo/rgb restatements live here. */
-:root[data-accent='blue'] {
-    --gn-orange: var(--gn-accent-blue);
-    --gn-orb-halo: rgba(31, 129, 255, 0.55);
-    --gn-accent-rgb: 31, 129, 255;
-}
-
-:root[data-accent='gray'] {
-    --gn-orange: var(--gn-accent-gray);
-    --gn-orb-halo: rgba(138, 138, 138, 0.5);
-    --gn-accent-rgb: 138, 138, 138;
 }
 
 /* ── Text-width setting ─────────────────────────────────────────────────────────────────────────

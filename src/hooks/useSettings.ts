@@ -7,18 +7,14 @@ import type {NoteAppearanceOverride} from '../storage/types';
  * title. Never the app chrome or the raw Markup editor. `sans` is the native system font.
  */
 export type EditorFont = 'sans' | 'serif' | 'mono';
-/** Accent hue for the app mark: the orb menu, the saving-status dot, and the list-selection wash. */
-export type AccentColor = 'amber' | 'blue' | 'gray';
 /** Max text measure of the editor/preview column. `unlimited` = no cap (fills the pane). */
 export type TextWidth = 'narrow' | 'normal' | 'wide' | 'unlimited';
 
 /** Override variants add `'default'` — inherit the wider scope's value instead of overriding it. */
 export type EditorFontPref = 'default' | EditorFont;
-export type AccentColorPref = 'default' | AccentColor;
 export type TextWidthPref = 'default' | TextWidth;
 
 export const EDITOR_FONTS: readonly EditorFont[] = ['sans', 'serif', 'mono'];
-export const ACCENT_COLORS: readonly AccentColor[] = ['amber', 'blue', 'gray'];
 export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'unlimited'];
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
@@ -27,8 +23,6 @@ export interface Settings {
     showNoteIcons: boolean;
     /** Font for the editor + preview + title (note content only). Default `sans` (the system font). */
     editorFont: EditorFont;
-    /** App accent hue. Default `amber` (the logo orange). */
-    accentColor: AccentColor;
     /** Editor/preview text column width. Default `normal` (a readable measure). */
     textWidth: TextWidth;
 }
@@ -36,27 +30,23 @@ export interface Settings {
 const DEFAULTS: Settings = {
     showNoteIcons: false,
     editorFont: 'sans',
-    accentColor: 'amber',
     textWidth: 'normal',
 };
 
 /** Per-workspace overrides of the appearance settings; `'default'` inherits the app-wide value. */
 export interface WorkspaceSettings {
     editorFont: EditorFontPref;
-    accentColor: AccentColorPref;
     textWidth: TextWidthPref;
 }
 
 const WORKSPACE_DEFAULTS: WorkspaceSettings = {
     editorFont: 'default',
-    accentColor: 'default',
     textWidth: 'default',
 };
 
 /**
  * Per-note overrides — the innermost layer; wins over both workspace and app. `'default'` inherits.
- * Accent is deliberately NOT overridable per-note (it's app/workspace only) — the app mark shouldn't
- * recolor as you browse notes. Persisted in the metadata sidecar (like icons), NOT in localStorage,
+ * Persisted in the metadata sidecar (like icons), NOT in localStorage,
  * so it survives rename/move and travels with the folder; see {@link noteAppearanceOf}.
  */
 export interface NoteAppearance {
@@ -84,7 +74,6 @@ function bool(value: unknown, fallback: boolean): boolean {
 }
 
 const FONT_PREFS: readonly EditorFontPref[] = ['default', ...EDITOR_FONTS];
-const ACCENT_PREFS: readonly AccentColorPref[] = ['default', ...ACCENT_COLORS];
 const WIDTH_PREFS: readonly TextWidthPref[] = ['default', ...TEXT_WIDTHS];
 
 /** Read persisted app settings, tolerating absent/corrupt storage and unknown keys (defaults fill gaps). */
@@ -94,7 +83,6 @@ function loadSettings(key: string): Settings {
         return {
             showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
-            accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),
             textWidth: oneOf(raw.textWidth, TEXT_WIDTHS, DEFAULTS.textWidth),
         };
     } catch {
@@ -108,7 +96,6 @@ function loadWorkspaceOverrides(key: string): WorkspaceSettings {
         const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<WorkspaceSettings>;
         return {
             editorFont: oneOf(raw.editorFont, FONT_PREFS, 'default'),
-            accentColor: oneOf(raw.accentColor, ACCENT_PREFS, 'default'),
             textWidth: oneOf(raw.textWidth, WIDTH_PREFS, 'default'),
         };
     } catch {
@@ -279,7 +266,6 @@ export function clearLegacyNoteAppearanceKeys(keys: readonly string[]): void {
 
 export interface EffectiveAppearance {
     editorFont: EditorFont;
-    accentColor: AccentColor;
     textWidth: TextWidth;
 }
 
@@ -293,7 +279,6 @@ function resolve<T extends string>(app: T, workspace: 'default' | T, note: 'defa
 /**
  * Resolve the appearance actually in effect across app → workspace → note. A note override wins over
  * a workspace override, which wins over the app value; `'default'` at any layer inherits outward.
- * Accent has no note layer (it's app/workspace only), so it resolves across the outer two.
  */
 export function effectiveAppearance(
     app: Settings,
@@ -302,7 +287,6 @@ export function effectiveAppearance(
 ): EffectiveAppearance {
     return {
         editorFont: resolve(app.editorFont, workspace.editorFont, note.editorFont),
-        accentColor: resolve<AccentColor>(app.accentColor, workspace.accentColor, 'default'),
         textWidth: resolve(app.textWidth, workspace.textWidth, note.textWidth),
     };
 }

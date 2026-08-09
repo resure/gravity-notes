@@ -6,8 +6,6 @@ import {useIsNarrow} from '../hooks/useIsNarrow';
 import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
 
 import {
-    ACCENT_OPTIONS,
-    ACCENT_OPTIONS_WS,
     AppearanceChoiceRow,
     FONT_OPTIONS,
     FONT_OPTIONS_WS,
@@ -82,13 +80,6 @@ export function SettingsDialog({
                         />
                         <AppearanceChoiceRow
                             layout={rowLayout}
-                            label="Accent color"
-                            options={ACCENT_OPTIONS}
-                            value={settings.accentColor}
-                            onUpdate={(value) => setSetting('accentColor', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
                             label="Text width"
                             options={WIDTH_OPTIONS}
                             value={settings.textWidth}
@@ -103,13 +94,6 @@ export function SettingsDialog({
                             options={FONT_OPTIONS_WS}
                             value={workspaceSettings.editorFont}
                             onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Accent color"
-                            options={ACCENT_OPTIONS_WS}
-                            value={workspaceSettings.accentColor}
-                            onUpdate={(value) => setWorkspaceSetting('accentColor', value)}
                         />
                         <AppearanceChoiceRow
                             layout={rowLayout}
