@@ -16,36 +16,40 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 ## Navigation
 
-| Keys                                | Action                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `↑` / `↓` (or `k` / `j`)            | Preview the previous / next note                                                      |
-| `⌘J` / `⌘K`                         | Preview next / previous note (works while editing)                                    |
-| `⌘[` / `⌘]`                         | Go back / forward through visited notes (browser-style history)                       |
-| `Enter`                             | Edit the selected note (in the title → jump to the body)                              |
-| `⌘Enter` / `⌘-click` / double-click | Open the selected note in its own window _(desktop)_                                  |
-| `⌘0`                                | Show this workspace's main window _(desktop; also Window ▸ Main Window)_              |
-| `Esc`                               | Editor → list → search (then close / clear)                                           |
-| `Esc` `Esc`                         | Focus the search box                                                                  |
-| `⌘L`                                | Jump to the search box (desktop app; browsers reserve it for the address bar)         |
-| `⌘\`                                | Toggle the sidebar                                                                    |
-| `⌘⇧\`                               | Toggle the folder rail                                                                |
-| `⌘'`                                | Peek the collapsed sidebar / focus the list (again to close)                          |
-| `⌃R`                                | Switch workspace — the recent-folders dialog (`↵` open, `⌘↵` new window, `⌘⌫` remove) |
+| Keys                                | Action                                                                                                          |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `↑` / `↓` (or `k` / `j`)            | Preview the previous / next note                                                                                |
+| `⌘J` / `⌘K`                         | Preview next / previous note (works while editing; in **Blocks**, `⌘K` over a selection inserts a link instead) |
+| `⌘[` / `⌘]`                         | Go back / forward through visited notes (browser-style history)                                                 |
+| `Enter`                             | Edit the selected note (in the title → jump to the body)                                                        |
+| `⌘Enter` / `⌘-click` / double-click | Open the selected note in its own window _(desktop)_                                                            |
+| `⌘0`                                | Show this workspace's main window _(desktop; also Window ▸ Main Window)_                                        |
+| `Esc`                               | Editor → list → search (then close / clear)                                                                     |
+| `Esc` `Esc`                         | Focus the search box                                                                                            |
+| `⌘L`                                | Jump to the search box (desktop app; browsers reserve it for the address bar)                                   |
+| `⌘\`                                | Toggle the sidebar                                                                                              |
+| `⌘⇧\`                               | Toggle the folder rail                                                                                          |
+| `⌘'`                                | Peek the collapsed sidebar / focus the list (again to close)                                                    |
+| `⌃R`                                | Switch workspace — the recent-folders dialog (`↵` open, `⌘↵` new window, `⌘⌫` remove)                           |
 
 ## Editing
+
+Rows tagged **Markdown** or **Blocks** apply to that editing surface only (Settings › Editor).
 
 | Keys             | Action                                                                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
-| `⌘⇧;`            | Toggle WYSIWYG / Markup                                                                                                                   |
+| `⌘⇧;`            | Toggle WYSIWYG / Markup — in **Blocks**, the raw Markdown behind the blocks (a plain textarea)                                            |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
-| `⌘⇧K`            | Insert link (in the editor)                                                                                                               |
-| `[[`             | Open the wiki-link note picker (in the editor)                                                                                            |
+| `⌘⇧K`            | Insert link — **Markdown**                                                                                                                |
+| `⌘K`             | Insert link over the selected text — **Blocks** (with nothing selected it still steps notes)                                              |
+| `[[`             | Open the wiki-link note picker — **Markdown**                                                                                             |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
+| `⌘Enter`         | Follow the `[[wiki link]]` under the caret — **Blocks** (⌘-click does the same; URLs stay preview-only)                                   |
 | `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
 | `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's the heading shortcut)                                               |
-| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it)                                                     |
+| `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in a **Blocks** body it duplicates the block      |
 | `⌘⇧⌫`            | Move the selected note to the Trash (asks to confirm; recoverable)                                                                        |
 
 ## General

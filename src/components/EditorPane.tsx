@@ -11,8 +11,11 @@ import {Hotkey, Icon, Select} from '@gravity-ui/uikit';
 import {EditorState, Selection} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
 
+import type {EditorEngine} from '../hooks/useSettings';
+import {isRoundTripStable} from '../markdown';
 import type {Note, NoteMeta} from '../storage/types';
 
+import {BlockEditorBody} from './BlockEditorBody';
 import {NotePreview} from './NotePreview';
 import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
@@ -163,6 +166,8 @@ interface EditorPaneProps {
     showToolbar?: boolean;
     /** Show the note's title icon (Settings › Show note icons, experimental). */
     showNoteIcons?: boolean;
+    /** Which editing surface renders the body (Settings › Editor). */
+    engine?: EditorEngine;
 }
 
 /** Imperative surface the shell uses to drive the editor body. */
@@ -601,12 +606,27 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onSetIcon,
         showToolbar,
         showNoteIcons,
+        engine = 'rich',
     },
     ref,
 ) {
     const titleRef = useRef<NoteTitleHandle>(null);
     const bodyRef = useRef<EditorBodyHandle>(null);
     const bodyWrapRef = useRef<HTMLDivElement>(null);
+    /**
+     * The block engine re-serializes the WHOLE note on every keystroke, so it may only hold a note
+     * whose Markdown survives a parse/serialize cycle byte-for-byte. When it doesn't — Obsidian
+     * frontmatter, a heading deeper than H3, a construct the small line-oriented parser reads
+     * imperfectly — editing in blocks would rewrite parts of the file the user never touched. Fall
+     * back to the Markdown engine for that note instead: the user keeps a fully editable surface and
+     * the file is left alone. Keyed on the session, so it is computed once per opened note.
+     */
+    const blocksSafe = useMemo(
+        () => engine !== 'blocks' || isRoundTripStable(note.content),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [engine, sessionId],
+    );
+    const activeEngine: EditorEngine = engine === 'blocks' && blocksSafe ? 'blocks' : 'rich';
     // The vertical scroll container (see EditorPane.css); EditorBody saves/restores its scrollTop per
     // note so a switch doesn't carry the previous note's scroll over.
     const paneRef = useRef<HTMLDivElement>(null);
@@ -685,7 +705,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             ref={paneRef}
             className={`editor-pane${showToolbar ? ' editor-pane_toolbar' : ''}${
                 scrolled ? ' editor-pane_scrolled' : ''
-            }`}
+            }${activeEngine === 'blocks' ? ' editor-pane_blocks' : ''}`}
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
                 // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
@@ -739,9 +759,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     // (height:100% in the package CSS), so matching it swallows every blank-area
                     // click (the 300px bottom pad, the margins beside a capped text column) and the
                     // unprevented mousedown then focuses the wrapper and BLURS the editor.
+                    // `.gn-block-editor` is the block engine's content host, and it owns its own
+                    // empty-space click (clicking under the last block appends/focuses one there).
+                    // Without it here, EVERY click inside the block editor fell through to the
+                    // focus-the-body path below and yanked the caret to the first block — the
+                    // surface was unusable with a mouse. The block editor's floating overlays need
+                    // no entry: they portal to <body>, so the `contains` guard above has already
+                    // returned by the time this runs.
                     if (
                         (event.target as HTMLElement).closest(
-                            '.g-md-editor, .cm-editor, .g-md-editor-sticky',
+                            '.g-md-editor, .cm-editor, .g-md-editor-sticky, .gn-block-editor',
                         )
                     )
                         return;
@@ -772,18 +799,32 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     }
                 }}
             >
-                <EditorBody
-                    ref={bodyRef}
-                    note={note}
-                    sessionId={sessionId}
-                    preview={preview}
-                    scrollContainerRef={paneRef}
-                    onChange={onChange}
-                    onUploadFile={onUploadFile}
-                    wikiNotes={wikiNotes}
-                    onOpenWikiLink={onOpenWikiLink}
-                    showToolbar={showToolbar}
-                />
+                {activeEngine === 'blocks' ? (
+                    <BlockEditorBody
+                        ref={bodyRef}
+                        note={note}
+                        sessionId={sessionId}
+                        preview={preview}
+                        autofocus={autofocus}
+                        onChange={onChange}
+                        onUploadFile={onUploadFile}
+                        onOpenWikiLink={onOpenWikiLink}
+                        onLeaveTop={() => titleRef.current?.focusAtEnd()}
+                    />
+                ) : (
+                    <EditorBody
+                        ref={bodyRef}
+                        note={note}
+                        sessionId={sessionId}
+                        preview={preview}
+                        scrollContainerRef={paneRef}
+                        onChange={onChange}
+                        onUploadFile={onUploadFile}
+                        wikiNotes={wikiNotes}
+                        onOpenWikiLink={onOpenWikiLink}
+                        showToolbar={showToolbar}
+                    />
+                )}
             </div>
         </div>
     );

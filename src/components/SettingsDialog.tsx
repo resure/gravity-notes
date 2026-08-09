@@ -9,6 +9,7 @@ import {
     ACCENT_OPTIONS,
     ACCENT_OPTIONS_WS,
     AppearanceChoiceRow,
+    ENGINE_OPTIONS,
     FONT_OPTIONS,
     FONT_OPTIONS_WS,
     WIDTH_OPTIONS,
@@ -74,6 +75,14 @@ export function SettingsDialog({
                             experimental
                             checked={settings.showNoteIcons}
                             onUpdate={(value) => setSetting('showNoteIcons', value)}
+                        />
+                        <AppearanceChoiceRow
+                            layout={rowLayout}
+                            label="Editor"
+                            experimental
+                            options={ENGINE_OPTIONS}
+                            value={settings.editorEngine}
+                            onUpdate={(value) => setSetting('editorEngine', value)}
                         />
                     </Section>
 

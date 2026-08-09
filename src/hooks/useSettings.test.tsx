@@ -21,6 +21,7 @@ const APP: Settings = {
     editorFont: 'serif',
     accentColor: 'blue',
     textWidth: 'wide',
+    editorEngine: 'rich',
 };
 
 const WS_DEFAULT: WorkspaceSettings = {

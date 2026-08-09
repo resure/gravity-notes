@@ -1,12 +1,13 @@
 import type {ReactNode} from 'react';
 
-import {SegmentedRadioGroup, Text} from '@gravity-ui/uikit';
+import {Label, SegmentedRadioGroup, Text} from '@gravity-ui/uikit';
 
 import {
     ACCENT_COLORS,
     type AccentColor,
     type AccentColorPref,
     EDITOR_FONTS,
+    type EditorEngine,
     type EditorFont,
     type EditorFontPref,
     TEXT_WIDTHS,
@@ -32,6 +33,8 @@ export interface AppearanceChoiceRowProps<T extends string> {
      *  `stack` — a small label above a full-width control (note-appearance popover).
      */
     layout: 'row' | 'stack';
+    /** Tag the row as experimental, like `ToggleRow` in the Settings dialog. */
+    experimental?: boolean;
 }
 
 /** One appearance picker: a label + segmented control, in the layout its host needs. */
@@ -41,6 +44,7 @@ export function AppearanceChoiceRow<T extends string>({
     value,
     onUpdate,
     layout,
+    experimental,
 }: AppearanceChoiceRowProps<T>) {
     return (
         <div className={`appearance-choice appearance-choice_${layout}`}>
@@ -49,6 +53,11 @@ export function AppearanceChoiceRow<T extends string>({
                 className="appearance-choice__label"
             >
                 {label}
+                {experimental ? (
+                    <Label theme="info" size="xs">
+                        Experimental
+                    </Label>
+                ) : null}
             </Text>
             <SegmentedRadioGroup
                 className="appearance-choice__picker"
@@ -103,6 +112,12 @@ export const WIDTH_OPTIONS: {value: TextWidth; content: string}[] = TEXT_WIDTHS.
 }));
 
 const DEFAULT_OPTION = {value: 'default' as const, content: 'Default'};
+
+/** Editing surface (Settings › General). Labels name the surface, not the library behind it. */
+export const ENGINE_OPTIONS: {value: EditorEngine; content: string}[] = [
+    {value: 'rich', content: 'Markdown'},
+    {value: 'blocks', content: 'Blocks'},
+];
 
 export const FONT_OPTIONS_WS: {value: EditorFontPref; content: ReactNode}[] = [
     DEFAULT_OPTION,

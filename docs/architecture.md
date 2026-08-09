@@ -151,8 +151,72 @@ GitHub Releases (signature-verified). Bulk listings skip iCloud **dataless** fil
 not-yet-downloaded vault doesn't block on the network; such notes list by name and fill in once
 macOS materializes them.
 
+## Two editors
+
+The note body can be edited by either of two surfaces (**Settings › Editor**); both read and write
+the same `.md` files, so switching is safe at any time.
+
+- **Markdown** (default) — `@gravity-ui/markdown-editor`: WYSIWYG plus a raw Markup mode (⌘⇧;), the
+  `[[` link picker and link tooltips, KaTeX, syntax highlighting, and the attachment image NodeView.
+- **Blocks** — a Notion-style block editor (vendored into this repo, and developed here): every
+  block is its own `contentEditable`, with a slash menu, drag-to-reorder, block selection, tables,
+  and to-dos. Its own page chrome was removed — the pane supplies the title, icon, and save state.
+
+They plug into the same pane behind one imperative contract, so the title, icon, read-only preview,
+Esc ladder, and backlinks are shared. What differs is how a note becomes a document: the Markdown
+editor is a long-lived instance whose content is swapped on a note switch (it saves and restores
+scroll itself), while the block editor parses Markdown into blocks once per session and remounts.
+
+### How blocks map to Markdown
+
+`src/markdown/` converts between the two. Ordinary Markdown carries most of it — headings, lists,
+task lists, quotes, fenced code, GFM tables — and the three block types Markdown cannot spell get a
+portable encoding rather than a private one:
+
+| Block   | On disk                                                            |
+| ------- | ------------------------------------------------------------------ |
+| toggle  | `<details>` + `<summary>` (collapsed state = the `open` attribute) |
+| callout | an Obsidian `> [!note]` callout, which degrades to a quote         |
+| image   | `![alt](Attachments/…)`, like every other attachment               |
+
+The round trip is meant to be a fixed point: opening a note and saving it unchanged must not rewrite
+the file. Two rules protect that in the small — a `[[wiki link]]` is never escaped (it stays the
+literal bytes Obsidian writes, which is also what the backlink scan reads), and a soft line break
+inside a block is written as a plain newline rather than a backslash, so files don't sprout
+punctuation on first save.
+
+Intent isn't proof, so the block editor **checks** instead of assuming. On load it parses the file
+into blocks, writes those back out, and compares the result to the bytes it started from. If they
+differ — the file holds something the block model can't reproduce — that note opens in the
+**Markdown** editor instead, even with Blocks selected. You keep a fully editable surface and the
+file is left exactly as it was.
+
+That check is the safety property the whole mapping rests on, and it is what makes the parser's
+incompleteness survivable. The block editor has no incremental edit model: every keystroke
+re-serializes the _whole_ document, so the file it writes reflects what the parser understood, not
+what you touched. Without the check, any construct it read imperfectly was rewritten across the
+entire note the first time a single character changed anywhere in it. With it, a construct nobody
+anticipated costs you the block surface for that one note rather than the note's contents.
+
+Editing a note in the block editor **does** rewrite the parts you touch into its own canonical form —
+that is what any structured editor does, and it is why the mapping favours plain, widely-understood
+Markdown over anything clever.
+
 ## Known limitations
 
+- **The block editor is not feature-equal with the Markdown one.** Choosing **Blocks** in Settings
+  gives up the `[[` autocomplete picker and link tooltips, KaTeX, and code syntax highlighting
+  (⌘-click and ⌘↵ still follow a `[[wiki link]]`). Its raw-Markdown mode (⌘⇧;, same shortcut as the
+  other engine) is a plain textarea rather than a CodeMirror surface, so it has no highlighting or
+  Markdown-aware editing of its own. Two of its own features have no Markdown spelling and are
+  dropped when it saves: block **colors** and a table's **header-column** flag.
+- **A note Blocks can't represent opens in Markdown instead.** The block model is smaller than
+  Markdown — headings stop at H3, a fenced code block has nowhere to keep its language, a callout
+  has nowhere to keep its kind, a table has nowhere to keep column alignment, and YAML frontmatter
+  isn't a block at all — and the parser is line-oriented rather than full CommonMark. Any file
+  holding such a construct fails the load-time check and simply opens in the Markdown editor. The
+  price is the occasional note Blocks won't take, which is also why Markdown stays the default:
+  Blocks is an alternative surface, not a replacement.
 - **Two windows on one store can clobber each other's _metadata_.** The sidecar (sort, pins,
   icons, per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
   workspace assignments and note _bodies_ (the live watcher + conflict banner) through the shell,

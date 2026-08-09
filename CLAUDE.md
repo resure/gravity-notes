@@ -309,8 +309,58 @@ Key modules:
   Gravity's `Dialog` focus-manager can park focus on the dialog container, where an input handler goes
   silent. Callers own filtering + rendering + pre-highlight seeding; `highlightMatch` (shared) marks
   the filter match.
+- `src/markdown/` — **Block[] ⇄ Markdown**, the format seam for the block editor (below): pure,
+  DOM-free, node-testable. `toMarkdown` favours what other tools understand (headings, lists, task
+  lists, GFM tables, fenced code) and gives the three types with no Markdown spelling a portable
+  encoding — toggle → `<details>` (the collapsed state rides on the `open` attribute), callout →
+  an Obsidian `> [!note]`, image → `![](Attachments/…)`. `fromMarkdown` is a small LINE-ORIENTED
+  parser, not CommonMark: it must recognise exactly what the writer emits (the round trip is the
+  design intent — a load/save cycle must not rewrite a file) and degrade everything else to
+  paragraphs. Degrading is only SAFE because the fixed point is **verified, not assumed**:
+  `isRoundTripStable` (`roundTrip.ts`) checks `blocksToMarkdown(markdownToBlocks(text)) === text` and
+  `EditorPane` consults it per session, falling back to the `rich` engine for THAT note when it fails
+  (`activeEngine`, not `engine`, drives the body and the CSS modifier). This is load-bearing, not
+  belt-and-braces: the block engine re-serializes the WHOLE document on every keystroke, so anything
+  the parser reads imperfectly is rewritten across the whole note on the first edit anywhere in it —
+  frontmatter, an H4, a fence's language, a callout's kind, a table's alignment. Anything that widens
+  the parser must keep that check as the backstop, and `markdown.test.ts` pins both halves (the
+  regression corpus of notes this once corrupted, and the constructs the guard is expected to reject).
+  `inline.ts` is a hand-rolled scanner for the span level; two rules matter — a `[[wiki link]]` is
+  NEVER escaped (it reaches disk as the literal bytes Obsidian writes, which is what the backlink
+  scan looks for), and a `<br>` is written as a plain newline, not a backslash hard break, so a
+  soft-wrapped paragraph survives a save without the file sprouting punctuation.
+- `src/components/blockEditor/` — the **Notion-style block editor**: each block is its own
+  `contentEditable` (no ProseMirror), with a slash menu, drag handles, block selection, tables, and
+  its own undo history. It began life as a standalone app and is now **vendored — this is its home**,
+  so it's edited freely rather than kept re-syncable: the standalone page chrome (its own title,
+  icon picker, save indicator, undo buttons) has been deleted, since the pane above supplies all of
+  it, and the surviving surface is body-only. Three things to know: `editor.css` is scoped under
+  `.gn-block-editor` by `scripts/scope-css.mjs` (its class names — `.page`, `.content`, `.block` —
+  would otherwise style the rest of the app); its palette is Notion's, hard-coded light, so the ink
+  is a `--n-ink` channel triple that `.g-root_theme_dark` re-tints in one line; and the floating
+  overlays (slash menu, block menu, selection toolbar) are `position: fixed` in VIEWPORT coordinates
+  AND portaled to `<body>` via `OverlayPortal` — the host pane scrolls, clips its overflow, and
+  carries a `transform`, which both re-anchors `fixed` to the pane and cuts the overlay off. The
+  portal host re-applies the `.gn-block-editor` scope class (with `display: contents`) so the scoped
+  rules still match once the overlay leaves the subtree. Block furniture is SPLIT across both
+  margins — drag handle left, add button right — so the left gutter only has to fit one 18px button
+  (`.editor-pane_blocks` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
+  too, so title and body keep one left edge).
+  ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
+  and IS a textbox; the rules can't tell, and the editor drives focus itself).
+- `src/components/BlockEditorBody.tsx` — the **adapter** that makes the block editor a drop-in for
+  `EditorPane`'s Gravity-markdown body: same props, same imperative handle, so the pane (title,
+  icon, preview badge, Esc ladder, backlinks) is unaware of which engine is mounted. `focus()` is
+  deliberately caret-PRESERVING (a no-op when focus is already in the body) — the pane calls it on
+  every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
+  made the surface unusable with a mouse. The engines
+  differ structurally — the Gravity editor is one long-lived instance whose CONTENT is swapped on a
+  note switch (hence its `scrollContainerRef` + scroll save/restore), while the block editor reads
+  its document once per session and is simply keyed on `sessionId`, so a switch is a remount.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
-  text width + the toolbar/icons toggles), `WorkspaceSettings` (per-workspace `'default'`-able
+  text width + the toolbar/icons toggles + `editorEngine`, which picks the body surface —
+  `rich` = `@gravity-ui/markdown-editor` (default), `blocks` = the block editor above; both read and
+  write the same `.md`, so it is switchable at any time), `WorkspaceSettings` (per-workspace `'default'`-able
   overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
   deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
   and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
@@ -366,7 +416,8 @@ Key modules:
   menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
   list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays the markdown heading shortcut; shares
   `useListboxNav` with the workspace switcher),
-  `EditorPane` (wraps the Gravity markdown editor; re-created per editing session via a stable
+  `EditorPane` (wraps the note body — the Gravity markdown editor, or the block editor when
+  Settings › Editor is `blocks`, behind one imperative contract; re-created per editing session via a stable
   `useNotes.sessionId`, so a rename doesn't remount it; saves/restores per-note **scroll + caret** on
   switch — the reused editor would otherwise carry the previous note's scrollTop; a note switch also
   hard-resets BOTH undo histories — ProseMirror via a fresh `EditorState`, and markup-mode CodeMirror
