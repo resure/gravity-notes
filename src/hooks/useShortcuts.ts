@@ -56,6 +56,16 @@ export function useShortcuts(actions: ShortcutActions): void {
             // closed, so its presence means one is open. The dialog's own keys are handled by its
             // own listeners, not this hook.
             if (document.querySelector('[role="dialog"]')) return;
+            // An editing surface that already acted on this chord marks it handled, and a global
+            // twin must not fire on top of it. `stopPropagation` cannot express that: the editors
+            // handle keys through React's root listener while this hook listens on `document`, and
+            // on bubble `document` is the LAST hop — but this listener is registered at Workspace
+            // mount, so for the capture pass it is also the FIRST. Either way the flag is the only
+            // signal that survives. Without it, the block editor's ⌘D duplicated the block AND ran
+            // `duplicateSelected`, writing a stray duplicate `.md` into the vault, while its ⌘K
+            // opened the link input AND ran `selectPrevNote`, remounting the session and discarding
+            // the half-typed link.
+            if (event.defaultPrevented) return;
             const typing = isTypingTarget(document.activeElement);
             for (const {global: binding, desktopOnly} of SHORTCUTS) {
                 if (!binding) continue;

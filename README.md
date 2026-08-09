@@ -25,6 +25,9 @@ Markdown files, and they are yours.
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
 - **Gravity Markdown editor**: WYSIWYG and markup modes, read-only preview, live URLs
+- **Or a Notion-style block editor** (Settings › Editor, experimental): slash menu, drag-to-reorder,
+  block selection — writing the same plain `.md` files, and stepping aside for the Markdown editor on
+  a note it can't represent exactly, so your file is never rewritten to fit it
 - **Markdown clipboard**: copy/paste with `⌘C` / `⌘V`; add `Shift` to copy or paste plain text,
   stripping Markdown and rich-text formatting
 - **Optional spellcheck** in both editor modes — toggle “Check spelling” in Settings (off by default)

@@ -221,6 +221,7 @@ body,
 .editor-pane .note-title-row,
 .editor-pane .g-md-wysiwyg-editor__editor,
 .editor-pane .note-preview__body,
+.editor-pane .gn-block-editor .page,
 .editor-pane_toolbar .g-md-flex-toolbar {
     /* width:100% gives these (flex) items a definite basis so `margin-inline:auto` centers them
        instead of collapsing them to content width. box-sizing keeps the --editor-gutter padding

@@ -262,3 +262,40 @@
 .editor-pane .g-md-editor.g-prosemirror_mod-pressed a {
     cursor: pointer;
 }
+
+/* ── Block editor (Settings › Editor = Blocks) ───────────────────────────────────────────────────
+   The block editor puts a drag handle in the margin to the LEFT of each block (and the add button
+   in the right margin, so the left side only has to fit one 18px button). The default 16px gutter
+   would leave it hanging off the pane edge, so widen the gutter a little for the whole pane — the
+   note TITLE reads the same variable, so title and body keep one shared left edge and the handle
+   sits inside the gutter rather than pushing the text right. */
+.editor-pane_blocks {
+    --editor-gutter: 36px;
+}
+
+/* On a phone the handle track isn't worth the width (the handles are hover furniture), so fall back
+   to the standard gutter — the block editor drops its own extra padding at the same breakpoint. */
+@media (max-width: 720px) {
+    .editor-pane_blocks {
+        --editor-gutter: 16px;
+    }
+}
+
+/* Raw-Markdown mode of the block editor (⌘⇧;) — a plain textarea over the note's source, sized and
+   inset like the block surface it replaces so toggling doesn't shift the text. */
+.block-editor-markup {
+    display: block;
+    width: 100%;
+    min-height: 60vh;
+    padding: 4px var(--editor-gutter, 16px) 30vh;
+    border: 0;
+    background: none;
+    color: var(--g-color-text-primary);
+    font-family: var(--g-font-family-monospace);
+    font-size: 14px;
+    line-height: 1.6;
+    tab-size: 2;
+    resize: none;
+    outline: none;
+    box-sizing: border-box;
+}
