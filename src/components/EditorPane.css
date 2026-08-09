@@ -1,148 +1,6 @@
-/* Markdown-first surface: hide the formatting toolbar strip + the settings gear — UNLESS the
-   "Show editor toolbar" setting is on (`.editor-pane_toolbar`, see EditorPane.tsx / useSettings).
-   (Selectors target the shipped @gravity-ui/markdown-editor classes.) */
-.editor-pane:not(.editor-pane_toolbar) .g-md-editor-sticky,
-.editor-pane:not(.editor-pane_toolbar) .g-md-toolbar {
-    display: none;
-}
-
-/* With the toolbar hidden the editor keeps its "has toolbar" modifier (which pads the content 16px
-   top/bottom) — bring the top gap down to a small, comfortable value. When the toolbar is shown, leave
-   the editor's own padding so the content clears the sticky bar. */
-.editor-pane:not(.editor-pane_toolbar) .g-md-wysiwyg-editor_toolbar .yfm-editor {
-    padding-top: 8px;
-}
-
-/* Toolbar shown (Settings › Show editor toolbar): give the sticky bar a solid background so scrolling
-   note text doesn't bleed through it, and inset its controls by --editor-gutter so they left-align
-   with the title + body (which the bar otherwise sits flush-left of). The `z-index` is load-bearing:
-   the sticky bar has `z-index: auto`, so the (later-painted) note content stacks ON TOP of it — even
-   with a solid background — and shows through; lifting it above the content fixes that. */
-.editor-pane_toolbar .g-md-editor-sticky {
-    background: var(--g-color-base-background);
-    z-index: 2;
-    /* The bundle sticks it at `top: 8px`, leaving an 8px strip above the bar where scrolling content
-       shows through; stick it flush to the pane top instead. */
-    top: 0;
-    /* A little vertical breathing room so an active button's highlight doesn't touch the bar edges.
-       Padded here (the outer wrapper) so the whole button row AND the trailing "…" overflow button
-       inset together — and the background/hairline still sit at the wrapper's outer edges. */
-    padding-top: 4px;
-    padding-bottom: 4px;
-}
-/* The whole toolbar (buttons + the trailing "…" overflow) is constrained to the note's text column
-   by the grouped centering rule in index.css — applied to the outer `.g-md-flex-toolbar` (holds
-   both) so the overflow comes along and the centering context matches the content scroller; the
-   sticky wrapper's background/hairline stay full-width. The `padding-inline` here is visually
-   absorbed by the inner container (which fills the border box), but it still shrinks the width
-   Gravity measures for collapsing — so the buttons fold into the "…" overflow a bit sooner as the
-   window narrows. */
-.editor-pane_toolbar .g-md-flex-toolbar {
-    padding-inline: var(--editor-gutter, 16px);
-}
-
-/* Inset the actual button row so the FIRST icon lines up with the note text. The text edge sits at
-   --editor-gutter + the ProseMirror root's own 4px inner padding, and each toolbar glyph is inset
-   ~6px in its button — so gutter + 4 − 6 = gutter − 2 lands the first icon on the text edge. Kept as
-   a calc over the shared var (like every other aligned surface) so a gutter change moves the toolbar
-   with the title/body/preview instead of stranding it. (Padding on `.g-md-flex-toolbar` above is
-   absorbed by its container, so it can't do this — the inset has to live on the button row.) */
-.editor-pane_toolbar .g-md-toolbar {
-    padding-left: calc(var(--editor-gutter, 16px) - 2px);
-}
-
-/* Once the note is scrolled the toolbar is stuck to the top with content sliding under it — a hairline
-   separates the two (box-shadow, not border, so toggling it adds no 1px layout shift). */
-.editor-pane_toolbar.editor-pane_scrolled .g-md-editor-sticky {
-    box-shadow: 0 1px 0 0 var(--g-color-line-generic);
-}
-
-/* Block-type (Text/H1–H6) Select options in the floating selection toolbar — icon + label + the
-   shortcut badge in a row. The selection toolbar portals to document.body, so this is NOT nested
-   under .editor-pane. */
-.g-md-toolbar-text-select__option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Let the label take the slack so the keyboard-shortcut badge sits at the trailing edge. */
-.g-md-toolbar-text-select__option-label {
-    flex: 1 1 auto;
-}
-
-/* Comfortable reading rhythm: a relaxed line-height. Blank lines between paragraphs are real empty
-   rows (preserveEmptyRows) that carry most of the gap, but a small paragraph bottom-margin gives
-   adjacent paragraphs (no explicit blank line) a little air too. The content typography lives deep in
-   the YFM stylesheets; the extra .ProseMirror.yfm classes outrank it so these win without !important.
-   Read-only preview mode re-scopes this same rhythm onto its static `.yfm` HTML — keep the values
-   here and in NotePreview.css in sync. */
-.editor-pane .g-md-editor.ProseMirror.yfm {
-    line-height: 1.2;
-}
-
-.editor-pane .g-md-editor.ProseMirror.yfm :where(p, li) {
-    margin-top: 0;
-    margin-bottom: 1px;
-    /* Per-font body leading (set per data-editor-font in index.css); the fallback is the sans value.
-       Preview mirrors this same var, so the two modes stay in lockstep per font. */
-    line-height: var(--gn-editor-line-height, 1.35);
-}
-
-/* Lists get their own per-font rhythm (index.css): a touch more leading + a small gap between items,
-   overriding the body values above for `<li>` only (the element selector out-ranks the :where above).
-   Sans loosens; serif/mono fall back to the body rhythm. Preview mirrors this — keep it in sync. */
-.editor-pane .g-md-editor.ProseMirror.yfm li {
-    margin-bottom: var(--gn-editor-list-gap, 1px);
-    line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.35));
-}
-
-/* A touch of margin between paragraphs. */
-.editor-pane .g-md-editor.ProseMirror.yfm p {
-    margin-bottom: 6px;
-}
-
-/* …but YFM wraps each list item's text in its own <p>, so the rule above would balloon the gap
-   between list items. Keep list paragraphs tight so lists stay compact. */
-.editor-pane .g-md-editor.ProseMirror.yfm li p {
-    margin-bottom: 0;
-}
-
-/* Block elements get real air above them. The paragraph above has an almost-zero bottom margin, so
-   without this a table or code block hugs the preceding line (YFM gives blocks a 0 top / 15px bottom
-   margin). Restore a top gap that mirrors the space below. The `> :first-child` rule below still
-   wins by specificity, so a block that opens the note stays flush with the top. */
-.editor-pane .g-md-editor.ProseMirror.yfm :where(pre, table, blockquote) {
-    margin-top: 12px;
-}
-
-/* Headers hug the content they title: a small bottom margin, and a top-margin hierarchy
-   so bigger headings get more space above them (the editor's default is uniform). */
-.editor-pane .g-md-editor.ProseMirror.yfm :where(h1, h2, h3, h4, h5, h6) {
-    margin-bottom: 4px;
-}
-.editor-pane .g-md-editor.ProseMirror.yfm h1 {
-    margin-top: 24px;
-}
-.editor-pane .g-md-editor.ProseMirror.yfm h2 {
-    margin-top: 19px;
-}
-.editor-pane .g-md-editor.ProseMirror.yfm h3 {
-    margin-top: 15px;
-}
-.editor-pane .g-md-editor.ProseMirror.yfm h4 {
-    margin-top: 12px;
-}
-.editor-pane .g-md-editor.ProseMirror.yfm h5,
-.editor-pane .g-md-editor.ProseMirror.yfm h6 {
-    margin-top: 9px;
-}
-
-/* No empty gap when a heading (or any block) opens the note — the editor's top padding
-   already provides the space above the first line. */
-.editor-pane .g-md-editor.ProseMirror.yfm > :first-child {
-    margin-top: 0;
-}
+/* The open-note surface: the note title above the block editor body. There is no toolbar and no
+   ProseMirror/CodeMirror chrome to tame here any more — the block editor owns its own layout
+   (blockEditor/editor.css); this file is the pane around it. */
 
 /* The title and the editor body share one vertical scroll container: .editor-pane is the
    scroller, so the title (its first child) scrolls away with the content instead of staying
@@ -168,121 +26,31 @@
     /* Grow to fill a short note (whole area stays click-to-focus); a tall note overflows the
        pane, which scrolls — carrying the title up out of view. The unbounded grow (no shrink,
        no min-height) deliberately keeps the scroll on .editor-pane rather than the markdown
-       editor's own internal scroller (.g-md-wysiwyg-editor__editor has overflow-y: auto) — so
-       don't "restore" flex: 1 1 auto / overflow here; it would re-pin the title. */
+       editor's own scroller — so don't "restore" flex: 1 1 auto / overflow here; it would re-pin
+       the title. */
     flex: 1 0 auto;
 }
 
-/* Apple-Notes-style short dashes for bullet lists. Chromium honors `::marker { content }`, but
-   WebKit (the desktop app's WKWebView) ignores `content` on ::marker and falls back to default
-   discs. `list-style-type: <string>` is honored by both engines (Chrome 79+, Safari 17+), so set
-   it too — in Chromium the ::marker rule still drives the exact rendering. */
-.editor-pane .g-md-editor ul > li {
-    list-style-type: '–  ';
-}
-.editor-pane .g-md-editor ul > li::marker {
-    content: '–  ';
-}
-
-/* …but not on checklist rows — the checkbox replaces the bullet. The editor renders
-   checkboxes as a .g-md-checkbox div inside ordinary <ul> items (no GFM task-list class). */
-.editor-pane .g-md-editor ul > li:has(.g-md-checkbox) {
-    list-style-type: none;
-}
-.editor-pane .g-md-editor ul > li:has(.g-md-checkbox)::marker {
-    content: '';
-}
-
-/* Tighten the gap between checklist rows — the editor gives each `.g-md-checkbox` a 15px bottom
-   margin (paragraph rhythm), which reads loose for a checklist; pull it in for a denser, more
-   Notion-like list. */
-.editor-pane .g-md-editor .g-md-checkbox {
-    margin-bottom: 6px;
-}
-
-/* Notion-style checkbox: a custom-drawn rounded square (native chrome stripped via
-   appearance:none) that fills with the app accent and shows a white check when ticked. The check is
-   a background SVG, not a pseudo-element — <input> is a replaced element and WebKit won't render
-   ::before/::after on it. Both the editor (here) and the read-only preview (NotePreview.css) share
-   the look; keep the two in sync. */
-.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox'] {
-    appearance: none;
-    -webkit-appearance: none;
-    box-sizing: border-box;
-    flex: none;
-    width: 17px;
-    height: 17px;
-    /* Vertical alignment: the plugin pins the box to the row's top (align-self:flex-start) and shifts
-       it 3px down with a positioned `top` — neutralize that, then center the box within ONE line via
-       margin-top. `1lh` (= the inherited text line-height) minus the box height, halved, centres the
-       17px box on the first text line at any font size (and keeps it on the FIRST line when the item
-       wraps, since flex-start still pins to the top). */
-    position: relative;
-    top: 0;
-    align-self: flex-start;
-    line-height: inherit;
-    margin: calc((1lh - 17px) / 2) 7px 0 0;
-    border: 1.5px solid var(--g-color-line-generic-hover);
-    border-radius: 5px;
-    background-color: transparent;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 12px 12px;
-    cursor: pointer;
-    transition:
-        background-color 0.12s ease,
-        border-color 0.12s ease;
-}
-
-/* Hover on an unticked box: a faint accent-tinted fill + accent border, matching Notion's affordance. */
-/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this is a checkbox the
-   user taps to tick, so the affordance must not cost the tap that toggles it. */
-@media (hover: hover) {
-    .editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:hover:not(:checked) {
-        border-color: var(--gn-orange);
-        background-color: rgba(var(--gn-accent-rgb), 0.12);
-    }
-}
-
-/* Ticked: accent fill + a white check glyph. */
-.editor-pane .g-md-editor .g-md-checkbox__input[type='checkbox']:checked {
-    border-color: var(--gn-orange);
-    background-color: var(--gn-orange);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
-}
-
-/* Checklist rows should indent like the dashed (bulleted) lists — the checkbox box adds extra
-   width, so pull the row's content left to match. Tuned live against a bulleted list. */
-.editor-pane .g-md-editor ul > li:has(.g-md-checkbox) {
-    margin-left: -2px;
-}
-
-/* While ⌘/Ctrl is held (class toggled by openLinkExtension), links read as clickable — show the
-   pointer cursor so the affordance matches the ⌘-click-to-open behaviour. */
-.editor-pane .g-md-editor.g-prosemirror_mod-pressed a {
-    cursor: pointer;
-}
-
-/* ── Block editor (Settings › Editor = Blocks) ───────────────────────────────────────────────────
-   The block editor puts a drag handle in the margin to the LEFT of each block (and the add button
+/* The block editor puts a drag handle in the margin to the LEFT of each block (and the add button
    in the right margin, so the left side only has to fit one 18px button). The default 16px gutter
-   would leave it hanging off the pane edge, so widen the gutter a little for the whole pane — the
-   note TITLE reads the same variable, so title and body keep one shared left edge and the handle
-   sits inside the gutter rather than pushing the text right. */
-.editor-pane_blocks {
+   would leave it hanging off the pane edge, so the pane runs a wider one — the note TITLE reads the
+   same variable, so title and body keep one shared left edge and the handle sits inside the gutter
+   rather than pushing the text right. */
+.editor-pane {
     --editor-gutter: 36px;
 }
 
 /* On a phone the handle track isn't worth the width (the handles are hover furniture), so fall back
    to the standard gutter — the block editor drops its own extra padding at the same breakpoint. */
 @media (max-width: 720px) {
-    .editor-pane_blocks {
+    .editor-pane {
         --editor-gutter: 16px;
     }
 }
 
-/* Raw-Markdown mode of the block editor (⌘⇧;) — a plain textarea over the note's source, sized and
-   inset like the block surface it replaces so toggling doesn't shift the text. */
+/* Raw-Markdown mode (⌘⇧;, and the forced surface for a note the block model can't hold) — a plain
+   textarea over the note's source, sized and inset like the block surface it replaces so toggling
+   doesn't shift the text. */
 .block-editor-markup {
     display: block;
     width: 100%;
@@ -298,4 +66,14 @@
     resize: none;
     outline: none;
     box-sizing: border-box;
+}
+
+/* The one-line notice above the source view when a note was FORCED onto it (see roundTrip.ts):
+   quiet, so it reads as an explanation rather than an error. */
+.block-editor-source__notice {
+    margin: 0;
+    padding: 8px var(--editor-gutter, 16px) 0;
+    color: var(--g-color-text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
 }

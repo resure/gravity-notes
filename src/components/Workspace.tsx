@@ -1726,15 +1726,12 @@ export function Workspace({
                                         onRename={handleEditorRename}
                                         onEscape={handleEditorEscape}
                                         onUploadFile={handleUploadFile}
-                                        onError={onError}
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
-                                        showToolbar={settings.showEditorToolbar}
                                         spellcheck={settings.spellcheck}
                                         showNoteIcons={settings.showNoteIcons}
-                                        engine={settings.editorEngine}
                                     />
                                 </div>
                                 <BacklinksPanel

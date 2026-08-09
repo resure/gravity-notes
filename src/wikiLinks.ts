@@ -40,7 +40,7 @@ export function extractWikiLinks(text: string): WikiLinkRef[] {
 }
 
 /** Strip an `|alias` and a `#heading` anchor off a target, leaving just the note reference. */
-function normalizeTarget(target: string): string {
+export function normalizeTarget(target: string): string {
     let ref = target.split('|', 1)[0]; // drop Obsidian-style display alias
     const hash = ref.indexOf('#');
     if (hash !== -1) ref = ref.slice(0, hash); // drop a #heading anchor
@@ -117,6 +117,21 @@ function resolveWith(target: string, fromId: string, index: ResolveIndex): strin
  */
 export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[]): string | null {
     return resolveWith(target, fromId, buildResolveIndex(notes));
+}
+
+/**
+ * A reusable resolver over one snapshot of the notes list — the batch form of
+ * {@link resolveWikiLink}, so a caller resolving MANY links (the editor decorating a whole document,
+ * per keystroke) pays the O(N) index build once instead of per link.
+ *
+ * The rules are literally the same function, which is the point: "is this link broken?" must never
+ * drift from "where does this link go?".
+ */
+export function createWikiLinkResolver(
+    notes: NoteMeta[],
+): (target: string, fromId: string) => string | null {
+    const index = buildResolveIndex(notes);
+    return (target, fromId) => resolveWith(target, fromId, index);
 }
 
 // Context window kept around a backlink occurrence, mirroring search.ts's snippet sizing.

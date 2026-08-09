@@ -80,10 +80,9 @@ body,
     --g-color-base-generic-hover: #332f29;
 }
 
-/* Code text was washing out in dark mode; force a readable foreground on inline + fenced code
-   (both the WYSIWYG body and the read-only .yfm preview). Background left as-is. Tuned live. */
-.g-root_theme_dark .g-md-editor code,
-.g-root_theme_dark .g-md-editor pre,
+/* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in
+   the read-only .yfm preview. Background left as-is. Tuned live. (The block editor carries its own
+   code palette — see blockEditor/editor.css.) */
 .g-root_theme_dark .note-preview .yfm code,
 .g-root_theme_dark .note-preview .yfm pre {
     color: var(--g-color-text-primary);
@@ -106,9 +105,9 @@ body,
    move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…) inside
    these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
    <html> as `data-editor-font` (by `Workspace`), and serif/mono override for the whole `.g-root`
-   subtree (specificity out-ranks the base). These feed the note CONTENT only — the WYSIWYG editor +
-   read-only preview (both `.yfm`, via `.g-root .yfm` below) and the note title (NoteTitle.css) —
-   never the app chrome (`--g-font-family-sans`) or the raw Markup editor (`.cm-editor`, not `.yfm`).
+   subtree (specificity out-ranks the base). These feed the note CONTENT only — the block editor's
+   document column, the read-only preview (`.yfm`), and the note title (NoteTitle.css) — never the
+   app chrome (`--g-font-family-sans`) or the raw Markdown source view.
    Set on `.g-root` so the family can reference `--g-font-family-sans`, which lives there. */
 .g-root {
     /* Sans — the native system font (default). 15px matches YFM's own base size. */
@@ -219,14 +218,12 @@ body,
 }
 
 .editor-pane .note-title-row,
-.editor-pane .g-md-wysiwyg-editor__editor,
 .editor-pane .note-preview__body,
 .editor-pane .gn-block-editor .page,
-.editor-pane_toolbar .g-md-flex-toolbar {
+.editor-pane .block-editor-markup {
     /* width:100% gives these (flex) items a definite basis so `margin-inline:auto` centers them
        instead of collapsing them to content width. box-sizing keeps the --editor-gutter padding
-       inside the cap, so the title and body share a left edge. The toolbar's own inset/padding
-       tweaks live in EditorPane.css. */
+       inside the cap, so the title and body share a left edge. */
     width: 100%;
     max-width: var(--gn-text-width, none);
     margin-inline: auto;
