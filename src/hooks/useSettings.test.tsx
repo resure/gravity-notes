@@ -18,13 +18,11 @@ import {
 const APP: Settings = {
     showNoteIcons: false,
     editorFont: 'serif',
-    accentColor: 'blue',
     textWidth: 'wide',
 };
 
 const WS_DEFAULT: WorkspaceSettings = {
     editorFont: 'default',
-    accentColor: 'default',
     textWidth: 'default',
 };
 
@@ -41,37 +39,23 @@ describe('effectiveAppearance', () => {
     it('inherits the app value when every override is "default"', () => {
         expect(effectiveAppearance(APP, WS_DEFAULT, NOTE_DEFAULT)).toEqual({
             editorFont: 'serif',
-            accentColor: 'blue',
             textWidth: 'wide',
         });
     });
 
     it('lets a workspace override beat the app value, field by field', () => {
-        const ws: WorkspaceSettings = {
-            editorFont: 'mono',
-            accentColor: 'default',
-            textWidth: 'narrow',
-        };
+        const ws: WorkspaceSettings = {editorFont: 'mono', textWidth: 'narrow'};
         expect(effectiveAppearance(APP, ws, NOTE_DEFAULT)).toEqual({
             editorFont: 'mono',
-            accentColor: 'blue',
             textWidth: 'narrow',
         });
     });
 
-    it('lets a note override beat both workspace and app (note wins; accent has no note layer)', () => {
-        const ws: WorkspaceSettings = {
-            editorFont: 'mono',
-            accentColor: 'gray',
-            textWidth: 'narrow',
-        };
-        const note: NoteAppearance = {
-            editorFont: 'sans',
-            textWidth: 'default',
-        };
+    it('lets a note override beat both workspace and app', () => {
+        const ws: WorkspaceSettings = {editorFont: 'mono', textWidth: 'narrow'};
+        const note: NoteAppearance = {editorFont: 'sans', textWidth: 'default'};
         expect(effectiveAppearance(APP, ws, note)).toEqual({
             editorFont: 'sans', // note wins
-            accentColor: 'gray', // app ← workspace (never per-note)
             textWidth: 'narrow', // note default → workspace
         });
     });
@@ -79,17 +63,15 @@ describe('effectiveAppearance', () => {
     it('defaults the note layer to all-inherit when omitted', () => {
         expect(effectiveAppearance(APP, WS_DEFAULT)).toEqual({
             editorFont: 'serif',
-            accentColor: 'blue',
             textWidth: 'wide',
         });
     });
 });
 
 describe('useSettings', () => {
-    it('defaults appearance to sans + amber + normal width', () => {
+    it('defaults appearance to sans + normal width', () => {
         const {result} = renderHook(() => useSettings());
         expect(result.current.settings.editorFont).toBe('sans');
-        expect(result.current.settings.accentColor).toBe('amber');
         expect(result.current.settings.textWidth).toBe('normal');
     });
 
@@ -112,22 +94,22 @@ describe('useSettings', () => {
 
     it('merges a set into the freshest STORED object, so another window’s change survives', () => {
         const {result} = renderHook(() => useSettings());
-        // Another window persists an accent change after this window mounted — this window's
+        // Another window persists a font change after this window mounted — this window's
         // in-memory copy is now stale (same-document writes fire no storage event).
-        localStorage.setItem('gravity-notes:settings', JSON.stringify({accentColor: 'blue'}));
+        localStorage.setItem('gravity-notes:settings', JSON.stringify({editorFont: 'mono'}));
         act(() => result.current.setSetting('showNoteIcons', true));
         const stored = JSON.parse(localStorage.getItem('gravity-notes:settings') ?? '{}');
         expect(stored.showNoteIcons).toBe(true);
-        expect(stored.accentColor).toBe('blue'); // NOT clobbered back to this window's stale amber
+        expect(stored.editorFont).toBe('mono'); // NOT clobbered back to this window's stale sans
     });
 
     it('adopts another window’s write when its storage event arrives', () => {
         const {result} = renderHook(() => useSettings());
         act(() => {
-            localStorage.setItem('gravity-notes:settings', JSON.stringify({accentColor: 'gray'}));
+            localStorage.setItem('gravity-notes:settings', JSON.stringify({editorFont: 'mono'}));
             window.dispatchEvent(new StorageEvent('storage', {key: 'gravity-notes:settings'}));
         });
-        expect(result.current.settings.accentColor).toBe('gray');
+        expect(result.current.settings.editorFont).toBe('mono');
     });
 });
 
@@ -180,11 +162,11 @@ describe('legacy per-note appearance migration', () => {
     it('reads legacy keys as overrides, skipping all-default and corrupt values — but lists every key', () => {
         localStorage.setItem(
             key('Work/Plan.md'),
-            JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
+            JSON.stringify({editorFont: 'serif', textWidth: 'default'}),
         );
         localStorage.setItem(
             key('Idle.md'),
-            JSON.stringify({editorFont: 'default', accentColor: 'default', textWidth: 'default'}),
+            JSON.stringify({editorFont: 'default', textWidth: 'default'}),
         );
         localStorage.setItem(key('Broken.md'), 'not json{');
         localStorage.setItem('gravity-notes:ws-2:note:Other.md:appearance', '{}'); // other workspace

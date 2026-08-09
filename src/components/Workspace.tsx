@@ -443,15 +443,14 @@ export function Workspace({
     useEffect(() => setAppearanceOpen(false), [notes.sessionId, noteClosed]);
 
     // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
-    // that index.css reads: `data-editor-font` swaps the editor/preview/title font, `data-accent` the
-    // accent trio, `data-text-width` the content column width. useLayoutEffect (not useEffect) so the
+    // that index.css reads: `data-editor-font` swaps the editor/preview/title font,
+    // `data-text-width` the content column width. useLayoutEffect (not useEffect) so the
     // swap lands before paint — on a workspace switch the tree remounts (keyed in App), so this runs
     // synchronously with the unmount cleanup, avoiding a one-frame flash to the default appearance.
-    // Amber is the CSS default, so it clears the attribute rather than stamping it. Deps are the
-    // three RESOLVED strings, not the source objects — those change identity on every note switch
-    // (and on unrelated settings toggles), and each re-run is a remove+set attribute pair that
-    // dirties style for the whole .g-root subtree for a no-op.
-    const {editorFont, accentColor, textWidth} = effectiveAppearance(
+    // Deps are the RESOLVED strings, not the source objects — those change identity on every note
+    // switch (and on unrelated settings toggles), and each re-run is a remove+set attribute pair
+    // that dirties style for the whole subtree for a no-op.
+    const {editorFont, textWidth} = effectiveAppearance(
         settings,
         workspaceSettings,
         noteAppearance,
@@ -460,14 +459,11 @@ export function Workspace({
         const root = document.documentElement;
         root.setAttribute('data-editor-font', editorFont);
         root.setAttribute('data-text-width', textWidth);
-        if (accentColor === 'amber') root.removeAttribute('data-accent');
-        else root.setAttribute('data-accent', accentColor);
         return () => {
             root.removeAttribute('data-editor-font');
-            root.removeAttribute('data-accent');
             root.removeAttribute('data-text-width');
         };
-    }, [editorFont, accentColor, textWidth]);
+    }, [editorFont, textWidth]);
 
     const [aboutOpen, setAboutOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);

@@ -1468,10 +1468,13 @@ fn apply_macos_chrome(window: &tauri::WebviewWindow) {
             .theme()
             .map(|t| t == tauri::Theme::Dark)
             .unwrap_or(true);
+        // The sRGB rendering of `--bg-desk` per theme (src/tokens.css). Keep in step with the
+        // anti-flash `<style>` in index.html — they paint the same surface, one before the bundle
+        // loads and one behind the webview during a live resize.
         let bg = if dark {
-            tauri::window::Color(33, 30, 26, 255)
+            tauri::window::Color(13, 11, 8, 255)
         } else {
-            tauri::window::Color(255, 255, 255, 255)
+            tauri::window::Color(238, 234, 229, 255)
         };
         let _ = window.set_background_color(Some(bg));
     }

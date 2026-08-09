@@ -43,6 +43,24 @@ export function App() {
         }
     }, [themePref]);
 
+    // Mirror the resolved theme onto `<html data-theme>`, which is what every Sol token reads
+    // (tokens.css). Resolving System here rather than in a CSS media query keeps ONE source of
+    // truth for "what theme is showing" — the attribute is always the answer, so a rule never has
+    // to be written twice. Runs alongside Gravity's ThemeProvider during the transition; when that
+    // goes, this stops being a mirror and becomes the theme.
+    useEffect(() => {
+        const root = document.documentElement;
+        if (themePref !== 'system') {
+            root.setAttribute('data-theme', themePref);
+            return undefined;
+        }
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+        const apply = () => root.setAttribute('data-theme', media.matches ? 'dark' : 'light');
+        apply();
+        media.addEventListener('change', apply);
+        return () => media.removeEventListener('change', apply);
+    }, [themePref]);
+
     // Drive the NATIVE window's appearance to match the in-app theme on desktop. The Rust shell reads
     // the OS appearance at setup (it can't see the webview's theme pref before first paint), so without
     // this a user whose app theme differs from the OS sees the native frame — and the anti-flash

@@ -4,9 +4,17 @@
    EVERY referenced asset — shipping both formats would double the ~160 KB font payload for a woff
    fallback none of our targets need (web is Chromium-only via the FSA gate; desktop is WKWebView —
    both have had woff2 for years). Rules mirror the package CSS files verbatim (same faces, same
-   order → same cascade), minus the woff src. Latin + Latin-ext subsets × {400, 700, italic,
-   bold-italic}; Cyrillic/other scripts fall back down the serif stack (Georgia has Cyrillic) — add
-   the `cyrillic-*` faces here to cover them. */
+   order → same cascade), minus the woff src. Latin, Latin-ext, Cyrillic and Cyrillic-ext subsets ×
+   {400, 700, italic, bold-italic}.
+
+   The Cyrillic faces are not optional. PT Serif is a Cyrillic-first face and the app is used in
+   Russian; without them RU note titles fell down the serif stack to Georgia, so a note's title
+   changed typeface depending on which alphabet it was written in. Both weights are shipped for the
+   same reason: with only 400, bold RU text was SYNTHETICALLY emboldened while bold latin was real —
+   two different-looking bolds in one paragraph. No `unicode-range` here, deliberately: the browser
+   picks the face that actually covers the codepoint, and listing four subsets without ranges lets
+   it do exactly that (the package's own ranges only matter for lazy per-subset fetching, which the
+   single-file build defeats anyway by inlining everything). */
 
 /* pt-serif-latin-400-normal */
 @font-face {
@@ -78,4 +86,76 @@
     font-display: swap;
     font-weight: 700;
     src: url('@fontsource/pt-serif/files/pt-serif-latin-ext-700-italic.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-400-normal */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-400-normal.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-400-italic */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: italic;
+    font-display: swap;
+    font-weight: 400;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-400-italic.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-700-normal */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-700-normal.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-700-italic */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: italic;
+    font-display: swap;
+    font-weight: 700;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-700-italic.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-ext-400-normal */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-ext-400-normal.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-ext-400-italic */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: italic;
+    font-display: swap;
+    font-weight: 400;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-ext-400-italic.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-ext-700-normal */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-ext-700-normal.woff2') format('woff2');
+}
+
+/* pt-serif-cyrillic-ext-700-italic */
+@font-face {
+    font-family: 'PT Serif';
+    font-style: italic;
+    font-display: swap;
+    font-weight: 700;
+    src: url('@fontsource/pt-serif/files/pt-serif-cyrillic-ext-700-italic.woff2') format('woff2');
 }
