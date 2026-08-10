@@ -16,38 +16,32 @@ import type {
     RefObject,
 } from 'react';
 
+import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
+
+import {useHeldValue} from '../hooks/useHeldValue';
+import {buildListRows} from '../listGroups';
+import {escapeRegExp, tokenizeQuery} from '../search';
+import {isOpenInNewWindowChord} from '../shortcuts';
+import {basename, dirname} from '../storage/noteText';
+import type {NoteMeta, SortMode} from '../storage/types';
+import {Button} from '../ui/Button';
+import {AlertDialog} from '../ui/Dialog';
+import {Menu, MenuItem, MenuSeparator} from '../ui/Menu';
+import {Select} from '../ui/Select';
+import {Chip} from '../ui/bits';
 import {
-    ArrowUpRightFromSquare,
+    ArrowRight,
     Copy,
     Ellipsis,
     Folder,
     FolderOpen,
+    NewWindow,
     Pencil,
     Pin,
-    PinFill,
     PinSlash,
     Plus,
-    TrashBin,
-} from '@gravity-ui/icons';
-import {
-    Button,
-    Dialog,
-    DropdownMenu,
-    Icon,
-    Label,
-    Select,
-    Text,
-    TextInput,
-} from '@gravity-ui/uikit';
-import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
-
-import {useHeldValue} from '../hooks/useHeldValue';
-import {escapeRegExp, tokenizeQuery} from '../search';
-import {isOpenInNewWindowChord} from '../shortcuts';
-import {dirname, formatCrumb} from '../storage/noteText';
-import type {NoteMeta, SortMode} from '../storage/types';
-
-import {IconPickerButton, IconPickerPopup} from './IconPicker';
+    Trash,
+} from '../ui/icons';
 
 import './NoteList.css';
 
@@ -56,6 +50,17 @@ import './NoteList.css';
  * `text/plain` drags can't be moved into a folder. Must match `NOTE_MIME` in FolderRail.
  */
 const NOTE_MIME = 'application/x-gravity-note';
+
+/** §05's hard numbers: the virtualizer depends on both. */
+const ROW_HEIGHT = 58;
+const GROUP_HEIGHT = 26;
+
+const SORT_OPTIONS: {value: SortMode; label: string}[] = [
+    {value: 'updated', label: 'Updated'},
+    {value: 'created', label: 'Created'},
+    {value: 'title', label: 'Title (A→Z)'},
+    {value: 'title-desc', label: 'Title (Z→A)'},
+];
 
 /**
  * Perf-regression seam: counts {@link NoteRow} render-body executions. A folder can hold thousands of
@@ -84,9 +89,9 @@ export interface NoteListProps {
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
-    /** The selected folder's display name (null = All Notes), for the empty-state copy. */
+    /** The selected folder's display name (null = All Notes) — the scope header's title. */
     scopeLabel: string | null;
-    /** Show each note's folder as a chip (when the list spans folders: All Notes / flat search). */
+    /** Show each note's folder beside its time (when the list spans folders: All Notes / search). */
     showCrumbs: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
     snippetById?: Map<string, string>;
@@ -122,11 +127,9 @@ export interface NoteListProps {
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
-    icons: Readonly<Record<string, string>>;
-    onSetIcon: (id: string, icon: string) => void;
-    /** Show a per-note icon picker on each row (Settings › Show note icons). */
-    showIcons: boolean;
-    /** Whether the folder rail is shown (drives the toggle button state + ← behavior). */
+    /** Creation stamps from the sidecar — the `created` sort's group boundaries. */
+    createdById?: Readonly<Record<string, number>>;
+    /** Whether the folder rail is shown (drives the scope chip). */
     railOpen: boolean;
     /** Show / hide the folder rail. */
     onToggleRail: () => void;
@@ -181,11 +184,10 @@ interface NoteRowProps {
     editing: boolean;
     /** The roving-tabindex target (selected row, or the first row as a fallback). */
     tabbable: boolean;
-    pinned: boolean;
     /** Full-text snippet or head-of-note preview, already resolved by the parent. */
     previewText: string;
-    /** Folder-path crumb (`''` when not shown). */
-    crumb: string;
+    /** Leaf folder name (`''` when the list is already scoped to one folder). */
+    folderName: string;
     /** Query terms to highlight in the title/preview (stable identity per query). */
     terms: string[];
     /** Current rename-field value; meaningful only while `editing` ('' for every other row). */
@@ -194,10 +196,6 @@ interface NoteRowProps {
     editInputRef: RefObject<HTMLInputElement>;
     /** Register/unregister this row's element in the parent's id→element map (stable). */
     registerRef: (id: string, el: HTMLDivElement | null) => void;
-    icon?: string;
-    /** Toggle the list's one shared icon-picker popup, anchored to this row's glyph button. */
-    onOpenIconPicker: (id: string, anchor: HTMLElement) => void;
-    showIcons: boolean;
     onClickRow: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
     onDoubleClickRow: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
     onContextMenuRow: (note: NoteMeta, x: number, y: number) => void;
@@ -209,26 +207,27 @@ interface NoteRowProps {
 }
 
 /**
- * One note row. Memoized so a selection change (or any parent re-render) only re-renders the two rows
- * whose `selected`/`tabbable` flipped — not all N rows in a large folder. Every callback prop is stable
- * (the parent wraps them in `useCallback`, reading live state via refs), and `note` keeps its identity
- * across a switch, so the default shallow prop-compare correctly bails out for the untouched rows.
+ * One note row — 58px fixed, per §05: a title with the time right-aligned beside it, then one line
+ * of the note's own first words. The preview is what tells "Sync conflicts — Q1" from
+ * "Sync conflicts — Q2" without opening either; it never wraps to a second line, because a row that
+ * changes height while scrolling is the fastest way to make an app feel cheap.
+ *
+ * Memoized so a selection change (or any parent re-render) only re-renders the two rows whose
+ * `selected`/`tabbable` flipped — not all N rows in a large folder. Every callback prop is stable
+ * (the parent wraps them in `useCallback`, reading live state via refs), and `note` keeps its
+ * identity across a switch, so the default shallow prop-compare correctly bails for untouched rows.
  */
 const NoteRow = memo(function NoteRow({
     note,
     selected,
     editing,
     tabbable,
-    pinned,
     previewText,
-    crumb,
+    folderName,
     terms,
     editValue,
     editInputRef,
     registerRef,
-    icon,
-    onOpenIconPicker,
-    showIcons,
     onClickRow,
     onDoubleClickRow,
     onContextMenuRow,
@@ -268,112 +267,63 @@ const NoteRow = memo(function NoteRow({
             }}
             onKeyDown={(e) => onKeyDownRow(e, note.id)}
         >
-            {editing ? (
-                <TextInput
-                    className="note-list__edit"
-                    controlRef={editInputRef}
-                    value={editValue}
-                    onUpdate={onEditChange}
-                    onBlur={() => onEditCommit(note.id, note.title)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
-                            e.preventDefault();
-                            onEditCommit(note.id, note.title);
-                        } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            onEditCancel();
-                        }
-                    }}
-                />
-            ) : (
-                <>
-                    {/* The icon glyph in a soft rounded tile, centered against the whole two-line
-                        cell. The tile IS the picker target (the button fills it). Only when the
-                        Show-note-icons setting is on; otherwise the text column goes flush-left. */}
-                    {showIcons ? (
-                        <span className="note-list__icon-tile">
-                            <IconPickerButton
-                                className="note-list__icon"
-                                size="s"
-                                value={icon}
-                                onClick={(e) => {
-                                    // Like the ⋯ button: don't browse the row; toggle the one
-                                    // shared picker popup anchored to this button.
-                                    e.stopPropagation();
-                                    onOpenIconPicker(note.id, e.currentTarget);
-                                }}
-                            />
+            <div className="note-list__line">
+                {editing ? (
+                    // Rename happens in place: no field, no border, no box. The preview line below
+                    // does not move, and the selected text takes the accent — one of its five uses.
+                    <input
+                        ref={editInputRef}
+                        className="note-list__edit"
+                        aria-label="Note title"
+                        value={editValue}
+                        onChange={(e) => onEditChange(e.target.value)}
+                        onBlur={() => onEditCommit(note.id, note.title)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                                e.preventDefault();
+                                onEditCommit(note.id, note.title);
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                onEditCancel();
+                            }
+                        }}
+                    />
+                ) : (
+                    <>
+                        <span className="note-list__title">
+                            {highlightTerms(note.title, terms)}
                         </span>
-                    ) : null}
-                    <div className="note-list__text">
-                        <div className="note-list__row">
-                            {pinned ? (
-                                <Icon
-                                    className="note-list__pin"
-                                    data={PinFill}
-                                    size={14}
-                                    aria-hidden
-                                />
-                            ) : null}
-                            <Text className="note-list__title" ellipsis>
-                                {highlightTerms(note.title, terms)}
-                            </Text>
-                            {/* The ⋯ actions button, revealed on hover / focus / selection. */}
-                            <div className="note-list__actions">
-                                <Button
-                                    view="flat"
-                                    size="s"
-                                    aria-label="Note actions"
-                                    onClick={(e) => {
-                                        // Don't browse the row; open the one shared menu anchored to
-                                        // this button (parent toggles it off if already this row's).
-                                        e.stopPropagation();
-                                        onOpenMenu(note, e.currentTarget);
-                                    }}
-                                >
-                                    <Icon data={Ellipsis} />
-                                </Button>
-                            </div>
-                        </div>
-                        {/* Second line: the date, then the preview snippet (date back on this line). */}
-                        <div className="note-list__meta">
-                            <Text variant="caption-2" color="secondary" className="note-list__date">
-                                {formatNoteDate(note.updatedAt)}
-                            </Text>
-                            {previewText ? (
-                                <Text
-                                    variant="caption-2"
-                                    color="secondary"
-                                    className="note-list__preview"
-                                    ellipsis
-                                >
-                                    {highlightTerms(previewText, terms)}
-                                </Text>
-                            ) : null}
-                        </div>
-                        {crumb ? (
-                            // Apple-Notes-style folder chip: which folder this note lives in, shown
-                            // when the list spans folders (All Notes / search). Its own line below.
-                            <div className="note-list__folder">
-                                <Icon
-                                    data={Folder}
-                                    size={12}
-                                    className="note-list__folder-icon"
-                                    aria-hidden
-                                />
-                                <Text
-                                    variant="caption-2"
-                                    color="secondary"
-                                    className="note-list__folder-name"
-                                    ellipsis
-                                >
-                                    {crumb}
-                                </Text>
-                            </div>
+                        {folderName ? (
+                            <span className="note-list__folder">{folderName}</span>
                         ) : null}
-                    </div>
-                </>
-            )}
+                        {/* The ⋯ takes the TIME's place on hover — 24px, the same target as every
+                            other icon button in the chrome. Both live in one slot, and the time
+                            keeps its box (visibility, not display) while the button overlays it:
+                            the two are different widths, and letting the slot resize would re-flow
+                            the flex-1 title and visibly shift its text under the pointer. */}
+                        <span className="note-list__trailing">
+                            <span className="note-list__date">
+                                {formatNoteDate(note.updatedAt)}
+                            </span>
+                            <button
+                                type="button"
+                                className="note-list__actions"
+                                aria-label="Note actions"
+                                tabIndex={-1}
+                                onClick={(e) => {
+                                    // Don't browse the row; open the one shared menu anchored to
+                                    // this button (the parent toggles it off if it's this row's).
+                                    e.stopPropagation();
+                                    onOpenMenu(note, e.currentTarget);
+                                }}
+                            >
+                                <Ellipsis size={15} />
+                            </button>
+                        </span>
+                    </>
+                )}
+            </div>
+            <div className="note-list__preview">{highlightTerms(previewText, terms)}</div>
         </div>
     );
 });
@@ -402,9 +352,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSortChange,
         pinnedIds,
         onTogglePin,
-        icons,
-        onSetIcon,
-        showIcons,
+        createdById,
         railOpen,
         onToggleRail,
         onClearScope,
@@ -416,20 +364,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const [editValue, setEditValue] = useState('');
     const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
     // The note + anchor for the one open action menu (null = closed). A single shared menu serves
-    // both the row's ⋯ button and the right-click context menu: mounting a DropdownMenu (and building
-    // its items) per row would be a large render cost on a folder with thousands of notes. The anchor
-    // is the ⋯ button element, or a zero-size virtual element at the cursor for a right-click.
+    // both the row's ⋯ button and the right-click context menu: mounting a Menu (and building its
+    // items) per row would be a large render cost on a folder with thousands of notes. The anchor is
+    // the ⋯ button element, or a zero-size virtual element at the cursor for a right-click.
     const [menu, setMenu] = useState<{
         note: NoteMeta;
-        anchor: {getBoundingClientRect: () => DOMRect};
+        anchor: HTMLElement | {getBoundingClientRect: () => DOMRect};
     } | null>(null);
-    // The note + anchor for the one open icon picker (null = closed) — the same shared-instance
-    // pattern as the action menu above: a whole IconPicker (popup + its own virtualizer) per row
-    // was a large per-row render cost, and an open per-row popup died with its row when it left
-    // the virtual window. Rows render only the glyph button; this popup serves them all.
-    const [iconPicker, setIconPicker] = useState<{noteId: string; anchor: HTMLElement} | null>(
-        null,
-    );
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -437,23 +378,42 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const noteIds = useMemo(() => notes.map((note) => note.id), [notes]);
     const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+    const searching = query.trim().length > 0;
+
+    // Group labels interleaved into the ordered list (Pinned / Today / … , or A B C under a title
+    // sort). A live search is ranked rather than sorted, so it gets no labels — see listGroups.ts.
+    const rows = useMemo(
+        () =>
+            buildListRows(notes, {
+                sort: sortMode,
+                pinned: pinnedSet,
+                created: createdById,
+                grouped: !searching,
+            }),
+        [notes, sortMode, pinnedSet, createdById, searching],
+    );
+    const rowIndexById = useMemo(() => {
+        const map = new Map<string, number>();
+        rows.forEach((row, index) => {
+            if (row.kind === 'note') map.set(row.note.id, index);
+        });
+        return map;
+    }, [rows]);
 
     // The note row that is tabbable: the selected one if visible, else the first note.
     const focusableId =
         selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
-    const focusableIndex = focusableId ? noteIds.indexOf(focusableId) : -1;
-    // The open row popovers' anchor rows (kept mounted below, so a scroll can't tear an anchor out
-    // from under its popup); -1 = closed, or the note has left the list.
-    const menuIndex = menu ? noteIds.indexOf(menu.note.id) : -1;
-    const iconPickerIndex = iconPicker ? noteIds.indexOf(iconPicker.noteId) : -1;
+    const focusableIndex = focusableId ? (rowIndexById.get(focusableId) ?? -1) : -1;
+    // The open row menu's anchor row (kept mounted below, so a scroll can't tear the anchor out from
+    // under its popup); -1 = closed, or the note has left the list.
+    const menuIndex = menu ? (rowIndexById.get(menu.note.id) ?? -1) : -1;
 
-    // Close an open row popover when its note leaves the list (deleted, filtered out by a new
-    // search, or renamed to a new id) — its anchor row is then no longer kept mounted, and a popup
-    // on a dead anchor just floats stale. Membership is read off the indexes derived above.
+    // Close the menu when its note leaves the list (deleted, filtered out by a new search, or
+    // renamed to a new id) — its anchor row is then no longer kept mounted, and a popup on a dead
+    // anchor just floats stale.
     useEffect(() => {
         if (menu && menuIndex === -1) setMenu(null);
-        if (iconPicker && iconPickerIndex === -1) setIconPicker(null);
-    }, [menu, menuIndex, iconPicker, iconPickerIndex]);
+    }, [menu, menuIndex]);
 
     // Live snapshot read by the stable row callbacks below — so those callbacks never close over a
     // stale value yet keep a constant identity (the key to NoteRow's memo bailing out for untouched
@@ -463,7 +423,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         editingId,
         editValue,
         railOpen,
-        iconPicker,
         onBrowse,
         onCommit,
         tapToOpen,
@@ -471,14 +430,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onFocusRail,
         onOpenInNewWindow,
         onRename,
-        onSetIcon,
     });
     live.current = {
         noteIds,
         editingId,
         editValue,
         railOpen,
-        iconPicker,
         onBrowse,
         onCommit,
         tapToOpen,
@@ -486,28 +443,27 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onFocusRail,
         onOpenInNewWindow,
         onRename,
-        onSetIcon,
     };
 
-    // Virtualize the rows: a folder can hold thousands of notes, and mounting every row (each a few
-    // Gravity components) blows out first-paint, memory, and scroll. The virtualizer renders only the
-    // visible window (+overscan) and grows the scroll area to the full measured height. Rows are
-    // variable-height (the folder crumb adds a line), so heights are measured per row.
+    // Virtualize: a folder can hold thousands of notes, and mounting every row blows out first paint,
+    // memory, and scroll. Heights are FIXED by §05 (58px rows, 26px group labels) rather than
+    // measured — that is exactly what makes the virtualizer's arithmetic exact and the scrollbar
+    // honest at three thousand rows.
     const scrollRef = useRef<HTMLDivElement>(null);
     const rowVirtualizer = useVirtualizer({
-        count: notes.length,
+        count: rows.length,
         getScrollElement: () => scrollRef.current,
-        estimateSize: () => 56,
+        estimateSize: (index) => (rows[index].kind === 'group' ? GROUP_HEIGHT : ROW_HEIGHT),
         overscan: 8,
-        getItemKey: (index) => notes[index].id,
+        getItemKey: (index) => rows[index].key,
         // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
         // so the list always has a keyboard-focusable element and focusing it never needs an async
-        // scroll-then-mount — plus any open row popover's anchor row (⋯ menu / icon picker), so
-        // scrolling can't unmount the popup's anchor from under it. A fresh closure per render keeps
-        // the forced indexes current; the window is a few dozen sorted indexes, so the sort is free.
+        // scroll-then-mount — plus the open menu's anchor row, so scrolling can't unmount the popup's
+        // anchor from under it. A fresh closure per render keeps the forced indexes current; the
+        // window is a few dozen sorted indexes, so the sort is free.
         rangeExtractor: (range) => {
             const indexes = defaultRangeExtractor(range);
-            for (const forced of [focusableIndex, menuIndex, iconPickerIndex]) {
+            for (const forced of [focusableIndex, menuIndex]) {
                 if (forced >= 0 && !indexes.includes(forced)) indexes.push(forced);
             }
             return indexes.sort((a, b) => a - b);
@@ -529,12 +485,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 el.focus();
                 return;
             }
-            const index = live.current.noteIds.indexOf(id);
-            if (index === -1) return;
+            const index = rowIndexById.get(id);
+            if (index === undefined) return;
             pendingFocusRef.current = id;
             rowVirtualizer.scrollToIndex(index);
         },
-        [rowVirtualizer],
+        [rowVirtualizer, rowIndexById],
     );
 
     // After the window re-renders (e.g. following scrollToIndex), focus the pending row once it mounts.
@@ -554,7 +510,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     // Focus the rename field when inline editing begins.
     useEffect(() => {
-        if (editingId) editInputRef.current?.focus();
+        if (editingId) editInputRef.current?.select();
     }, [editingId]);
 
     // When an inline rename ends (commit or cancel), return keyboard focus to the list so
@@ -602,7 +558,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         setDeleting(null);
     };
 
-    // Keep the title rendered through the Dialog's ~150ms close animation: `deleting` clears on
+    // Keep the title rendered through the dialog's close transition: `deleting` clears on
     // confirm/cancel, so reading off it directly would blank the body mid-close. Display-only —
     // confirmDelete still reads live `deleting`.
     const deletingView = useHeldValue(deleting);
@@ -628,8 +584,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             const {editingId: editing, onOpenInNewWindow: openInNew, tapToOpen: tap} = live.current;
             if (editing === id) return;
             // ⌘-click (desktop): open the note in its own window, leaving this window's selection
-            // alone — the same modifier convention as ⌘↵ here and ⌘-click in the recents submenu.
-            // Without the callback (web) the modifier is ignored and the click browses as usual.
+            // alone — the same modifier convention as ⌘↵ here and ⌘-click in the orb menu. Without
+            // the callback (web) the modifier is ignored and the click browses as usual.
             if (openInNew && isOpenInNewWindowChord(event)) {
                 openInNew(id);
                 return;
@@ -664,23 +620,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onOpenMenu = useCallback((note: NoteMeta, anchor: HTMLElement) => {
         setMenu((open) => (open?.note.id === note.id ? null : {note, anchor}));
-    }, []);
-
-    const onOpenIconPicker = useCallback((noteId: string, anchor: HTMLElement) => {
-        setIconPicker((open) => (open?.noteId === noteId ? null : {noteId, anchor}));
-    }, []);
-
-    // Route a pick to the note whose glyph opened the popup. Skipped — deliberately, instead of
-    // writing icon metadata for a dead id — if that note just left the list (e.g. a blur-committed
-    // title rename landed between open and pick); the close effect above retires the popup a tick
-    // later. Stable identity so the memoized popup skips scroll-driven list re-renders.
-    const onPickIcon = useCallback((name: string) => {
-        const {iconPicker: open, noteIds: ids, onSetIcon: setIcon} = live.current;
-        if (open && ids.includes(open.noteId)) setIcon(open.noteId, name);
-    }, []);
-
-    const onIconPickerOpenChange = useCallback((next: boolean) => {
-        if (!next) setIconPicker(null);
     }, []);
 
     const moveSelection = useCallback(
@@ -736,8 +675,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         }
                         break;
                     }
-                    // From a focused row-level button (icon glyph, ⋯ actions), Enter must activate
-                    // the button — preventDefault on the bubbled keydown would cancel the button's
+                    // From a focused row-level button (the ⋯ actions), Enter must activate the
+                    // button — preventDefault on the bubbled keydown would cancel the button's
                     // click synthesis and open the note instead.
                     if (event.target instanceof Element && event.target.closest('button')) break;
                     event.preventDefault();
@@ -761,138 +700,64 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onEditCancel = useCallback(() => setEditingId(null), []);
 
-    // The per-note action list, shared by the row's ⋯ menu and the right-click context menu.
-    const noteMenuItems = (note: NoteMeta) => {
-        const pinned = pinnedSet.has(note.id);
-        return [
-            // Desktop only: a per-note window. First, like Apple Notes' context menu (⌘↵ too).
-            ...(onOpenInNewWindow
-                ? [
-                      {
-                          text: 'Open in New Window',
-                          iconStart: <Icon data={ArrowUpRightFromSquare} />,
-                          action: () => onOpenInNewWindow(note.id),
-                      },
-                  ]
-                : []),
-            {
-                text: pinned ? 'Unpin' : 'Pin to top',
-                iconStart: <Icon data={pinned ? PinSlash : Pin} />,
-                action: () => onTogglePin(note.id),
-            },
-            {
-                text: 'Rename',
-                iconStart: <Icon data={Pencil} />,
-                action: () => beginRename(note.id, note.title),
-            },
-            {
-                text: 'Move to…',
-                iconStart: <Icon data={Folder} />,
-                action: () => onRequestMove(note.id),
-            },
-            {
-                text: 'Duplicate',
-                iconStart: <Icon data={Copy} />,
-                action: () => onDuplicate(note.id),
-            },
-            // Desktop only: revealed in Finder when the backend supports it.
-            ...(onReveal
-                ? [
-                      {
-                          text: 'Reveal in Finder',
-                          iconStart: <Icon data={FolderOpen} />,
-                          action: () => onReveal(note.id),
-                      },
-                  ]
-                : []),
-            {
-                text: 'Delete',
-                theme: 'danger' as const,
-                iconStart: <Icon data={TrashBin} />,
-                action: () => setDeleting({id: note.id, title: note.title}),
-            },
-        ];
-    };
-
     // Empty-state copy, tailored to context: a no-match search, an empty selected folder, or a
-    // truly empty store. A quiet second line points at the way to add a note.
+    // truly empty store. §09: per-pane, never full-window, and at most one oversized quiet glyph.
     const renderEmpty = () => {
         const q = query.trim();
-        if (q) return <Text color="secondary">No match — press Enter to create “{q}”</Text>;
-        if (scopeLabel) {
-            return (
-                <>
-                    <Text color="secondary">No notes in “{scopeLabel}”</Text>
-                    <Text color="hint" variant="caption-2">
-                        “New” adds a note here
-                    </Text>
-                </>
-            );
+        if (q) {
+            return <p className="note-list__empty-line">No match — press ⏎ to create “{q}”</p>;
         }
         return (
             <>
-                <Text color="secondary">No notes yet</Text>
-                <Text color="hint" variant="caption-2">
-                    Type to search, or press Enter to create
-                </Text>
+                <Folder size={26} className="note-list__empty-glyph" />
+                <p className="note-list__empty-line">
+                    {scopeLabel ? `No notes in “${scopeLabel}”` : 'No notes yet'}
+                </p>
+                <p className="note-list__empty-hint">
+                    {scopeLabel ? '“New” adds a note here' : 'Type to search, or press ⏎ to create'}
+                </p>
             </>
         );
     };
 
     return (
         <div className="note-list">
-            <div className="note-list__toolbar">
-                {/* `selected` doubles as the state signal: Gravity renders it as `aria-pressed`
-                    (a raw aria-pressed prop would be clobbered), plus the pressed look. */}
-                <Button
-                    view="outlined"
-                    size="m"
-                    aria-label="Folders"
-                    selected={railOpen}
-                    onClick={onToggleRail}
-                >
-                    <Icon data={Folder} />
-                </Button>
+            {/* The 38px scope header (§04/§05): the folder's name and count — this is what replaced
+                the per-row breadcrumb — then the sort control and the app's ONE raised button. */}
+            <div className="note-list__header">
+                <span className="note-list__scope-name">{scopeLabel ?? 'All Notes'}</span>
+                <span className="note-list__scope-count">{notes.length}</span>
+                <div className="note-list__header-gap" />
                 <Select
-                    className="note-list__sort"
                     aria-label="Sort notes"
-                    size="m"
-                    width="max"
-                    value={[sortMode]}
-                    onUpdate={([next]) => {
-                        if (next) onSortChange(next as SortMode);
-                    }}
-                    options={[
-                        {value: 'updated', content: 'Updated'},
-                        {value: 'title', content: 'Title (A→Z)'},
-                        {value: 'title-desc', content: 'Title (Z→A)'},
-                        {value: 'created', content: 'Created'},
-                    ]}
+                    options={SORT_OPTIONS}
+                    value={sortMode}
+                    onChange={onSortChange}
                 />
-                <Button view="normal" size="m" onClick={() => onCreate()}>
-                    <Icon data={Plus} />
+                <Button
+                    size="s"
+                    variant="raised"
+                    icon={<Plus size={12} />}
+                    onClick={() => onCreate()}
+                >
                     New
                 </Button>
             </div>
 
             {/* Scope chip: with the rail closed, a selected folder silently filters the list — name
-                the scope, click-through to the folder tree, × back to All Notes. Hidden while a
+                the scope, click through to the folder tree, ✕ back to All Notes. Hidden while a
                 search is live (the list is global then) and whenever the rail already shows it. */}
-            {!railOpen && scopeLabel && !query.trim() && onClearScope ? (
+            {!railOpen && scopeLabel && !searching && onClearScope ? (
                 <div className="note-list__scope">
-                    <Label
-                        className="note-list__scope-chip"
-                        size="xs"
-                        type="close"
-                        icon={<Icon data={Folder} size={12} />}
-                        interactive
+                    <Chip
+                        icon={<Folder size={12} />}
                         onClick={onToggleRail}
-                        onCloseClick={onClearScope}
-                        closeButtonLabel="Show all notes"
+                        onDismiss={onClearScope}
+                        dismissLabel="Show all notes"
                         title={`Showing “${scopeLabel}” — click to open folders`}
                     >
                         {scopeLabel}
-                    </Label>
+                    </Chip>
                 </div>
             ) : null}
 
@@ -906,49 +771,71 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     <div className="note-list__empty">{renderEmpty()}</div>
                 ) : (
                     // Spacer sized to the full list; each visible row is absolutely positioned at its
-                    // measured offset. Only the windowed rows (getVirtualItems) are mounted.
+                    // offset. Only the windowed rows (getVirtualItems) are mounted.
                     <div style={{height: rowVirtualizer.getTotalSize(), position: 'relative'}}>
                         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                            const note = notes[virtualRow.index];
+                            const row = rows[virtualRow.index];
                             return (
                                 <div
                                     key={virtualRow.key}
                                     data-index={virtualRow.index}
-                                    ref={rowVirtualizer.measureElement}
+                                    // Two washed rows must never touch: if hover landed directly
+                                    // above or below the selection they would read as one four-line
+                                    // block. The flag lives on this POSITIONING wrapper, not on the
+                                    // memoized row — a selection change moves it across up to four
+                                    // neighbours, and passing it down would re-render all of them
+                                    // for a purely visual rule (the row itself must re-render only
+                                    // when it gains or loses selection).
+                                    data-no-hover={
+                                        focusableIndex >= 0 &&
+                                        Math.abs(virtualRow.index - focusableIndex) === 1
+                                            ? ''
+                                            : undefined
+                                    }
                                     style={{
                                         position: 'absolute',
                                         top: 0,
                                         left: 0,
                                         width: '100%',
+                                        height: virtualRow.size,
                                         transform: `translateY(${virtualRow.start}px)`,
                                     }}
                                 >
-                                    <NoteRow
-                                        note={note}
-                                        selected={note.id === selectedId}
-                                        editing={note.id === editingId}
-                                        tabbable={note.id !== editingId && note.id === focusableId}
-                                        pinned={pinnedSet.has(note.id)}
-                                        previewText={
-                                            snippetById?.get(note.id) ?? note.preview ?? ''
-                                        }
-                                        crumb={showCrumbs ? formatCrumb(dirname(note.id)) : ''}
-                                        terms={terms}
-                                        editValue={note.id === editingId ? editValue : ''}
-                                        editInputRef={editInputRef}
-                                        registerRef={registerRef}
-                                        icon={icons[note.id]}
-                                        onOpenIconPicker={onOpenIconPicker}
-                                        showIcons={showIcons}
-                                        onClickRow={onClickRow}
-                                        onDoubleClickRow={onDoubleClickRow}
-                                        onContextMenuRow={onContextMenuRow}
-                                        onKeyDownRow={onKeyDownRow}
-                                        onOpenMenu={onOpenMenu}
-                                        onEditChange={setEditValue}
-                                        onEditCommit={onEditCommit}
-                                        onEditCancel={onEditCancel}
-                                    />
+                                    {row.kind === 'group' ? (
+                                        <div className="note-list__group">{row.label}</div>
+                                    ) : (
+                                        <NoteRow
+                                            note={row.note}
+                                            selected={row.note.id === selectedId}
+                                            editing={row.note.id === editingId}
+                                            tabbable={
+                                                row.note.id !== editingId &&
+                                                row.note.id === focusableId
+                                            }
+                                            previewText={
+                                                snippetById?.get(row.note.id) ??
+                                                row.note.preview ??
+                                                ''
+                                            }
+                                            folderName={
+                                                showCrumbs
+                                                    ? basename(dirname(row.note.id) || '')
+                                                    : ''
+                                            }
+                                            terms={terms}
+                                            editValue={row.note.id === editingId ? editValue : ''}
+                                            editInputRef={editInputRef}
+                                            registerRef={registerRef}
+                                            onClickRow={onClickRow}
+                                            onDoubleClickRow={onDoubleClickRow}
+                                            onContextMenuRow={onContextMenuRow}
+                                            onKeyDownRow={onKeyDownRow}
+                                            onOpenMenu={onOpenMenu}
+                                            onEditChange={setEditValue}
+                                            onEditCommit={onEditCommit}
+                                            onEditCancel={onEditCancel}
+                                        />
+                                    )}
                                 </div>
                             );
                         })}
@@ -956,53 +843,97 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 )}
             </div>
 
-            <Dialog
+            <AlertDialog
                 open={deleting !== null}
                 onClose={() => setDeleting(null)}
-                onEnterKeyDown={confirmDelete}
-                size="s"
-                disableBodyScrollLock
+                title="Move to Trash"
+                confirmLabel="Move to Trash"
+                onConfirm={confirmDelete}
+                danger
             >
-                <Dialog.Header caption="Move to Trash" />
-                <Dialog.Body>
-                    <Text>
-                        {deletingView
-                            ? `Move "${deletingView.title}" to the Trash? You can restore it later from the Trash.`
-                            : ''}
-                    </Text>
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonApply="Move to Trash"
-                    textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'action'}}
-                    onClickButtonApply={confirmDelete}
-                    onClickButtonCancel={() => setDeleting(null)}
-                />
-            </Dialog>
+                {deletingView
+                    ? `Move “${deletingView.title}” to the Trash? You can restore it later from the Trash.`
+                    : ''}
+            </AlertDialog>
 
             {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
-                cursor, for a right-click) opened it, so the list needs no per-row DropdownMenu. Gravity
-                substitutes its default ⋯ switcher when renderSwitcher returns null/undefined, so return
-                a hidden element instead — otherwise that kebab leaks in as a stray bottom-left button. */}
-            <DropdownMenu
+                cursor, for a right-click) opened it, so the list needs no per-row Menu instance.
+                §07: file actions only — no appearance, no view state; those belong to the note that
+                is OPEN, not to a row you are pointing at. */}
+            <Menu
                 open={menu !== null}
-                onOpenToggle={(open: boolean) => {
+                onOpenChange={(open) => {
                     if (!open) setMenu(null);
                 }}
-                renderSwitcher={() => <span hidden />}
-                popupProps={{anchorElement: menu?.anchor}}
-                items={menu ? noteMenuItems(menu.note) : []}
-            />
-
-            {/* The one shared icon picker — controlled, anchored to whichever row's glyph button
-                opened it (see the `iconPicker` state above for why it isn't per-row). Handlers are
-                stable and the popup memoized, so scroll-driven list re-renders skip it. */}
-            <IconPickerPopup
-                anchorElement={iconPicker?.anchor ?? null}
-                value={iconPicker ? icons[iconPicker.noteId] : undefined}
-                onChange={onPickIcon}
-                onOpenChange={onIconPickerOpenChange}
-            />
+                anchor={menu?.anchor}
+                align="start"
+                width={248}
+                finalFocus={false}
+            >
+                {menu ? (
+                    <>
+                        {onOpenInNewWindow ? (
+                            <MenuItem
+                                icon={<NewWindow size={16} />}
+                                hint="⌘↵"
+                                onClick={() => onOpenInNewWindow(menu.note.id)}
+                            >
+                                Open in New Window
+                            </MenuItem>
+                        ) : null}
+                        <MenuItem
+                            icon={
+                                pinnedSet.has(menu.note.id) ? (
+                                    <PinSlash size={16} />
+                                ) : (
+                                    <Pin size={16} />
+                                )
+                            }
+                            onClick={() => onTogglePin(menu.note.id)}
+                        >
+                            {pinnedSet.has(menu.note.id) ? 'Unpin' : 'Pin to top'}
+                        </MenuItem>
+                        <MenuItem
+                            icon={<Pencil size={16} />}
+                            hint="F2"
+                            onClick={() => beginRename(menu.note.id, menu.note.title)}
+                        >
+                            Rename
+                        </MenuItem>
+                        <MenuItem
+                            icon={<ArrowRight size={16} />}
+                            hint="⌘⇧M"
+                            onClick={() => onRequestMove(menu.note.id)}
+                        >
+                            Move to…
+                        </MenuItem>
+                        <MenuItem
+                            icon={<Copy size={16} />}
+                            hint="⌘D"
+                            onClick={() => onDuplicate(menu.note.id)}
+                        >
+                            Duplicate
+                        </MenuItem>
+                        {onReveal ? (
+                            <MenuItem
+                                icon={<FolderOpen size={16} />}
+                                onClick={() => onReveal(menu.note.id)}
+                            >
+                                Reveal in Finder
+                            </MenuItem>
+                        ) : null}
+                        <MenuSeparator />
+                        <MenuItem
+                            icon={<Trash size={16} />}
+                            hint="⌘⇧⌫"
+                            danger
+                            onClick={() => setDeleting({id: menu.note.id, title: menu.note.title})}
+                        >
+                            Delete
+                        </MenuItem>
+                    </>
+                ) : null}
+            </Menu>
         </div>
     );
 });

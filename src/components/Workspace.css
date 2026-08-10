@@ -1,11 +1,17 @@
+/* The three-pane shell — §04.
+   Panes at 236 / 324 / fill, separated by the TINT STEP and nothing else: desk → panel → panel-2 →
+   paper, with no rule between them. The editor is the only pure-white surface, and it earns that by
+   being the only one you write on. */
+
 .workspace {
-    /* Width of the notes list column, and of the folder rail beside it. */
-    --sidebar-width: 280px;
-    --rail-width: 200px;
+    --sidebar-width: 324px;
+    --rail-width: 236px;
     display: flex;
     flex-direction: column;
     height: 100%;
-    background-color: var(--g-color-base-background);
+    background: var(--bg-desk);
+    color: var(--text-1);
+    font-family: var(--font-ui);
 }
 
 .workspace__body {
@@ -32,6 +38,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: var(--bg-paper);
     /* The horizontal gutter shared by the editor body, the source view, and the note title, so
        their left edges line up. `.editor-pane` widens it to fit the block editor's drag handles;
        this is the fallback for anything mounted outside the pane. */
@@ -81,6 +88,9 @@
     justify-content: center;
     height: 100%;
     padding: 24px;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-3);
 }
 
 .workspace__conflict {
@@ -99,10 +109,12 @@
     z-index: 5;
     transform: translateX(-100%);
     visibility: hidden;
+    /* Pane collapse is one of the three moments in the app that move for effect: --dur-3, with a
+       hair of overshoot on the way in (see the peek rule below). */
     transition:
-        transform 0.15s ease,
-        visibility 0s linear 0.15s;
-    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+        transform var(--dur-3) var(--ease),
+        visibility 0s linear var(--dur-3);
+    box-shadow: var(--shadow-3);
 }
 
 /* Peeked (⌘\): slide the overlay in and make it focusable. visibility flips to visible
@@ -113,7 +125,7 @@
     transform: translateX(0);
     visibility: visible;
     transition:
-        transform 0.15s ease,
+        transform var(--dur-3) cubic-bezier(0.22, 1.15, 0.36, 1),
         visibility 0s linear 0s;
 }
 
@@ -124,7 +136,7 @@
     .workspace__body_peeked .workspace__sidebar {
         transition:
             transform 0s,
-            visibility 0s linear 0.15s;
+            visibility 0s linear var(--dur-3);
     }
     .workspace__body_peeked .workspace__sidebar {
         transition:
@@ -185,7 +197,7 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-3);
 }
 
 /* The scrim behind the drawer (mounted only on mobile while the rail is open) — a tap here closes

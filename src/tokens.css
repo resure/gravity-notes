@@ -38,6 +38,13 @@
     --line: rgba(62, 54, 42, 0.08);
     --bg-hover: rgba(62, 54, 42, 0.04);
     --bg-selected: rgba(62, 54, 42, 0.065);
+    /* One step past `selected`, for the two places that need to out-weigh it without reaching for
+       the accent: a row the KEYBOARD is on (vs one merely selected), and the ⋯ target while the
+       pointer is on the button itself (§05's "10% wash", so the target reads as a button rather
+       than a mark). It is a token rather than a `color-mix` of `--bg-selected` because these washes
+       carry their own alpha, and mixing past 100% is invalid CSS — the declaration is dropped and
+       the state silently stops drawing. */
+    --bg-selected-strong: rgba(62, 54, 42, 0.1);
 
     /* ── Accent + danger ───────────────────────────────────────────────────────────────────── */
     --accent: oklch(0.7 0.14 62);
@@ -128,6 +135,7 @@
     --line: rgba(255, 255, 255, 0.09);
     --bg-hover: rgba(255, 255, 255, 0.05);
     --bg-selected: rgba(255, 255, 255, 0.08);
+    --bg-selected-strong: rgba(255, 255, 255, 0.12);
 
     --accent: oklch(0.78 0.13 68);
     --accent-soft: oklch(0.78 0.13 68 / 0.14);

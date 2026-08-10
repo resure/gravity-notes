@@ -182,7 +182,8 @@ Key modules:
   rename two-step (macOS's case-insensitive FS makes a direct case-only rename a no-op). `save()`
   reproduces the FS contract exactly: `ConflictError` on mtime mismatch, a `NotFoundError` `DOMException`
   when the file is gone (so `useNotes` maps it to a "deleted" conflict).
-- `src/storage/transfer.ts` — `.md` export (zip via `fflate`) and import (`.md` / `.zip`), for any
+- `src/storage/transfer.ts` — `.md` export (a whole-vault zip via `fflate`, or `exportNote` for a
+  single file — the note menu's "Export this note…", note bytes only) and import (`.md` / `.zip`), for any
   backend; the way to get plain files out of in-browser storage and migrate between backends.
   Preserves folder structure (incl. deliberately-empty folders, via a `.gnkeep` marker) and bundles
   `Attachments/` bytes both ways.
@@ -388,6 +389,31 @@ Key modules:
   error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
   out of the web bundle. `Workspace` runs a silent check on launch (production only) → toast; `TopBar`
   adds a manual "Check for Updates…" item; `UpdateDialog` renders the flow.
+- `src/ui/` — the **design-system primitives**, on [`@base-ui/react`](https://base-ui.com) for
+  behaviour and ~100% our own CSS for looks. `Button` (quiet / raised / filled — `filled` appears
+  exactly ONCE in the app, on the folder gate, and `raised` marks the one action a pane exists for),
+  `Icon`/`icons` (the hand-drawn set: one stroke each, drawn on a 16 box, with the stroke WEIGHT a
+  function of the rendered size — a path merely scaled goes spindly at 12 and heavy at 26), `Menu`
+  (+`MenuItem`/`MenuSub`/`MenuPanel`), `Dialog`+`AlertDialog`, `Popover`, `Select`, `Switch`,
+  `ToggleGroup`, `Input`, `Tooltip`, `toast`, and `bits` (Kbd / Chip / Banner / Skeleton). Three
+  things here are contracts, not styling:
+  - **`.ui-pop` is a selector other code depends on.** Every floating surface carries it, and
+    `Workspace`'s F2 guard tests `closest('.note-title-row, .ui-pop, .g-popup, [role="dialog"]')` to
+    know focus is inside a floating layer. Base UI portals all of them to `<body>`, so the guard
+    cannot walk the React tree instead. (`.g-popup` stays until the last uikit popup goes.)
+  - **Dialogs must never be `keepMounted`.** `useShortcuts` goes quiet while
+    `[role="dialog"]:not(.ui-toast), [role="alertdialog"]` matches, so a kept-mounted dialog would
+    silence every global chord for the session. The `:not(.ui-toast)` is equally load-bearing: an
+    interactive toast is a `role="dialog"` too, and one failure toast would otherwise kill the
+    keyboard while it was on screen.
+  - **Menus anchor, they don't only trigger.** `Menu` takes an `anchor` (an element OR a zero-size
+    rect at the cursor) as well as a `trigger`, which is what lets the note list and folder rail keep
+    ONE menu instance across thousands of rows and still open at the pointer on right-click. With a
+    bare anchor there is no trigger to return focus to, so callers pass `finalFocus`.
+- `src/listGroups.ts` — pure list grouping (no I/O, no React; sibling to `search.ts`/`tree.ts`):
+  interleaves Pinned / Today / Yesterday / Earlier labels — or A, B, C under a title sort — into an
+  already-ordered note list. Groups FOLLOW the active sort, and a live search gets none at all: its
+  results are ranked, not sorted, so "Today" over them would be a lie about the order.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate + a recents
   list so a failed probe is never a dead end; **desktop is folder-first** — in-browser storage is
   offered on the web only; the transient `loading` state renders NO gate UI — just a 300 ms-delayed
@@ -405,27 +431,45 @@ Key modules:
   floating **Preview badge** (read-only preview is otherwise invisible; hover swaps it to "Exit
   preview", click or ⌘⇧P leaves) and the **search auto-peek** — typing a query while the sidebar is
   collapsed peeks the list WITHOUT stealing focus from the box, and clearing the query or committing a
-  match tucks it away), `TopBar` (nvALT search box + orb menu [export / import / manage attachments /
-  trash / **Open Recent submenu** (click = switch in place, ⌘-click = new window on desktop;
-  "Workspaces…" opens the ⌃R switcher) / **Open Folder…** (⌘-click = new window)] + theme/help
-  controls + save-status dot),
+  match tucks it away), `TopBar` (the 44px title bar: two 26px pane toggles, the **Orb** (a flat 19px
+  amber disc — the app MARK, not an accent, which is why it never recolours with state) holding
+  everything app-wide [workspace list (click = switch in place, ⌘-click = new window on desktop) /
+  Open Folder… (⌘-click = new window) / Workspaces… (⌃R) / export / import / attachments / trash /
+  reload / toggle sidebar / theme / settings / shortcuts / updates / about], a **window-centred**
+  404×27 search field (absolutely positioned, so a long title or a wide pane can never nudge it off
+  centre), and at the right the **sync dot + word** — which REPLACED the toast that used to fire on
+  every save — then the open note's own **⋯ menu**. The one structural rule is that "what is this
+  app doing" and "what is this note doing" are never in the same list: the ⋯ carries the appearance
+  strips (two ToggleGroups inline in the popup, out of the arrow-key ring), preview / markup, and the
+  note's file actions, and ⌘⇧I opens it),
   `WorkspaceSwitcherDialog` (the ⌃R recents switcher; shares the keyboard model with MoveToDialog via
   `useListboxNav`: filter + ↑/↓ + ↵ open / ⌘↵ new window / ⌘⌫ remove; OTHER workspaces lead by recency
   with the current one parked last, and the top row is pre-highlighted, so ⌃R↵ ⌃R↵ ping-pongs between
   the two most recent workspaces; a pinned "Open Folder…" action row sits outside the filter; the
   in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
-  strands), `FolderRail` (collapsible
-  nested-folder tree left of the list — select/scope,
-  drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
-  sort, **Open in New Window** (row ⋯/context menu, ⌘↵, ⌘-click — desktop only, gated by the optional
-  `onOpenInNewWindow` prop); right-click and ⌘-click deliberately NEVER move the selection (the menu
-  acts via its own payload, and a row `onMouseDown` blocks the focus grab); a **folder-scope chip**
-  names the filter when a folder is selected while the rail is closed (click opens the rail, ✕ clears
-  to All Notes without switching notes); **virtualized** via `@tanstack/react-virtual`, with a
-  `rangeExtractor` that keeps the
-  keyboard-focused row and any open row popover's anchor row (⋯ menu / icon picker) mounted; rows
-  render only an `IconPickerButton` glyph and share ONE `IconPickerPopup` — like the one shared row
-  menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
+  strands), `FolderRail` (the 236px
+  nested-folder tree left of the list — select/scope, drag-and-drop, rename, pin; toggle ⌘⇧\. Rows
+  are the same 14/500 type as the note list so the two panes read as one app, grouped by two mono
+  labels (Library / Folders) and indented by a 12px step with a hairline guide; **Trash sits at the
+  foot** — a destination, not a folder, and so deliberately outside the tree's roving-tabindex ring —
+  above a 36px "New Folder" row. It stays a plain roving-tabindex tree and NOT a Base UI Menu:
+  Menu/Select capture single letters for type-to-select, which would eat `n` and the vim `j`/`k`), `NoteList` (the 324px middle pane: a 38px **scope header** (folder name ·
+  count · sort Select · the app's ONE raised button, "+ New") over **time-group labels** and **58px
+  FIXED rows** — the height is a virtualizer contract, not a measurement, which is what keeps the
+  arithmetic exact at three thousand rows. A row is a title with the time beside it plus one line of
+  the note's own first words; the time gives way to a 24px ⋯ on hover. Pins are the first GROUP
+  rather than a badge on a row, and the scope header is what replaced the per-row breadcrumb (only
+  the leaf folder name still shows, and only outside a scoped folder). Create/rename/delete/move,
+  pin, sort, **Open in New Window** (row ⋯/context menu, ⌘↵, ⌘-click — desktop only, gated by the
+  optional `onOpenInNewWindow` prop); right-click and ⌘-click deliberately NEVER move the selection
+  (the menu acts via its own payload, and a row `onMouseDown` blocks the focus grab); a
+  **folder-scope chip** names the filter when a folder is selected while the rail is closed (click
+  opens the rail, ✕ clears to All Notes without switching notes); **virtualized** via
+  `@tanstack/react-virtual`, with a `rangeExtractor` that keeps the keyboard-focused row and the open
+  ⋯ menu's anchor row mounted. Hover is suppressed on the row directly above or below the selection
+  (two washes of the same family would read as one four-line block) — via a `data-no-hover` attribute
+  on the row's POSITIONING WRAPPER, never a prop, so a selection change still re-renders exactly two
+  memoized rows), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
   list-scoped via `inTyping:false`, so in the editor ⌘⇧M stays a typing chord; shares
   `useListboxNav` with the workspace switcher),
   `EditorPane` (the note title above the block editor body; the pane does NOT remount on a switch —
@@ -447,13 +491,10 @@ Key modules:
   understands — plus alt/caption editing and explicit loading/broken states),
   `BacklinksPanel` (the "linked references" list
   under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
-  Appearance for the app and workspace layers), `NoteAppearancePopover` (the per-note font/width
-  popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
-  `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
-  derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
+  Appearance for the app and workspace layers), `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
-  clickable links), `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
+  clickable links), and `ErrorBoundary` (root render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`. The theme key (`gravity-notes:theme`) is also read by an inline anti-flash
   script in `index.html` that paints the document background in the resolved theme before the bundle
@@ -472,10 +513,14 @@ Key modules:
 ## Conventions
 
 - React 18 function components + hooks; TypeScript `strict` (plus `noUnusedLocals`/`noUnusedParameters`).
-- UI is **Gravity UI** (`@gravity-ui/uikit`, `@gravity-ui/icons`) — prefer its components over hand-rolled ones.
+- UI is being rewritten onto **Base UI** (`@base-ui/react`) + our own CSS: reach for a primitive in
+  `src/ui/` first, and add one there rather than styling a component in place. What is still Gravity
+  UI (`@gravity-ui/uikit`, `@gravity-ui/icons`) is mid-migration and leaves in the dialogs pass.
 - Code style follows the Gravity ecosystem (single quotes, sorted imports), enforced via
   `@gravity-ui/eslint-config` + `@gravity-ui/prettier-config`.
-- Errors surface to the user via the toaster (`onError` in `Workspace`); storage methods throw and
+- Errors surface to the user via `toast()` from `src/ui/toast` (`onError` in `Workspace`) — and ONLY
+  genuine failures and things with an action to take do: the save confirmation is gone, replaced by
+  the title bar's sync dot. Storage methods throw and
   callers translate to toasts.
 - Keep new persistence behind `NoteStore` so alternative backends (the Tauri `fs` store, HTTP API,
   IndexedDB) stay drop-in. Anything that runs only in the desktop shell must feature-detect Tauri (the

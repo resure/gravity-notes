@@ -4,7 +4,6 @@ import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
-import {loadEmojis, loadIconCatalog} from '../icons';
 import type {NoteMeta} from '../storage/types';
 import {renderWithProviders} from '../test/render';
 
@@ -41,9 +40,6 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         onSortChange: vi.fn(),
         pinnedIds: [],
         onTogglePin: vi.fn(),
-        icons: {},
-        onSetIcon: vi.fn(),
-        showIcons: false,
         railOpen: false,
         onToggleRail: vi.fn(),
         onFocusRail: vi.fn(),
@@ -165,8 +161,8 @@ describe('NoteList — list & a11y', () => {
 
     it('names the folder in the empty state of an empty selected folder', () => {
         setup({notes: [], scopeLabel: 'Work'});
-        expect(screen.getByText(/No notes in/)).toBeInTheDocument();
-        expect(screen.getByText(/Work/)).toBeInTheDocument();
+        // The scope header names the folder too, so assert on the empty-state line itself.
+        expect(screen.getByText(/No notes in .Work./)).toBeInTheDocument();
     });
 
     it('shows a body preview snippet and a formatted date', () => {
@@ -294,7 +290,7 @@ describe('NoteList — delete', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        const dialog = await screen.findByRole('dialog');
+        const dialog = await screen.findByRole('alertdialog');
         // Wait until the dialog has grabbed focus, else Enter races its focus trap.
         await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
         await user.keyboard('{Enter}');
@@ -340,12 +336,14 @@ describe('NoteList — search display', () => {
         expect(mark).toBeTruthy();
     });
 
-    it('shows a folder-path crumb on a nested note in search mode', () => {
+    it("names a nested note's folder — the leaf only — outside a scoped folder", () => {
         setup({
             showCrumbs: true,
             notes: [{id: 'Work/Sub/Plan.md', title: 'Plan', updatedAt: 1}],
         });
-        expect(screen.getByText('Work / Sub')).toBeInTheDocument();
+        // Only the leaf: the full path was the breadcrumb the scope header replaced.
+        expect(screen.getByText('Sub')).toBeInTheDocument();
+        expect(screen.queryByText(/Work \/ Sub/)).toBeNull();
     });
 
     it('hints note creation when filtered to empty with a query', () => {
@@ -354,7 +352,7 @@ describe('NoteList — search display', () => {
     });
 });
 
-describe('NoteList — toolbar', () => {
+describe('NoteList — scope header', () => {
     it('creates an untitled note from the New button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
@@ -370,29 +368,16 @@ describe('NoteList — toolbar', () => {
         expect(props.onSortChange).toHaveBeenCalledWith('title');
     });
 
-    it('toggles the folder rail from the toolbar button', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({railOpen: false});
-        await user.click(screen.getByRole('button', {name: 'Folders'}));
-        expect(props.onToggleRail).toHaveBeenCalledTimes(1);
+    it('names the scope and its count in the header', () => {
+        setup({scopeLabel: 'Work'});
+        const header = document.querySelector('.note-list__header') as HTMLElement;
+        expect(header).toHaveTextContent('Work');
+        expect(header).toHaveTextContent('2');
     });
 
-    it('reflects the rail state on the toggle via aria-pressed (the label stays "Folders")', () => {
-        // Constant label + aria-pressed is the toggle-button pattern; Gravity's `selected` prop
-        // renders both the aria state and the pressed look.
-        setup({railOpen: true});
-        expect(screen.getByRole('button', {name: 'Folders'})).toHaveAttribute(
-            'aria-pressed',
-            'true',
-        );
-    });
-
-    it('reads unpressed while the rail is closed', () => {
-        setup({railOpen: false});
-        expect(screen.getByRole('button', {name: 'Folders'})).toHaveAttribute(
-            'aria-pressed',
-            'false',
-        );
+    it('falls back to All Notes in the header with no folder scope', () => {
+        setup({scopeLabel: null});
+        expect(document.querySelector('.note-list__header')).toHaveTextContent('All Notes');
     });
 });
 
@@ -415,12 +400,14 @@ describe('NoteList — rail focus handoff', () => {
 });
 
 describe('NoteList — pinning', () => {
-    it('shows a pin icon on pinned notes only', () => {
+    it('files pinned notes under their own group instead of badging the row', () => {
         setup({pinnedIds: ['Alpha.md']});
-        const alpha = screen.getByRole('option', {name: /Alpha/});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        expect(alpha.querySelector('.note-list__pin')).toBeTruthy();
-        expect(beta.querySelector('.note-list__pin')).toBeFalsy();
+        const groups = [...document.querySelectorAll('.note-list__group')].map(
+            (g) => g.textContent,
+        );
+        expect(groups[0]).toBe('Pinned');
+        // The pin is the group, not a mark on the row.
+        expect(document.querySelector('.note-list__pin')).toBeNull();
     });
 
     it('pins an unpinned note from the menu', async () => {
@@ -578,7 +565,7 @@ describe('NoteList — folder scope chip (rail closed)', () => {
         const user = userEvent.setup();
         const onClearScope = vi.fn();
         setup({...scoped, onClearScope});
-        expect(screen.getByText('Work')).toBeInTheDocument();
+        expect(document.querySelector('.note-list__scope')).toHaveTextContent('Work');
         await user.click(screen.getByRole('button', {name: 'Show all notes'}));
         expect(onClearScope).toHaveBeenCalledTimes(1);
     });
@@ -586,23 +573,27 @@ describe('NoteList — folder scope chip (rail closed)', () => {
     it('clicking the chip opens the folder rail', async () => {
         const user = userEvent.setup();
         const {props} = setup({...scoped});
-        await user.click(screen.getByText('Work'));
+        await user.click(
+            within(document.querySelector('.note-list__scope') as HTMLElement).getByRole('button', {
+                name: 'Work',
+            }),
+        );
         expect(props.onToggleRail).toHaveBeenCalledTimes(1);
     });
 
     it('hides the chip when the rail already shows the scope', () => {
         setup({...scoped, railOpen: true});
-        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+        expect(document.querySelector('.note-list__scope')).toBeNull();
     });
 
     it('hides the chip while a search is live (the list is global then)', () => {
         setup({...scoped, query: 'find me'});
-        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+        expect(document.querySelector('.note-list__scope')).toBeNull();
     });
 
     it('renders no chip at All Notes (no scope)', () => {
         setup({...scoped, scopeLabel: null});
-        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+        expect(document.querySelector('.note-list__scope')).toBeNull();
     });
 });
 
@@ -656,9 +647,6 @@ describe('NoteList — row memoization (perf)', () => {
             onSortChange: vi.fn(),
             pinnedIds: [],
             onTogglePin: vi.fn(),
-            icons: {},
-            onSetIcon: vi.fn(),
-            showIcons: false,
             railOpen: false,
             onToggleRail: vi.fn(),
             onFocusRail: vi.fn(),
@@ -681,109 +669,5 @@ describe('NoteList — row memoization (perf)', () => {
         noteRowRenders.count = 0;
         rerender(<NoteList {...props} />);
         expect(noteRowRenders.count).toBe(0);
-    });
-});
-
-describe('NoteList — note icons (one shared picker)', () => {
-    it('renders a glyph button per row; the stored emoji shows right in the button', () => {
-        setup({showIcons: true, icons: {'Alpha.md': '🔥'}});
-        const alpha = screen.getByRole('option', {name: /Alpha/});
-        expect(within(alpha).getByRole('button', {name: 'Change note icon'})).toHaveTextContent(
-            '🔥',
-        );
-        // A row without an icon gets the default affordance…
-        const beta = screen.getByRole('option', {name: /Beta/});
-        expect(within(beta).getByRole('button', {name: 'Set note icon'})).toBeInTheDocument();
-        // …and no picker popup exists until a button is clicked (it used to mount per row).
-        expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull();
-    });
-
-    it('clicking a row button opens the shared popup; a pick goes to that row’s note', async () => {
-        // Preload both catalogs (memoized module-level): they otherwise resolve in two async
-        // steps after the popup opens, and the second one prepends entries — remounting every
-        // option out from under a just-located element mid-click.
-        await Promise.all([loadEmojis(), loadIconCatalog()]);
-        const user = userEvent.setup();
-        const onSetIcon = vi.fn();
-        setup({showIcons: true, onSetIcon});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button', {name: 'Set note icon'}));
-        const grid = await screen.findByRole('listbox', {name: 'Pick an icon'});
-        const options = await within(grid).findAllByRole('option');
-        expect(options.length).toBeGreaterThan(0);
-        await user.click(options[0]);
-        expect(onSetIcon).toHaveBeenCalledTimes(1);
-        const [id, value] = onSetIcon.mock.calls[0] as [string, string];
-        expect(id).toBe('Beta.md');
-        expect(value.length).toBeGreaterThan(0);
-        // Picking closes the popup.
-        await waitFor(() =>
-            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
-        );
-    });
-
-    it('does not browse the row when its icon button is clicked', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({showIcons: true});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        await user.click(within(beta).getByRole('button', {name: 'Set note icon'}));
-        expect(props.onBrowse).not.toHaveBeenCalled();
-    });
-
-    it('a second click on the same button toggles the picker closed', async () => {
-        const user = userEvent.setup();
-        setup({showIcons: true});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        const button = within(beta).getByRole('button', {name: 'Set note icon'});
-        await user.click(button);
-        await screen.findByRole('listbox', {name: 'Pick an icon'});
-        await user.click(button);
-        await waitFor(() =>
-            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
-        );
-    });
-
-    it('opening the shared picker re-renders no rows (memo parity)', async () => {
-        const user = userEvent.setup();
-        setup({showIcons: true});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        const button = within(beta).getByRole('button', {name: 'Set note icon'});
-        noteRowRenders.count = 0;
-        await user.click(button);
-        await screen.findByRole('listbox', {name: 'Pick an icon'});
-        expect(noteRowRenders.count).toBe(0);
-    });
-
-    it('Enter on a focused row icon button opens the picker, not the note', async () => {
-        // The row's keydown handler used to preventDefault bare Enter unconditionally, cancelling
-        // the button's click synthesis and opening the note — Enter was dead on row buttons.
-        const user = userEvent.setup();
-        const {props} = setup({showIcons: true});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        const button = within(beta).getByRole('button', {name: 'Set note icon'});
-        button.focus();
-        await user.keyboard('{Enter}');
-        await screen.findByRole('listbox', {name: 'Pick an icon'});
-        expect(props.onCommit).not.toHaveBeenCalled();
-    });
-
-    it('the shared popup starts clean on reopen (tab choice does not leak across notes)', async () => {
-        await Promise.all([loadEmojis(), loadIconCatalog()]);
-        const user = userEvent.setup();
-        setup({showIcons: true});
-        const beta = screen.getByRole('option', {name: /Beta/});
-        const betaButton = within(beta).getByRole('button', {name: 'Set note icon'});
-        await user.click(betaButton);
-        await screen.findByRole('listbox', {name: 'Pick an icon'});
-        await user.click(screen.getByRole('radio', {name: 'Emoji'}));
-        // Close via the same button (the toggle path), then open another row's picker.
-        await user.click(betaButton);
-        await waitFor(() =>
-            expect(screen.queryByRole('listbox', {name: 'Pick an icon'})).toBeNull(),
-        );
-        const alpha = screen.getByRole('option', {name: /Alpha/});
-        await user.click(within(alpha).getByRole('button', {name: /note icon/i}));
-        await screen.findByRole('listbox', {name: 'Pick an icon'});
-        expect(screen.getByRole('radio', {name: 'All'})).toBeChecked();
     });
 });

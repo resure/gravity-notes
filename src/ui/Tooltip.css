@@ -1,0 +1,45 @@
+/* Solid ink, one line, 26px. A tooltip is the only surface in the app that inverts. */
+
+.ui-tooltip {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    box-sizing: border-box;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 7px;
+    background: var(--text-1);
+    color: var(--bg-paper);
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    line-height: 17px;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px -3px rgba(52, 44, 32, 0.34);
+    transform-origin: var(--transform-origin);
+    transition:
+        opacity var(--dur-1) var(--ease),
+        transform var(--dur-1) var(--ease);
+}
+
+.ui-tooltip__hint {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    opacity: 0.65;
+}
+
+.ui-tooltip[data-starting-style],
+.ui-tooltip[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-tooltip {
+        transition: none;
+    }
+    .ui-tooltip[data-starting-style],
+    .ui-tooltip[data-ending-style] {
+        transform: none;
+    }
+}

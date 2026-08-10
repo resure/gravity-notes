@@ -1,0 +1,197 @@
+/* Fields, switches and segmented strips — the only kinds of control the app has.
+   §08: "Every control is a Base UI Toggle Group or a Switch — there are no other kinds of setting
+   in this app." The field below is the third thing, and it is never a setting: it is search, rename,
+   and folder-filter. */
+
+/* ── Field ─────────────────────────────────────────────────────────────────────────────────────
+   Inputs go the OTHER way from raised controls: paper fill with a hairline and a shallow inner
+   shadow in light, and in dark they go darker-with-inner-shadow while raised controls go lighter
+   (§04b). That inversion is what keeps "you type into this" legible without a label. */
+
+.ui-field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    box-sizing: border-box;
+    height: 27px;
+    padding: 0 8px 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--bg-paper);
+    color: var(--text-1);
+    box-shadow:
+        0 1px 1px rgba(52, 44, 32, 0.03),
+        inset 0 1px 2px rgba(52, 44, 32, 0.03);
+}
+
+[data-theme='dark'] .ui-field,
+.g-root_theme_dark .ui-field {
+    background: color-mix(in oklab, var(--bg-panel), black 22%);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* A field marks its own focus, and it marks it ON ITSELF: the app-wide 2px-at-2px-offset ring is
+   for controls that would otherwise show nothing, and around a 27px box it draws a detached amber
+   lozenge — permanently, since in an nvALT app the search box holds focus most of the time. The
+   accent border plus a 3px halo is the same language as the sync dot, hugs the 7px radius exactly,
+   and still never suppresses the focus signal. */
+.ui-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+[data-theme='dark'] .ui-field:focus-within,
+.g-root_theme_dark .ui-field:focus-within {
+    box-shadow:
+        inset 0 1px 2px rgba(0, 0, 0, 0.35),
+        0 0 0 3px var(--accent-soft);
+}
+
+.ui-field__icon {
+    flex: none;
+    color: var(--text-3);
+}
+
+.ui-field__input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    line-height: 17px;
+    letter-spacing: -0.003em;
+    outline: none;
+}
+
+.ui-field__input::placeholder {
+    color: var(--text-3);
+}
+
+/* The field is the focus surface, not the bare input — otherwise the ring draws inside the box. */
+.ui-field__input:focus-visible {
+    outline: none;
+}
+
+.ui-field__clear {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--text-3);
+    cursor: default;
+}
+
+@media (hover: hover) {
+    .ui-field__clear:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+.ui-field_size-l {
+    height: 34px;
+}
+
+.ui-field_size-l .ui-field__input {
+    /* WKWebView auto-zooms a focused input below 16px; the mobile bar's field is the one place
+       that matters. */
+    font-size: 16px;
+}
+
+/* ── Toggle group ──────────────────────────────────────────────────────────────────────────────
+   A track at 5% neutral with a raised pill on the active segment. The pill is NOT accent: §07 and
+   §08 both render it as paper with a 1px-deep shadow, and a strip of four amber-capable segments
+   would put the accent everywhere the eye lands. */
+
+.ui-toggle-group {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-selected);
+}
+
+.ui-toggle-group__item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 24px;
+    min-width: 0;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-2);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+    transition: background var(--dur-1) var(--ease);
+}
+
+.ui-toggle-group__item[data-pressed] {
+    background: var(--bg-paper);
+    color: var(--text-1);
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(52, 44, 32, 0.12);
+}
+
+[data-theme='dark'] .ui-toggle-group__item[data-pressed],
+.g-root_theme_dark .ui-toggle-group__item[data-pressed] {
+    background: color-mix(in oklab, var(--bg-paper), white 5%);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+@media (hover: hover) {
+    .ui-toggle-group__item:not([data-pressed]):hover {
+        color: var(--text-1);
+    }
+}
+
+/* ── Switch ────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-switch {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: var(--bg-selected);
+    cursor: default;
+    transition: background var(--dur-1) var(--ease);
+}
+
+.ui-switch[data-checked] {
+    background: var(--accent);
+}
+
+.ui-switch__thumb {
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin-left: 2px;
+    border-radius: 50%;
+    background: var(--bg-paper);
+    box-shadow: var(--shadow-1);
+    transition: transform var(--dur-1) var(--ease);
+}
+
+.ui-switch[data-checked] .ui-switch__thumb {
+    transform: translateX(14px);
+}

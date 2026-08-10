@@ -1,0 +1,176 @@
+/* ── Keycap ────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-kbd {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
+    border-radius: var(--r-xs);
+    background: color-mix(in oklab, var(--bg-panel), var(--bg-paper) 50%);
+    color: var(--text-4);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 14px;
+    white-space: nowrap;
+}
+
+/* ── Chip ──────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 2px 0 0;
+    border-radius: var(--r-xs);
+    background: var(--bg-selected);
+    color: var(--text-3);
+    font-family: var(--font-ui);
+    font-size: var(--fs-meta);
+    line-height: var(--lh-meta);
+    max-width: 100%;
+}
+
+.ui-chip__body {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    height: 18px;
+    padding: 0 4px 0 5px;
+    border: 0;
+    border-radius: var(--r-xs);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+}
+
+.ui-chip__icon {
+    flex: none;
+    display: inline-flex;
+}
+
+.ui-chip__label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+@media (hover: hover) {
+    button.ui-chip__body:hover {
+        color: var(--text-1);
+    }
+}
+
+.ui-chip__dismiss {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    cursor: default;
+}
+
+@media (hover: hover) {
+    .ui-chip__dismiss:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+/* ── Banner ────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-left-width: 3px;
+    border-radius: var(--r-md);
+    background: var(--bg-panel-2);
+    font-family: var(--font-ui);
+}
+
+.ui-banner_info {
+    border-left-color: var(--text-3);
+}
+
+.ui-banner_warning {
+    border-left-color: var(--accent);
+}
+
+.ui-banner_danger {
+    border-left-color: var(--danger);
+}
+
+.ui-banner__text {
+    flex: 1;
+    min-width: 0;
+}
+
+.ui-banner__title {
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    font-weight: 550;
+    letter-spacing: -0.003em;
+    color: var(--text-1);
+}
+
+.ui-banner__body {
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 17px;
+    color: var(--text-2);
+}
+
+.ui-banner__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+/* ── Skeleton ──────────────────────────────────────────────────────────────────────────────── */
+
+.ui-skeleton {
+    display: block;
+    height: 0.7em;
+    border-radius: 3px;
+    background: var(--bg-selected);
+}
+
+/* A slow sweep, not a pulse: a list of pulsing rows is a strobe. Off entirely under
+   reduced motion — the flat wash still reads as "not yet". */
+@media (prefers-reduced-motion: no-preference) {
+    .ui-skeleton {
+        background: linear-gradient(
+            90deg,
+            var(--bg-selected) 0%,
+            var(--bg-hover) 40%,
+            var(--bg-selected) 80%
+        );
+        background-size: 300% 100%;
+        animation: ui-skeleton-sweep 1.6s var(--ease) infinite;
+    }
+
+    @keyframes ui-skeleton-sweep {
+        from {
+            background-position: 120% 0;
+        }
+        to {
+            background-position: -40% 0;
+        }
+    }
+}

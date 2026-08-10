@@ -1,0 +1,40 @@
+/* The Select trigger: a text button with a chevron, and no field chrome until hover (§07). It is
+   the one control in the list header that must not compete with "+ New" beside it. */
+
+.ui-select__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text-2);
+    font-family: var(--font-ui);
+    font-size: var(--fs-ui-sm);
+    line-height: var(--lh-ui-sm);
+    font-weight: 510;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+}
+
+@media (hover: hover) {
+    .ui-select__trigger:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+.ui-select__trigger[data-popup-open] {
+    background: var(--bg-selected);
+    color: var(--text-1);
+}
+
+.ui-select__chevron {
+    display: inline-flex;
+    opacity: 0.6;
+}

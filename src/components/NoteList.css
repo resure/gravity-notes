@@ -1,242 +1,306 @@
+/* The note list — §04/§05.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   324px on `--bg-panel-2`, a 38px scope header, time-group labels, and 58px fixed rows. The row is
+   the single most repeated object in the app; at three thousand notes it IS the app, which is why
+   its height is a contract rather than a measurement. */
+
 .note-list {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: var(--sidebar-width, 324px);
     height: 100%;
-    width: var(--sidebar-width);
-    flex-shrink: 0;
-    border-right: 1px solid var(--g-color-line-generic);
-    background-color: var(--g-color-base-background);
+    flex: none;
+    background: var(--bg-panel-2);
+    color: var(--text-1);
+    font-family: var(--font-ui);
 }
 
-/* Filter + New, above the list. */
-.note-list__toolbar {
+/* ── Scope header ─────────────────────────────────────────────────────────────────────────────
+   The folder's name and count — this is what replaced the per-row breadcrumb, and the reason the
+   rows below can stay two lines. */
+
+.note-list__header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
+    gap: 6px;
+    box-sizing: border-box;
+    flex: none;
+    height: 38px;
+    padding: 0 10px 0 14px;
 }
 
-.note-list__sort {
+.note-list__scope-name {
+    padding-left: 2px;
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.note-list__scope-count {
+    font-size: var(--fs-ui-sm);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.note-list__header-gap {
     flex: 1;
-    min-width: 0;
+    min-width: 4px;
 }
 
-/* The folder-scope chip row (rail closed + a folder selected — see the render-site comment). */
 .note-list__scope {
-    display: flex;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
+    flex: none;
+    padding: 0 14px 6px;
 }
 
-.note-list__scope-chip {
-    max-width: 100%;
+/* ── Group labels ─────────────────────────────────────────────────────────────────────────── */
+
+.note-list__group {
+    display: flex;
+    align-items: flex-end;
+    box-sizing: border-box;
+    height: 100%;
+    margin: 0 8px;
+    padding: 0 12px 4px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
 }
+
+/* ── Rows ─────────────────────────────────────────────────────────────────────────────────────
+   58px fixed. The hit area is inset 8px and rounded to 8, matching the folder rows exactly, so
+   selection reads identically in both panes. */
 
 .note-list__items {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    overscroll-behavior: contain; /* keep scroll momentum inside the list (no chaining to the shell) */
-    padding: 0;
 }
 
-.note-list__empty {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 24px 16px;
-    text-align: center;
-}
-
-/* "Ledger" cell: an icon tile + a two-line text column (title line, then date · preview). Full-width,
-   flat; a faint divider separates rows. */
 .note-list__item {
     display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 6px 16px;
-    cursor: pointer;
-    /* A very faint divider — fainter than --g-color-line-generic, so the rows read as a quiet ledger
-       rather than a hard-ruled table. Theme-aware (light default; dark override below). */
-    border-bottom: 1px solid rgba(0, 0, 0, 0.045);
-}
-.g-root_theme_dark .note-list__item {
-    border-bottom-color: rgba(255, 255, 255, 0.05);
-}
-
-/* The text column (right of the icon tile): title line, meta line (date · preview), folder chip. */
-.note-list__text {
-    flex: 1;
-    min-width: 0;
-    display: flex;
     flex-direction: column;
-    gap: 0px;
+    justify-content: center;
+    gap: 1px;
+    box-sizing: border-box;
+    height: 100%;
+    margin: 0 8px;
+    padding: 0 12px;
+    border-radius: var(--r-md);
+    cursor: default;
+    user-select: none;
 }
 
-.note-list__row {
+@media (hover: hover) {
+    .note-list__item:hover {
+        background: var(--bg-hover);
+    }
+
+    /* Hover and selection are the same neutral family, so adjacent washes would read as one
+       four-line block. The flag sits on the row's positioning wrapper (see NoteList.tsx) — the row
+       still works, the wash just doesn't draw. */
+    [data-no-hover] .note-list__item:hover {
+        background: none;
+    }
+}
+
+/* Selection NEVER animates: picking a row must feel like it was already selected. */
+.note-list__item_selected,
+.note-list__item_selected:hover {
+    background: var(--bg-selected);
+}
+
+.note-list__item_selected .note-list__title {
+    font-weight: 600;
+}
+
+.note-list__item_selected .note-list__preview,
+.note-list__item_selected .note-list__date {
+    color: var(--text-2);
+}
+
+/* Selected AND the list has the keyboard: a darker step. `:focus`, NOT `:focus-visible` — rows are
+   focused programmatically (arrow keys, ↓ from the search box), and WebKit does not set
+   :focus-visible for a scripted focus. Deliberate; don't "modernise" it. */
+.note-list__item:focus {
+    outline: none;
+    background: var(--bg-selected-strong);
+}
+
+.note-list__line {
     display: flex;
     align-items: center;
+    gap: 10px;
+    min-width: 0;
 }
 
 .note-list__title {
     flex: 1;
     min-width: 0;
-    font-weight: 450;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* The ⋯ actions button sits at the title's right edge, revealed on hover / keyboard focus / selection
-   (kept in the DOM at opacity 0 so it stays focusable + clickable, and the shared menu can anchor to
-   it even on an idle row). */
-.note-list__actions {
-    flex-shrink: 0;
-    opacity: 0;
-}
-.note-list__item:focus-within .note-list__actions,
-.note-list__item_selected .note-list__actions {
-    opacity: 1;
-}
-/* Hover-reveal is for REAL POINTERS ONLY (`@media (hover: hover)`). On a touch screen WebKit spends
-   the first tap applying :hover — and when that tap reveals previously-hidden content like this
-   button, it SWALLOWS the click, so opening a note took two taps. Every :hover rule in the app is
-   gated this way for that reason; keep new ones gated too. */
-@media (hover: hover) {
-    .note-list__item:hover .note-list__actions {
-        opacity: 1;
-    }
-}
-
-/* Second line: the date, then a preview snippet, on a shared baseline. The text column's gap is 0, so
-   the only space left between this line and the title is the two line boxes' leading — a small
-   negative top margin trims a little of it to sit the two lines closer (safely inside that leading). */
-.note-list__meta {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-    margin-top: -2px;
+/* Outside a scoped folder, and only the leaf name — the full path would be the breadcrumb again. */
+.note-list__folder {
+    flex: none;
+    max-width: 78px;
+    font-size: var(--fs-ui-sm);
+    color: var(--text-4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .note-list__date {
-    flex-shrink: 0;
+    flex: none;
+    font-size: var(--fs-time);
+    line-height: var(--lh-time);
+    color: var(--text-3);
     font-variant-numeric: tabular-nums;
 }
 
+/* The preview is BODY TEXT, not metadata: the note's own first words, one line, ellipsis. */
 .note-list__preview {
-    flex: 1;
-    min-width: 0;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-@media (hover: hover) {
-    .note-list__item:hover {
-        background-color: var(--g-color-base-simple-hover);
-    }
-}
-
-.note-list__item_selected {
-    background-color: var(--note-list-selected-bg);
-}
-
-/* Re-assert the selected fill over the hover fill above: same specificity, so source order wins.
-   Only needed where hover exists — on touch the unguarded rule above already gives the right fill. */
-@media (hover: hover) {
-    .note-list__item_selected:hover {
-        background-color: var(--note-list-selected-bg);
-    }
-}
-
-/* Mark the focused (cursor) row with a stronger fill instead of an outline border — a step stronger
-   than the selected-row wash so the active note clearly stands out from a merely-selected one (e.g.
-   the open note while you're typing in the editor: it stays the fainter selected wash, the list's
-   own cursor row goes stronger). Plain :focus, not :focus-visible — the cursor moves here via a
-   programmatic .focus(), which WebKit doesn't treat as focus-visible, so the distinction would
-   otherwise collapse onto the selected wash. The orange tint is theme-aware (see index.css). */
-.note-list__item:focus {
-    outline: none;
-    background-color: var(--note-list-focus-bg);
-}
-
-.note-list__edit {
-    flex: 1;
-}
-
-.note-list__match {
-    background-color: var(--g-color-base-warning-medium, rgba(255, 219, 77, 0.45));
-    border-radius: 2px;
-    padding: 0 1px;
-}
-
-/* The soft rounded icon tile — a neutral fill idle, accent-tinted when the row is selected (mirrors
-   the selection wash). Theme-aware: a faint dark tint in light, a faint light tint in dark.
-   Its size + radius are shared vars (below), so the picker button that fills it stays exactly matched
-   even if the tile is resized — otherwise the button's own hover/press fill drifts out of alignment. */
-.note-list__icon-tile {
-    --gn-icon-tile-size: 32px;
-    --gn-icon-tile-radius: 8px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    width: var(--gn-icon-tile-size);
-    height: var(--gn-icon-tile-size);
-    border-radius: var(--gn-icon-tile-radius);
-    background: rgba(0, 0, 0, 0.05);
-}
-.g-root_theme_dark .note-list__icon-tile {
-    background: rgba(255, 255, 255, 0.06);
-}
-.note-list__item_selected .note-list__icon-tile {
-    background: rgba(var(--gn-accent-rgb), 0.18);
-}
-
-/* The picker button fills the tile and is visually transparent — the tile is the surface, and the
-   whole tile is the click target. (`.icon-picker__button` is added by IconPickerButton itself.)
-
-   Size it through Gravity's own --g-button-height rather than width/height:100%. An icon-only Gravity
-   button locks its WIDTH to its height via `width: var(--g-button-height)` at a specificity that beats
-   a plain width:100%, so a bare width:100% is silently ignored and the button stays at the size-m
-   height (28px) — leaving a gap inside a larger tile. Feeding --g-button-height the tile size sets
-   both width and height with no specificity fight. --g-button-border-radius matches the tile's radius
-   too, so Gravity's hover/press ::before fill lines up with the tile: no inner box, no gap. */
-.note-list__icon.icon-picker__button {
-    --g-button-height: var(--gn-icon-tile-size);
-    --g-button-border-radius: var(--gn-icon-tile-radius);
-    min-width: 0;
-    background: transparent;
-}
-
-/* Don't shrink-on-press: Gravity's :active scale(0.96) pulls the fill inward, leaving a visible gap
-   inside the tile (the fill no longer reaches the tile's edge). Keep it flush — the tile is the
-   surface, so the press feedback should fill it, not float inside it. */
-.note-list__icon.icon-picker__button:active {
-    transform: none;
-}
-
-.note-list__pin {
-    flex-shrink: 0;
-    /* A little breathing room before the title (the title row has no gap of its own). */
-    margin-right: 5px;
-    /* Follow the workspace accent (amber/blue/gray), like the orb and selection wash. */
-    color: var(--gn-orange);
-}
-
-/* Apple-Notes-style folder chip on its own line: which folder a note lives in, shown when the list
-   spans folders (All Notes / search). A folder glyph + the (dimmed) folder path. */
-.note-list__folder {
+/* One trailing slot holds the time AND the ⋯, stacked. The slot's width comes from the time, and
+   the time keeps its box on hover (`visibility`, not `display`) while the button overlays it — the
+   two are different widths, so letting the slot resize would re-flow the flex-1 title and visibly
+   shift its text under the pointer. */
+.note-list__trailing {
+    position: relative;
+    flex: none;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    min-width: 24px;
+}
+
+/* 24px, like every other icon button in the chrome, with two steps of its own so it reads as a
+   target before you click. */
+.note-list__actions {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text-2);
+    cursor: default;
+}
+
+@media (hover: hover) {
+    .note-list__item:hover .note-list__actions {
+        display: flex;
+    }
+
+    /* The time gives way; the FOLDER stays. Hiding it too was a second source of re-flow, and it
+       is the one piece of context an All-Notes row has. */
+    .note-list__item:hover .note-list__date {
+        visibility: hidden;
+    }
+
+    .note-list__actions:hover {
+        background: var(--bg-selected-strong);
+        color: var(--text-1);
+    }
+}
+
+/* Touch has no hover: show the ⋯ on the selected row so the menu is still reachable. */
+@media (hover: none) {
+    .note-list__item_selected .note-list__actions {
+        display: flex;
+    }
+
+    .note-list__item_selected .note-list__date {
+        visibility: hidden;
+    }
+}
+
+/* Rename in place: no field, no border, no box — only the title becomes editable, and the preview
+   line below does not move. The selected text takes the accent (one of its five uses). */
+.note-list__edit {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    outline: none;
+}
+
+.note-list__edit::selection {
+    background: var(--accent-soft);
+}
+
+/* Search hits, in both the title and the preview. */
+.note-list__match {
+    padding: 0 1px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: inherit;
+}
+
+/* ── Empty ────────────────────────────────────────────────────────────────────────────────────
+   Per-pane, never full-window; at most one oversized quiet glyph (§09). */
+
+.note-list__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     gap: 4px;
-    min-width: 0;
-    /* The text column's row gap is 0, so the chip supplies its own breathing room above. */
-    margin-top: 2px;
-    opacity: 0.75;
+    height: 100%;
+    padding: 24px;
+    text-align: center;
 }
 
-.note-list__folder-icon {
-    flex-shrink: 0;
-    color: var(--g-color-text-secondary);
+.note-list__empty-glyph {
+    margin-bottom: 6px;
+    color: var(--text-4);
+    opacity: 0.7;
 }
 
-.note-list__folder-name {
-    min-width: 0;
+.note-list__empty-line {
+    margin: 0;
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    color: var(--text-3);
+}
+
+.note-list__empty-hint {
+    margin: 0;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-4);
 }

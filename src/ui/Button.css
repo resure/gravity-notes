@@ -1,0 +1,145 @@
+/* Three variants, and the app uses the third exactly once.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   `quiet`  — the default, and nearly everything: no chrome until the pointer is on it. Every icon
+              button in the chrome is this, at 26px with a 15px glyph.
+   `raised` — the §04 recipe: paper fill, one hairline, shadow-1, an inset top highlight. It exists
+              to mark the ONE action in a pane that is the reason the pane is there — today that is
+              the note list's 24px "+ New", and nothing else.
+   `filled` — solid ink. Used once, on the first-run folder gate, where there is exactly one thing
+              to do and no context to read it against.
+
+   In dark the raised recipe inverts, as §04b spells out: inputs go DARKER with an inner shadow
+   while raised controls go LIGHTER with a 6% top highlight. A dark card lit from below reads as a
+   hole; lit from above it reads as a lid. */
+
+.ui-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text-2);
+    font-family: var(--font-ui);
+    font-size: var(--fs-ui-sm);
+    line-height: var(--lh-ui-sm);
+    font-weight: 510;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+    transition: background var(--dur-1) var(--ease);
+}
+
+.ui-button:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* Square icon-only target: 26px is the chrome's one icon-button size, per §04. */
+.ui-button_icon {
+    width: 26px;
+    padding: 0;
+}
+
+.ui-button_size-s {
+    height: 24px;
+}
+
+.ui-button_size-s.ui-button_icon {
+    width: 24px;
+}
+
+.ui-button_size-l {
+    height: 32px;
+    padding: 0 12px;
+    font-size: var(--fs-menu);
+}
+
+.ui-button_size-l.ui-button_icon {
+    width: 32px;
+}
+
+/* ── quiet ─────────────────────────────────────────────────────────────────────────────────── */
+
+@media (hover: hover) {
+    .ui-button_quiet:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+.ui-button_quiet:active,
+.ui-button_quiet[data-pressed],
+.ui-button_quiet[aria-pressed='true'],
+.ui-button_quiet[aria-expanded='true'] {
+    background: var(--bg-selected);
+    color: var(--text-1);
+}
+
+/* ── raised ────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-button_raised {
+    background: var(--bg-paper);
+    border-color: var(--line);
+    color: var(--text-1);
+    box-shadow:
+        0 1px 1.5px rgba(52, 44, 32, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+[data-theme='dark'] .ui-button_raised,
+.g-root_theme_dark .ui-button_raised {
+    /* Lighter than its pane, lit along the top edge — the dark inversion of "paper + highlight". */
+    background: color-mix(in oklab, var(--bg-paper), white 4%);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+@media (hover: hover) {
+    .ui-button_raised:hover {
+        background: color-mix(in oklab, var(--bg-paper), var(--text-1) 4%);
+    }
+}
+
+.ui-button_raised:active {
+    box-shadow: inset 0 1px 2px rgba(52, 44, 32, 0.1);
+}
+
+/* ── filled ────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-button_filled {
+    background: var(--text-1);
+    color: var(--bg-paper);
+    font-weight: 550;
+    box-shadow: var(--shadow-1);
+}
+
+@media (hover: hover) {
+    .ui-button_filled:hover {
+        background: color-mix(in oklab, var(--text-1), var(--text-2) 35%);
+    }
+}
+
+/* Destructive confirm. Danger is not an accent and never stands in for one — it appears only on
+   the button that answers "yes, delete it". */
+.ui-button_filled.ui-button_danger {
+    background: var(--danger);
+    color: white;
+}
+
+@media (hover: hover) {
+    .ui-button_filled.ui-button_danger:hover {
+        background: color-mix(in oklab, var(--danger), black 12%);
+    }
+}
+
+.ui-button__icon {
+    flex: none;
+    display: inline-flex;
+}

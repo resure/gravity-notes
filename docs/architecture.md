@@ -53,11 +53,47 @@ format, in full:
 - **Blank lines** inside a note persist as `&nbsp;` lines (the editor's `preserveEmptyRows`), so
   intentional vertical space survives the Markdown round-trip.
 
+## The shell
+
+Three panes at **236 / 324 / fill**, separated by a tint step and nothing else: desk → panel →
+panel-2 → paper. There is no rule between them, and the editor is the only pure-white surface in
+the app (in dark it inverts to the _lightest_ one) — which is the whole argument for the palette:
+the thing you write on is the extreme of the stack, and everything else recedes from it.
+
+The **44px title bar** is frameless — the whole strip drags the window except its controls, and the
+traffic lights are positioned by the system (an empty unified `NSToolbar`; never hand-place them,
+macOS re-runs title-bar layout and reverts it). It carries one structural rule: _what is this app
+doing_ and _what is this note doing_ are never in the same list.
+
+- The **Orb** — a flat amber disc, the app's mark rather than an accent — holds everything app-wide:
+  the workspace list, Open Folder…, export/import, attachments, Trash, theme, settings, shortcuts.
+- The **⋯** at the far right is the open note's own menu: its appearance strips (font and text
+  width, committing live behind the open popup), read-only preview, markup-instead-of-blocks, and
+  its file actions. `⌘⇧I` opens it.
+- Between them, the search field is centred on the **window**, not on the editor, so a long note
+  title or a collapsed pane can never nudge it.
+- At the right, a **sync dot and one word** carry the save state. This replaced the toast that used
+  to fire on every autosave; a toast is now reserved for genuine failures and for things with an
+  action to take.
+
+The **note list** is the app at scale — at three thousand notes, the row _is_ the app. Rows are
+**58px fixed**, which is a contract with the virtualizer rather than a measurement, and each is a
+title with its time beside it over one line of the note's own first words (the line that tells
+"Sync conflicts — Q1" from "Sync conflicts — Q2" without opening either). Above them sits a 38px
+**scope header** — the folder's name and count, which is what replaced the per-row breadcrumb —
+and between them **time groups**: Pinned, Today, Yesterday, Earlier, or A/B/C when sorting by title
+([`src/listGroups.ts`](../src/listGroups.ts)). Pinning a note moves it into the first group instead
+of putting a badge on its row.
+
+Chrome arrives on demand throughout: the row's ⋯ appears only under the pointer (taking the time's
+place rather than adding a column), folder actions the same, and hover is suppressed on the row
+directly above or below the selection so two washes of the same family never read as one block.
+
 ## Workspaces & windows
 
 Every opened folder/store is a **workspace**, remembered (with recency) in an IndexedDB registry
-([`src/storage/workspaceRegistry.ts`](../src/storage/workspaceRegistry.ts)) that feeds the orb
-menu's Open Recent, the `⌃R` switcher, and launch restore. On the desktop each workspace can have
+([`src/storage/workspaceRegistry.ts`](../src/storage/workspaceRegistry.ts)) that feeds the workspace
+list at the top of the orb menu, the `⌃R` switcher, and launch restore. On the desktop each workspace can have
 its own native window, plus Apple-Notes-style **per-note windows** (`⌘↵` on a list row) — small,
 panels tucked away, focus-if-open, with `⌘0` bringing back the workspace's main window. The window
 ↔ workspace/note assignments live in the Rust shell, so new windows boot straight into the right

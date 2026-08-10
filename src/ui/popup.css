@@ -1,0 +1,185 @@
+/* The one floating material.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   Every menu, select, and popover in the app is this card: 12px radius, one hairline, shadow-3
+   (whose inset top highlight is most of what reads as "raised"), 6px of padding, and 32px rows with
+   a 16px icon column. §07's rule is that a menu is deliberately roomier than the panes around it —
+   a menu you are aiming at is not a list you are scanning.
+
+   `.ui-pop` is also a CONTRACT, not just a look: Workspace's F2 guard tests
+   `closest('.note-title-row, .ui-pop, …')` to know that focus is inside a floating layer, so every
+   floating surface built here has to carry the class. Base UI portals all of them to <body>, which
+   is why the guard can't walk the React tree instead. */
+
+/* Every floating part portals to <body> — a sibling of #root, which carries `isolation: isolate`
+   (index.css). That is the whole stacking contract: the app can never mint a z-index that reaches
+   above a menu, and in particular a menu opens ABOVE the Tauri title bar's drag region rather than
+   under it. */
+.ui-pop-positioner {
+    z-index: 900;
+}
+
+.ui-pop {
+    box-sizing: border-box;
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-3);
+    padding: 6px;
+    color: var(--text-1);
+    font-family: var(--font-ui);
+    font-size: var(--fs-menu);
+    line-height: var(--lh-menu);
+    /* Menus are as tall as they need to be, up to the viewport Base UI measures for us. */
+    max-height: var(--available-height);
+    overflow-y: auto;
+    outline: none;
+    /* The icon column's ink: a step warmer than the label, so a row reads label-first. */
+    --pop-icon: color-mix(in oklab, var(--text-2), var(--text-3) 45%);
+}
+
+/* Popups scale from 0.97 with their origin at the trigger, in at --dur-2 and out in half that.
+   Base UI hands us `--transform-origin` and the starting/ending style hooks. */
+.ui-pop {
+    transform-origin: var(--transform-origin);
+    transition:
+        opacity var(--dur-2) var(--ease),
+        transform var(--dur-2) var(--ease);
+}
+
+.ui-pop[data-starting-style],
+.ui-pop[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.97);
+}
+
+.ui-pop[data-ending-style] {
+    transition-duration: calc(var(--dur-2) / 2);
+    transition-timing-function: var(--ease-in);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-pop {
+        transition: none;
+    }
+    .ui-pop[data-starting-style],
+    .ui-pop[data-ending-style] {
+        transform: none;
+    }
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────────────────────────── */
+
+.ui-pop__item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: -0.003em;
+    text-align: start;
+    cursor: default;
+    user-select: none;
+    outline: none;
+}
+
+/* Highlight is NEUTRAL by design: the accent marks persistent state, and a menu highlight is only
+   where the keyboard happens to be. Base UI sets `data-highlighted` for both pointer and keyboard,
+   so there is one visual state and no hover/focus mismatch. */
+.ui-pop__item[data-highlighted] {
+    background: var(--bg-hover);
+}
+
+.ui-pop__item[data-disabled] {
+    opacity: 0.45;
+}
+
+/* Disabled items stay focusable (that is how a "why is this off?" tooltip is reachable by
+   keyboard), so they must not also look pressable. */
+.ui-pop__item[data-disabled][data-highlighted] {
+    background: none;
+}
+
+.ui-pop__item_danger {
+    color: var(--danger);
+}
+
+.ui-pop__icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: var(--pop-icon);
+}
+
+/* Rows with no glyph still reserve the column, so nothing shifts when a checkmark appears. */
+.ui-pop__icon_empty {
+    display: block;
+}
+
+.ui-pop__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ui-pop__hint {
+    flex: none;
+    /* NOT the mono face: ⌘⇧⌫↵ come from a fallback in SF Mono and land visibly smaller than the
+       Latin around them, so a chord reads as a smudge. The system font draws them at full size —
+       which is also where macOS's own menus get them from. */
+    font-family: var(--font-ui);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--text-3);
+}
+
+.ui-pop__item_danger .ui-pop__hint {
+    opacity: 0.75;
+}
+
+.ui-pop__chevron {
+    flex: none;
+    color: var(--text-3);
+}
+
+/* One hairline, only where a group ends — never between rows. */
+.ui-pop__separator {
+    height: 1px;
+    margin: 5px 10px;
+    background: var(--line);
+}
+
+/* A mono caps label over a group, matching the rail's "Library"/"Folders" and the list's time
+   groups — the app has exactly one way of labelling a group. */
+.ui-pop__group-label {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
+}
+
+/* Arbitrary content inside a menu (the note menu's appearance strips): same 10px gutter as a row,
+   and explicitly OUT of the arrow-key ring — see `Menu.Panel`. */
+.ui-pop__panel {
+    padding: 4px 10px 10px;
+}
+
+.ui-pop__panel-label {
+    margin-bottom: 6px;
+    font-size: 11.5px;
+    color: var(--text-3);
+}

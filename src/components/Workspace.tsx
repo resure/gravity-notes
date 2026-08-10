@@ -1,8 +1,5 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 
-import {Eye} from '@gravity-ui/icons';
-import {Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
-
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
 import {useAppUpdater} from '../hooks/useAppUpdater';
 import {useBacklinks} from '../hooks/useBacklinks';
@@ -28,9 +25,12 @@ import {useSwipeBack} from '../hooks/useSwipeBack';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
-import {exportNotes, importNotes} from '../storage/transfer';
+import {exportNote, exportNotes, importNotes} from '../storage/transfer';
 import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
+import {Chip} from '../ui/bits';
+import {Eye} from '../ui/icons';
+import {toast} from '../ui/toast';
 import {resolveWikiLink} from '../wikiLinks';
 
 import {AboutDialog} from './AboutDialog';
@@ -143,12 +143,6 @@ function loadExpandedFolders(workspaceId: string): Set<string> {
     }
 }
 
-/**
- * Monotonic counter for toast names, so two toasts fired in the same tick don't collide on the
- * Toaster's name key (Date.now() alone can repeat within one millisecond).
- */
-let toastSeq = 0;
-
 export function Workspace({
     store,
     workspaceId,
@@ -166,26 +160,17 @@ export function Workspace({
     onOpenFolderInNewWindow,
     supportsFolders,
 }: WorkspaceProps) {
-    const {add} = useToaster();
-
     // A single-note desktop window (constant for the window's whole life — it's the label).
     // Both side panels start closed there, and its transient layout is never persisted to the
     // workspace-namespaced keys: those belong to the full workspace views, and one localStorage
     // is shared by every window.
     const noteWindow = isNoteWindow();
 
-    const onError = useCallback(
-        (message: string) => {
-            add({
-                name: `notes-error-${toastSeq++}`,
-                title: 'Something went wrong',
-                content: message,
-                theme: 'danger',
-                autoHiding: 5000,
-            });
-        },
-        [add],
-    );
+    // Toasts are for genuine failures now: the save confirmation that used to fire on every
+    // autosave is gone, replaced by the title bar's sync dot.
+    const onError = useCallback((message: string) => {
+        toast({title: 'Something went wrong', content: message, tone: 'danger'});
+    }, []);
 
     const notes = useNotes(store, onError, initialNoteId);
 
@@ -404,10 +389,6 @@ export function Workspace({
         },
         [openNoteId, notes.metadata.appearances, notes.setNoteAppearance],
     );
-    const resetNoteAppearance = useCallback(() => {
-        if (openNoteId !== null) notes.setNoteAppearance(openNoteId, {});
-    }, [openNoteId, notes.setNoteAppearance]);
-
     // One-time migration of the legacy localStorage per-note overrides into the sidecar (they used to
     // strand on every rename/move). Gated on `ready` so it can't race the sidecar's initial load.
     // Live ids adopt into `appearances`; an override whose note sits in the Trash attaches to its
@@ -434,13 +415,14 @@ export function Workspace({
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot: reads notes state at ready-time only
     }, [notes.ready, workspaceId]);
-    // The note-appearance popover's open state lives here (its ⋯ trigger is in the TopBar) so the ⌘⇧I
-    // shortcut can toggle it too. Closed whenever the editing SESSION changes (another note opened,
-    // or the note closed) — keyed on sessionId, NOT note id, because a rename/move re-keys the id in
-    // place without ending the session and shouldn't dismiss a popover mid-adjustment.
-    const [appearanceOpen, setAppearanceOpen] = useState(false);
+    // The open note's ⋯ menu — appearance strips plus the note's own file actions. Its state lives
+    // here (the trigger is in the TopBar) so ⌘⇧I can toggle it too. Closed whenever the editing
+    // SESSION changes (another note opened, or the note closed) — keyed on sessionId, NOT note id,
+    // because a rename/move re-keys the id in place without ending the session and shouldn't
+    // dismiss the menu mid-adjustment.
+    const [noteMenuOpen, setNoteMenuOpen] = useState(false);
     const noteClosed = notes.note === null;
-    useEffect(() => setAppearanceOpen(false), [notes.sessionId, noteClosed]);
+    useEffect(() => setNoteMenuOpen(false), [notes.sessionId, noteClosed]);
 
     // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
     // that index.css reads: `data-editor-font` swaps the editor/preview/title font,
@@ -504,16 +486,16 @@ export function Workspace({
         void (async () => {
             const found = await updater.check({silent: true});
             if (!found) return;
-            add({
-                name: `update-available-${toastSeq++}`,
+            toast({
                 title: 'Update available',
                 content: `Gravity Notes v${found.version} is ready to install.`,
-                theme: 'info',
-                autoHiding: false,
+                // No auto-dismiss: there is an action to take, and a notification you can miss is
+                // worse than none.
+                timeout: false,
                 actions: [{label: 'View', onClick: () => setUpdateDialogOpen(true)}],
             });
         })();
-        // Run once on mount; updater.check + add are stable.
+        // Run once on mount; updater.check is stable.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const [pendingListFocus, setPendingListFocus] = useState(false);
@@ -842,16 +824,12 @@ export function Workspace({
         else nav.escapeEditor();
     }, [isNarrow, backToList, collapsed, nav]);
 
-    const notify = useCallback(
-        (message: string) =>
-            add({
-                name: `notes-info-${toastSeq++}`,
-                title: message,
-                theme: 'success',
-                autoHiding: 4000,
-            }),
-        [add],
-    );
+    // The outcome of a deliberate, one-off operation (an export finished, a note went to the
+    // Trash). Distinct from the save confirmations this app no longer shows: those reported on
+    // something you were already doing, these report on something you asked for and left.
+    const notify = useCallback((message: string) => {
+        toast({title: message, tone: 'success', timeout: 4000});
+    }, []);
 
     // Leave the current workspace only after flushing any pending edit, so a keystroke inside the
     // 500 ms autosave window isn't lost when this component unmounts. If the flush couldn't land
@@ -982,6 +960,37 @@ export function Workspace({
             }
         })();
     }, [notes, store, notify, onError]);
+
+    /**
+     * Export the OPEN note as a single `.md` file (§07's note menu). Flushes first, so what lands
+     * on disk is what is on screen — not the last autosave.
+     */
+    const handleExportNote = useCallback(() => {
+        const id = notes.note?.id;
+        if (!id) return;
+        void (async () => {
+            try {
+                await notes.flushPending();
+                await exportNote(store, id);
+            } catch (err) {
+                onError(err instanceof Error ? err.message : 'Failed to export the note');
+            }
+        })();
+    }, [notes, store, onError]);
+
+    /**
+     * "Copy link to note" copies the note's `[[Title]]` wiki link — the app's only link format, and
+     * the one Obsidian understands. There is no URL scheme to copy instead; a `sol://` deep link is
+     * backlog.
+     */
+    const handleCopyNoteLink = useCallback(() => {
+        const title = notes.note?.title;
+        if (!title) return;
+        void navigator.clipboard
+            ?.writeText(`[[${title}]]`)
+            .then(() => notify('Link copied'))
+            .catch(() => onError('Could not copy to the clipboard'));
+    }, [notes.note, notify, onError]);
 
     // Flush any pending edit before opening the attachments manager, so a just-pasted image's
     // reference is already on disk — otherwise it reads as "Unused" and is bulk-deletable.
@@ -1300,7 +1309,7 @@ export function Workspace({
         toggleEditorMode: () => editorRef.current?.toggleMode(),
         openNoteAppearance: () => {
             // Toggle the TopBar's ⋯ appearance popover — only meaningful with a note open.
-            if (notes.note) setAppearanceOpen((open) => !open);
+            if (notes.note) setNoteMenuOpen((open) => !open);
         },
         togglePreview: () => setPreviewMode((p) => !p),
         openHelp: () => setHelpOpen(true),
@@ -1308,10 +1317,11 @@ export function Workspace({
         renameSelected: () => {
             // F2 fires even while typing. Context-aware: a focused folder row → rename the folder;
             // the whole in-editor title row (the title input handles F2 itself; its icon-picker
-            // button is a sibling of the input) and any floating layer — every uikit popup renders
-            // `.g-popup` (menus, the icon pickers) and every uikit modal `[role="dialog"]` — are
-            // no-ops: a list rename from there would yank focus out from under the open layer
+            // button is a sibling of the input) and any floating layer — every Sol popup renders
+            // `.ui-pop`, every remaining uikit popup `.g-popup`, and every modal `[role="dialog"]` —
+            // are no-ops: a list rename from there would yank focus out from under the open layer
             // (and even commit on blur behind a modal); otherwise rename the selected note.
+            // `.g-popup` stays in the selector until the last uikit popup goes in Pass 5.
             const el = document.activeElement;
             if (el instanceof HTMLElement) {
                 const folderRow = el.closest('.folder-rail__row[data-path]');
@@ -1319,7 +1329,7 @@ export function Workspace({
                     railRef.current?.startRename(folderRow.getAttribute('data-path') ?? '');
                     return;
                 }
-                if (el.closest('.note-title-row, .g-popup, [role="dialog"]')) return;
+                if (el.closest('.note-title-row, .ui-pop, .g-popup, [role="dialog"]')) return;
             }
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
@@ -1350,7 +1360,6 @@ export function Workspace({
                     }}
                 />
                 <TopBar
-                    storageLabel={storageLabel}
                     workspaces={workspaces}
                     activeWorkspaceId={workspaceId}
                     isDesktop={isDesktopTauri}
@@ -1379,6 +1388,7 @@ export function Workspace({
                     trashCount={notes.trashCount}
                     onOpenHelp={() => setHelpOpen(true)}
                     onOpenSettings={() => setSettingsOpen(true)}
+                    onOpenAbout={() => setAboutOpen(true)}
                     onCheckForUpdates={
                         updater.supported
                             ? () => {
@@ -1397,6 +1407,9 @@ export function Workspace({
                     updateAvailable={updater.status === 'available'}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
+                    railOpen={railOpen}
+                    onToggleRail={toggleRail}
+                    collapsed={collapsed}
                     onToggleCollapsed={toggleCollapsed}
                     saveState={notes.saveState}
                     query={query}
@@ -1426,13 +1439,39 @@ export function Workspace({
                         if (collapsed && !peeked && notes.note) editorRef.current?.focus();
                         else listRef.current?.focusSelected();
                     }}
-                    noteOpen={notes.note !== null}
-                    appearanceOpen={appearanceOpen}
-                    onToggleAppearance={() => setAppearanceOpen((open) => !open)}
-                    onCloseAppearance={() => setAppearanceOpen(false)}
+                    note={notes.note}
+                    noteMenuOpen={noteMenuOpen}
+                    onNoteMenuOpenChange={setNoteMenuOpen}
                     noteAppearance={noteAppearance}
                     onSetNoteAppearance={setNoteSetting}
-                    onResetNoteAppearance={resetNoteAppearance}
+                    previewMode={previewMode}
+                    onTogglePreview={() => setPreviewMode((p) => !p)}
+                    onToggleSource={() => editorRef.current?.toggleMode()}
+                    notePinned={
+                        notes.note !== null && notes.metadata.pinned.includes(notes.note.id)
+                    }
+                    onTogglePin={() => {
+                        if (notes.note) notes.togglePin(notes.note.id);
+                    }}
+                    // Rename / delete route through the LIST, which owns both interactions (in-place
+                    // rename, the Trash confirm) — the same paths F2 and ⌘⇧⌫ take.
+                    onRenameNote={() => {
+                        if (notes.note) listRef.current?.startRename(notes.note.id);
+                    }}
+                    onMoveNote={() => {
+                        if (notes.note) setMovingNoteId(notes.note.id);
+                    }}
+                    onDuplicateNote={() => {
+                        if (notes.note) handleDuplicate(notes.note.id);
+                    }}
+                    onRevealNote={
+                        handleReveal && openNoteId ? () => handleReveal(openNoteId) : undefined
+                    }
+                    onExportNote={handleExportNote}
+                    onCopyNoteLink={handleCopyNoteLink}
+                    onDeleteNote={() => {
+                        if (notes.note) listRef.current?.requestDelete(notes.note.id);
+                    }}
                 />
 
                 <div
@@ -1468,6 +1507,8 @@ export function Workspace({
                                 onMoveTo={(id, dest) => void notes.move(id, dest)}
                                 onReveal={handleReveal}
                                 onFocusList={() => listRef.current?.focusSelected()}
+                                trashCount={notes.trashCount}
+                                onOpenTrash={() => setTrashOpen(true)}
                             />
                         ) : null}
                         {/* Mobile: a dimmed backdrop behind the rail drawer — tap it to dismiss the
@@ -1515,9 +1556,7 @@ export function Workspace({
                             onSortChange={notes.setSortMode}
                             pinnedIds={notes.metadata.pinned}
                             onTogglePin={notes.togglePin}
-                            icons={notes.metadata.icons}
-                            onSetIcon={notes.setIcon}
-                            showIcons={settings.showNoteIcons}
+                            createdById={notes.metadata.created}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
                             // Straight setSelectedFolder — unlike rail selection this must NOT
@@ -1553,12 +1592,9 @@ export function Workspace({
                                         // Floating state chip: read-only preview is otherwise
                                         // invisible (the surface just stops responding to edits).
                                         // Clicking it (or ⌘⇧P) returns to editing.
-                                        <Label
+                                        <Chip
                                             className="workspace__preview-badge"
-                                            theme="info"
-                                            size="s"
-                                            icon={<Icon data={Eye} size={13} />}
-                                            interactive
+                                            icon={<Eye size={12} />}
                                             onClick={() => setPreviewMode(false)}
                                             title="Read-only preview — click (or ⌘⇧P) to edit"
                                         >
@@ -1569,7 +1605,7 @@ export function Workspace({
                                             <span className="workspace__preview-badge-hover">
                                                 Exit preview
                                             </span>
-                                        </Label>
+                                        </Chip>
                                     ) : null}
                                     <EditorPane
                                         ref={editorRef}
@@ -1602,9 +1638,7 @@ export function Workspace({
                             // restored note lands read as a blink on every new window.
                             notes.ready && (
                                 <div className="workspace__placeholder">
-                                    <Text variant="body-2" color="secondary">
-                                        Select a note, or create a new one to start writing.
-                                    </Text>
+                                    Select a note, or create a new one to start writing.
                                 </div>
                             )
                         )}

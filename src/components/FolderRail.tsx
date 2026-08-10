@@ -10,6 +10,11 @@ import {
 } from 'react';
 import type {DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent} from 'react';
 
+import {basename, dirname, joinPath, sanitizeSegment} from '../storage/noteText';
+import type {FolderRow} from '../tree';
+import {Button} from '../ui/Button';
+import {Menu, MenuItem, MenuSeparator} from '../ui/Menu';
+import {Tooltip} from '../ui/Tooltip';
 import {
     ChevronDown,
     ChevronRight,
@@ -22,12 +27,9 @@ import {
     Pin,
     PinFill,
     PinSlash,
-    TrashBin,
-} from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
-
-import {basename, dirname, joinPath, sanitizeSegment} from '../storage/noteText';
-import type {FolderRow} from '../tree';
+    Plus,
+    Trash,
+} from '../ui/icons';
 
 import './FolderRail.css';
 
@@ -78,14 +80,9 @@ export interface FolderRailProps {
     onReveal?: (path: string) => void;
     /** Move focus into the notes list (Enter / → off a leaf folder). */
     onFocusList: () => void;
-}
-
-/**
- * Left padding (px) for a row at the given tree depth. The 8px base keeps top-level carets off
- *  the window edge (matching the row's 8px trailing padding); each level adds a 14px step.
- */
-function indentFor(depth: number): number {
-    return 8 + depth * 14;
+    /** The Trash, at the rail's foot — a destination, not a folder (§04). */
+    trashCount: number;
+    onOpenTrash: () => void;
 }
 
 /** Whether dropping the dragged folder onto `target` (`''` = root) is forbidden (self / descendant). */
@@ -93,6 +90,18 @@ function isInvalidFolderDrop(target: string, dragged: string): boolean {
     return target === dragged || target.startsWith(`${dragged}/`);
 }
 
+/**
+ * The 236px folder rail (§04).
+ *
+ * Its rows are the same 14/500 type as the note list, so the two panes read as one app, and the
+ * column is grouped by two mono labels — Library and Folders — exactly the way the note list groups
+ * by time. Indent is a 12px step with a hairline guide, which is what keeps five levels legible in a
+ * 236px column.
+ *
+ * It stays a plain roving-tabindex tree and NOT a Base UI Menu, deliberately: Menu and Select
+ * capture single letters for type-to-select, which would eat `n` (new subfolder) and the vim `j`/`k`
+ * the rail navigates with.
+ */
 export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function FolderRail(
     {
         rows,
@@ -107,6 +116,8 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         onMoveTo,
         onReveal,
         onFocusList,
+        trashCount,
+        onOpenTrash,
     },
     ref,
 ) {
@@ -119,11 +130,12 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
     // The folder + anchor for the one open action menu (null = closed). A single shared menu serves
-    // both each row's ⋯ button and the right-click context menu, so the rail mounts no per-row
-    // DropdownMenu (a popup instance + its rebuilt items array per folder row is needless work).
+    // both each row's ⋯ button and the right-click context menu, so the rail mounts no per-row Menu
+    // (a popup instance + its rebuilt items array per folder row is needless work). The anchor is
+    // either the ⋯ button or a zero-size rect at the cursor.
     const [contextMenu, setContextMenu] = useState<{
         row: FolderRow;
-        anchor: {getBoundingClientRect: () => DOMRect};
+        anchor: HTMLElement | {getBoundingClientRect: () => DOMRect};
     } | null>(null);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const newFolderInputRef = useRef<HTMLInputElement>(null);
@@ -200,9 +212,13 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     useEffect(() => {
         if (newFolderParent !== null) newFolderInputRef.current?.focus();
     }, [newFolderParent]);
+    // Select the whole name when a rename BEGINS — keyed on the path, not on `renaming` itself:
+    // every keystroke mints a new state object, and re-running this would re-select the text under
+    // the caret on each character (typing "Wonk" would leave "k").
+    const renamingPath = renaming?.path;
     useEffect(() => {
-        if (renaming) renameInputRef.current?.focus();
-    }, [renaming]);
+        if (renamingPath !== undefined) renameInputRef.current?.select();
+    }, [renamingPath]);
 
     const focusRow = useCallback((key: string) => itemRefs.current.get(key)?.focus(), []);
 
@@ -393,6 +409,19 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         if (id) onMoveTo(id, target);
     };
 
+    /**
+     * The indent guides for a row at `depth`: one 12px column per ancestor level, each drawing the
+     * hairline that keeps a deep tree legible in a 236px column.
+     */
+    const renderGuides = (depth: number) =>
+        depth > 0 ? (
+            <span className="folder-rail__guides" aria-hidden>
+                {Array.from({length: depth}, (_, level) => (
+                    <span key={level} className="folder-rail__guide" />
+                ))}
+            </span>
+        ) : null;
+
     const renderAllNotes = () => {
         const selected = selectedFolder === null;
         return (
@@ -407,7 +436,6 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     (selected ? ' folder-rail__row_selected' : '') +
                     (dropTarget === ALL_KEY ? ' folder-rail__row_drop-target' : '')
                 }
-                style={{paddingInlineStart: indentFor(0)}}
                 role="treeitem"
                 aria-level={1}
                 aria-selected={selected}
@@ -419,90 +447,65 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 onDrop={(e) => onRowDrop(e, '')}
             >
                 <span className="folder-rail__caret" />
-                <Icon className="folder-rail__icon" data={Layers} size={16} />
-                <Text className="folder-rail__name" ellipsis>
-                    All Notes
-                </Text>
+                <Layers size={15} className="folder-rail__icon" />
+                <span className="folder-rail__name">All Notes</span>
                 {allNotesCount > 0 ? (
                     <span className="folder-rail__count">{allNotesCount}</span>
                 ) : null}
-                {/* Reserve the same trailing slot as a folder row's ⋯ menu, so counts line up. */}
-                <span className="folder-rail__actions-spacer" aria-hidden />
             </div>
         );
     };
 
-    const renderRenameInput = (row: FolderRow) => (
-        <div
-            key={row.path}
-            className="folder-rail__row"
-            style={{paddingInlineStart: indentFor(row.depth)}}
-        >
+    /** The shared inline editor for both renaming a folder and naming a new one. */
+    const renderFolderInput = (
+        depth: number,
+        value: string,
+        onChange: (value: string) => void,
+        onSubmit: () => void,
+        onCancel: () => void,
+        inputRef: typeof renameInputRef,
+        placeholder?: string,
+    ) => (
+        <div className="folder-rail__row folder-rail__row_editing">
+            {renderGuides(depth)}
             <span className="folder-rail__caret" />
-            <Icon className="folder-rail__icon" data={Folder} size={16} aria-hidden />
-            <TextInput
+            <Folder size={15} className="folder-rail__icon" />
+            <input
+                ref={inputRef}
                 className="folder-rail__input"
-                controlRef={renameInputRef}
-                size="s"
-                view="clear"
-                value={renaming?.value ?? ''}
-                onUpdate={(value) => setRenaming((r) => (r ? {...r, value} : r))}
-                onBlur={submitRename}
+                value={value}
+                placeholder={placeholder}
+                aria-label={placeholder ?? 'Folder name'}
+                onChange={(e) => onChange(e.target.value)}
+                onBlur={onSubmit}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        submitRename();
+                        onSubmit();
                     } else if (e.key === 'Escape') {
                         e.preventDefault();
-                        setRenaming(null);
+                        onCancel();
                     }
                 }}
             />
         </div>
     );
 
-    // The per-folder action list, shared by the row's ⋯ menu and the right-click context menu.
-    const folderMenuItems = (row: FolderRow) => {
-        const deletable = row.noteCount === 0 && !row.hasChildren;
-        return [
-            {
-                text: row.pinned ? 'Unpin' : 'Pin to top',
-                iconStart: <Icon data={row.pinned ? PinSlash : Pin} />,
-                action: () => onTogglePin(row.path),
-            },
-            {
-                text: 'Rename',
-                iconStart: <Icon data={Pencil} />,
-                action: () => setRenaming({path: row.path, value: row.name}),
-            },
-            {
-                text: 'New subfolder',
-                iconStart: <Icon data={FolderPlus} />,
-                action: () => startNewSubfolder(row),
-            },
-            // Desktop only: revealed in Finder when the backend supports it.
-            ...(onReveal
-                ? [
-                      {
-                          text: 'Reveal in Finder',
-                          iconStart: <Icon data={FolderOpen} />,
-                          action: () => onReveal(row.path),
-                      },
-                  ]
-                : []),
-            {
-                text: 'Delete folder',
-                theme: 'danger' as const,
-                iconStart: <Icon data={TrashBin} />,
-                // Only a truly empty folder (no notes, no subfolders) can be removed.
-                disabled: !deletable,
-                action: () => onRemoveFolder(row.path),
-            },
-        ];
-    };
-
     const renderFolder = (row: FolderRow) => {
-        if (renaming?.path === row.path) return renderRenameInput(row);
+        if (renaming?.path === row.path) {
+            return (
+                <Fragment key={row.path}>
+                    {renderFolderInput(
+                        row.depth,
+                        renaming.value,
+                        (value) => setRenaming((r) => (r ? {...r, value} : r)),
+                        submitRename,
+                        () => setRenaming(null),
+                        renameInputRef,
+                    )}
+                </Fragment>
+            );
+        }
         const selected = selectedFolder === row.path;
         return (
             <div
@@ -517,7 +520,6 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     (selected ? ' folder-rail__row_selected' : '') +
                     (dropTarget === row.path ? ' folder-rail__row_drop-target' : '')
                 }
-                style={{paddingInlineStart: indentFor(row.depth)}}
                 role="treeitem"
                 aria-level={row.depth + 1}
                 aria-selected={selected}
@@ -551,6 +553,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 onDragLeave={() => setDropTarget((t) => (t === row.path ? null : t))}
                 onDrop={(e) => onRowDrop(e, row.path)}
             >
+                {renderGuides(row.depth)}
                 {row.hasChildren ? (
                     <button
                         type="button"
@@ -562,25 +565,21 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                             onToggleCollapse(row.path);
                         }}
                     >
-                        <Icon data={row.collapsed ? ChevronRight : ChevronDown} size={14} />
+                        {row.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                     </button>
                 ) : (
                     <span className="folder-rail__caret" />
                 )}
-                <Icon className="folder-rail__icon" data={Folder} size={16} />
-                {row.pinned ? (
-                    <Icon className="folder-rail__pin" data={PinFill} size={12} aria-hidden />
-                ) : null}
-                <Text className="folder-rail__name" ellipsis>
-                    {row.name}
-                </Text>
+                <Folder size={15} className="folder-rail__icon" />
+                <span className="folder-rail__name">{row.name}</span>
+                {row.pinned ? <PinFill size={12} className="folder-rail__pin" /> : null}
                 {row.noteCount > 0 ? (
                     <span className="folder-rail__count">{row.noteCount}</span>
                 ) : null}
                 <div className="folder-rail__actions">
                     <Button
-                        view="flat"
                         size="s"
+                        icon={<Ellipsis size={15} />}
                         tabIndex={-1}
                         aria-label={`${row.name} actions`}
                         onClick={(e) => {
@@ -592,47 +591,26 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                                 open?.row.path === row.path ? null : {row, anchor: target},
                             );
                         }}
-                    >
-                        <Icon data={Ellipsis} />
-                    </Button>
+                    />
                 </div>
             </div>
         );
     };
 
     // The inline new-folder editor, indented to its parent's child depth ('' root = depth 0).
-    const renderNewFolderInput = () => (
-        <div
-            className="folder-rail__row"
-            style={{
-                paddingInlineStart: indentFor(
-                    newFolderParent ? newFolderParent.split('/').length : 0,
-                ),
-            }}
-        >
-            <span className="folder-rail__caret" />
-            <Icon className="folder-rail__icon" data={Folder} size={16} aria-hidden />
-            <TextInput
-                className="folder-rail__input"
-                controlRef={newFolderInputRef}
-                size="s"
-                view="clear"
-                placeholder="Folder name"
-                value={newFolderName}
-                onUpdate={setNewFolderName}
-                onBlur={cancelNewFolder}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        submitNewFolder();
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        cancelNewFolder();
-                    }
-                }}
-            />
-        </div>
-    );
+    const renderNewFolderInput = () =>
+        renderFolderInput(
+            newFolderParent ? newFolderParent.split('/').length : 0,
+            newFolderName,
+            setNewFolderName,
+            submitNewFolder,
+            cancelNewFolder,
+            newFolderInputRef,
+            'Folder name',
+        );
+
+    const menuRow = contextMenu?.row;
+    const deletable = menuRow ? menuRow.noteCount === 0 && !menuRow.hasChildren : false;
 
     return (
         // Drag autoscroll lives on the wrapper (not the role="tree" list) so the tree stays
@@ -645,51 +623,121 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) stopAutoScroll();
             }}
         >
-            <div ref={itemsRef} className="folder-rail__items" role="tree" aria-label="Folders">
-                {renderAllNotes()}
-                {/* A new root folder sits at the top; a new subfolder renders under its parent row. */}
-                {newFolderParent === '' ? renderNewFolderInput() : null}
-                {rows.map((row) => (
-                    <Fragment key={row.path}>
-                        {renderFolder(row)}
-                        {newFolderParent === row.path ? renderNewFolderInput() : null}
-                    </Fragment>
-                ))}
+            <div ref={itemsRef} className="folder-rail__items">
+                {/* Two mono labels group the column the way the note list groups by time. */}
+                <div className="folder-rail__group-label">Library</div>
+                <div role="tree" aria-label="Folders">
+                    {renderAllNotes()}
+                    <div className="folder-rail__group-label folder-rail__group-label_spaced">
+                        Folders
+                    </div>
+                    {/* A new root folder sits at the top; a new subfolder renders under its parent. */}
+                    {newFolderParent === '' ? renderNewFolderInput() : null}
+                    {rows.map((row) => (
+                        <Fragment key={row.path}>
+                            {renderFolder(row)}
+                            {newFolderParent === row.path ? renderNewFolderInput() : null}
+                        </Fragment>
+                    ))}
+                </div>
                 {/* First-run nudge: no folders yet, and not already typing a new one. */}
                 {rows.length === 0 && newFolderParent === null ? (
                     <div className="folder-rail__hint">
-                        <Text color="hint" variant="caption-2">
-                            No folders yet. Add one to group your notes.
-                        </Text>
+                        No folders yet. Add one to group your notes.
                     </div>
                 ) : null}
-            </div>
-            <div className="folder-rail__footer">
-                <Button
-                    view="flat"
-                    size="s"
-                    width="max"
-                    aria-label="New folder"
-                    onClick={() => setNewFolderParent('')}
+
+                <div className="folder-rail__spacer" />
+
+                {/* Trash sits at the foot, away from the vault: it is a destination, not a folder —
+                    which is also why it is outside the tree's roving-tabindex ring. */}
+                <button
+                    type="button"
+                    className="folder-rail__row folder-rail__row_trash"
+                    onClick={onOpenTrash}
                 >
-                    <Icon data={FolderPlus} />
-                    New Folder
-                </Button>
+                    <Trash size={15} className="folder-rail__icon" />
+                    <span className="folder-rail__name">Trash</span>
+                    {trashCount > 0 ? (
+                        <span className="folder-rail__count">{trashCount}</span>
+                    ) : null}
+                </button>
             </div>
 
+            <button
+                type="button"
+                className="folder-rail__footer"
+                onClick={() => setNewFolderParent('')}
+            >
+                <FolderPlus size={15} />
+                <span>New Folder</span>
+            </button>
+
             {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
-                cursor, for a right-click) opened it, so the rail needs no per-row DropdownMenu. Gravity
-                substitutes its default ⋯ switcher when renderSwitcher returns null/undefined, so return
-                a hidden element instead — otherwise that kebab leaks in as a stray bottom-left button. */}
-            <DropdownMenu
+                cursor, for a right-click) opened it, so the rail needs no per-row Menu instance. */}
+            <Menu
                 open={contextMenu !== null}
-                onOpenToggle={(open: boolean) => {
+                onOpenChange={(open) => {
                     if (!open) setContextMenu(null);
                 }}
-                renderSwitcher={() => <span hidden />}
-                popupProps={{anchorElement: contextMenu?.anchor}}
-                items={contextMenu ? folderMenuItems(contextMenu.row) : []}
-            />
+                anchor={contextMenu?.anchor}
+                align="start"
+                width={224}
+                finalFocus={false}
+            >
+                {menuRow ? (
+                    <>
+                        <MenuItem
+                            icon={menuRow.pinned ? <PinSlash size={16} /> : <Pin size={16} />}
+                            onClick={() => onTogglePin(menuRow.path)}
+                        >
+                            {menuRow.pinned ? 'Unpin' : 'Pin to top'}
+                        </MenuItem>
+                        <MenuItem
+                            icon={<Pencil size={16} />}
+                            hint="F2"
+                            onClick={() => setRenaming({path: menuRow.path, value: menuRow.name})}
+                        >
+                            Rename
+                        </MenuItem>
+                        <MenuItem
+                            icon={<Plus size={16} />}
+                            hint="n"
+                            onClick={() => startNewSubfolder(menuRow)}
+                        >
+                            New subfolder
+                        </MenuItem>
+                        {onReveal ? (
+                            <MenuItem
+                                icon={<FolderOpen size={16} />}
+                                onClick={() => onReveal(menuRow.path)}
+                            >
+                                Reveal in Finder
+                            </MenuItem>
+                        ) : null}
+                        <MenuSeparator />
+                        {/* Disabled, not hidden, while the folder has contents — with the reason in a
+                            tooltip. Base UI keeps disabled items focusable, so it is reachable from
+                            the keyboard too, which is the point of not hiding it. */}
+                        {deletable ? (
+                            <MenuItem
+                                icon={<Trash size={16} />}
+                                hint="⌫"
+                                danger
+                                onClick={() => onRemoveFolder(menuRow.path)}
+                            >
+                                Delete folder
+                            </MenuItem>
+                        ) : (
+                            <Tooltip label="Only an empty folder can be deleted" side="bottom">
+                                <MenuItem icon={<Trash size={16} />} hint="⌫" danger disabled>
+                                    Delete folder
+                                </MenuItem>
+                            </Tooltip>
+                        )}
+                    </>
+                ) : null}
+            </Menu>
         </div>
     );
 });

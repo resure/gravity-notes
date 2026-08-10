@@ -1,0 +1,110 @@
+.ui-toast-viewport {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 340px;
+    max-width: calc(100vw - 32px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.ui-toast {
+    position: relative;
+    box-sizing: border-box;
+    padding: 12px 34px 12px 14px;
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-3);
+    color: var(--text-1);
+    font-family: var(--font-ui);
+    transition:
+        opacity var(--dur-2) var(--ease),
+        transform var(--dur-2) var(--ease);
+}
+
+.ui-toast[data-starting-style],
+.ui-toast[data-ending-style] {
+    opacity: 0;
+    transform: translateY(8px);
+}
+
+.ui-toast__title {
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    font-weight: 550;
+    letter-spacing: -0.003em;
+}
+
+.ui-toast__content {
+    margin-top: 3px;
+    font-size: 12.5px;
+    line-height: 17px;
+    color: var(--text-2);
+}
+
+/* Danger is the one tone that colours anything: a hairline down the leading edge, not a fill. */
+.ui-toast[data-type='danger'] {
+    border-color: color-mix(in oklab, var(--danger), transparent 55%);
+}
+
+.ui-toast[data-type='danger'] .ui-toast__title {
+    color: var(--danger);
+}
+
+.ui-toast__actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 9px;
+}
+
+.ui-toast__action {
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg-paper);
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 510;
+    cursor: default;
+    box-shadow: var(--shadow-1);
+}
+
+.ui-toast__close {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-xs);
+    background: none;
+    color: var(--text-3);
+    cursor: default;
+}
+
+@media (hover: hover) {
+    .ui-toast__close:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-toast {
+        transition: none;
+    }
+    .ui-toast[data-starting-style],
+    .ui-toast[data-ending-style] {
+        transform: none;
+    }
+}
