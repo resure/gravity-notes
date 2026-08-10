@@ -4,15 +4,42 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] - 2026-08-10
 
 ### Added
 
+- **Resizable side panels** — drag the divider on either edge (folder rail ↔ note list, note list ↔
+  editor) to resize the panel to its left; the widths are remembered per workspace. Double-click a
+  divider to reset it to the default. The dividers are keyboard-reachable too: Tab to one, then arrow
+  keys step the width and Home/End jump to the ends of the range. The editor always keeps room for
+  itself, and dragging the list narrow folds the **New** button down to its icon so the sort control
+  stays readable.
 - **Mobile / narrow-window layout** — on viewports 700px and under (a phone, or a desktop window
   dragged narrow) the app switches to a single-pane view: the note list fills the screen, tapping a
-  note slides to a full-width editor with a **‹ Notes** back button, and the folder picker opens as a
-  drawer over a dimmed backdrop. The desktop three-pane layout is unchanged above that width, and the
-  desktop app's minimum window size was lowered so it can be sized down to a narrow column.
+  note slides to a full-width editor with a **‹** back button, and the folder picker opens as a
+  drawer over a dimmed backdrop. Swipe from the left edge to go back — the pane follows your finger
+  and settles either way on release. One top bar serves both panes (orb · search, with back and the
+  note's **⋯** where they apply) at a fixed height, so nothing shifts as you navigate. The desktop
+  three-pane layout is unchanged above that width, and the desktop app's minimum window size was
+  lowered so it can be sized down to a narrow column.
+- **Notion-style checkboxes** — task lists render as proper rounded checkboxes that follow the app
+  accent, in both the editor and the read-only preview (where `[ ]` / `[x]` previously leaked through
+  as literal text).
+- **Double-click a note row** to open it in its own window (desktop).
+
+### Changed
+
+- Dialogs now fit a phone screen instead of overflowing it, and the keyboard-shortcuts sheet is
+  hidden on touch devices (where there's no keyboard to shortcut with) — gated on the pointer, so a
+  narrow desktop window keeps it.
+
+### Fixed
+
+- **The software updater can no longer hang forever** — a stalled check or download now times out and
+  can be retried, instead of leaving "Checking for updates…" / "Updating…" latched on screen.
+- Icon-picker polish, and assorted touch-input fixes found while testing on a real device (taps no
+  longer needing a second try, tap targets no longer swallowed by an oversized invisible button,
+  Reduce Motion respected by the pane transition).
 
 ## [0.7.0] - 2026-07-06
 
