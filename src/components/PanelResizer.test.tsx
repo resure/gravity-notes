@@ -1,3 +1,5 @@
+import {useState} from 'react';
+
 import {fireEvent, screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -178,6 +180,44 @@ describe('PanelResizer', () => {
         unmount();
         expect(onCommit).toHaveBeenCalledTimes(1);
         expect(onCommit).toHaveBeenCalledWith(320);
+        expect(document.body).not.toHaveClass('panel-resizing');
+    });
+
+    it('survives a parent re-render mid-drag even with an unstable onCommit', () => {
+        // The unmount cleanup tears down the live gesture, so it must key on `dragging` ALONE.
+        // Naming onCommit as a dep instead makes an inline-lambda caller lose the drag on any
+        // parent render: premature commit, later moves ignored, and the body class stuck on
+        // (endDrag returns early, so `dragging` never clears) — the whole app left in col-resize.
+        const onCommit = vi.fn();
+        function Parent() {
+            const [tick, setTick] = useState(0);
+            return (
+                <>
+                    <button type="button" onClick={() => setTick(tick + 1)}>
+                        rerender
+                    </button>
+                    <PanelResizer
+                        label="Resize note list"
+                        width={280}
+                        onResize={vi.fn()}
+                        // Deliberately a new identity every parent render.
+                        onCommit={(w) => onCommit(w)}
+                        onReset={vi.fn()}
+                    />
+                </>
+            );
+        }
+        renderWithProviders(<Parent />);
+        const divider = screen.getByRole('separator', {name: 'Resize note list'});
+        fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 140, pointerId: 1});
+        fireEvent.click(screen.getByRole('button', {name: 'rerender'}));
+        expect(onCommit).not.toHaveBeenCalled();
+        // The gesture is still live: this move lands, and the release commits it exactly once.
+        fireEvent.pointerMove(divider, {clientX: 200, pointerId: 1});
+        fireEvent.pointerUp(divider, {pointerId: 1});
+        expect(onCommit).toHaveBeenCalledTimes(1);
+        expect(onCommit).toHaveBeenCalledWith(380);
         expect(document.body).not.toHaveClass('panel-resizing');
     });
 });
