@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -274,27 +274,25 @@ describe('NoteList — inline rename', () => {
 });
 
 describe('NoteList — delete', () => {
-    it('deletes a note after confirming', async () => {
+    // The list only ASKS; the confirmation lives in Workspace, which can act on the open note even
+    // when this list isn't showing it (a live search, a different folder). See Workspace's suite for
+    // the dialog itself.
+    it('asks the workspace to delete the row the menu acted on', async () => {
         const user = userEvent.setup();
         const {props} = setup();
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        await user.click(screen.getByRole('button', {name: 'Move to Trash'}));
         expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
     });
 
-    it('deletes on Enter in the confirmation dialog', async () => {
+    it('shows no confirmation of its own', async () => {
         const user = userEvent.setup();
-        const {props} = setup();
+        setup();
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
-        const dialog = await screen.findByRole('alertdialog');
-        // Wait until the dialog has grabbed focus, else Enter races its focus trap.
-        await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-        await user.keyboard('{Enter}');
-        expect(props.onDelete).toHaveBeenCalledWith('Beta.md');
+        expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 });
 

@@ -10,11 +10,11 @@
     --n-hover: rgba(var(--n-ink), 0.08);
     --n-border: rgba(var(--n-ink), 0.16);
     /* The interaction accent — selection wash, drop indicator, focus rings, checked to-do box,
-       active toolbar button. Notion's blue is only the fallback: the app's accent-color setting
-       publishes its hue as the channel triple `--gn-accent-rgb` on :root (index.css, swapped by
-       `data-accent`), so an amber- or gray-accented app no longer paints a blue marquee over its
-       own notes. Channels rather than a color because each of these needs its own alpha. Unlike
-       the rest of the palette these need NO dark-theme remap — the accent is theme-independent. */
+       active toolbar button. Notion's blue is only the fallback: the app publishes its own accent
+       as the channel triple `--gn-accent-rgb` on :root (index.css, an alias of the fixed amber in
+       tokens.css), so the editor no longer paints a blue marquee over its own notes. Channels
+       rather than a colour because each of these needs its own alpha. Unlike the rest of the
+       palette these need NO dark-theme remap — the accent is theme-independent. */
     --n-accent-rgb: var(--gn-accent-rgb, 35, 131, 226);
     --n-blue: rgb(var(--n-accent-rgb));
     --n-blue-selection: rgba(var(--n-accent-rgb), 0.28);

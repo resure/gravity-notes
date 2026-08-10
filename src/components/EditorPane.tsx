@@ -14,6 +14,12 @@ export interface EditorPaneHandle {
     toggleMode(): void;
     /** Move keyboard focus into the editor body. */
     focus(): void;
+    /**
+     * Rename the OPEN note: focus its title field and select it. The note-list's inline rename can't
+     * serve this — the open note need not be in the (searched, folder-scoped) list at all — and the
+     * title is where this note's name already lives.
+     */
+    renameTitle(): void;
 }
 
 interface EditorPaneProps {
@@ -88,13 +94,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
      * frontmatter, a heading deeper than H3, a construct the small line-oriented parser reads
      * imperfectly — editing in blocks would rewrite parts of the file the user never touched. Open
      * that note on its raw source instead: still fully editable, but nothing re-serializes it, so
-     * the file is left exactly as it is. Keyed on the session, so it is computed once per opened note.
+     * the file is left exactly as it is.
+     *
+     * Keyed on the CONTENT it is checking, not on the session counter: this is the safety property
+     * the whole blocks surface rests on, and binding it to a counter meant it held only while every
+     * path that replaces `note.content` also happens to bump `sessionId`. Nothing enforced that.
+     * Typing doesn't re-run it — keystrokes go to a ref and a timer, never back into `note`.
      */
-    const blocksSafe = useMemo(
-        () => isRoundTripStable(note.content),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [sessionId],
-    );
+    const blocksSafe = useMemo(() => isRoundTripStable(note.content), [note.content]);
     // The vertical scroll container (see EditorPane.css); the body saves/restores its scrollTop per
     // note so a switch doesn't carry the previous note's scroll over.
     const paneRef = useRef<HTMLDivElement>(null);
@@ -110,6 +117,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             },
             focus() {
                 bodyRef.current?.focus();
+            },
+            renameTitle() {
+                // Focus AND select: `select()` alone highlights the text without claiming focus.
+                titleRef.current?.focus();
+                titleRef.current?.select();
             },
         }),
         [],

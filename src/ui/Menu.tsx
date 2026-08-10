@@ -45,8 +45,15 @@ export interface MenuProps {
     alignOffset?: number;
     /** Fixed popup width; menus otherwise size to their longest row. */
     width?: number;
-    /** Where focus lands on close — required when the menu is anchored rather than triggered. */
-    finalFocus?: RefObject<HTMLElement | null> | boolean;
+    /**
+     * Where focus lands on close — required when the menu is anchored rather than triggered. The
+     * function form lets an item that has already moved the caret opt out of the restore by
+     * returning `false`; returning nothing keeps the default (back to the trigger).
+     */
+    finalFocus?:
+        | RefObject<HTMLElement | null>
+        | boolean
+        | (() => boolean | HTMLElement | null | void);
     className?: string;
     children: ReactNode;
 }
@@ -149,14 +156,6 @@ export const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(function MenuI
 
 export function MenuSeparator() {
     return <BaseMenu.Separator className="ui-pop__separator" />;
-}
-
-export function MenuGroupLabel({children}: {children: ReactNode}) {
-    return <BaseMenu.GroupLabel className="ui-pop__group-label">{children}</BaseMenu.GroupLabel>;
-}
-
-export function MenuGroup({children}: {children: ReactNode}) {
-    return <BaseMenu.Group>{children}</BaseMenu.Group>;
 }
 
 /**

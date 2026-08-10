@@ -372,15 +372,16 @@ Key modules:
   caret-PRESERVING (a no-op when focus is already in the body) — the pane calls it on
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
-- `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
-  text width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
-  overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
-  deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
+- `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / text
+  width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
+  overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar), and pure
+  `effectiveAppearance` (note wins → workspace → app). There is no accent SETTING — amber is fixed
+  (tokens.css), and the picker, its stored value and every `[data-accent]` rule went with it. The app
   and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
   stored object at write time and adopts other windows' writes via `storage` events — the desktop
   runs one window per workspace over one localStorage, so a naive whole-object persist was a
   multi-window lost update. `Workspace` stamps the resolved values on `<html>` as
-  `data-editor-font` / `data-accent` / `data-text-width`; `index.css` consumes them (per-font
+  `data-editor-font` / `data-text-width`; `index.css` consumes them (per-font
   `--gn-editor-*` metrics; serif = self-hosted PT Serif, woff2-only rules in `src/fonts/pt-serif.css`).
   Also owns the one-shot legacy-localStorage → sidecar migration helpers (keys are cleared only after
   the adoption verifiably lands on disk; trashed notes' overrides attach to their `TrashEntry`).
