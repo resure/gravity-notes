@@ -43,7 +43,6 @@
     background: none;
     color: inherit;
     font: inherit;
-    cursor: default;
 }
 
 .ui-chip__icon {
@@ -76,7 +75,6 @@
     border-radius: 3px;
     background: none;
     color: inherit;
-    cursor: default;
 }
 
 @media (hover: hover) {

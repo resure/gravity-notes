@@ -71,7 +71,6 @@
     font-family: inherit;
     font-size: 12px;
     font-weight: 510;
-    cursor: default;
     box-shadow: var(--shadow-1);
 }
 
@@ -89,7 +88,6 @@
     border-radius: var(--r-xs);
     background: none;
     color: var(--text-3);
-    cursor: default;
 }
 
 @media (hover: hover) {

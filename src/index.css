@@ -12,6 +12,14 @@ body,
     overscroll-behavior: none;
 }
 
+/* Anything that is a button acts like one under the pointer. A type selector (specificity 0,0,1)
+   so any component with a reason to differ — the block editor's drag handle wants `grab`, a
+   read-only field wants `default` — still wins with a single class. Disabled buttons are excluded:
+   a hand over a control that won't respond is a lie. */
+button:not(:disabled) {
+    cursor: pointer;
+}
+
 /* The app root is its own stacking context, so nothing inside it can out-stack a portalled menu,
    dialog or tooltip — those render as siblings of #root, directly on <body>. Without this the
    Tauri title bar's drag region wins over an open menu. */

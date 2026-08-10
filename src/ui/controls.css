@@ -88,7 +88,6 @@
     border-radius: 50%;
     background: none;
     color: var(--text-3);
-    cursor: default;
 }
 
 @media (hover: hover) {
@@ -137,7 +136,6 @@
     font-size: 12px;
     line-height: 16px;
     white-space: nowrap;
-    cursor: default;
     user-select: none;
     transition: background var(--dur-1) var(--ease);
 }
