@@ -143,10 +143,6 @@
     color: var(--text-4);
 }
 
-.folder-rail__caret_button {
-    cursor: default;
-}
-
 @media (hover: hover) {
     .folder-rail__caret_button:hover {
         color: var(--text-2);
@@ -242,6 +238,9 @@
 /* ── Trash + footer ───────────────────────────────────────────────────────────────────────── */
 
 .folder-rail__row_trash {
+    /* Not a folder you select — a button that opens the Trash. The row class sets `default` for
+       the treeitems it also styles, so say so explicitly here. */
+    cursor: pointer;
     color: var(--text-3);
 }
 
@@ -268,7 +267,6 @@
     font-weight: 500;
     letter-spacing: -0.003em;
     text-align: start;
-    cursor: default;
 }
 
 @media (hover: hover) {

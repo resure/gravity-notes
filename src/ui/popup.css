@@ -84,7 +84,7 @@
     font: inherit;
     letter-spacing: -0.003em;
     text-align: start;
-    cursor: default;
+    cursor: pointer;
     user-select: none;
     outline: none;
 }
