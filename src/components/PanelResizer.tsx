@@ -18,12 +18,15 @@ const DRAGGING_BODY_CLASS = 'panel-resizing';
 /**
  * Clamp a panel width into the shared range, optionally tightened by a gesture-time `max` (the
  * "leave the editor room" cap). A cap below the minimum loses: a tiny window must not wedge the
- * divider into an undraggable dead state.
+ * divider into an undraggable dead state. Rounded — a fractional clientX delta must not commit a
+ * fractional width (symmetric with parsePanelWidth, which rounds what it reads back).
  */
 export function clampPanelWidth(width: number, max = PANEL_MAX_WIDTH): number {
-    return Math.min(
-        Math.max(width, PANEL_MIN_WIDTH),
-        Math.max(Math.min(max, PANEL_MAX_WIDTH), PANEL_MIN_WIDTH),
+    return Math.round(
+        Math.min(
+            Math.max(width, PANEL_MIN_WIDTH),
+            Math.max(Math.min(max, PANEL_MAX_WIDTH), PANEL_MIN_WIDTH),
+        ),
     );
 }
 
@@ -83,13 +86,22 @@ export function PanelResizer({
         [getMaxWidth],
     );
 
-    // The body class outlives the component only if it unmounts mid-drag (e.g. the rail closes
-    // under a ⌘-shortcut) — clean it up.
+    // The body class and a pending commit outlive the component only if it unmounts mid-drag
+    // (⌘⇧\ closes the rail, a ⌃R workspace switch): no pointerup will arrive, so the cleanup
+    // both drops the class and commits the width the DOM already shows — otherwise the inline
+    // var written during the drag survives with no matching state until a reload. On a normal
+    // release endDrag has already nulled the gesture, so the cleanup commit is a no-op.
+    // (onCommit is a useState setter in practice — stable, so this effect runs on drag edges.)
     useEffect(() => {
         if (!dragging) return undefined;
         document.body.classList.add(DRAGGING_BODY_CLASS);
-        return () => document.body.classList.remove(DRAGGING_BODY_CLASS);
-    }, [dragging]);
+        return () => {
+            document.body.classList.remove(DRAGGING_BODY_CLASS);
+            const pending = drag.current;
+            drag.current = null;
+            if (pending && pending.last !== pending.startWidth) onCommit(pending.last);
+        };
+    }, [dragging, onCommit]);
 
     const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
@@ -99,7 +111,15 @@ export function PanelResizer({
         e.preventDefault();
         // Optional call: jsdom lacks pointer capture.
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        drag.current = {startX: e.clientX, startWidth: width, max: gestureMax(), last: width};
+        // The editor-room cap stops GROWTH; it must never pull an already-wider panel back on the
+        // first move (a small window would otherwise snap the panel to the cap regardless of drag
+        // direction), so the current width always floors it.
+        drag.current = {
+            startX: e.clientX,
+            startWidth: width,
+            max: Math.max(gestureMax(), width),
+            last: width,
+        };
         setDragging(true);
     };
 
@@ -111,24 +131,34 @@ export function PanelResizer({
         );
         if (next === drag.current.last) return;
         drag.current.last = next;
+        // Keep the separator's value fresh for assistive tech mid-drag: state (and the rendered
+        // aria-valuenow) only commits on release, by design — so write the attribute directly,
+        // same as the width var.
+        e.currentTarget.setAttribute('aria-valuenow', String(next));
         onResize(next);
     };
 
     const endDrag = () => {
         if (!drag.current) return;
-        const {last} = drag.current;
+        const {startWidth, last} = drag.current;
         drag.current = null;
         setDragging(false);
-        onCommit(last);
+        // A stray click (zero movement) must not commit: it would pin today's stylesheet default
+        // into localStorage as if the user had chosen it — and the first click of a double-click
+        // reset would write the very key the second click removes.
+        if (last !== startWidth) onCommit(last);
     };
 
     const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+        // Same floor as the drag path: a cap below the current width blocks growth but must not
+        // yank the panel backwards (ArrowLeft would otherwise overshoot its 16px step, and
+        // ArrowRight/End would shrink the panel they promise to grow).
+        const max = Math.max(gestureMax(), width);
         let next: number | null = null;
-        if (e.key === 'ArrowLeft') next = clampPanelWidth(width - KEYBOARD_STEP, gestureMax());
-        else if (e.key === 'ArrowRight')
-            next = clampPanelWidth(width + KEYBOARD_STEP, gestureMax());
+        if (e.key === 'ArrowLeft') next = clampPanelWidth(width - KEYBOARD_STEP, max);
+        else if (e.key === 'ArrowRight') next = clampPanelWidth(width + KEYBOARD_STEP, max);
         else if (e.key === 'Home') next = PANEL_MIN_WIDTH;
-        else if (e.key === 'End') next = clampPanelWidth(PANEL_MAX_WIDTH, gestureMax());
+        else if (e.key === 'End') next = clampPanelWidth(PANEL_MAX_WIDTH, max);
         if (next === null) return;
         e.preventDefault();
         if (next !== width) onCommit(next);

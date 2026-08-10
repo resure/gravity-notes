@@ -1034,4 +1034,23 @@ describe('Workspace — resizable panels', () => {
         await user.click(screen.getByRole('button', {name: 'Folders'}));
         expect(await screen.findByRole('separator', {name: 'Resize folder rail'})).toBeVisible();
     });
+
+    it('renders no dividers in the mobile single-pane layout', async () => {
+        // Phone-sim: the ≤700px width query matches while the hover query still reports a mouse.
+        // No divider belongs there — the rail is a drawer and the list fills the width, so a drag
+        // could only rewrite the DESKTOP widths sight unseen.
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            ...original(query),
+            matches: query.includes('max-width'),
+        })) as typeof window.matchMedia;
+        try {
+            renderWorkspace();
+            await screen.findByRole('option', {name: /Alpha/});
+            expect(document.querySelector('.workspace__body_mobile')).not.toBeNull();
+            expect(screen.queryAllByRole('separator')).toHaveLength(0);
+        } finally {
+            window.matchMedia = original;
+        }
+    });
 });

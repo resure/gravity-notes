@@ -19,8 +19,10 @@ const handlers = () => ({
 
 const renderResizer = (props: Partial<Parameters<typeof PanelResizer>[0]> = {}) => {
     const h = handlers();
-    renderWithProviders(<PanelResizer label="Resize note list" width={280} {...h} {...props} />);
-    return {divider: screen.getByRole('separator', {name: 'Resize note list'}), ...h};
+    const {unmount} = renderWithProviders(
+        <PanelResizer label="Resize note list" width={280} {...h} {...props} />,
+    );
+    return {divider: screen.getByRole('separator', {name: 'Resize note list'}), unmount, ...h};
 };
 
 describe('clampPanelWidth', () => {
@@ -133,6 +135,49 @@ describe('PanelResizer', () => {
         fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
         expect(document.body).toHaveClass('panel-resizing');
         fireEvent.pointerUp(divider, {pointerId: 1});
+        expect(document.body).not.toHaveClass('panel-resizing');
+    });
+
+    it('does not commit a stray click (zero movement)', () => {
+        const {divider, onCommit} = renderResizer();
+        fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
+        fireEvent.pointerUp(divider, {pointerId: 1});
+        // Would otherwise pin today's stylesheet default into localStorage as a chosen width —
+        // and the first click of a double-click reset would write the key the second removes.
+        expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it('a cap below the current width blocks growth but never yanks the panel back', () => {
+        const {divider, onResize, onCommit} = renderResizer({getMaxWidth: () => 230});
+        // Pointer: a rightward drag must hold the current 280, not snap back to the 230 cap.
+        fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 104, pointerId: 1});
+        expect(onResize).not.toHaveBeenCalled();
+        fireEvent.pointerUp(divider, {pointerId: 1});
+        expect(onCommit).not.toHaveBeenCalled();
+        // Keyboard: growth is a no-op, but shrinking still steps normally (280 → 264, not 230).
+        fireEvent.keyDown(divider, {key: 'ArrowRight'});
+        expect(onCommit).not.toHaveBeenCalled();
+        fireEvent.keyDown(divider, {key: 'ArrowLeft'});
+        expect(onCommit).toHaveBeenLastCalledWith(264);
+    });
+
+    it('keeps aria-valuenow live during a drag (state only commits on release)', () => {
+        const {divider} = renderResizer();
+        fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 140, pointerId: 1});
+        expect(divider).toHaveAttribute('aria-valuenow', '320');
+    });
+
+    it('commits the dragged width if unmounted mid-drag', () => {
+        // The rail can close under ⌘⇧\ while its divider is held: no pointerup will ever arrive,
+        // so the unmount path must both commit the width the DOM shows and drop the body class.
+        const {divider, onCommit, unmount} = renderResizer();
+        fireEvent.pointerDown(divider, {button: 0, clientX: 100, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 140, pointerId: 1});
+        unmount();
+        expect(onCommit).toHaveBeenCalledTimes(1);
+        expect(onCommit).toHaveBeenCalledWith(320);
         expect(document.body).not.toHaveClass('panel-resizing');
     });
 });

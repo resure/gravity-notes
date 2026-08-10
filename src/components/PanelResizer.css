@@ -35,10 +35,18 @@
     transition-delay: 0.25s;
 }
 
-.panel-resizer_dragging::after,
+.panel-resizer_dragging::after {
+    opacity: 1;
+    transition-delay: 0s;
+}
+
+/* Keyboard focus: the same line, but in the dedicated focus color — Tab is the ONLY way to reach
+   the divider (pointerdown is canceled, so clicks never focus it), and the quiet hover shade
+   alone is too faint to announce where the keyboard landed. */
 .panel-resizer:focus-visible::after {
     opacity: 1;
     transition-delay: 0s;
+    background-color: var(--g-color-line-focus);
 }
 
 /* Live drag, set on <body> by PanelResizer: the pointer strays off the 7px strip between capture
