@@ -1,9 +1,19 @@
 /* A 7px hit strip straddling the 1px border-right the panel to its left already draws: 4px over
-   the panel (its border is the strip's center), 3px over the neighbor — net zero layout width, so
-   adding/removing a divider never shifts the panes. Sits above both neighbors to win the pointer. */
+   the panel (its border is the strip's center), 3px over the neighbor. Sits above both neighbors
+   to win the pointer.
+
+   The divider itself is a ZERO-width flex item; the strip and the line are painted out of flow by
+   the pseudo-elements below, so adding or removing a divider can never shift the panes. It used to
+   be a 7px item cancelled by -7px of margin, which laid out identically but left WebKit computing
+   the flex row's INTRINSIC width 7px short per divider — it counts the item's width but not the
+   negative margins. The sidebar sizes to its children, so its box came up 14px narrow with the
+   rail open, the panes overflowed it, and the editor pane started 14px early and lost most of its
+   left gutter. Chrome computes that row correctly, so it only ever showed in the desktop app's
+   WKWebView. With no width and no margins there is nothing left to miscount. Hit-testing on a
+   pseudo-element targets its originating element, so the strip still receives the whole gesture. */
 .panel-resizer {
-    flex: 0 0 7px;
-    margin-inline: -4px -3px;
+    flex: 0 0 0px;
+    width: 0;
     position: relative;
     z-index: 2;
     cursor: col-resize;
@@ -16,14 +26,26 @@
     user-select: none;
 }
 
-/* The grab affordance: a 2px line centered on the underlying 1px border — one shade up from it
-   (generic-active), a nudge rather than a highlight. Appears on hover (delayed — casual mouse
-   travel across the app must not flash it), instantly while dragging or focused via keyboard. */
+/* The hit strip itself, out of flow so it costs no layout width: 4px over the panel to the left
+   (its 1px border included) and 3px over the neighbor. Transparent — the ::after line below is the
+   only thing the divider ever paints. */
+.panel-resizer::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: -4px;
+    width: 7px;
+}
+
+/* The grab affordance: a 2px line covering the underlying 1px border and 1px of the panel — one
+   shade up from the border (generic-active), a nudge rather than a highlight. Appears on hover
+   (delayed — casual mouse travel across the app must not flash it), instantly while dragging or
+   focused via keyboard. */
 .panel-resizer::after {
     content: '';
     position: absolute;
     inset-block: 0;
-    inset-inline-start: 3px;
+    inset-inline-start: -2px;
     width: 2px;
     background-color: var(--g-color-line-generic-active);
     opacity: 0;

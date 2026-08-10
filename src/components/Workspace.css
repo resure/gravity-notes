@@ -97,28 +97,24 @@
    visibility change is delayed (0s duration, 0.15s delay) so on CLOSE the sidebar stays visible
    through the slide-out and only then hides.
 
-   The overlay's width is EXPLICIT — the same sum the panes produce in flow (each +1px for its
-   border; the dividers net to zero). Left to shrink-to-fit, WebKit underestimates the absolute
-   flex row's intrinsic width and paints the box-shadow for a box narrower than the laid-out
-   panes, so the peeked overlay casts no shadow at its right edge. Pinning the width also keeps
-   the shadow tracking live divider drags. */
+   The overlay shrink-to-fits its panes, which is also what gives the box-shadow the right edge to
+   hug (and keeps it tracking live divider drags). This used to need an explicit width duplicating
+   the panes' sum: the dividers' negative margins made WebKit measure the flex row short, so the
+   shadow was painted for a box narrower than the panes. That is fixed at the source now — a
+   PanelResizer occupies no layout width at all (see PanelResizer.css) — so nothing here has to
+   restate the panel widths. */
 .workspace__body_collapsed .workspace__sidebar {
     position: absolute;
     left: 0;
     top: 0;
     bottom: 0;
     z-index: 5;
-    width: calc(var(--sidebar-width) + 1px);
     transform: translateX(-100%);
     visibility: hidden;
     transition:
         transform 0.15s ease,
         visibility 0s linear 0.15s;
     box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
-}
-
-.workspace__body_collapsed .workspace__sidebar_with-rail {
-    width: calc(var(--rail-width) + var(--sidebar-width) + 2px);
 }
 
 /* Peeked (⌘\): slide the overlay in and make it focusable. visibility flips to visible
