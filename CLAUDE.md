@@ -31,7 +31,8 @@ new window). Desktop also has **per-note windows** (Apple-Notes-style): ⌘↵ /
 its ⋯ menu opens that note in its own `note-N` window — both side panels closed, focus in the editor
 body, native title = the note title, per-note focus-if-open — and **⌘0** (Window ▸ Main Window, a
 native accelerator) surfaces the full workspace window for THAT window's workspace, un-hiding or
-creating one as needed. Per-workspace UI layout (sidebar/rail/selected folder) lives under
+creating one as needed. Per-workspace UI layout (sidebar/rail/selected folder, plus the two
+divider-dragged panel widths `rail-width`/`sidebar-width` — see `PanelResizer`) lives under
 workspace-namespaced localStorage keys — note windows neither read nor write those (their transient
 layout must not clobber the full views', and reading would eat the legacy-key migration); the sidecar
 metadata is per-folder anyway.
@@ -354,7 +355,11 @@ Key modules:
   in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
   strands), `FolderRail` (collapsible
   nested-folder tree left of the list — select/scope,
-  drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
+  drag-and-drop, rename, pin; toggle ⌘⇧\), `PanelResizer` (the WAI-ARIA window-splitter divider on
+  the rail's and the list's right edge — gesture state in a ref so pointer moves write the width
+  CSS var straight to the DOM instead of re-rendering the editor, state committing only on release;
+  rendered only in the desktop column layout, since mobile makes the rail a drawer and stretches
+  the list to full width), `NoteList` (sidebar with create/rename/delete/move, pin,
   sort, **Open in New Window** (row ⋯/context menu, ⌘↵, ⌘-click — desktop only, gated by the optional
   `onOpenInNewWindow` prop); right-click and ⌘-click deliberately NEVER move the selection (the menu
   acts via its own payload, and a row `onMouseDown` blocks the focus grab); a **folder-scope chip**
