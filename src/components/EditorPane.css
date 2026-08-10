@@ -40,6 +40,32 @@
     --editor-gutter: 36px;
 }
 
+/* One of the app's three signature moments (§03): a note switch crossfades the paper and rises 2px,
+   at --dur-2. Both halves of the surface are keyed on `sessionId` and so remount together — the
+   animation runs because they are NEW elements, which is also why nothing has to reset it. */
+@keyframes editor-pane-note-in {
+    from {
+        opacity: 0;
+        transform: translateY(2px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.editor-pane .note-title-row,
+.editor-pane .gn-block-editor {
+    animation: editor-pane-note-in var(--dur-2) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .editor-pane .note-title-row,
+    .editor-pane .gn-block-editor {
+        animation: none;
+    }
+}
+
 /* On a phone the handle track isn't worth the width (the handles are hover furniture), so fall back
    to the standard gutter — the block editor drops its own extra padding at the same breakpoint. */
 @media (max-width: 720px) {

@@ -231,10 +231,6 @@
     outline: none;
 }
 
-.folder-rail__input::selection {
-    background: var(--accent-soft);
-}
-
 /* ── Trash + footer ───────────────────────────────────────────────────────────────────────── */
 
 .folder-rail__row_trash {

@@ -1,40 +1,43 @@
+/* The vendored block editor, on Sol's tokens.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   This palette began as Notion's, hard-coded light, with a second copy of itself for the dark
+   theme at the foot of the file. Both are gone: every `--n-*` below now RESOLVES a Sol token, so
+   the editor follows the app's theme (and any future one) without a remap — the dark block that
+   survives sets exactly one thing, the ink channel, because that is the only value CSS can't
+   derive from an oklch token.
+
+   `--n-ink` has to stay a channel triple: a dozen rules below build their own alpha with
+   `rgba(var(--n-ink), α)`, and no `color-mix` on an oklch value can stand in for that. It is the
+   same warm neutral `--line` / `--bg-hover` are cut from (hue 75), restated as sRGB by hand. */
 :root {
-    /* Notion's ink, as raw channels so every rgba() below can be re-tinted for a dark theme in
-       one place (see the .g-root_theme_dark block at the end of this file). */
-    --n-ink: 55, 53, 47;
-    --n-text: rgb(var(--n-ink));
-    --n-text-light: rgba(var(--n-ink), 0.65);
-    --n-text-lighter: rgba(var(--n-ink), 0.5);
-    --n-placeholder: rgba(var(--n-ink), 0.4);
-    --n-icon: rgba(var(--n-ink), 0.45);
-    --n-hover: rgba(var(--n-ink), 0.08);
-    --n-border: rgba(var(--n-ink), 0.16);
+    --n-ink: 62, 54, 42;
+    --n-text: var(--text-1);
+    --n-text-light: var(--text-2);
+    --n-text-lighter: var(--text-3);
+    --n-placeholder: var(--text-4);
+    --n-icon: var(--text-3);
+    --n-hover: var(--bg-hover);
+    --n-border: var(--line);
     /* The interaction accent — selection wash, drop indicator, focus rings, checked to-do box,
-       active toolbar button. Notion's blue is only the fallback: the app publishes its own accent
-       as the channel triple `--gn-accent-rgb` on :root (index.css, an alias of the fixed amber in
-       tokens.css), so the editor no longer paints a blue marquee over its own notes. Channels
-       rather than a colour because each of these needs its own alpha. Unlike the rest of the
-       palette these need NO dark-theme remap — the accent is theme-independent. */
-    --n-accent-rgb: var(--gn-accent-rgb, 35, 131, 226);
-    --n-blue: rgb(var(--n-accent-rgb));
-    --n-blue-selection: rgba(var(--n-accent-rgb), 0.28);
+       active toolbar button. Amber, via the channel triple the app publishes on :root (index.css,
+       an alias of the fixed accent in tokens.css). Channels rather than a colour because each of
+       these needs its own alpha, and theme-independent like the accent itself. */
+    --n-accent-rgb: var(--gn-accent-rgb, 219, 136, 51);
+    --n-blue: var(--accent);
     --n-blue-overlay: rgba(var(--n-accent-rgb), 0.14);
     --n-blue-drop: rgba(var(--n-accent-rgb), 0.4);
     --n-blue-marquee-border: rgba(var(--n-accent-rgb), 0.55);
     --n-blue-marquee-fill: rgba(var(--n-accent-rgb), 0.12);
-    --n-code-red: #eb5757;
-    --n-code-bg: rgba(135, 131, 120, 0.15);
-    --n-gray-bg: rgb(247, 246, 243);
-    --n-callout-bg: rgb(241, 241, 239);
+    --n-code-red: var(--danger);
+    --n-code-bg: var(--bg-selected);
+    --n-gray-bg: var(--bg-panel-2);
+    --n-callout-bg: var(--bg-panel);
     /* Every floating surface's fill — the slash menu, the `[[` picker, the block menu, the
-       selection toolbar, a table cell. Notion's paper white, and a variable rather than a literal
-       because the dark theme has to move it: the overlays PORTAL to <body>, so a hard-coded white
-       there painted white text on a white card (the ink channel below is remapped, the fill wasn't). */
-    --n-surface: #ffffff;
-    --n-overlay-shadow:
-        rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px,
-        rgba(15, 15, 15, 0.2) 0px 9px 24px;
-    --n-mono: 'SFMono-Regular', Menlo, Consolas, 'PT Mono', 'Liberation Mono', Courier, monospace;
+       selection toolbar, a table cell. Paper, and a variable rather than a literal because the
+       overlays PORTAL to <body>: a hard-coded white there painted white text on a white card. */
+    --n-surface: var(--bg-paper);
+    --n-overlay-shadow: var(--shadow-3);
+    --n-mono: var(--font-mono);
 }
 
 .gn-block-editor {
@@ -135,20 +138,28 @@
     height: 0;
 }
 
+/* H1 and H2 are PT Serif at 400 — the same voice as the note title above them, which is what makes
+   a heading inside the note read as a smaller instance of its title rather than as bold body copy.
+   Absolute sizes (not `em`) so a serif BODY doesn't compound its own scale onto them. H3 has no
+   serif step in §03, so it stays in the body face and merely out-weighs it. */
 .gn-block-editor .block[data-type='heading1'] .content {
-    font-size: 1.875em;
-    font-weight: 600;
-    line-height: 1.3;
+    font-family: var(--font-serif);
+    font-size: var(--fs-h1);
+    line-height: var(--lh-h1);
+    font-weight: 400;
+    letter-spacing: -0.005em;
 }
 .gn-block-editor .block[data-type='heading2'] .content {
-    font-size: 1.5em;
-    font-weight: 600;
-    line-height: 1.3;
+    font-family: var(--font-serif);
+    font-size: var(--fs-h2);
+    line-height: var(--lh-h2);
+    font-weight: 400;
+    letter-spacing: -0.004em;
 }
 .gn-block-editor .block[data-type='heading3'] .content {
-    font-size: 1.25em;
+    font-size: 1.05em;
     font-weight: 600;
-    line-height: 1.3;
+    line-height: 1.4;
 }
 
 /* inline formatting */
@@ -203,12 +214,14 @@
     user-select: none;
 }
 
+/* §06: both sit 54px out from the measure. The left slot holds one 22px button, so -54 puts its
+   far edge level with the note title's own left inset; the right slot mirrors it. */
 .gn-block-editor .handle-slot_left {
-    left: -26px;
+    left: -32px;
 }
 
 .gn-block-editor .handle-slot_right {
-    right: -30px;
+    right: -32px;
 }
 
 .gn-block-editor .block:hover .handles,
@@ -216,15 +229,32 @@
     opacity: 1;
 }
 
+/* §06: 2.8% with a 6px bleed past the measure, "so the highlight reads as a band of paper rather
+   than a card". The bleed is why this is drawn as a pseudo-element rather than a background on the
+   block — the block is the measure, and a background would stop exactly at the text. */
+@media (hover: hover) {
+    .gn-block-editor .block:hover > .content::before,
+    .gn-block-editor .block:hover > .row > .content::before {
+        content: '';
+        position: absolute;
+        inset: 0 -6px;
+        z-index: -1;
+        border-radius: 4px;
+        background: rgba(var(--n-ink), 0.028);
+        pointer-events: none;
+    }
+}
+
 .gn-block-editor .handle-btn {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 22px;
+    height: 24px;
     border: none;
     background: transparent;
-    border-radius: 4px;
-    color: var(--n-icon);
-    cursor: pointer;
+    border-radius: 5px;
+    color: var(--text-4);
     padding: 0;
 }
 
@@ -234,18 +264,11 @@
 
 .gn-block-editor .handle-btn:focus-visible {
     opacity: 1;
-    outline: 2px solid rgba(35, 131, 226, 0.35);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
 }
 
-.gn-block-editor .plus-btn {
-    width: 24px;
-    height: 24px;
-}
-
 .gn-block-editor .drag-btn {
-    width: 18px;
-    height: 24px;
     cursor: grab;
 }
 
@@ -388,8 +411,20 @@
     background: #fdebec;
 }
 
+/* One of the three moments in the app that move for effect (§03): a dragged block lifts off the
+   paper at 2° under the floating-surface shadow. */
 .gn-block-editor .block.dragging {
-    opacity: 0.4;
+    opacity: 0.75;
+    transform: rotate(2deg);
+    box-shadow: var(--shadow-3);
+    border-radius: 4px;
+    background: var(--bg-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gn-block-editor .block.dragging {
+        transform: none;
+    }
 }
 
 .gn-block-editor .block.drop-before::before,
@@ -810,62 +845,71 @@
 
 /* ---------- overlay menus ---------- */
 
+/* The one floating material (§07), shared with `src/ui/popup.css`: 12px radius, one hairline,
+   shadow-3, 6px padding, 32px rows with a 16px icon column and 13.5px labels. These four surfaces
+   stay hand-rolled — they are anchored to the CARET, not to a trigger element — so the recipe is
+   restated here rather than imported; keep the two in step. */
 .gn-block-editor .overlay-menu {
     /* Fixed, not absolute: the host pane scrolls, clips its overflow, and carries a `transform`,
        so a root-relative overlay landed off-target and got cut off. Coordinates come in as
        viewport values (Editor.tsx). */
     position: fixed;
     z-index: 999;
+    box-sizing: border-box;
     background: var(--n-surface);
-    border-radius: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
     box-shadow: var(--n-overlay-shadow);
-    padding: 6px 0;
+    padding: 6px;
     max-height: 320px;
     overflow-y: auto;
+    color: var(--text-1);
+    font-size: var(--fs-menu);
+    line-height: var(--lh-menu);
     cursor: default;
 }
 
 .gn-block-editor .slash-menu {
-    width: 324px;
+    width: 244px;
 }
 
 .gn-block-editor .block-menu {
-    width: 265px;
+    width: 244px;
 }
 
+/* The app's one way of labelling a group — the same mono caps the folder rail and the note list's
+   time groups use. */
 .gn-block-editor .menu-section {
-    padding: 6px 14px 4px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--n-text-lighter);
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
     user-select: none;
 }
 
 .gn-block-editor .menu-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    /* Clamp the row to the menu (minus its own margins). Without this the row takes its max-content
-       width and the shortcut hint at its right end is pushed outside the rounded box. */
+    gap: 11px;
     box-sizing: border-box;
-    width: calc(100% - 8px);
-    margin: 0 4px;
-    padding: 5px 10px;
-    min-height: 30px;
-    border-radius: 6px;
-    font-size: 14px;
+    width: 100%;
+    padding: 0 10px;
+    height: 32px;
+    border-radius: 7px;
+    letter-spacing: -0.003em;
     cursor: pointer;
     user-select: none;
-    width: calc(100% - 8px);
     border: 0;
     background: transparent;
     color: inherit;
-    font-family: inherit;
+    font: inherit;
     text-align: left;
-}
-
-.gn-block-editor .slash-menu .menu-item {
-    min-height: 54px;
 }
 
 .gn-block-editor .menu-item.active,
@@ -879,9 +923,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
-    color: rgba(var(--n-ink), 0.85);
+    width: 16px;
+    height: 16px;
+    color: var(--text-2);
     flex-shrink: 0;
 }
 
@@ -975,8 +1019,8 @@
 }
 
 .gn-block-editor .menu-item-hint {
-    color: var(--n-placeholder);
-    font-size: 12px;
+    color: var(--text-3);
+    font-size: 12.5px;
     flex-shrink: 0;
     /* Pinned to the right edge even when the copy column is narrower than the space available. */
     margin-left: auto;
@@ -984,19 +1028,22 @@
 }
 
 .gn-block-editor .menu-empty {
-    padding: 8px 14px;
-    font-size: 14px;
-    color: var(--n-text-lighter);
+    padding: 7px 10px;
+    color: var(--text-3);
 }
 
+/* One hairline, inset, and only where a group ends. */
 .gn-block-editor .menu-divider {
     height: 1px;
-    background: rgba(var(--n-ink), 0.09);
-    margin: 6px 0;
+    background: var(--line);
+    margin: 5px 10px;
 }
 
 /* ---------- selection toolbar ---------- */
 
+/* §06's format bar: 34px tall, the same card as every other floating surface, and its controls are
+   LETTERFORMS rather than icons — B, I, S and <> are type at 600, which is why they are 24×22 (a
+   letterform needs width, not a square) and sized 0.8× the icon box beside them. */
 .gn-block-editor .sel-toolbar {
     /* Viewport-fixed, like .overlay-menu above. */
     position: fixed;
@@ -1005,10 +1052,13 @@
     display: flex;
     align-items: center;
     gap: 1px;
+    height: 34px;
+    box-sizing: border-box;
     background: var(--n-surface);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
     box-shadow: var(--n-overlay-shadow);
-    padding: 4px;
+    padding: 0 5px;
     cursor: default;
 }
 
@@ -1016,14 +1066,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    padding: 0 6px;
+    min-width: 24px;
+    height: 22px;
+    padding: 0 4px;
     border: none;
-    border-radius: 6px;
+    border-radius: 5px;
     background: transparent;
-    color: var(--n-text);
-    font-size: 15px;
+    color: var(--text-1);
+    font-size: 12px;
+    font-weight: 600;
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
@@ -1033,8 +1084,11 @@
     background: var(--n-hover);
 }
 
+/* Pressed state is a wash, not the accent: what is bold here is the SELECTION's state, and the
+   selection is already amber. */
 .gn-block-editor .tb-btn.active {
-    color: var(--n-blue);
+    background: var(--bg-selected);
+    color: var(--text-1);
 }
 
 .gn-block-editor .tb-b {
@@ -1061,8 +1115,8 @@
 
 .gn-block-editor .tb-divider {
     width: 1px;
-    height: 20px;
-    background: rgba(var(--n-ink), 0.09);
+    height: 18px;
+    background: var(--line);
     margin: 0 3px;
 }
 
@@ -1252,11 +1306,24 @@
     text-decoration-style: dashed;
 }
 
-/* The `[[` note picker reuses the slash menu's material; it only needs its own measure. */
+/* The `[[` note picker reuses the material above; §06 gives it its own measure and a taller row,
+   because a note row carries its folder underneath the title. */
 .gn-block-editor .wiki-suggest-menu {
-    min-width: 240px;
-    max-width: 380px;
-    padding: 4px;
+    width: 284px;
+}
+
+.gn-block-editor .wiki-suggest-menu .menu-item {
+    height: 44px;
+}
+
+/* …except the trailing "Create …" row, which is a plain 32px action like any other. */
+.gn-block-editor .wiki-suggest-menu .menu-item_create {
+    height: 32px;
+}
+
+.gn-block-editor .wiki-suggest-menu .menu-item-description {
+    font-size: 11.5px;
+    line-height: 15px;
 }
 
 /* ---------- theming ---------- */

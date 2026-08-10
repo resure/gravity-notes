@@ -258,10 +258,6 @@
     outline: none;
 }
 
-.note-list__edit::selection {
-    background: var(--accent-soft);
-}
-
 /* Search hits, in both the title and the preview. */
 .note-list__match {
     padding: 0 1px;

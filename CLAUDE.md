@@ -343,8 +343,10 @@ Key modules:
   icon picker, save indicator, undo buttons) has been deleted, since the pane above supplies all of
   it, and the surviving surface is body-only. Three things to know: `editor.css` is scoped under
   `.gn-block-editor` by `scripts/scope-css.mjs` (its class names — `.page`, `.content`, `.block` —
-  would otherwise style the rest of the app); its palette is Notion's, hard-coded light, so the ink
-  is a `--n-ink` channel triple that `.g-root_theme_dark` re-tints in one line; and the floating
+  would otherwise style the rest of the app); every `--n-*` in its palette now RESOLVES a Sol token,
+  so there is no second dark copy of it — the one thing that can't be derived from an oklch token is
+  the `--n-ink` channel triple a dozen `rgba(var(--n-ink), α)` rules build their own alpha from, and
+  that is the only line the dark block sets; and the floating
   overlays (slash menu, block menu, selection toolbar) are `position: fixed` in VIEWPORT coordinates
   AND portaled to `<body>` via `OverlayPortal` — the host pane scrolls, clips its overflow, and
   carries a `transform`, which both re-anchors `fixed` to the pane and cuts the overlay off. The
@@ -490,8 +492,10 @@ Key modules:
   pinch/scroll zoom + drag-pan; the block editor's `AttachmentImage` opens it on click, and also
   carries drag-resize — persisted as the YFM ` =600x` suffix, which `NotePreview`'s `imsize` plugin
   understands — plus alt/caption editing and explicit loading/broken states),
-  `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
+  `BacklinksPanel` (§04's "linked references" bar: 40px pinned to the foot of the
+  editor pane, a Base UI **Collapsible** that opens to at most 300px of its own scroll — Base UI
+  keeps the panel MOUNTED while closed, so the closed height is stated in CSS or "collapse" does
+  nothing), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
   Appearance for the app and workspace layers), `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
