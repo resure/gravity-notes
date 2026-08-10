@@ -6,8 +6,9 @@ Guidance for working in this repository.
 
 **Gravity Notes** — a local-first Markdown note-taking app, shipping as both a **web app** and a
 **macOS desktop app** (Tauri 2). On first run the user chooses where notes live: a **folder** of
-plain `.md` files or **in-browser** (IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/)
-ecosystem, with a vendored Notion-style **block editor** as the note body.
+plain `.md` files or **in-browser** (IndexedDB). Built on [Base UI](https://base-ui.com) for
+behaviour and ~100% our own CSS for looks, with a vendored Notion-style **block editor** as the
+note body. (Runtime `@gravity-ui/*` is gone; only the ESLint/Prettier configs remain, dev-only.)
 
 **Targets / folder backends.** The folder-of-`.md` backend is served two ways behind one `NoteStore`
 seam:
@@ -187,14 +188,13 @@ Key modules:
   backend; the way to get plain files out of in-browser storage and migrate between backends.
   Preserves folder structure (incl. deliberately-empty folders, via a `.gnkeep` marker) and bundles
   `Attachments/` bytes both ways.
-- `src/storage/workspaceRegistry.ts` — the workspace registry (IndexedDB `gravity-notes` v2): every
-  opened workspace as a `WorkspaceEntry` (`indexeddb` | `tauri:<path>` | `fsa:<uuid>`; a
+- `src/storage/workspaceRegistry.ts` — the workspace registry (IndexedDB `sol`): every opened
+  workspace as a `WorkspaceEntry` (`indexeddb` | `tauri:<path>` | `fsa:<uuid>`; a
   `FileSystemDirectoryHandle` structured-clones inside the entry, `tauri-fs` keeps a path string) plus
-  a last-active pointer for launch restore. Lazily migrates the v1 single-choice keys into a
-  deterministic entry (`fsa:legacy`) so a StrictMode/two-window double-run is idempotent. ⚠️ This must
-  stay the ONLY module opening that database — a second module opening v1 would throw `VersionError`
-  after the upgrade. Each `tx()` closes the connection on complete / error / abort (short-lived
-  connections are also why cross-window v1→v2 upgrades can't block).
+  a last-active pointer for launch restore. ⚠️ This must stay the ONLY module opening that database —
+  a second module opening it at a lower version would throw `VersionError` after any upgrade. Each
+  `tx()` closes the connection on complete / error / abort (short-lived connections are also why a
+  cross-window upgrade can't block).
 - `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
   `orderNotes` (pins first, then the active sort). The `pinned` set holds both note ids and folder
@@ -202,8 +202,9 @@ Key modules:
   overrides) also live here, keyed by note id — a note id is its rel-path, so keeping them in the
   sidecar is what lets `withRenamed`/`withReprefixed` re-key them on rename/move (and lets them
   travel with the folder + survive trash → restore via the `TrashEntry`). Per-note appearance is
-  deliberately NOT in localStorage; `Workspace` one-shot migrates any legacy
-  `gravity-notes:<wsId>:note:<id>:appearance` keys into the sidecar on first ready load.
+  deliberately NOT in localStorage — that is what stranded it on every rename before. The `icons`
+  map has no UI any more (the picker is cut) but keeps flowing through parse/serialize/rename/trash,
+  so a vault an older build still opens doesn't lose it on the first write.
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
   change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a
@@ -374,19 +375,15 @@ Key modules:
   caret-PRESERVING (a no-op when focus is already in the body) — the pane calls it on
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
-- `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / text
-  width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
-  overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar), and pure
-  `effectiveAppearance` (note wins → workspace → app). There is no accent SETTING — amber is fixed
-  (tokens.css), and the picker, its stored value and every `[data-accent]` rule went with it. The app
-  and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
-  stored object at write time and adopts other windows' writes via `storage` events — the desktop
-  runs one window per workspace over one localStorage, so a naive whole-object persist was a
-  multi-window lost update. `Workspace` stamps the resolved values on `<html>` as
+- `src/hooks/useSettings.ts` — the **appearance model**, TWO layers: `Settings` (app-wide editor
+  font + text width) and `NoteAppearance` (per-note font + width, read from the metadata sidecar),
+  resolved by pure `effectiveAppearance` (note wins → app). The per-workspace layer is CUT, as is
+  the accent setting — amber is fixed (tokens.css) — and so is the note-icons toggle. The app layer
+  persists through `usePersistedSettings`, which MERGES into the freshest stored object at write
+  time and adopts other windows' writes via `storage` events — the desktop runs one window per
+  workspace over one localStorage, so a naive whole-object persist was a multi-window lost update. `Workspace` stamps the resolved values on `<html>` as
   `data-editor-font` / `data-text-width`; `index.css` consumes them (per-font
   `--gn-editor-*` metrics; serif = self-hosted PT Serif, woff2-only rules in `src/fonts/pt-serif.css`).
-  Also owns the one-shot legacy-localStorage → sidecar migration helpers (keys are cleared only after
-  the adoption verifiably lands on disk; trashed notes' overrides attach to their `TrashEntry`).
 - `src/hooks/useAppUpdater.ts` — in-app auto-update (macOS desktop) over the Tauri updater/process
   plugins: a small state machine (check → available → downloading → installed / restart-required /
   error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
@@ -397,13 +394,16 @@ Key modules:
   exactly ONCE in the app, on the folder gate, and `raised` marks the one action a pane exists for),
   `Icon`/`icons` (the hand-drawn set: one stroke each, drawn on a 16 box, with the stroke WEIGHT a
   function of the rendered size — a path merely scaled goes spindly at 12 and heavy at 26), `Menu`
-  (+`MenuItem`/`MenuSub`/`MenuPanel`), `Dialog`+`AlertDialog`, `Popover`, `Select`, `Switch`,
-  `ToggleGroup`, `Input`, `Tooltip`, `toast`, and `bits` (Kbd / Chip / Banner / Skeleton). Three
+  (+`MenuItem`/`MenuSub`/`MenuPanel`), `Dialog`+`AlertDialog`, `Popover`, `Select`, `Progress`,
+  `ToggleGroup`, `Input`, `Tooltip`, `toast`, and `bits` (Kbd / Chip / Banner / Skeleton). Four
   things here are contracts, not styling:
   - **`.ui-pop` is a selector other code depends on.** Every floating surface carries it, and
-    `Workspace`'s F2 guard tests `closest('.note-title-row, .ui-pop, .g-popup, [role="dialog"]')` to
-    know focus is inside a floating layer. Base UI portals all of them to `<body>`, so the guard
-    cannot walk the React tree instead. (`.g-popup` stays until the last uikit popup goes.)
+    `Workspace`'s F2 guard tests `closest('.note-title-row, .ui-pop, [role="dialog"]')` to know
+    focus is inside a floating layer. Base UI portals all of them to `<body>`, so the guard cannot
+    walk the React tree instead.
+  - **A dialog's popup STOPS keydown propagation** (so a nested dialog's Escape can't also close its
+    parent). Anything that has to see keys pressed inside a dialog must listen in the CAPTURE phase
+    — which is exactly why `useListboxNav`'s document listener is a capture listener.
   - **Dialogs must never be `keepMounted`.** `useShortcuts` goes quiet while
     `[role="dialog"]:not(.ui-toast), [role="alertdialog"]` matches, so a kept-mounted dialog would
     silence every global chord for the session. The `:not(.ui-toast)` is equally load-bearing: an
@@ -419,13 +419,14 @@ Key modules:
   results are ranked, not sorted, so "Today" over them would be a lie about the order.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate + a recents
   list so a failed probe is never a dead end; **desktop is folder-first** — in-browser storage is
-  offered on the web only; the transient `loading` state renders NO gate UI — just a 300 ms-delayed
-  spinner — so fresh windows don't flash the welcome card), `Workspace` (top bar + layout + nav
+  offered on the web only; §09's copy and the app's ONE filled button; the transient `loading` state
+  renders NO gate UI — just a 300 ms-delayed indeterminate bar — so fresh windows don't flash the
+  welcome card), `Workspace` (top bar + layout + nav
   wiring; takes the
   `NoteStore` and a `workspaceId` — App remounts it `key`ed per workspace, so switches start clean;
   owns export/import and the flush-then-confirm guard before any workspace switch; per-workspace UI
-  layout persists under `gravity-notes:<wsId>:*` localStorage keys, adopting the legacy un-namespaced
-  value once — note windows skip both the read and the write, start with panels closed + editor
+  layout persists under `sol:<wsId>:*` localStorage keys — note windows skip both the read and the
+  write (their transient layout must not clobber the full views'), start with panels closed + editor
   focused (search box when the assigned note failed to load, so the window is never
   keyboard-orphaned), and sync their native title + `set_window_note` assignment to the open note
   ONLY once `notes.ready` — the mount run would otherwise push `set_window_note(null)` mid-load and
@@ -495,13 +496,17 @@ Key modules:
   `BacklinksPanel` (§04's "linked references" bar: 40px pinned to the foot of the
   editor pane, a Base UI **Collapsible** that opens to at most 300px of its own scroll — Base UI
   keeps the panel MOUNTED while closed, so the closed height is stated in CSS or "collapse" does
-  nothing), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
-  Appearance for the app and workspace layers), `UpdateDialog` (the software-update sheet;
+  nothing), `ConflictBanner`, `ShortcutsDialog` (⌘/ — rendered from the `SHORTCUTS` descriptor via
+  `shortcutChords`, which does the ⌘/Ctrl platform substitution), `SettingsDialog` (⌘, — 620px, ONE
+  Appearance section, no Save: every control commits live behind a 22% scrim),
+  `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
   clickable links), and `ErrorBoundary` (root render-crash net).
-- `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
-  `ErrorBoundary`. The theme key (`gravity-notes:theme`) is also read by an inline anti-flash
+- `src/App.tsx` — the toast region + tooltip provider (the only two, and both are behaviour rather
+  than looks) + theme persistence; wraps the app in
+  `ErrorBoundary`. Theme is `data-theme` on `<html>`, stamped here — there is no ThemeProvider —
+  resolving System through `matchMedia`. The theme key (`sol:theme`) is also read by an inline anti-flash
   script in `index.html` that paints the document background in the resolved theme before the bundle
   loads (so launch doesn't flash white before dark) — keep the two in sync. Also owns the **⌘0
   (`menu:main-window`) listener** — deliberately HERE, not in `Workspace`: App mounts exactly once
@@ -518,9 +523,9 @@ Key modules:
 ## Conventions
 
 - React 18 function components + hooks; TypeScript `strict` (plus `noUnusedLocals`/`noUnusedParameters`).
-- UI is being rewritten onto **Base UI** (`@base-ui/react`) + our own CSS: reach for a primitive in
-  `src/ui/` first, and add one there rather than styling a component in place. What is still Gravity
-  UI (`@gravity-ui/uikit`, `@gravity-ui/icons`) is mid-migration and leaves in the dialogs pass.
+- UI is **Base UI** (`@base-ui/react`) + our own CSS: reach for a primitive in `src/ui/` first, and
+  add one there rather than styling a component in place. No runtime `@gravity-ui/*` remains — only
+  the ESLint/Prettier configs, which ship nothing.
 - Code style follows the Gravity ecosystem (single quotes, sorted imports), enforced via
   `@gravity-ui/eslint-config` + `@gravity-ui/prettier-config`.
 - Errors surface to the user via `toast()` from `src/ui/toast` (`onError` in `Workspace`) — and ONLY

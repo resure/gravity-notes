@@ -266,6 +266,29 @@
     color: inherit;
 }
 
+/* ── Loading ──────────────────────────────────────────────────────────────────────────────────
+   Skeleton rows at the list's own 58px pitch, so the real rows land where the placeholders were
+   rather than jumping. No spinner (§09). */
+
+.note-list__skeletons {
+    padding-top: 2px;
+}
+
+.note-list__skeleton {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    box-sizing: border-box;
+    height: 58px;
+    margin: 0 8px;
+    padding: 0 12px;
+}
+
+.note-list__skeleton-sub {
+    opacity: 0.65;
+}
+
 /* ── Empty ────────────────────────────────────────────────────────────────────────────────────
    Per-pane, never full-window; at most one oversized quiet glyph (§09). */
 
@@ -298,4 +321,15 @@
     font-size: var(--fs-preview);
     line-height: var(--lh-preview);
     color: var(--text-4);
+}
+
+/* "Search is also create" — the offer under a no-results search, stated rather than implied. */
+.note-list__empty-create {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 0 0;
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    color: var(--text-2);
 }

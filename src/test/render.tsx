@@ -1,30 +1,19 @@
 import type {ReactElement, ReactNode} from 'react';
 
-import {MobileProvider, ThemeProvider, Toaster, ToasterProvider} from '@gravity-ui/uikit';
 import {type RenderOptions, type RenderResult, render} from '@testing-library/react';
 
 import {TooltipProvider} from '../ui/Tooltip';
 import {ToastRegion} from '../ui/toast';
 
-const toaster = new Toaster();
-
 /**
- * The new providers are ADDED alongside the Gravity ones rather than replacing them: components
- * under test are mid-migration, and uikit's `useToaster` THROWS outside `ToasterProvider` while its
- * popups need `ThemeProvider` to portal. The three Gravity providers leave in Pass 5, with the last
- * uikit import.
+ * The same two providers `App` mounts, and for the same reason: `toast()` needs a region to render
+ * into, and tooltips need the shared delay. Theme is an attribute on `<html>`, so nothing wraps it.
  */
 function Providers({children}: {children: ReactNode}) {
     return (
-        <ThemeProvider theme="light">
-            <MobileProvider>
-                <ToasterProvider toaster={toaster}>
-                    <ToastRegion>
-                        <TooltipProvider>{children}</TooltipProvider>
-                    </ToastRegion>
-                </ToasterProvider>
-            </MobileProvider>
-        </ThemeProvider>
+        <ToastRegion>
+            <TooltipProvider>{children}</TooltipProvider>
+        </ToastRegion>
     );
 }
 

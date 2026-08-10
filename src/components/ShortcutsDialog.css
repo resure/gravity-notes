@@ -1,20 +1,47 @@
-.shortcuts-dialog {
+/* The ⌘/ help sheet. Rows are description-left / caps-right, and the group label is the same mono
+   caps object the rail, the list and Settings use — one label style across the whole app. */
+
+.shortcuts {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    /* The dialog has no footer, so give the last group a little breathing room from the edge. */
-    padding-bottom: 16px;
+    gap: 18px;
 }
 
-.shortcuts-dialog__group {
+.shortcuts__group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
 }
 
-.shortcuts-dialog__row {
+.shortcuts__group-label {
+    margin: 0 0 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
+}
+
+.shortcuts__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 24px;
+    min-height: 28px;
+}
+
+.shortcuts__desc {
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    color: var(--text-1);
+}
+
+.shortcuts__keys {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }

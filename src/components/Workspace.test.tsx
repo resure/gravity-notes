@@ -430,12 +430,12 @@ describe('Workspace — nvALT navigation', () => {
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
         // Layout state persists under the workspace-namespaced key.
-        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('true');
+        expect(localStorage.getItem('sol:test-ws:sidebar-collapsed')).toBe('true');
         await toggleSidebarViaMenu(user);
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
         );
-        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('false');
+        expect(localStorage.getItem('sol:test-ws:sidebar-collapsed')).toBe('false');
     });
 
     it('toggles the sidebar with ⌘\\', async () => {
@@ -448,15 +448,11 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('restores the collapsed sidebar from the pre-workspace key and adopts it', async () => {
-        // An upgrade scenario: only the legacy (un-namespaced) key exists. The first workspace
-        // opened inherits it — and consumes it, so "back to default" can't fall through later.
-        localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
+    it('restores the collapsed sidebar from its workspace-namespaced key', async () => {
+        localStorage.setItem('sol:test-ws:sidebar-collapsed', 'true');
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
-        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('true');
-        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBeNull();
     });
 
     it("⌘' peeks the collapsed sidebar", async () => {
@@ -609,32 +605,6 @@ describe('Workspace — nvALT navigation', () => {
         await user.keyboard('{F2}');
         // The guard means the list does NOT open an inline rename input for the selected row.
         const list = screen.getByRole('listbox', {name: 'Notes'});
-        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
-    });
-
-    it('F2 does not start a list rename from the title icon picker (button or open popup)', async () => {
-        localStorage.setItem('gravity-notes:settings', JSON.stringify({showNoteIcons: true}));
-        const user = userEvent.setup();
-        renderWorkspace();
-        await screen.findByRole('option', {name: /Beta/});
-        await user.click(screen.getByRole('option', {name: /Beta/}));
-        const title = await screen.findByLabelText('Note title');
-        const row = title.closest('.note-title-row') as HTMLElement;
-        const iconButton = within(row).getByRole('button', {name: /note icon/i});
-        const list = screen.getByRole('listbox', {name: 'Notes'});
-
-        // The icon button is a sibling of the .note-title input — a `.note-title`-only
-        // guard misses it and F2 yanked focus to a sidebar rename.
-        iconButton.focus();
-        await user.keyboard('{F2}');
-        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
-
-        // …and the open picker popup is portaled out of the title row entirely (guarded as a
-        // floating layer via uikit's .g-popup).
-        await user.click(iconButton);
-        const search = await screen.findByPlaceholderText('Search icons…');
-        search.focus();
-        await user.keyboard('{F2}');
         expect(within(list).queryByDisplayValue('Beta')).toBeNull();
     });
 
@@ -977,34 +947,5 @@ describe('Workspace — attachments survive StrictMode', () => {
         });
         // The note references it, so it must read as used — not flagged "Unused".
         expect(screen.getByText(/Used by 1 note/)).toBeInTheDocument();
-    });
-});
-
-describe('Workspace — legacy note-appearance migration', () => {
-    afterEach(() => {
-        localStorage.clear();
-    });
-
-    it('folds legacy localStorage overrides into the sidecar and clears the keys', async () => {
-        // The pre-sidecar layer: one override for a live note, one stranded by a long-ago rename.
-        localStorage.setItem(
-            'gravity-notes:test-ws:note:Alpha.md:appearance',
-            JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
-        );
-        localStorage.setItem(
-            'gravity-notes:test-ws:note:Gone.md:appearance',
-            JSON.stringify({editorFont: 'mono', accentColor: 'default', textWidth: 'default'}),
-        );
-        const {store} = renderWorkspace();
-        await screen.findByRole('option', {name: /Alpha/});
-
-        // The live note's override lands in the sidecar; the stranded one is dropped, not adopted.
-        await waitFor(async () => {
-            const meta = await store.readMetadata();
-            expect(meta.appearances).toEqual({'Alpha.md': {editorFont: 'serif'}});
-        });
-        // Both legacy keys are gone (the stranded one was the leak this migration also cleans up).
-        expect(localStorage.getItem('gravity-notes:test-ws:note:Alpha.md:appearance')).toBeNull();
-        expect(localStorage.getItem('gravity-notes:test-ws:note:Gone.md:appearance')).toBeNull();
     });
 });

@@ -47,90 +47,6 @@ button:not(:disabled) {
     --gn-accent-rgb: 219, 136, 51;
 }
 
-/* ── The Gravity bridge (temporary) ──────────────────────────────────────────────────────────────
-   Everything Gravity UI still renders — menus, dialogs, buttons, the note list, the folder rail —
-   reads `--g-color-*` from the uikit stylesheet. This block re-points those at the Sol tokens, so
-   the whole app takes the new palette in one step while its SHAPE is still the old one.
-
-   It is scoped to BOTH theming systems on purpose: `.g-root_theme_*` is what Gravity's own
-   ThemeProvider emits today, `[data-theme]` is what the app stamps on `<html>` and what everything
-   built from here on reads. The two agree until the last uikit import goes, and this whole block
-   goes with it.
-
-   Only the variables the app's own surfaces actually consume are mapped. Mapping the whole uikit
-   palette would be busywork with no visible effect and a lot of ways to be subtly wrong. */
-.g-root,
-:root {
-    /* Text ramp — Gravity's four ink levels onto ours, in order. */
-    --g-color-text-primary: var(--text-1);
-    --g-color-text-secondary: var(--text-2);
-    --g-color-text-hint: var(--text-3);
-    --g-color-text-complementary: var(--text-4);
-    --g-color-text-misc: var(--text-2);
-
-    /* Surfaces. `base-background` is the desk the panes sit on; `base-float` is what every popup and
-       dialog fills with, so it takes the paper value — a floating surface must read as the top of
-       the stack, not as another pane. */
-    --g-color-base-background: var(--bg-desk);
-    --g-color-base-float: var(--bg-paper);
-    --g-color-base-modal: var(--bg-paper);
-    --g-color-base-generic: var(--bg-panel);
-    --g-color-base-generic-hover: var(--bg-hover);
-    --g-color-base-simple-hover: var(--bg-hover);
-    --g-color-base-selection: var(--bg-selected);
-    --g-color-base-selection-hover: var(--bg-selected);
-
-    /* Lines. Gravity distinguishes a resting hairline from a hovered one; Sol has one `--line`, so
-       the hover step is the same hairline at a touch more presence. */
-    --g-color-line-generic: var(--line);
-    --g-color-line-generic-hover: var(--line);
-    --g-color-line-generic-active: var(--text-4);
-    --g-color-line-brand: var(--accent);
-
-    /* Danger is not an accent — it is its own colour, and it never stands in for one. */
-    --g-color-base-danger: var(--danger);
-    --g-color-base-danger-light: color-mix(in srgb, var(--danger) 12%, transparent);
-    --g-color-text-danger: var(--danger);
-    --g-color-text-danger-heavy: var(--danger);
-
-    /* The brand stays monochrome ink: a filled Gravity button is a shape, not an accent use (the
-       five permitted accent uses are listed in tokens.css, and "a button" isn't one of them). */
-    --g-color-base-brand: var(--text-1);
-    --g-color-base-brand-hover: var(--text-2);
-    --g-color-text-brand: var(--text-1);
-    --g-color-text-brand-heavy: var(--text-1);
-    --g-color-text-brand-contrast: var(--bg-paper);
-
-    /* Hyperlink IS one of the five. */
-    --g-color-text-link: var(--accent);
-    --g-color-text-link-hover: color-mix(in srgb, var(--accent), var(--text-1) 25%);
-    --g-color-text-link-visited: color-mix(in srgb, var(--accent), var(--text-1) 40%);
-
-    --g-font-family-sans: var(--font-ui);
-
-    /* The note list's own washes: neutral, like every other row highlight in the spec. The
-       keyboard-focused row is a clear step darker than a merely selected one, so focus reads
-       distinctly from selection without either of them borrowing the accent. */
-    --note-list-selected-bg: var(--bg-selected);
-    --note-list-focus-bg: var(--bg-selected-strong);
-}
-
-/* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in
-   the read-only .yfm preview. Background left as-is. Tuned live. (The block editor carries its own
-   code palette — see blockEditor/editor.css.) */
-.g-root_theme_dark .note-preview .yfm code,
-.g-root_theme_dark .note-preview .yfm pre {
-    color: var(--g-color-text-primary);
-}
-
-/* Use the native system font (San Francisco on macOS) rather than Gravity's Inter default: nothing to
-   bundle or fetch from Google, works offline, feels native. Set on `.g-root` to out-specify Gravity's
-   own `--g-font-family-sans` declaration on that element. */
-.g-root {
-    --g-font-family-sans:
-        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
-
 /* ── Editor-font setting + per-font typography ──────────────────────────────────────────────────
    Each font variation owns its note-CONTENT typography in a SELF-CONTAINED block below: the family
    (`--gn-editor-font`), the base reading size (`--gn-editor-font-size`), the body line-height
@@ -139,15 +55,14 @@ button:not(:disabled) {
    NotePreview.css). Keeping them separate per font is deliberate — tuning sans's leading must not
    move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…) inside
    these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
-   <html> as `data-editor-font` (by `Workspace`), and serif/mono override for the whole `.g-root`
-   subtree (specificity out-ranks the base). These feed the note CONTENT only — the block editor's
-   document column, the read-only preview (`.yfm`), and the note title (NoteTitle.css) — never the
-   app chrome (`--g-font-family-sans`) or the raw Markdown source view.
-   Set on `.g-root` so the family can reference `--g-font-family-sans`, which lives there. */
-.g-root {
+   <html> as `data-editor-font` (by `Workspace`), and serif/mono override on the same element.
+   These feed the note CONTENT only — the block editor's document column and the read-only preview
+   (`.yfm`) — never the app chrome (`--font-ui`), the raw Markdown source view, or the note TITLE,
+   which is PT Serif by design (§03; see NoteTitle.css). */
+:root {
     /* Sans — the native system font (default). 15/24, §03's `--fs-body` / `--lh-body`: the body
        copy of the note is the one text in the app the type scale is really about. */
-    --gn-editor-font: var(--g-font-family-sans);
+    --gn-editor-font: var(--font-ui);
     --gn-editor-font-size: 15px;
     --gn-editor-line-height: 1.6;
     /* Lists get a little more air than body copy — sans's tight default made bullet/numbered lists
@@ -156,7 +71,7 @@ button:not(:disabled) {
     --gn-editor-list-gap: 4px;
 }
 
-:root[data-editor-font='serif'] .g-root {
+:root[data-editor-font='serif'] {
     /* PT Serif is bundled (self-hosted @fontsource files via src/fonts/pt-serif.css); the rest is a graceful
        fallback if it ever fails to load, and covers scripts we don't ship a PT Serif subset for. Its
        smaller x-height reads small at 15px, so bump the size up and give it a touch more leading
@@ -169,7 +84,7 @@ button:not(:disabled) {
     --gn-editor-list-gap: 1px;
 }
 
-:root[data-editor-font='mono'] .g-root {
+:root[data-editor-font='mono'] {
     --gn-editor-font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --gn-editor-font-size: 15px;
     --gn-editor-line-height: 1.35;
@@ -185,7 +100,7 @@ button:not(:disabled) {
    the reading-rhythm rules (EditorPane.css / NotePreview.css), not here. Headings keep their own
    absolute `--yfm-font-size-h*` vars, so `--yfm-font-size` grows only the body copy. Code blocks keep
    `--yfm-font-family-monospace`, so they stay mono in every mode. */
-.g-root .yfm {
+.yfm {
     --yfm-font-family-sans: var(--gn-editor-font);
     --yfm-font-size: var(--gn-editor-font-size);
 }
@@ -198,12 +113,12 @@ button:not(:disabled) {
    rule reads `var(--yfm-color-hljs-X, …-private)`, so setting the public var wins) to a readable dark
    palette, for the editor + preview `.yfm` alike. Strings/numbers stay in the red family (just made
    legible); the rest lift to conventional, cohesive hues. Light theme is untouched — its private
-   defaults still apply. (Targets `g-root_theme_dark`; the app doesn't expose the high-contrast dark.) */
-.g-root_theme_dark .yfm {
+   defaults still apply. */
+[data-theme='dark'] .yfm {
     /* `.hljs-subst` spans (e.g. template-literal substitutions) otherwise fall back to #444 here: the
        existing dark code-foreground rule near the top of this file colors only the code/pre element,
        not these child spans. Point them at the theme text color so they stay readable. */
-    --yfm-color-hljs-subst: var(--g-color-text-primary);
+    --yfm-color-hljs-subst: var(--text-1);
     --yfm-color-hljs-deletion: #e06c75; /* strings, numbers, types — the red, now readable */
     --yfm-color-hljs-section: #e5c07b; /* titles: function / class names */
     --yfm-color-hljs-pseudo: #56b6c2; /* variables, symbols, regexp, links */

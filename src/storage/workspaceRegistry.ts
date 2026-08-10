@@ -6,26 +6,21 @@
  * in IndexedDB and recover the same folder on the next visit (browsers still require a fresh
  * permission grant per session). Desktop (`tauri-fs`) workspaces are plain path strings.
  *
- * ⚠️ This is deliberately the ONLY module that opens the `gravity-notes` IndexedDB database. It
- * opens at version 2; anything else opening the same name at a lower version would throw
- * `VersionError` after the first upgrade. Connections are opened per operation and always closed
- * (see `tx`), which keeps the window for a cross-window upgrade block small — but not zero, so
- * `openDb` still handles `blocked` (reject, don't hang) and `versionchange` (step aside).
+ * ⚠️ This is deliberately the ONLY module that opens the `sol` IndexedDB database. Anything else
+ * opening the same name at a lower version would throw `VersionError` after an upgrade.
+ * Connections are opened per operation and always closed (see `tx`), which keeps the window for a
+ * cross-window upgrade block small — but not zero, so `openDb` still handles `blocked` (reject,
+ * don't hang) and `versionchange` (step aside).
  *
- * v1 (the single-choice era) kept exactly one backend in the `handles` store; v2 adds the
- * `workspaces` store. The legacy keys are migrated into a deterministic workspace entry on first
- * read and then left untouched (never maintained again).
+ * The `handles` store keeps the last-active pointer; `workspaces` keeps one entry per known
+ * workspace. The database name is new with Sol, so there is no earlier version to migrate from —
+ * the app's data lives in the vault, and a vault is re-picked at the gate (see PLAN.md D8).
  */
 
-const DB_NAME = 'gravity-notes';
-const DB_VERSION = 2;
+const DB_NAME = 'sol';
+const DB_VERSION = 1;
 const HANDLES_STORE = 'handles';
 const WORKSPACES_STORE = 'workspaces';
-
-// Legacy single-choice keys (v1), read once by the migration and never written again.
-const LEGACY_HANDLE_KEY = 'notes-dir';
-const LEGACY_BACKEND_KEY = 'backend';
-const LEGACY_FOLDER_PATH_KEY = 'notes-folder-path';
 
 /** Which workspace the main window restores on launch (the most recently opened anywhere). */
 const LAST_ACTIVE_KEY = 'last-active-workspace';
@@ -40,7 +35,7 @@ const LAST_ACTIVE_KEY = 'last-active-workspace';
 export type StorageBackend = 'filesystem' | 'tauri-fs' | 'indexeddb';
 
 export interface WorkspaceEntry {
-    /** `'indexeddb'` (singleton), `tauri:<path>`, or `fsa:<uuid>` (`fsa:legacy` when migrated). */
+    /** `'indexeddb'` (singleton), `tauri:<path>`, or `fsa:<uuid>`. */
     id: string;
     backend: StorageBackend;
     /** Display name: the folder's leaf name (UI supplies its own label for `indexeddb`). */
@@ -67,7 +62,6 @@ function openDb(): Promise<IDBDatabase> {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
             const db = req.result;
-            // v0 (fresh install) creates both; v1 → v2 only adds the workspaces store.
             if (!db.objectStoreNames.contains(HANDLES_STORE)) {
                 db.createObjectStore(HANDLES_STORE);
             }
@@ -166,77 +160,13 @@ export async function findFsaEntry(
 }
 
 /**
- * Build the v2 entry for a v1 single-choice, or undefined when there's nothing to migrate.
- * Deterministic ids (`indexeddb`, `tauri:<path>`, `fsa:legacy`) make a double-run (StrictMode's
- * mount→unmount→mount, or two windows racing) an idempotent overwrite instead of a duplicate.
- */
-function legacyEntry(
-    backend: StorageBackend | undefined,
-    handle: FileSystemDirectoryHandle | undefined,
-    path: string | undefined,
-): WorkspaceEntry | undefined {
-    // Back-compat within back-compat: a stored handle with no backend flag is an old
-    // file-system user (mirrors the original bootstrap rule).
-    const kind = backend ?? (handle ? 'filesystem' : undefined);
-    if (kind === 'indexeddb') {
-        return {
-            id: 'indexeddb',
-            backend: 'indexeddb',
-            name: 'Browser storage',
-            lastOpenedAt: Date.now(),
-        };
-    }
-    if (kind === 'tauri-fs' && path) {
-        return {
-            id: workspaceIdForPath(path),
-            backend: 'tauri-fs',
-            name: folderNameFromPath(path),
-            lastOpenedAt: Date.now(),
-            path,
-        };
-    }
-    if (kind === 'filesystem' && handle) {
-        return {
-            id: 'fsa:legacy',
-            backend: 'filesystem',
-            name: handle.name,
-            lastOpenedAt: Date.now(),
-            handle,
-        };
-    }
-    return undefined;
-}
-
-/**
- * All known workspaces, most recently opened first. On the first read after the v2 upgrade,
- * migrates the v1 single choice into the registry (and points last-active at it).
+ * All known workspaces, most recently opened first.
  */
 export async function loadWorkspaces(): Promise<WorkspaceEntry[]> {
     const entries = await tx<WorkspaceEntry[]>([WORKSPACES_STORE], 'readonly', (t) =>
         t.objectStore(WORKSPACES_STORE).getAll(),
     );
-    if (entries.length > 0) return byRecency(entries);
-
-    // Empty registry: seed it from the legacy keys, if any (left in place, never maintained).
-    const [backend, handle, path] = await Promise.all([
-        tx<StorageBackend | undefined>([HANDLES_STORE], 'readonly', (t) =>
-            t.objectStore(HANDLES_STORE).get(LEGACY_BACKEND_KEY),
-        ),
-        tx<FileSystemDirectoryHandle | undefined>([HANDLES_STORE], 'readonly', (t) =>
-            t.objectStore(HANDLES_STORE).get(LEGACY_HANDLE_KEY),
-        ),
-        tx<string | undefined>([HANDLES_STORE], 'readonly', (t) =>
-            t.objectStore(HANDLES_STORE).get(LEGACY_FOLDER_PATH_KEY),
-        ),
-    ]);
-    const seed = legacyEntry(backend, handle, path);
-    if (!seed) return [];
-    // One atomic commit for the entry + the last-active pointer.
-    await tx([WORKSPACES_STORE, HANDLES_STORE], 'readwrite', (t) => {
-        t.objectStore(WORKSPACES_STORE).put(seed);
-        return t.objectStore(HANDLES_STORE).put(seed.id, LAST_ACTIVE_KEY);
-    });
-    return [seed];
+    return byRecency(entries);
 }
 
 /** Upsert a workspace with a fresh `lastOpenedAt` and point last-active at it (one atomic commit). */

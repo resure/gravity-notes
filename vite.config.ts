@@ -44,20 +44,12 @@ export default defineConfig(({mode}) => ({
                     name: 'dom',
                     environment: 'jsdom',
                     include: ['src/**/*.test.tsx'],
-                    // Rendering real Gravity components in jsdom (esp. the icon-picker popup, which
-                    // mounts the full emoji/icon catalog + drives userEvent through a virtualized
-                    // grid) runs several seconds per test locally and more under CI's loaded runner,
-                    // where parallel worker contention adds up — a boundary-slow test hit ~16s past
-                    // Vitest's 5s default. Give the whole DOM suite generous headroom so these don't
-                    // flake on CI.
+                    // The Workspace suite drives userEvent through the whole shell (virtualized
+                    // list, portaled menus, dialogs) and runs several seconds per test locally —
+                    // more under CI's loaded runner, where parallel worker contention adds up.
+                    // Give the DOM suite generous headroom so these don't flake on CI.
                     testTimeout: 30_000,
                     setupFiles: ['./src/test/setup.ts'],
-                    server: {
-                        deps: {
-                            // Gravity's ESM imports `.css`; route it through Vite so jsdom doesn't choke.
-                            inline: [/@gravity-ui\//],
-                        },
-                    },
                 },
             },
         ],

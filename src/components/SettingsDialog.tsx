@@ -1,163 +1,79 @@
-import type {ReactNode} from 'react';
-
-import {Dialog, Label, Switch, Text} from '@gravity-ui/uikit';
-
-import {useIsNarrow} from '../hooks/useIsNarrow';
-import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
-
 import {
-    AppearanceChoiceRow,
-    FONT_OPTIONS,
-    FONT_OPTIONS_WS,
-    WIDTH_OPTIONS,
-    WIDTH_OPTIONS_WS,
-} from './appearanceControls';
+    EDITOR_FONTS,
+    type EditorFont,
+    type Settings,
+    TEXT_WIDTHS,
+    type TextWidth,
+} from '../hooks/useSettings';
+import {Dialog} from '../ui/Dialog';
+import {ToggleGroup} from '../ui/ToggleGroup';
 
 import './SettingsDialog.css';
+
+/**
+ * Labels keyed by the full union (`Record` exhaustiveness), and options DERIVED from the canonical
+ * value arrays — the same arrays `oneOf` validates persisted values against. A new union member
+ * fails typecheck here until it's labeled, and then appears in the strip automatically; the strip
+ * can never silently offer less than storage accepts.
+ */
+const FONT_LABELS: Record<EditorFont, string> = {sans: 'Sans', serif: 'Serif', mono: 'Mono'};
+const WIDTH_LABELS: Record<TextWidth, string> = {
+    narrow: 'Narrow',
+    normal: 'Default',
+    wide: 'Wide',
+    unlimited: 'Unlimited',
+};
+
+const FONT_OPTIONS = EDITOR_FONTS.map((value) => ({value, content: FONT_LABELS[value]}));
+const WIDTH_OPTIONS = TEXT_WIDTHS.map((value) => ({value, content: WIDTH_LABELS[value]}));
 
 interface SettingsDialogProps {
     open: boolean;
     onClose: () => void;
     settings: Settings;
     setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
-    workspaceSettings: WorkspaceSettings;
-    setWorkspaceSetting: <K extends keyof WorkspaceSettings>(
-        key: K,
-        value: WorkspaceSettings[K],
-    ) => void;
-    /** Human label of the active workspace, shown in the per-workspace section subtext (if known). */
-    workspaceLabel: string | null;
 }
 
-/** App preferences sheet (⌘, / the menu). App-wide settings and per-workspace overrides. */
-export function SettingsDialog({
-    open,
-    onClose,
-    settings,
-    setSetting,
-    workspaceSettings,
-    setWorkspaceSetting,
-    workspaceLabel,
-}: SettingsDialogProps) {
-    const workspaceDescription = `Override the app appearance for ${
-        workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
-    }. “Default” inherits it.`;
-    // The `row` layout spends a fixed 150px column on the label, which leaves a phone-width dialog
-    // too little room for the segmented pickers — their last options ("Gray", "Unlimited") were
-    // clipped off the edge. Narrow screens reuse the `stack` layout the note-appearance popover
-    // already uses: label above, control across the full width.
-    const rowLayout = useIsNarrow() ? 'stack' : 'row';
+/**
+ * App preferences (⌘, / the orb menu) — §08.
+ *
+ * One section, because there is only one kind of setting left: the two engine rows configured a
+ * rich editor that no longer exists, theme lives in the orb menu, and per-note overrides live in
+ * the note's own ⋯ menu, beside the note. 620px with a 150px label column, and NO Save button —
+ * every control commits on change and the app repaints live behind a 22% scrim, which is the whole
+ * argument for a dialog you can see past.
+ */
+export function SettingsDialog({open, onClose, settings, setSetting}: SettingsDialogProps) {
     return (
-        // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
-        // size="m" is 720px — a touch wide for these rows; cap it via --g-dialog-width (see CSS).
-        <Dialog
-            open={open}
-            onClose={onClose}
-            size="m"
-            className="settings-dialog-modal"
-            disableBodyScrollLock
-            contentOverflow="auto"
-        >
-            <Dialog.Header caption="Settings" />
-            <Dialog.Body>
-                <div className="settings-dialog">
-                    <Section title="General">
-                        <ToggleRow
-                            title="Show note icons"
-                            experimental
-                            checked={settings.showNoteIcons}
-                            onUpdate={(value) => setSetting('showNoteIcons', value)}
-                        />
-                    </Section>
-
-                    <Section title="Appearance">
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Editor font"
-                            options={FONT_OPTIONS}
-                            value={settings.editorFont}
-                            onUpdate={(value) => setSetting('editorFont', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Text width"
-                            options={WIDTH_OPTIONS}
-                            value={settings.textWidth}
-                            onUpdate={(value) => setSetting('textWidth', value)}
-                        />
-                    </Section>
-
-                    <Section title="This workspace" description={workspaceDescription}>
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Editor font"
-                            options={FONT_OPTIONS_WS}
-                            value={workspaceSettings.editorFont}
-                            onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Text width"
-                            options={WIDTH_OPTIONS_WS}
-                            value={workspaceSettings.textWidth}
-                            onUpdate={(value) => setWorkspaceSetting('textWidth', value)}
-                        />
-                    </Section>
+        <Dialog open={open} onClose={onClose} title="Settings" width={620}>
+            <section className="settings">
+                {/* A label, not a heading: 10px mono caps over a hairline, the same object the
+                    folder rail and the note list use over a group. It keeps the dialog from
+                    reading as a settings *page*. */}
+                <h3 className="settings__section-label">Appearance</h3>
+                <div className="settings__row">
+                    <span className="settings__label">Editor font</span>
+                    <ToggleGroup
+                        aria-label="Editor font"
+                        options={FONT_OPTIONS}
+                        value={settings.editorFont}
+                        onChange={(value) => setSetting('editorFont', value)}
+                    />
                 </div>
-            </Dialog.Body>
+                <div className="settings__row">
+                    <span className="settings__label">Text width</span>
+                    <ToggleGroup
+                        aria-label="Text width"
+                        options={WIDTH_OPTIONS}
+                        value={settings.textWidth}
+                        onChange={(value) => setSetting('textWidth', value)}
+                    />
+                </div>
+                <p className="settings__note">
+                    A single note can depart from this in its own ⋯ menu, where “Default” inherits
+                    what is set here.
+                </p>
+            </section>
         </Dialog>
-    );
-}
-
-interface SectionProps {
-    title: string;
-    description?: string;
-    children: ReactNode;
-}
-
-function Section({title, description, children}: SectionProps) {
-    return (
-        <section className="settings-dialog__section">
-            <div className="settings-dialog__section-head">
-                <Text
-                    variant="subheader-2"
-                    color="secondary"
-                    className="settings-dialog__section-title"
-                >
-                    {title}
-                </Text>
-                {description ? (
-                    <Text color="secondary" variant="body-1">
-                        {description}
-                    </Text>
-                ) : null}
-            </div>
-            {children}
-        </section>
-    );
-}
-
-interface ToggleRowProps {
-    title: string;
-    experimental?: boolean;
-    checked: boolean;
-    onUpdate: (value: boolean) => void;
-}
-
-/** A toggle row: label on the left, the Switch on the right edge (platform convention). */
-function ToggleRow({title, experimental, checked, onUpdate}: ToggleRowProps) {
-    return (
-        <div className="settings-dialog__row">
-            <span className="settings-dialog__label">
-                <Text variant="body-1">{title}</Text>
-                {experimental ? (
-                    <Label theme="info" size="xs">
-                        Experimental
-                    </Label>
-                ) : null}
-            </span>
-            {/* The Switch is itself a <label>; its visible title lives beside it, so name it via aria. */}
-            <Switch checked={checked} onUpdate={onUpdate} controlProps={{'aria-label': title}} />
-        </div>
     );
 }

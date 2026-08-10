@@ -281,3 +281,41 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
 
 /** Help-dialog group order. */
 export const SHORTCUT_GROUPS: ShortcutDescriptor['group'][] = ['Navigation', 'Editing', 'General'];
+
+/**
+ * Platform substitution: `mod` is ⌘ on a Mac and Ctrl everywhere else. The only part of GravityUI's
+ * `Hotkey` worth keeping — the rest of it was chrome the keycap in `ui/bits` already draws.
+ */
+const IS_APPLE = /Mac|iPhone|iPad|iPod/i.test(
+    typeof navigator === 'undefined' ? '' : navigator.platform || navigator.userAgent,
+);
+
+const KEY_GLYPHS: Record<string, string> = {
+    mod: IS_APPLE ? '⌘' : 'Ctrl',
+    ctrl: IS_APPLE ? '⌃' : 'Ctrl',
+    shift: '⇧',
+    alt: IS_APPLE ? '⌥' : 'Alt',
+    enter: '↵',
+    backspace: '⌫',
+    esc: 'Esc',
+    up: '↑',
+    down: '↓',
+    left: '←',
+    right: '→',
+    f2: 'F2',
+};
+
+/**
+ * Split a descriptor's `keys` into the caps the help sheet renders: space separates CHORDS
+ * (`'esc esc'` = press it twice), `+` separates keys within one chord. Unknown tokens render
+ * as-is, upper-cased for single letters — so a new binding needs no table entry to look right.
+ */
+export function shortcutChords(keys: string): string[][] {
+    return keys.split(' ').map((chord) =>
+        chord.split('+').map((part) => {
+            const glyph = KEY_GLYPHS[part];
+            if (glyph) return glyph;
+            return part.length === 1 ? part.toUpperCase() : part;
+        }),
+    );
+}

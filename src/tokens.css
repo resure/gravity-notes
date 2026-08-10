@@ -17,9 +17,8 @@
      accent marks persistent state, and a menu highlight is only where the keyboard happens to be.
      Destructive red is not an accent — it is `--danger`, and it never stands in for one.
 
-   Theme comes from `data-theme` on `<html>` (App stamps it, resolving System through `matchMedia`).
-   While Gravity UI is still mounted the dark block is ALSO scoped under `.g-root_theme_dark`, so
-   the two theming systems agree during the transition; that half goes with the last Gravity import. */
+   Theme comes from `data-theme` on `<html>` (App stamps it, resolving System through `matchMedia`) —
+   one attribute, always the answer, so a rule is never written twice. */
 
 :root {
     /* ── Surfaces ──────────────────────────────────────────────────────────────────────────── */
@@ -117,11 +116,8 @@
    LIGHTEST dark surface, mirroring its role as the brightest light one. The ink's chroma runs
    about 1.7× the light ramp's, which is what keeps it warm instead of grey at low lightness.
 
-   Scoped under BOTH selectors during the Gravity transition: `[data-theme]` is what the app stamps,
-   `.g-root_theme_dark` is what Gravity's own ThemeProvider still emits. Drop the second one with the
-   last uikit import. */
-[data-theme='dark'],
-.g-root_theme_dark {
+*/
+[data-theme='dark'] {
     --bg-desk: oklch(0.15 0.006 75);
     --bg-panel: oklch(0.19 0.007 75);
     --bg-panel-2: oklch(0.21 0.007 75);

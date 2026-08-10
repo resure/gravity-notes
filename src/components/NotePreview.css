@@ -20,14 +20,18 @@
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
 .note-preview__error {
-    display: block;
+    margin: 0;
     padding: 8px calc(var(--editor-gutter, 16px) + 4px) 16px;
+    color: var(--danger);
+    font-family: var(--font-ui);
+    font-size: var(--fs-menu);
+    line-height: 19px;
 }
 
 /* [[wiki links]] post-processed into spans (see withWikiLinks) read as links, matching the editor.
    Read-only here, so no pointer cursor — preview doesn't navigate. */
 .note-preview__body .wiki-link {
-    color: var(--g-color-text-link);
+    color: var(--accent);
 }
 
 /* Mirror the editor's Apple-Notes rhythm onto the diplodoc-rendered preview HTML, so toggling into
@@ -160,7 +164,7 @@
     height: 17px;
     margin: calc((1lh - 17px) / 2) 7px 0 0;
     padding: 0;
-    border: 1.5px solid var(--g-color-line-generic-hover);
+    border: 1.5px solid var(--text-4);
     border-radius: 5px;
     background-color: transparent;
     background-repeat: no-repeat;

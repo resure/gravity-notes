@@ -26,7 +26,7 @@ import type {NoteMeta, SortMode} from '../storage/types';
 import {Button} from '../ui/Button';
 import {Menu, MenuItem, MenuSeparator} from '../ui/Menu';
 import {Select} from '../ui/Select';
-import {Chip} from '../ui/bits';
+import {Chip, Kbd, Skeleton} from '../ui/bits';
 import {
     ArrowRight,
     Copy,
@@ -52,6 +52,9 @@ const NOTE_MIME = 'application/x-gravity-note';
 /** §05's hard numbers: the virtualizer depends on both. */
 const ROW_HEIGHT = 58;
 const GROUP_HEIGHT = 26;
+
+/** Widths for the loading ladder — irregular, because a column of identical bars reads as a table. */
+const SKELETON_ROWS = [186, 148, 210, 132, 172, 196, 140, 164];
 
 const SORT_OPTIONS: {value: SortMode; label: string}[] = [
     {value: 'updated', label: 'Updated'},
@@ -89,6 +92,11 @@ export interface NoteListProps {
     scopeLabel: string | null;
     /** Show each note's folder beside its time (when the list spans folders: All Notes / search). */
     showCrumbs: boolean;
+    /**
+     * The initial load hasn't landed yet. §09: skeleton rows, never a spinner — and never the empty
+     * state, which would claim "No notes yet" about a vault nobody has read.
+     */
+    loading?: boolean;
     /** Note id → body snippet around the match (full-text hits); shown in place of the preview. */
     snippetById?: Map<string, string>;
     /** Shared with the top bar's search box; focused when the list is empty. */
@@ -335,6 +343,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         query,
         scopeLabel,
         showCrumbs,
+        loading = false,
         snippetById,
         searchInputRef,
         onBrowse,
@@ -697,7 +706,20 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const renderEmpty = () => {
         const q = query.trim();
         if (q) {
-            return <p className="note-list__empty-line">No match — press ⏎ to create “{q}”</p>;
+            // Search is also create — §09 spells the offer out rather than leaving ⏎ implied, and
+            // says where it looked, because "nothing matches" is otherwise easy to read as "this
+            // folder has nothing" when the search spans the whole vault.
+            return (
+                <>
+                    <p className="note-list__empty-line">Nothing matches “{q}”</p>
+                    <p className="note-list__empty-hint">
+                        Search covers titles and bodies across every folder.
+                    </p>
+                    <p className="note-list__empty-create">
+                        Create “{q}” <Kbd>↵</Kbd>
+                    </p>
+                </>
+            );
         }
         return (
             <>
@@ -759,7 +781,20 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 role="listbox"
                 aria-label="Notes"
             >
-                {notes.length === 0 ? (
+                {loading && notes.length === 0 ? (
+                    // §09's loading state: rows in the shape of the rows that are coming, at the
+                    // list's own 58px pitch. No spinner — and no empty state, which would be a
+                    // claim about a vault that hasn't been read yet.
+                    <div className="note-list__skeletons">
+                        {/* A static ladder of widths — an index IS the identity here. */}
+                        {SKELETON_ROWS.map((width, i) => (
+                            <div className="note-list__skeleton" key={i}>
+                                <Skeleton width={width} />
+                                <Skeleton width={width - 40} className="note-list__skeleton-sub" />
+                            </div>
+                        ))}
+                    </div>
+                ) : notes.length === 0 ? (
                     <div className="note-list__empty">{renderEmpty()}</div>
                 ) : (
                     // Spacer sized to the full list; each visible row is absolutely positioned at its

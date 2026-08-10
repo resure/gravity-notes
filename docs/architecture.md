@@ -39,8 +39,9 @@ format, in full:
 - **A note is a file.** Its id is its POSIX relative path (`Inbox.md`, `Work/Sub/Title.md`); the
   file name without `.md` is the title. Folders are real directories.
 - **`.gravity-notes.json`** — one metadata sidecar at the root: sort mode, pins (notes and
-  folders), created stamps, note icons, per-note appearance overrides, the open note, and the
-  trash registry. Losing it loses pins and icons, never notes.
+  folders), created stamps, per-note appearance overrides, the open note, and the trash registry
+  (plus a dormant `icons` map, kept flowing so an older build's vault survives a write). Losing
+  the sidecar loses pins and preferences, never notes.
 - **`.trash/`** — deleting a note moves it here (a hidden folder, excluded from listings), so
   Trash survives across app restarts and is restorable from the storage menu. Emptying the Trash
   is the only permanent delete.
@@ -68,8 +69,8 @@ doing_ and _what is this note doing_ are never in the same list.
 - The **Orb** — a flat amber disc, the app's mark rather than an accent — holds everything app-wide:
   the workspace list, Open Folder…, export/import, attachments, Trash, theme, settings, shortcuts.
 - The **⋯** at the far right is the open note's own menu: its appearance strips (font and text
-  width, committing live behind the open popup), read-only preview, markup-instead-of-blocks, and
-  its file actions. `⌘⇧I` opens it.
+  width, committing live behind the open popup — "Default" there inherits the app setting), the
+  read-only preview, markup-instead-of-blocks, and its file actions. `⌘⇧I` opens it.
 - Between them, the search field is centred on the **window**, not on the editor, so a long note
   title or a collapsed pane can never nudge it.
 - At the right, a **sync dot and one word** carry the save state. This replaced the toast that used
@@ -278,7 +279,7 @@ Markdown over anything clever.
   it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a
   typing-time rule that can round-trip.
 - **Two windows on one store can clobber each other's _metadata_.** The sidecar (sort, pins,
-  icons, per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
+  per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
   workspace assignments and note _bodies_ (the live watcher + conflict banner) through the shell,
   but not the sidecar — and browser tabs coordinate nothing, seeing external changes only on
   refocus. Body conflicts are detected by modification timestamp, coarse enough that rapid

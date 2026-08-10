@@ -2,14 +2,11 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 
 // No web font for the UI: the app chrome uses the native system font (San Francisco on macOS), set
-// via `--g-font-family-sans` in index.css. Gravity's `fonts.css` (a Google-Fonts Inter `@import`) is
-// intentionally NOT imported — nothing to fetch or bundle, works offline, feels native. (The one
-// bundled font is the opt-in serif note-content face imported below — self-hosted, not a CDN fetch.)
-// Sol's foundations. FIRST, so everything after it — the uikit stylesheet, the `--g-*` bridge in
-// index.css, every component sheet — can read a token that is already defined.
+// via `--font-ui` in tokens.css — nothing to fetch or bundle, works offline, feels native. (The one
+// bundled font is PT Serif, imported below — self-hosted, not a CDN fetch.)
+// Sol's foundations. FIRST, so everything after it — every component sheet, the YFM maps — can
+// read a token that is already defined.
 import './tokens.css';
-
-import '@gravity-ui/uikit/styles/styles.css';
 
 // YFM content styles for the read-only preview (NotePreview, and the release notes in
 // UpdateDialog), straight from the renderer that produces that HTML. These used to arrive with

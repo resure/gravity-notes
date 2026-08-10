@@ -36,8 +36,7 @@ Markdown files, and they are yours.
   watcher), with conflict handling when a note changes underneath you
 - **Multiple workspaces & windows** (desktop): switch folders with `⌃R`, open a workspace — or a
   single note — in its own window
-- **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
-  per workspace, or per note
+- **Make it yours**: light/dark/system theme, editor font, text width — app-wide, or per note
 - **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
   desktop window); an **iOS app** opens an iCloud Drive (or on-device) folder of `.md` files through
   the native Files picker

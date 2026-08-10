@@ -150,37 +150,6 @@ export function withNoteAppearance(
     return {...meta, appearances: {...meta.appearances, [id]: entry}};
 }
 
-/**
- * The note id a trash entry restores to: `originalPath` holds the original FOLDER (dirname), and
- * the original basename is exactly `<title>.md` (the trash FILE may be dedupe-renamed; the entry's
- * title is not).
- */
-export function trashEntryOriginalId(entry: TrashEntry): string {
-    return entry.originalPath ? `${entry.originalPath}/${entry.title}.md` : `${entry.title}.md`;
-}
-
-/**
- * Attach an appearance override to the trash entry (or entries) whose ORIGINAL note id matches —
- * the legacy-localStorage migration path, where an override may belong to a note that sits in the
- * Trash. An entry that already carries an appearance wins (sidecar-era data outranks the legacy
- * copy); no matching entry is a no-op.
- */
-export function withTrashedAppearance(
-    meta: NotesMetadata,
-    originalId: string,
-    appearance: NoteAppearanceOverride,
-): NotesMetadata {
-    const entry = parseAppearanceOverride(appearance);
-    if (!entry) return meta;
-    let changed = false;
-    const trashed = meta.trashed.map((item) => {
-        if (trashEntryOriginalId(item) !== originalId || item.appearance) return item;
-        changed = true;
-        return {...item, appearance: entry};
-    });
-    return changed ? {...meta, trashed} : meta;
-}
-
 export function withRenamed(meta: NotesMetadata, oldId: string, newId: string): NotesMetadata {
     if (oldId === newId) return meta;
     const pinned = meta.pinned.map((p) => (p === oldId ? newId : p));

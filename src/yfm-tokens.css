@@ -9,50 +9,62 @@
    needed, so they are vendored here, trimmed to what this app actually renders (no high-contrast
    themes, no term/modal/tabs variables for extensions we don't load).
 
-   Everything still points at Gravity tokens, so a theme switch keeps working unchanged. */
+   Everything points at Sol tokens, so a theme switch is the `data-theme` attribute and nothing
+   else. Where YFM asks for a semantic colour Sol doesn't own (the note callouts' four hues), the
+   value is stated here as an oklch pair at the ramp's own lightness — the preview is the only
+   surface in the app that needs them. */
 
 .yfm {
-    --yfm-color-base: var(--g-color-base-background);
-    --yfm-color-text: var(--g-color-text-primary);
-    --yfm-color-link: var(--g-color-text-link);
-    --yfm-color-link-hover: var(--g-color-text-link-hover);
-    --yfm-color-border: var(--g-color-line-generic);
-    --yfm-color-accent: var(--g-color-line-brand);
-    --yfm-color-inline-code: var(--g-color-text-misc);
-    --yfm-color-inline-code-background: var(--g-color-base-misc-light);
-    --yfm-color-code-background: var(--g-color-base-misc-light);
-    --yfm-color-note-tip: var(--g-color-text-positive);
-    --yfm-color-note-tip-background: var(--g-color-base-positive-light);
-    --yfm-color-note-warning: var(--g-color-text-warning);
-    --yfm-color-note-warning-background: var(--g-color-base-warning-light);
-    --yfm-color-note-important: var(--g-color-text-danger);
-    --yfm-color-note-important-background: var(--g-color-base-danger-light);
-    --yfm-color-note-info: var(--g-color-text-info);
-    --yfm-color-note-info-background: var(--g-color-base-info-light);
-    --yfm-color-table: var(--g-color-text-primary);
-    --yfm-color-table-row-background: var(--g-color-base-generic);
-    --yfm-color-table-border: var(--g-color-line-generic);
-    --yfm-color-table-background: var(--g-color-base-background);
-    --yfm-color-table-head-background: var(--g-color-base-generic);
-    --yfm-color-table-stripe-row-background: var(--g-color-base-generic);
+    --yfm-color-base: var(--bg-paper);
+    --yfm-color-text: var(--text-1);
+    --yfm-color-link: var(--accent);
+    --yfm-color-link-hover: color-mix(in srgb, var(--accent), var(--text-1) 25%);
+    --yfm-color-border: var(--line);
+    --yfm-color-accent: var(--accent);
+    --yfm-color-inline-code: var(--text-1);
+    --yfm-color-inline-code-background: var(--bg-selected);
+    --yfm-color-code-background: var(--bg-panel-2);
+    --yfm-color-note-tip: var(--yfm-green);
+    --yfm-color-note-tip-background: color-mix(in srgb, var(--yfm-green) 10%, transparent);
+    --yfm-color-note-warning: var(--yfm-orange);
+    --yfm-color-note-warning-background: color-mix(in srgb, var(--yfm-orange) 10%, transparent);
+    --yfm-color-note-important: var(--danger);
+    --yfm-color-note-important-background: color-mix(in srgb, var(--danger) 10%, transparent);
+    --yfm-color-note-info: var(--yfm-blue);
+    --yfm-color-note-info-background: color-mix(in srgb, var(--yfm-blue) 10%, transparent);
+    --yfm-color-table: var(--text-1);
+    --yfm-color-table-row-background: transparent;
+    --yfm-color-table-border: var(--line);
+    --yfm-color-table-background: transparent;
+    --yfm-color-table-head-background: var(--bg-panel-2);
+    --yfm-color-table-stripe-row-background: var(--bg-panel-2);
 
     /* From the package's `yfm-overrides.css` — a chunkier rule than YFM's own default. */
     --yfm-hr-height: 4px;
     --yfm-hr-margin: 24px 0;
 }
 
-/* The colour palette `{red}(text)` (the @diplodoc/color-extension, wired up in NotePreview) renders
-   against. Was `yc-colors.css`. */
-.g-root {
-    --yfm-color-text-gray: var(--g-color-text-secondary);
-    --yfm-color-text-yellow: var(--g-color-private-yellow-600-solid);
-    --yfm-color-text-orange: var(--g-color-private-orange-500-solid);
-    --yfm-color-text-red: var(--g-color-text-danger);
-    --yfm-color-text-green: var(--g-color-text-positive);
-    --yfm-color-text-blue: var(--g-color-text-info);
-    --yfm-color-text-violet: var(--g-color-text-utility);
+/* The palette `{red}(text)` renders against (the @diplodoc/color-extension, wired up in
+   NotePreview) — was `yc-colors.css`. These are the app's ONLY chromatic colours besides amber and
+   danger, and they exist because the author asked for them by name in the note. Stated at the
+   warm-neutral ramp's own lightness so a coloured word sits at the same weight as the text
+   around it. */
+:root {
+    --yfm-green: oklch(0.55 0.13 150);
+    --yfm-orange: oklch(0.62 0.15 55);
+    --yfm-blue: oklch(0.55 0.14 250);
+    --yfm-violet: oklch(0.55 0.16 300);
+    --yfm-yellow: oklch(0.62 0.13 90);
 
-    --yfm-colorify-black: var(--g-color-text-primary);
+    --yfm-color-text-gray: var(--text-2);
+    --yfm-color-text-yellow: var(--yfm-yellow);
+    --yfm-color-text-orange: var(--yfm-orange);
+    --yfm-color-text-red: var(--danger);
+    --yfm-color-text-green: var(--yfm-green);
+    --yfm-color-text-blue: var(--yfm-blue);
+    --yfm-color-text-violet: var(--yfm-violet);
+
+    --yfm-colorify-black: var(--text-1);
     --yfm-colorify-gray: var(--yfm-color-text-gray);
     --yfm-colorify-yellow: var(--yfm-color-text-yellow);
     --yfm-colorify-orange: var(--yfm-color-text-orange);
@@ -62,8 +74,17 @@
     --yfm-colorify-violet: var(--yfm-color-text-violet);
 }
 
+/* Dark: the same hues, lifted off the ink so they stay legible rather than merely present. */
+[data-theme='dark'] {
+    --yfm-green: oklch(0.75 0.14 150);
+    --yfm-orange: oklch(0.78 0.14 55);
+    --yfm-blue: oklch(0.74 0.13 250);
+    --yfm-violet: oklch(0.74 0.15 300);
+    --yfm-yellow: oklch(0.82 0.13 90);
+}
+
 /* The collapse chevron `.yfm-cut` draws is a black SVG baked into the extension's stylesheet, so it
    disappears on a dark background; the package shipped this same swap in `yfm-themes.css`. */
-.g-root_theme_dark .yfm .yfm-cut-title::before {
+[data-theme='dark'] .yfm .yfm-cut-title::before {
     background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHBhdGggc3Ryb2tlPSJyZ2JhKDI1NSwgMjU1LCAyNTUsIDAuNykiIGZpbGw9Im5vbmUiIGQ9Ik0zIDZsNSA1IDUtNSI+PC9wYXRoPjwvc3ZnPg==');
 }

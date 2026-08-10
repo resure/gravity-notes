@@ -33,10 +33,15 @@ interface Options<T> {
  * list changes, and scroll-the-active-row-into-view. Callers own filtering, rendering, and the
  * pre-highlight/typeahead seeding (via `setActiveIndex`).
  *
- * The listener is on `document`, not the filter input, because Gravity's `Dialog` wraps its content
- * in a floating-ui FocusManager that can park focus on the dialog CONTAINER (or a row's ✕ button),
- * where an input-scoped `onKeyDown` goes silent — arrows/Enter dead. Pair with `initialFocus` on the
- * Dialog so type-to-filter still lands in the input.
+ * The listener is on `document`, not the filter input, because the dialog's focus manager can park
+ * focus on the popup CONTAINER (or a row's ✕ button), where an input-scoped `onKeyDown` goes silent
+ * — arrows/Enter dead. Pair with `initialFocus` on the Dialog so type-to-filter still lands in the
+ * input.
+ *
+ * It listens in the CAPTURE phase, which is not optional: Base UI's dialog popup stops keydown
+ * propagation at its own root (so a nested dialog's Escape can't also close its parent), and a
+ * bubble-phase document listener therefore never fires for a key pressed inside the dialog. Capture
+ * runs on the way DOWN, before the popup can swallow anything.
  */
 export function useListboxNav<T>({
     open,
@@ -130,8 +135,8 @@ export function useListboxNav<T>({
     useEffect(() => {
         if (!open) return undefined;
         const listener = (event: KeyboardEvent) => handleKeyRef.current(event);
-        document.addEventListener('keydown', listener);
-        return () => document.removeEventListener('keydown', listener);
+        document.addEventListener('keydown', listener, true);
+        return () => document.removeEventListener('keydown', listener, true);
     }, [open]);
 
     return {activeIndex, setActiveIndex, registerRow};

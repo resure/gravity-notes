@@ -1,21 +1,56 @@
+/* The root render-crash net — §09's last state. Full-window, because when this shows there is
+   genuinely nothing else left to show. */
+
 .error-boundary {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     padding: 24px;
-    background-color: var(--g-color-base-background);
+    background: var(--bg-desk);
+    font-family: var(--font-ui);
 }
 
 .error-boundary__card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    max-width: 420px;
+    align-items: center;
+    gap: 10px;
+    max-width: 460px;
     text-align: center;
 }
 
+.error-boundary__title {
+    margin: 0;
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+    color: var(--text-1);
+}
+
+.error-boundary__body {
+    margin: 0;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-2);
+}
+
+/* The message stays raw and monospaced: this is the one place in the app where the literal text
+   is more use than a friendlier paraphrase. */
 .error-boundary__detail {
+    max-width: 100%;
+    margin: 4px 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg-panel-2);
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: var(--fs-preview);
+    line-height: 17px;
+    text-align: left;
+    white-space: pre-wrap;
     word-break: break-word;
 }
 
@@ -23,5 +58,5 @@
     display: flex;
     gap: 8px;
     justify-content: center;
-    margin-top: 4px;
+    margin-top: 8px;
 }

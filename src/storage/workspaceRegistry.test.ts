@@ -14,51 +14,6 @@ import {
     workspaceIdForPath,
 } from './workspaceRegistry';
 
-/** Write the pre-workspace (v1) database shape: a bare `handles` store with the legacy keys. */
-function seedLegacyDb(entries: Record<string, unknown>): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('gravity-notes', 1);
-        req.onupgradeneeded = () => {
-            req.result.createObjectStore('handles');
-        };
-        req.onsuccess = () => {
-            const db = req.result;
-            const tx = db.transaction('handles', 'readwrite');
-            const store = tx.objectStore('handles');
-            for (const [key, value] of Object.entries(entries)) store.put(value, key);
-            tx.oncomplete = () => {
-                db.close();
-                resolve();
-            };
-            tx.onerror = () => {
-                db.close();
-                reject(tx.error);
-            };
-        };
-        req.onerror = () => reject(req.error);
-    });
-}
-
-/** Raw read of a `handles` key at the CURRENT db version (v2), for post-migration assertions. */
-function readHandlesKey(key: string): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('gravity-notes', 2);
-        req.onsuccess = () => {
-            const db = req.result;
-            const get = db.transaction('handles', 'readonly').objectStore('handles').get(key);
-            get.onsuccess = () => {
-                db.close();
-                resolve(get.result);
-            };
-            get.onerror = () => {
-                db.close();
-                reject(get.error);
-            };
-        };
-        req.onerror = () => reject(req.error);
-    });
-}
-
 function entry(over: Partial<WorkspaceEntry> = {}): WorkspaceEntry {
     return {
         id: 'tauri:/Users/me/Notes',
@@ -82,86 +37,10 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-describe('workspaceRegistry — migration from the v1 single choice', () => {
-    it('seeds a tauri-fs entry from the legacy backend + path and points last-active at it', async () => {
-        await seedLegacyDb({backend: 'tauri-fs', 'notes-folder-path': '/Users/me/Notes'});
-
-        const workspaces = await loadWorkspaces();
-
-        expect(workspaces).toHaveLength(1);
-        expect(workspaces[0]).toMatchObject({
-            id: 'tauri:/Users/me/Notes',
-            backend: 'tauri-fs',
-            name: 'Notes',
-            path: '/Users/me/Notes',
-        });
-        expect(await loadLastActiveId()).toBe('tauri:/Users/me/Notes');
-        // The legacy keys are left in place (harmless), just never maintained again.
-        expect(await readHandlesKey('backend')).toBe('tauri-fs');
-    });
-
-    it('seeds a filesystem entry (deterministic fsa:legacy id) from a stored handle', async () => {
-        // A real FSA handle can't exist under Node; any structured-cloneable object stands in.
-        const handle = {name: 'notes'};
-        await seedLegacyDb({backend: 'filesystem', 'notes-dir': handle});
-
-        const workspaces = await loadWorkspaces();
-
-        expect(workspaces).toHaveLength(1);
-        expect(workspaces[0]).toMatchObject({
-            id: 'fsa:legacy',
-            backend: 'filesystem',
-            name: 'notes',
-        });
-        expect(workspaces[0].handle).toEqual(handle);
-        expect(await loadLastActiveId()).toBe('fsa:legacy');
-    });
-
-    it('treats a stored handle with no backend flag as a filesystem user (v1 back-compat)', async () => {
-        await seedLegacyDb({'notes-dir': {name: 'old-notes'}});
-
-        const workspaces = await loadWorkspaces();
-
-        expect(workspaces).toHaveLength(1);
-        expect(workspaces[0]).toMatchObject({id: 'fsa:legacy', backend: 'filesystem'});
-    });
-
-    it('seeds the in-browser entry from an indexeddb choice', async () => {
-        await seedLegacyDb({backend: 'indexeddb'});
-
-        const workspaces = await loadWorkspaces();
-
-        expect(workspaces).toHaveLength(1);
-        expect(workspaces[0]).toMatchObject({id: 'indexeddb', backend: 'indexeddb'});
-        expect(await loadLastActiveId()).toBe('indexeddb');
-    });
-
-    it('yields an empty registry when there is nothing to migrate', async () => {
+describe('workspaceRegistry — an empty registry', () => {
+    it('yields nothing, with no launch pointer', async () => {
         expect(await loadWorkspaces()).toEqual([]);
         expect(await loadLastActiveId()).toBeUndefined();
-    });
-
-    it('is idempotent under a concurrent double-run (StrictMode / two windows)', async () => {
-        await seedLegacyDb({backend: 'tauri-fs', 'notes-folder-path': '/Users/me/Notes'});
-
-        const [first, second] = await Promise.all([loadWorkspaces(), loadWorkspaces()]);
-
-        expect(first).toHaveLength(1);
-        expect(second).toHaveLength(1);
-        // The deterministic id makes the double-seed an overwrite, never a duplicate.
-        expect(await loadWorkspaces()).toHaveLength(1);
-    });
-
-    it('does not re-seed once real entries exist (legacy keys still present)', async () => {
-        await seedLegacyDb({backend: 'tauri-fs', 'notes-folder-path': '/Users/me/Notes'});
-        await loadWorkspaces(); // migrate
-        await touchWorkspace(entry({id: 'tauri:/Other', path: '/Other', name: 'Other'}));
-        await removeWorkspace('tauri:/Users/me/Notes');
-
-        const workspaces = await loadWorkspaces();
-
-        // The removed migrated entry must NOT resurrect from the (still present) legacy keys.
-        expect(workspaces.map((w) => w.id)).toEqual(['tauri:/Other']);
     });
 });
 

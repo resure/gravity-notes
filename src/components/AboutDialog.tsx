@@ -1,14 +1,12 @@
 import {useEffect, useState} from 'react';
 
-import {Dialog, Link, Text} from '@gravity-ui/uikit';
-
 import {isTauri} from '../isTauri';
 import {openExternalUrl} from '../openExternal';
+import {Dialog} from '../ui/Dialog';
 
 import './AboutDialog.css';
 
 const GITHUB_URL = 'https://github.com/resure/gravity-notes';
-const GRAVITY_URL = 'https://gravity-ui.com';
 
 /**
  * The app's About box, opened from the native macOS "About Gravity Notes" menu item (Workspace
@@ -37,32 +35,23 @@ export function AboutDialog({open, onClose}: {open: boolean; onClose: () => void
         };
     }, [open]);
 
-    const openLink = (url: string) => (event: React.MouseEvent) => {
-        event.preventDefault();
-        openExternalUrl(url);
-    };
-
     return (
-        <Dialog open={open} onClose={onClose} size="s">
-            <Dialog.Body>
-                <div className="about-dialog">
-                    <div className="about-dialog__orb" aria-hidden />
-                    <Text variant="subheader-2">Gravity Notes</Text>
-                    {version ? (
-                        <Text color="secondary" variant="body-1">
-                            Version {version}
-                        </Text>
-                    ) : null}
-                    <div className="about-dialog__links">
-                        <Link href={GITHUB_URL} onClick={openLink(GITHUB_URL)}>
-                            Project on GitHub
-                        </Link>
-                        <Link href={GRAVITY_URL} onClick={openLink(GRAVITY_URL)}>
-                            Powered by GravityUI
-                        </Link>
-                    </div>
-                </div>
-            </Dialog.Body>
+        <Dialog open={open} onClose={onClose} title="About" width={340} className="about-dialog">
+            <div className="about">
+                <div className="about__orb" aria-hidden />
+                <div className="about__name">Gravity Notes</div>
+                {version ? <div className="about__version">Version {version}</div> : null}
+                <a
+                    className="about__link"
+                    href={GITHUB_URL}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        openExternalUrl(GITHUB_URL);
+                    }}
+                >
+                    Project on GitHub
+                </a>
+            </div>
         </Dialog>
     );
 }

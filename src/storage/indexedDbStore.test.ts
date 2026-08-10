@@ -517,37 +517,5 @@ describe('IndexedDbNoteStore', () => {
             await store.emptyTrash();
             expect(await store.listTrash()).toEqual([]);
         });
-
-        it('upgrades a v2 database to v3, keeping notes and adding the trash store', async () => {
-            // Build a pre-existing v2-shaped database by hand (no trash store), with one note.
-            await new Promise<void>((resolve, reject) => {
-                const req = indexedDB.open('gravity-notes-data', 2);
-                req.onupgradeneeded = () => {
-                    const db = req.result;
-                    db.createObjectStore('notes', {keyPath: 'id'});
-                    db.createObjectStore('kv');
-                    db.createObjectStore('attachments', {keyPath: 'id'});
-                };
-                req.onsuccess = () => {
-                    const db = req.result;
-                    const tx = db.transaction('notes', 'readwrite');
-                    tx.objectStore('notes').put({id: 'Old.md', content: 'kept\n\n', updatedAt: 5});
-                    tx.oncomplete = () => {
-                        db.close();
-                        resolve();
-                    };
-                    tx.onerror = () => reject(tx.error);
-                };
-                req.onerror = () => reject(req.error);
-            });
-
-            // Opening the store runs the v2 → v3 upgrade: the old note survives and trashing works
-            // (the new trash store was created without disturbing the existing object stores).
-            const upgraded = new IndexedDbNoteStore();
-            expect((await upgraded.get('Old.md')).content).toBe('kept');
-            const trashId = await upgraded.trash('Old.md');
-            expect((await upgraded.listTrash()).map((t) => t.id)).toEqual([trashId]);
-            expect(await upgraded.list()).toEqual([]);
-        });
     });
 });

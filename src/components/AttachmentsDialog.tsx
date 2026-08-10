@@ -1,12 +1,15 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
-import {FolderOpen, TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, Icon, Label, Select, Spin, Text} from '@gravity-ui/uikit';
 import {useVirtualizer} from '@tanstack/react-virtual';
 
 import {type AttachmentUrlCache} from '../attachments';
 import {attachmentRefsIn} from '../storage/noteText';
 import type {AttachmentMeta, NoteStore} from '../storage/types';
+import {Button} from '../ui/Button';
+import {AlertDialog, Dialog} from '../ui/Dialog';
+import {Select} from '../ui/Select';
+import {Chip, Skeleton} from '../ui/bits';
+import {FolderOpen, Paperclip, Trash} from '../ui/icons';
 
 import {Lightbox} from './Lightbox';
 
@@ -93,7 +96,6 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     const [loading, setLoading] = useState(true);
     const [items, setItems] = useState<AttachmentRow[]>([]);
     const [pending, setPending] = useState<PendingDelete | null>(null);
-    const [busy, setBusy] = useState(false);
     const [sort, setSort] = useState<AttachmentSort>('recent');
     // The attachment being viewed full-size (null = none), resolved to an object URL. `ref` is kept so
     // the open lightbox image can subscribe and stay protected from LRU eviction while it's on screen.
@@ -213,7 +215,6 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
 
     const runDelete = useCallback(async () => {
         if (!pending) return;
-        setBusy(true);
         try {
             for (const ref of pending.refs) {
                 await store.removeAttachment(ref);
@@ -226,8 +227,6 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
             onError(err instanceof Error ? err.message : 'Failed to delete attachment');
             await load(); // resync after a partial failure
             setPending(null);
-        } finally {
-            setBusy(false);
         }
     }, [pending, store, cache, onError, load]);
 
@@ -246,180 +245,166 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
 
     return (
         <>
-            <Dialog open={open} onClose={onClose} size="m" disableBodyScrollLock>
-                <Dialog.Header caption="Attachments" />
-                <Dialog.Body>
-                    {loading ? (
-                        <div className="attachments__center">
-                            <Spin />
-                        </div>
-                    ) : items.length === 0 ? (
-                        <div className="attachments__center">
-                            <Text color="secondary">
-                                No attachments yet. Drop or paste an image into a note to add one.
-                            </Text>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="attachments__toolbar">
-                                <Text color="secondary" variant="caption-2">
-                                    {items.length} file{items.length === 1 ? '' : 's'}
-                                </Text>
-                                <Select
-                                    className="attachments__sort"
-                                    size="s"
-                                    aria-label="Sort attachments"
-                                    value={[sort]}
-                                    onUpdate={([next]) => {
-                                        if (next) setSort(next as AttachmentSort);
-                                    }}
-                                    options={[
-                                        {value: 'recent', content: 'Recent'},
-                                        {value: 'size', content: 'Largest'},
-                                        {value: 'name', content: 'Name'},
-                                    ]}
-                                />
-                            </div>
-                            <div ref={listRef} className="attachments__list virtual-scroll">
-                                <div
-                                    style={{
-                                        height: rowVirtualizer.getTotalSize(),
-                                        position: 'relative',
-                                    }}
-                                >
-                                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                                        const item = sortedItems[virtualRow.index];
-                                        return (
-                                            <div
-                                                key={virtualRow.key}
-                                                data-index={virtualRow.index}
-                                                ref={rowVirtualizer.measureElement}
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: 0,
-                                                    left: 0,
-                                                    width: '100%',
-                                                    paddingBottom: 4,
-                                                    transform: `translateY(${virtualRow.start}px)`,
-                                                }}
-                                            >
-                                                <div className="attachments__row">
-                                                    <button
-                                                        type="button"
-                                                        className="attachments__thumb-btn"
-                                                        aria-label={`View ${item.name}`}
-                                                        onClick={() => openView(item)}
-                                                    >
-                                                        <Thumb
-                                                            cache={cache}
-                                                            refPath={item.ref}
-                                                            alt={item.name}
-                                                        />
-                                                    </button>
-                                                    <div className="attachments__meta">
-                                                        <Text
-                                                            className="attachments__name"
-                                                            ellipsis
-                                                            title={item.name}
-                                                        >
-                                                            {item.name}
-                                                        </Text>
-                                                        <div className="attachments__sub">
-                                                            <Text
-                                                                color="secondary"
-                                                                variant="caption-2"
-                                                            >
-                                                                {formatBytes(item.size)}
-                                                            </Text>
-                                                            {item.usedBy === 0 ? (
-                                                                <Label theme="warning" size="xs">
-                                                                    Unused
-                                                                </Label>
-                                                            ) : (
-                                                                <Text
-                                                                    color="secondary"
-                                                                    variant="caption-2"
-                                                                >
-                                                                    · Used by {item.usedBy} note
-                                                                    {item.usedBy === 1 ? '' : 's'}
-                                                                </Text>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    {reveal ? (
-                                                        <Button
-                                                            view="flat"
-                                                            size="m"
-                                                            aria-label={`Reveal ${item.name} in Finder`}
-                                                            onClick={() => onReveal(item.ref)}
-                                                        >
-                                                            <Icon data={FolderOpen} />
-                                                        </Button>
-                                                    ) : null}
-                                                    <Button
-                                                        view="flat"
-                                                        size="m"
-                                                        aria-label={`Delete ${item.name}`}
-                                                        onClick={() =>
-                                                            setPending({
-                                                                refs: [item.ref],
-                                                                usedBy: item.usedBy,
-                                                                label: item.name,
-                                                                bulk: false,
-                                                            })
-                                                        }
-                                                    >
-                                                        <Icon data={TrashBin} />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+            <Dialog
+                open={open}
+                onClose={onClose}
+                title="Attachments"
+                width={560}
+                footer={
+                    <>
+                        {orphans.length > 0 ? (
+                            <Button
+                                className="ui-button_danger"
+                                onClick={() =>
+                                    setPending({
+                                        refs: orphans.map((o) => o.ref),
+                                        usedBy: 0,
+                                        label: '',
+                                        bulk: true,
+                                    })
+                                }
+                            >
+                                Delete unused ({orphans.length})
+                            </Button>
+                        ) : null}
+                        <Button onClick={onClose}>Close</Button>
+                    </>
+                }
+            >
+                {loading ? (
+                    // Skeleton rows, not a spinner (§09): the thumbnails stream in behind them.
+                    <div className="attachments__skeletons">
+                        {[0, 1, 2, 3].map((i) => (
+                            <div className="attachments__row" key={i}>
+                                <span className="attachments__thumb attachments__thumb_loading" />
+                                <div className="attachments__meta">
+                                    <Skeleton width={180} />
+                                    <Skeleton width={110} className="attachments__skeleton-sub" />
                                 </div>
                             </div>
-                        </>
-                    )}
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonCancel="Close"
-                    onClickButtonCancel={onClose}
-                    textButtonApply={
-                        orphans.length > 0 ? `Delete unused (${orphans.length})` : undefined
-                    }
-                    propsButtonApply={{view: 'outlined-danger'}}
-                    onClickButtonApply={
-                        orphans.length > 0
-                            ? () =>
-                                  setPending({
-                                      refs: orphans.map((o) => o.ref),
-                                      usedBy: 0,
-                                      label: '',
-                                      bulk: true,
-                                  })
-                            : undefined
-                    }
-                />
+                        ))}
+                    </div>
+                ) : items.length === 0 ? (
+                    <div className="attachments__empty">
+                        <Paperclip size={26} className="attachments__empty-glyph" />
+                        <p className="attachments__empty-line">No attachments yet</p>
+                        <p className="attachments__empty-hint">
+                            Drop or paste an image into a note to add one.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="attachments__toolbar">
+                            <span className="attachments__count">
+                                {items.length} file{items.length === 1 ? '' : 's'}
+                            </span>
+                            <Select
+                                aria-label="Sort attachments"
+                                value={sort}
+                                onChange={setSort}
+                                options={[
+                                    {value: 'recent', label: 'Recent'},
+                                    {value: 'size', label: 'Largest'},
+                                    {value: 'name', label: 'Name'},
+                                ]}
+                            />
+                        </div>
+                        <div ref={listRef} className="attachments__list virtual-scroll">
+                            <div
+                                style={{
+                                    height: rowVirtualizer.getTotalSize(),
+                                    position: 'relative',
+                                }}
+                            >
+                                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                                    const item = sortedItems[virtualRow.index];
+                                    return (
+                                        <div
+                                            key={virtualRow.key}
+                                            data-index={virtualRow.index}
+                                            ref={rowVirtualizer.measureElement}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                paddingBottom: 4,
+                                                transform: `translateY(${virtualRow.start}px)`,
+                                            }}
+                                        >
+                                            <div className="attachments__row">
+                                                <button
+                                                    type="button"
+                                                    className="attachments__thumb-btn"
+                                                    aria-label={`View ${item.name}`}
+                                                    onClick={() => openView(item)}
+                                                >
+                                                    <Thumb
+                                                        cache={cache}
+                                                        refPath={item.ref}
+                                                        alt={item.name}
+                                                    />
+                                                </button>
+                                                <div className="attachments__meta">
+                                                    <span
+                                                        className="attachments__name"
+                                                        title={item.name}
+                                                    >
+                                                        {item.name}
+                                                    </span>
+                                                    <span className="attachments__sub">
+                                                        {formatBytes(item.size)}
+                                                        {item.usedBy === 0 ? (
+                                                            <Chip className="attachments__unused">
+                                                                Unused
+                                                            </Chip>
+                                                        ) : (
+                                                            <span>
+                                                                · Used by {item.usedBy} note
+                                                                {item.usedBy === 1 ? '' : 's'}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                {reveal ? (
+                                                    <Button
+                                                        icon={<FolderOpen size={15} />}
+                                                        aria-label={`Reveal ${item.name} in Finder`}
+                                                        onClick={() => onReveal(item.ref)}
+                                                    />
+                                                ) : null}
+                                                <Button
+                                                    icon={<Trash size={15} />}
+                                                    aria-label={`Delete ${item.name}`}
+                                                    onClick={() =>
+                                                        setPending({
+                                                            refs: [item.ref],
+                                                            usedBy: item.usedBy,
+                                                            label: item.name,
+                                                            bulk: false,
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                )}
             </Dialog>
 
-            <Dialog
+            <AlertDialog
                 open={pending !== null}
-                onClose={() => !busy && setPending(null)}
-                onEnterKeyDown={runDelete}
-                size="s"
-                disableBodyScrollLock
+                onClose={() => setPending(null)}
+                title="Delete attachment"
+                confirmLabel="Delete"
+                onConfirm={runDelete}
+                danger
             >
-                <Dialog.Header caption="Delete attachment" />
-                <Dialog.Body>
-                    <Text>{confirmMessage()}</Text>
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonApply="Delete"
-                    textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'outlined-danger', loading: busy}}
-                    onClickButtonApply={runDelete}
-                    onClickButtonCancel={() => setPending(null)}
-                />
-            </Dialog>
+                {confirmMessage()}
+            </AlertDialog>
 
             {viewing ? (
                 <Lightbox src={viewing.url} alt={viewing.name} onClose={() => setViewing(null)} />

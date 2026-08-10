@@ -1,11 +1,12 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import {Database, Folder, FolderPlus, Xmark} from '@gravity-ui/icons';
-import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
-
 import {useListboxNav} from '../hooks/useListboxNav';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {isOpenInNewWindowChord} from '../shortcuts';
+import {Button} from '../ui/Button';
+import {Dialog} from '../ui/Dialog';
+import {Input} from '../ui/Input';
+import {Database, Folder, FolderPlus, Xmark} from '../ui/icons';
 
 import {highlightMatch} from './highlightMatch';
 
@@ -176,9 +177,9 @@ export function WorkspaceSwitcherDialog({
 
     const renderRow = (row: Row, index: number) => {
         const active = index === activeIndex;
-        let glyph = Folder;
-        if (row.isBrowser) glyph = Database;
-        if (row.openFolder) glyph = FolderPlus;
+        let Glyph = Folder;
+        if (row.isBrowser) Glyph = Database;
+        if (row.openFolder) Glyph = FolderPlus;
         return (
             // Combobox pattern: keyboard runs through the filter input (aria-activedescendant points
             // at the active option), so options are mouse targets and aren't individually focusable.
@@ -201,16 +202,12 @@ export function WorkspaceSwitcherDialog({
                     if (!row.disabled && !active) setActiveIndex(index);
                 }}
             >
-                <Icon className="ws-switch__icon" data={glyph} size={16} aria-hidden />
+                <Glyph size={15} className="ws-switch__icon" />
                 <span className="ws-switch__text">
-                    <Text className="ws-switch__name" ellipsis>
+                    <span className="ws-switch__name">
                         {highlightMatch(row.name, ql, 'ws-switch__match')}
-                    </Text>
-                    {row.path ? (
-                        <Text className="ws-switch__path" color="hint" ellipsis>
-                            {row.path}
-                        </Text>
-                    ) : null}
+                    </span>
+                    {row.path ? <span className="ws-switch__path">{row.path}</span> : null}
                 </span>
                 {row.disabled ? <span className="ws-switch__hint">current</span> : null}
                 {!row.disabled && !row.synthesized && !row.openFolder ? (
@@ -224,7 +221,7 @@ export function WorkspaceSwitcherDialog({
                             onRemove(row.id);
                         }}
                     >
-                        <Icon data={Xmark} size={12} />
+                        <Xmark size={12} />
                     </button>
                 ) : null}
             </div>
@@ -233,45 +230,43 @@ export function WorkspaceSwitcherDialog({
 
     return (
         // initialFocus hands the filter input straight to the Dialog's focus manager — otherwise
-        // it focuses the dialog container itself, racing (and beating) our own focus effect.
+        // it focuses the popup container itself, racing (and beating) our own focus effect.
         <Dialog
             open={open}
             onClose={onClose}
-            size="s"
-            disableBodyScrollLock
+            title="Switch workspace"
+            width={440}
             initialFocus={inputRef}
+            className="ws-switch-dialog"
+            footer={
+                <>
+                    <span className="ws-switch__keys">
+                        {isDesktop ? '↵ open · ⌘↵ new window · ⌘⌫ remove' : '↵ open · ⌘⌫ remove'}
+                    </span>
+                    <Button onClick={onClose}>Cancel</Button>
+                </>
+            }
         >
-            <Dialog.Header caption="Switch workspace" />
-            <Dialog.Body>
-                <TextInput
-                    controlRef={inputRef}
-                    autoComplete={false}
-                    placeholder="Filter workspaces…"
-                    value={query}
-                    onUpdate={setQuery}
-                    controlProps={{
-                        role: 'combobox',
-                        'aria-expanded': true,
-                        'aria-controls': 'ws-switch-listbox',
-                        'aria-activedescendant': activeId ? `ws-switch-opt-${activeId}` : undefined,
-                        'aria-label': 'Filter workspaces',
-                    }}
-                />
-                <div className="ws-switch__list" id="ws-switch-listbox" role="listbox">
-                    {/* The action row sits outside the filter, so "no matches" is judged on the
-                        workspace rows alone and the hint renders above the still-present action. */}
-                    {ql && !entries.some((row) => !row.openFolder) ? (
-                        <div className="ws-switch__empty">
-                            <Text color="secondary">No workspaces match “{query.trim()}”</Text>
-                        </div>
-                    ) : null}
-                    {entries.map(renderRow)}
-                </div>
-                <Text className="ws-switch__keys" color="hint">
-                    {isDesktop ? '↵ open · ⌘↵ new window · ⌘⌫ remove' : '↵ open · ⌘⌫ remove'}
-                </Text>
-            </Dialog.Body>
-            <Dialog.Footer textButtonCancel="Cancel" onClickButtonCancel={onClose} />
+            <Input
+                ref={inputRef}
+                placeholder="Filter workspaces…"
+                autoComplete="off"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                role="combobox"
+                aria-expanded
+                aria-controls="ws-switch-listbox"
+                aria-activedescendant={activeId ? `ws-switch-opt-${activeId}` : undefined}
+                aria-label="Filter workspaces"
+            />
+            <div className="ws-switch__list" id="ws-switch-listbox" role="listbox">
+                {/* The action row sits outside the filter, so "no matches" is judged on the
+                    workspace rows alone and the hint renders above the still-present action. */}
+                {ql && !entries.some((row) => !row.openFolder) ? (
+                    <div className="ws-switch__empty">No workspaces match “{query.trim()}”</div>
+                ) : null}
+                {entries.map(renderRow)}
+            </div>
         </Dialog>
     );
 }

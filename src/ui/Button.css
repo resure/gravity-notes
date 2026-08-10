@@ -92,7 +92,7 @@
 }
 
 [data-theme='dark'] .ui-button_raised,
-.g-root_theme_dark .ui-button_raised {
+[data-theme='dark'] .ui-button_raised {
     /* Lighter than its pane, lit along the top edge — the dark inversion of "paper + highlight". */
     background: color-mix(in oklab, var(--bg-paper), white 4%);
     box-shadow:

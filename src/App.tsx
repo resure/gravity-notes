@@ -1,13 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
 
-import {
-    MobileProvider,
-    ThemeProvider,
-    Toaster,
-    ToasterComponent,
-    ToasterProvider,
-} from '@gravity-ui/uikit';
-
 import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
 import {Workspace} from './components/Workspace';
@@ -17,9 +9,7 @@ import {isTauri} from './isTauri';
 import {TooltipProvider} from './ui/Tooltip';
 import {ToastRegion} from './ui/toast';
 
-const toaster = new Toaster();
-
-const THEME_KEY = 'gravity-notes:theme';
+const THEME_KEY = 'sol:theme';
 
 function initialTheme(): ThemePref {
     // Reads in App's body, before the ErrorBoundary mounts — a throw here (e.g. private mode where
@@ -45,11 +35,10 @@ export function App() {
         }
     }, [themePref]);
 
-    // Mirror the resolved theme onto `<html data-theme>`, which is what every Sol token reads
+    // Stamp the resolved theme onto `<html data-theme>`, which is what every Sol token reads
     // (tokens.css). Resolving System here rather than in a CSS media query keeps ONE source of
     // truth for "what theme is showing" — the attribute is always the answer, so a rule never has
-    // to be written twice. Runs alongside Gravity's ThemeProvider during the transition; when that
-    // goes, this stops being a mirror and becomes the theme.
+    // to be written twice. This IS the theme; there is no provider behind it.
     useEffect(() => {
         const root = document.documentElement;
         if (themePref !== 'system') {
@@ -119,56 +108,47 @@ export function App() {
     }, []);
 
     return (
-        <ThemeProvider theme={themePref}>
-            <MobileProvider>
-                <ToasterProvider toaster={toaster}>
-                    {/* The new providers sit INSIDE the Gravity ones for the duration of the
-                        migration: the toast region owns failures and the update prompt, the tooltip
-                        provider owns §07's shared 420ms/0ms delay. Both leave the Gravity wrappers
-                        behind in Pass 5 without moving. */}
-                    <ToastRegion>
-                        <TooltipProvider>
-                            <ErrorBoundary>
-                                {storage.state === 'ready' && storage.store ? (
-                                    <Workspace
-                                        // Keyed by workspace: switching remounts the whole tree, so every
-                                        // per-workspace piece (list cursor, rail state, editor session,
-                                        // corpus) starts clean instead of reconciling across workspaces.
-                                        key={storage.activeWorkspaceId ?? 'workspace'}
-                                        store={storage.store}
-                                        workspaceId={storage.activeWorkspaceId ?? 'workspace'}
-                                        storageLabel={storage.storageLabel}
-                                        workspaces={storage.workspaces}
-                                        // A single-note window's assigned note — only while it still
-                                        // shows the workspace it was created for (an in-place workspace
-                                        // switch remounts Workspace without a note assignment).
-                                        initialNoteId={
-                                            storage.windowNote &&
-                                            storage.windowNote.workspaceId ===
-                                                storage.activeWorkspaceId
-                                                ? storage.windowNote.noteId
-                                                : null
-                                        }
-                                        themePref={themePref}
-                                        onChangeThemePref={setThemePref}
-                                        onOpenWorkspace={storage.openWorkspace}
-                                        onOpenWorkspaceInNewWindow={storage.openInNewWindow}
-                                        onOpenNoteInNewWindow={storage.openNoteInNewWindow}
-                                        onRemoveWorkspace={storage.removeWorkspace}
-                                        onRefreshWorkspaces={storage.refreshWorkspaces}
-                                        onOpenFolder={() => void storage.pickFolder()}
-                                        onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
-                                        supportsFolders={storage.supportsFolders}
-                                    />
-                                ) : (
-                                    <FolderGate storage={storage} />
-                                )}
-                            </ErrorBoundary>
-                        </TooltipProvider>
-                    </ToastRegion>
-                    <ToasterComponent />
-                </ToasterProvider>
-            </MobileProvider>
-        </ThemeProvider>
+        // Two providers, and both are behaviour rather than looks: the toast region owns failures
+        // and the update prompt, the tooltip provider owns §07's shared 420ms/0ms delay. Theme is
+        // an attribute on <html>, not a provider — see the stamping effect above.
+        <ToastRegion>
+            <TooltipProvider>
+                <ErrorBoundary>
+                    {storage.state === 'ready' && storage.store ? (
+                        <Workspace
+                            // Keyed by workspace: switching remounts the whole tree, so every
+                            // per-workspace piece (list cursor, rail state, editor session, corpus)
+                            // starts clean instead of reconciling across workspaces.
+                            key={storage.activeWorkspaceId ?? 'workspace'}
+                            store={storage.store}
+                            workspaceId={storage.activeWorkspaceId ?? 'workspace'}
+                            storageLabel={storage.storageLabel}
+                            workspaces={storage.workspaces}
+                            // A single-note window's assigned note — only while it still shows the
+                            // workspace it was created for (an in-place workspace switch remounts
+                            // Workspace without a note assignment).
+                            initialNoteId={
+                                storage.windowNote &&
+                                storage.windowNote.workspaceId === storage.activeWorkspaceId
+                                    ? storage.windowNote.noteId
+                                    : null
+                            }
+                            themePref={themePref}
+                            onChangeThemePref={setThemePref}
+                            onOpenWorkspace={storage.openWorkspace}
+                            onOpenWorkspaceInNewWindow={storage.openInNewWindow}
+                            onOpenNoteInNewWindow={storage.openNoteInNewWindow}
+                            onRemoveWorkspace={storage.removeWorkspace}
+                            onRefreshWorkspaces={storage.refreshWorkspaces}
+                            onOpenFolder={() => void storage.pickFolder()}
+                            onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
+                            supportsFolders={storage.supportsFolders}
+                        />
+                    ) : (
+                        <FolderGate storage={storage} />
+                    )}
+                </ErrorBoundary>
+            </TooltipProvider>
+        </ToastRegion>
     );
 }

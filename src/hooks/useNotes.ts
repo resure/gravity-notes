@@ -15,7 +15,6 @@ import {
     withSortMode,
     withTrashEmptied,
     withTrashed,
-    withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
 import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
@@ -158,26 +157,11 @@ export interface UseNotes {
     ready: boolean;
     setSortMode(sort: SortMode): void;
     togglePin(id: string): void;
-    /** Set (or clear, with an empty string) a note's icon (a Gravity component name). */
-    setIcon(id: string, icon: string): void;
     /**
      * Set (or clear, with an empty override) a note's appearance override in the metadata sidecar —
-     * stored like its icon, so it follows the note through rename/move and travels with the folder.
+     * keyed by note id, so it follows the note through rename/move and travels with the folder.
      */
     setNoteAppearance(id: string, appearance: NoteAppearanceOverride): void;
-    /**
-     * One-time migration hook: fold externally-stored per-note overrides (the legacy localStorage
-     * layer) into the sidecar. Entries whose note already has a sidecar override are skipped — the
-     * sidecar may hold a newer value written by another machine. `trashed` carries overrides whose
-     * note currently sits in the Trash, keyed by ORIGINAL path; they attach to the matching
-     * TrashEntry so a later restore reinstates them. Call only after `ready`. Resolves `true` only
-     * when the adoption is durably on disk (or there was nothing to write) — callers must not
-     * delete their source copy on `false`.
-     */
-    adoptNoteAppearances(
-        overrides: Record<string, NoteAppearanceOverride>,
-        trashed?: Record<string, NoteAppearanceOverride>,
-    ): Promise<boolean>;
     /** The single open note's id (mirrors `metadata.active`), or null. */
     activeId: string | null;
     /** Full content of the open note (the editor's initial markup), or null. */
@@ -383,34 +367,11 @@ export function useNotes(
         (id: string) => void persistMetadata(withPinToggled(metadataRef.current, id)),
         [persistMetadata],
     );
-    const setIcon = useCallback(
-        (id: string, icon: string) => void persistMetadata(withIcon(metadataRef.current, id, icon)),
-        [persistMetadata],
-    );
     const setNoteAppearance = useCallback(
         (id: string, appearance: NoteAppearanceOverride) =>
             void persistMetadata(withNoteAppearance(metadataRef.current, id, appearance)),
         [persistMetadata],
     );
-    const adoptNoteAppearances = useCallback(
-        async (
-            overrides: Record<string, NoteAppearanceOverride>,
-            trashed: Record<string, NoteAppearanceOverride> = {},
-        ): Promise<boolean> => {
-            let next = metadataRef.current;
-            for (const [id, override] of Object.entries(overrides)) {
-                if (id in next.appearances) continue; // an existing sidecar override wins
-                next = withNoteAppearance(next, id, override);
-            }
-            for (const [originalPath, override] of Object.entries(trashed)) {
-                next = withTrashedAppearance(next, originalPath, override);
-            }
-            if (next === metadataRef.current) return true; // nothing new — already landed
-            return persistMetadata(next);
-        },
-        [persistMetadata],
-    );
-
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** Latest unsaved edit, tagged with the note it belongs to. */
     const pendingRef = useRef<{id: string; content: string} | null>(null);
@@ -1683,9 +1644,7 @@ export function useNotes(
         sessionId,
         setSortMode,
         togglePin,
-        setIcon,
         setNoteAppearance,
-        adoptNoteAppearances,
         activeId: metadata.active,
         note,
         saveState,

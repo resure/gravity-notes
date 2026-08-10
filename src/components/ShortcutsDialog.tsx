@@ -1,7 +1,7 @@
-import {Dialog, Hotkey, Text} from '@gravity-ui/uikit';
-
 import {isTauri} from '../isTauri';
-import {SHORTCUTS, SHORTCUT_GROUPS} from '../shortcuts';
+import {SHORTCUTS, SHORTCUT_GROUPS, shortcutChords} from '../shortcuts';
+import {Dialog} from '../ui/Dialog';
+import {Kbd} from '../ui/bits';
 
 import './ShortcutsDialog.css';
 
@@ -10,38 +10,37 @@ interface ShortcutsDialogProps {
     onClose: () => void;
 }
 
-/** Read-only help sheet listing the app's keyboard shortcuts, derived from SHORTCUTS. */
+/** Read-only help sheet listing the app's keyboard shortcuts, derived from `SHORTCUTS` (⌘/). */
 export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
     return (
-        // The app shell already locks scroll (index.css overflow:hidden), so the modal's own
-        // body-scroll-lock is redundant — and toggling it on open repaints the whole page (flicker).
-        <Dialog open={open} onClose={onClose} size="s" disableBodyScrollLock contentOverflow="auto">
-            <Dialog.Header caption="Keyboard shortcuts" />
-            <Dialog.Body>
-                <div className="shortcuts-dialog">
-                    {SHORTCUT_GROUPS.map((group) => {
-                        // Desktop-shell-only rows (per-note windows, ⌘0) are noise in the browser.
-                        const rows = SHORTCUTS.filter(
-                            (shortcut) =>
-                                shortcut.group === group && (!shortcut.desktopOnly || isTauri),
-                        );
-                        if (rows.length === 0) return null;
-                        return (
-                            <div key={group} className="shortcuts-dialog__group">
-                                <Text variant="subheader-1" color="secondary">
-                                    {group}
-                                </Text>
-                                {rows.map((shortcut) => (
-                                    <div key={shortcut.keys} className="shortcuts-dialog__row">
-                                        <Text>{shortcut.description}</Text>
-                                        <Hotkey value={shortcut.keys} />
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    })}
-                </div>
-            </Dialog.Body>
+        <Dialog open={open} onClose={onClose} title="Keyboard shortcuts" width={460}>
+            <div className="shortcuts">
+                {SHORTCUT_GROUPS.map((group) => {
+                    // Desktop-shell-only rows (per-note windows, ⌘0) are noise in the browser.
+                    const rows = SHORTCUTS.filter(
+                        (shortcut) =>
+                            shortcut.group === group && (!shortcut.desktopOnly || isTauri),
+                    );
+                    if (rows.length === 0) return null;
+                    return (
+                        <section key={group} className="shortcuts__group">
+                            <h3 className="shortcuts__group-label">{group}</h3>
+                            {rows.map((shortcut) => (
+                                <div key={shortcut.keys} className="shortcuts__row">
+                                    <span className="shortcuts__desc">{shortcut.description}</span>
+                                    <span className="shortcuts__keys">
+                                        {/* A chord's position in this fixed, static list IS its
+                                            identity — 'esc esc' is two identical caps. */}
+                                        {shortcutChords(shortcut.keys).map((chord, i) => (
+                                            <Kbd key={i}>{chord.join('')}</Kbd>
+                                        ))}
+                                    </span>
+                                </div>
+                            ))}
+                        </section>
+                    );
+                })}
+            </div>
         </Dialog>
     );
 }
