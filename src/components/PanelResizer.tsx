@@ -86,12 +86,21 @@ export function PanelResizer({
         [getMaxWidth],
     );
 
-    // The body class and a pending commit outlive the component only if it unmounts mid-drag
-    // (⌘⇧\ closes the rail, a ⌃R workspace switch): no pointerup will arrive, so the cleanup
-    // both drops the class and commits the width the DOM already shows — otherwise the inline
-    // var written during the drag survives with no matching state until a reload. On a normal
-    // release endDrag has already nulled the gesture, so the cleanup commit is a no-op.
-    // (onCommit is a useState setter in practice — stable, so this effect runs on drag edges.)
+    // Read through a ref so the cleanup below can stay on [dragging] alone. Naming onCommit as a
+    // dep would make the cleanup fire on any identity change — and it TEARS DOWN A LIVE GESTURE
+    // (nulls `drag`), so a caller passing an inline lambda would break dragging the moment its
+    // parent re-rendered: a premature commit, the rest of the gesture ignored, and — because
+    // endDrag then returns early and never clears `dragging` — the body class stuck on, leaving
+    // the whole app in col-resize/no-select. Today's callers happen to pass useState setters;
+    // that must not be load-bearing.
+    const onCommitRef = useRef(onCommit);
+    onCommitRef.current = onCommit;
+
+    // The body class and a pending commit outlive the component only if it unmounts mid-drag —
+    // ⌘⇧\ closing the rail under a held divider is the real case (Workspace stays mounted, so
+    // the inline var it wrote survives with no matching state until a reload). No pointerup will
+    // arrive, so the cleanup both drops the class and commits the width the DOM already shows.
+    // On a normal release endDrag has already nulled the gesture, so the commit is a no-op.
     useEffect(() => {
         if (!dragging) return undefined;
         document.body.classList.add(DRAGGING_BODY_CLASS);
@@ -99,9 +108,9 @@ export function PanelResizer({
             document.body.classList.remove(DRAGGING_BODY_CLASS);
             const pending = drag.current;
             drag.current = null;
-            if (pending && pending.last !== pending.startWidth) onCommit(pending.last);
+            if (pending && pending.last !== pending.startWidth) onCommitRef.current(pending.last);
         };
-    }, [dragging, onCommit]);
+    }, [dragging]);
 
     const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
@@ -113,7 +122,10 @@ export function PanelResizer({
         e.currentTarget.setPointerCapture?.(e.pointerId);
         // The editor-room cap stops GROWTH; it must never pull an already-wider panel back on the
         // first move (a small window would otherwise snap the panel to the cap regardless of drag
-        // direction), so the current width always floors it.
+        // direction), so the current width always floors it. Frozen for the gesture, unlike the
+        // keyboard path's per-keypress floor: shrinking past the cap mid-drag and coming back can
+        // end above it, but never past where the drag started — a drag returning to its own
+        // starting width is the one place a rubber-band feels worse than honoring the cap.
         drag.current = {
             startX: e.clientX,
             startWidth: width,
