@@ -9,9 +9,19 @@
    The search field is centred on the WINDOW, not on the editor, and the Orb rides beside it at a
    fixed offset — which is why both are absolutely positioned rather than sitting in the flex flow.
    The flow itself only carries the pane toggles (left) and the sync dot + note ⋯ (right), so a long
-   note title or a wide sidebar can never nudge the search off centre. */
+   note title or a wide sidebar can never nudge the search off centre.
+
+   Being centred is also why the field has to give way as the window narrows: the clusters in the
+   flow grow toward the middle from both ends, and a fixed 404px would simply be overlapped — first
+   by the orb, then by the pane toggles. §04's 404 is the width AT 1280; below that the field takes
+   whatever is left between the two clusters, and the orb (measured from the field's own left edge,
+   not from a constant) rides in with it. `--topbar-side-reserve` is the room each end needs: the
+   left cluster plus the orb plus a gap, which on the desktop also has to clear the traffic
+   lights. */
 
 .topbar {
+    --topbar-side-reserve: 110px;
+    --topbar-search-width: min(404px, calc(100vw - var(--topbar-side-reserve) * 2));
     position: relative;
     flex: none;
     box-sizing: border-box;
@@ -31,9 +41,12 @@
 }
 
 /* Desktop app: inset past the system-positioned traffic lights. The cluster is ~78px on macOS 26;
-   the extra keeps the first pane toggle from reading as a fourth window button. */
+   the extra keeps the first pane toggle from reading as a fourth window button — and the same 80px
+   has to come off the search field's half-width, since the field is centred on the WINDOW while the
+   lights push its left-hand neighbours inward. */
 .tauri-app:not(.ios) .topbar {
     padding-left: 92px;
+    --topbar-side-reserve: 190px;
 }
 
 .topbar__panes {
@@ -47,10 +60,13 @@
    recolours with state; the sync dot at the right does that. Positioned relative to the centred
    search field so the two read as one group at any window width. */
 
+/* 8px to the left of the field (§04), measured off the field's own edge so the pair stays together
+   at any width: half the field, then the 26px target and the 8px gap. At the full 404 this is the
+   mock's -236px exactly. */
 .topbar__orb-slot {
     position: absolute;
     left: 50%;
-    margin-left: -236px;
+    margin-left: calc(var(--topbar-search-width) / -2 - 34px);
     display: flex;
 }
 
@@ -84,7 +100,7 @@
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    width: 404px;
+    width: var(--topbar-search-width);
 }
 
 /* ── Right cluster: sync dot, then the note ⋯ ──────────────────────────────────────────────── */
