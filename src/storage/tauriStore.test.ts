@@ -516,6 +516,14 @@ describe('TauriNoteStore', () => {
         expect((await store.readMetadata()).sort).toBe('title');
     });
 
+    it('falls back to the legacy sidecar when the Sol one is empty or truncated', async () => {
+        fs.write('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}));
+        fs.write('.sol-notes.json', '');
+        expect((await store.readMetadata()).sort).toBe('title');
+        fs.write('.sol-notes.json', '{"version":1,"sort":"cre');
+        expect((await store.readMetadata()).sort).toBe('title');
+    });
+
     it('lets the new sidecar win outright when both exist', async () => {
         fs.write('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}));
         fs.write('.sol-notes.json', JSON.stringify({version: 1, sort: 'created'}));

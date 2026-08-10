@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import {useListboxNav} from '../hooks/useListboxNav';
+import {domIdPart, useListboxNav} from '../hooks/useListboxNav';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {isOpenInNewWindowChord} from '../shortcuts';
 import {Button} from '../ui/Button';
@@ -186,7 +186,7 @@ export function WorkspaceSwitcherDialog({
             // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus
             <div
                 key={row.id}
-                id={`ws-switch-opt-${row.id}`}
+                id={`ws-switch-opt-${domIdPart(row.id)}`}
                 ref={(el) => registerRow(row.id, el)}
                 className={
                     'ws-switch__row' +
@@ -237,7 +237,6 @@ export function WorkspaceSwitcherDialog({
             title="Switch workspace"
             width={440}
             initialFocus={inputRef}
-            className="ws-switch-dialog"
             footer={
                 <>
                     <span className="ws-switch__keys">
@@ -256,7 +255,9 @@ export function WorkspaceSwitcherDialog({
                 role="combobox"
                 aria-expanded
                 aria-controls="ws-switch-listbox"
-                aria-activedescendant={activeId ? `ws-switch-opt-${activeId}` : undefined}
+                aria-activedescendant={
+                    activeId ? `ws-switch-opt-${domIdPart(activeId)}` : undefined
+                }
                 aria-label="Filter workspaces"
             />
             <div className="ws-switch__list" id="ws-switch-listbox" role="listbox">

@@ -8,12 +8,34 @@ export const METADATA_FILENAME = '.sol-notes.json';
  * read it ONCE — when no `.sol-notes.json` exists yet — and immediately write its contents under
  * the new name. The legacy file is then left in place, untouched and never read again: an older
  * Gravity Notes install pointed at the same vault keeps working, which is the whole reason the
- * migration copies rather than renames. If both exist, the new one wins unconditionally.
+ * migration copies rather than renames. If both exist and the new one is USABLE, it wins.
  *
  * Every place that must IGNORE the sidecar (folder-emptiness checks, the note walks) has to know
  * both names, or a legacy vault's leftover file would read as folder content forever.
  */
 export const LEGACY_METADATA_FILENAME = '.gravity-notes.json';
+
+/**
+ * Parse sidecar file text into metadata, or `null` when there is nothing usable in it — absent
+ * (`null` text), empty, malformed JSON, or JSON that isn't an object.
+ *
+ * The distinction the stores need is "usable" rather than "present": an empty or truncated
+ * `.sol-notes.json` is what a half-completed write leaves behind, and treating it as present would
+ * let it shadow a real `.gravity-notes.json` permanently. Note this is deliberately STRICTER than
+ * {@link parseMetadata}, which coerces anything at all to defaults — the caller decides whether
+ * "unusable" means fall back to the legacy file or reset.
+ */
+export function parseSidecarText(text: string | null): NotesMetadata | null {
+    if (text === null) return null;
+    let raw: unknown;
+    try {
+        raw = JSON.parse(text);
+    } catch {
+        return null;
+    }
+    if (typeof raw !== 'object' || raw === null) return null;
+    return parseMetadata(raw);
+}
 
 /** The metadata for a folder with no pins, no stamps, the default sort, nothing open, empty trash. */
 export const DEFAULT_METADATA: NotesMetadata = {

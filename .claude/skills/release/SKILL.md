@@ -25,11 +25,26 @@ build, or a "this looks wrong" after actually trying the app, leaves only throwa
 1. **Clean main, in sync.** `git rev-parse --abbrev-ref HEAD` is `main`; `git status
 --porcelain` is empty; `git fetch` then confirm not behind `origin/main`. If the tree
    is dirty or you're not on main, stop and tell the user.
-2. **Toolchain.** macOS arm64 with Xcode Command Line Tools, and **rustup's** cargo installed
+2. **The release repo matches the updater endpoint.** The installed app polls whatever
+   `plugins.updater.endpoints` names in `src-tauri/tauri.conf.json`; the release must be published
+   to that same repo, or every install silently stops updating. `gh release create` here takes no
+   `-R`, so it targets `origin`. Assert they agree:
+
+   ```bash
+   ENDPOINT_REPO=$(node -p "new URL(require('./src-tauri/tauri.conf.json').plugins.updater.endpoints[0]).pathname.split('/').slice(1,3).join('/')")
+   ORIGIN_REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
+   [ "$ENDPOINT_REPO" = "$ORIGIN_REPO" ] || echo "MISMATCH: endpoint=$ENDPOINT_REPO origin=$ORIGIN_REPO"
+   ```
+
+   On a mismatch, STOP and ask the user which repo is authoritative — do not guess. Publishing to
+   `origin` while the app polls elsewhere strands every installed copy on the version you just
+   shipped, and it cannot be fixed after the fact for anyone who already installed it.
+
+3. **Toolchain.** macOS arm64 with Xcode Command Line Tools, and **rustup's** cargo installed
    (`~/.cargo/bin/cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
    `rust-toolchain-tauri` memory). The build script prepends `~/.cargo/bin` to PATH itself, so a
    Homebrew cargo sitting first on PATH no longer breaks the build.
-3. **Signing credentials** — these live in **`~/.localrc`**, NOT in the agent's default
+4. **Signing credentials** — these live in **`~/.localrc`**, NOT in the agent's default
    environment. The Bash tool starts a **fresh shell on every call** and does not persist env vars
    between calls, so you must `source ~/.localrc` **in the same command** as anything that reads the
    credentials — both this check **and** the build in Step 3 (a bare `source` in an earlier call is
@@ -54,8 +69,8 @@ build, or a "this looks wrong" after actually trying the app, leaves only throwa
    [ -r "$APPLE_API_KEY_PATH" ] || echo "MISSING/unreadable: APPLE_API_KEY_PATH"
    ```
 
-4. **GitHub CLI.** `gh auth status` is logged in.
-5. **Green tree.** Run `npm run typecheck`, `npm test`, and `npm run lint`. Do not
+5. **GitHub CLI.** `gh auth status` is logged in.
+6. **Green tree.** Run `npm run typecheck`, `npm test`, and `npm run lint`. Do not
    release a red tree.
 
 ## Step 1 — Bump the version
@@ -159,7 +174,7 @@ commit/tag/publish.
 Stage only the release files (the bump touched these; the build refreshed `Cargo.lock`):
 
 ```bash
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock CHANGELOG.md
+git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/gen/apple/app_iOS/Info.plist CHANGELOG.md
 git commit -m "release: v$NEW" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 

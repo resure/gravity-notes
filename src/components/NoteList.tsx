@@ -780,6 +780,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 className="note-list__items virtual-scroll"
                 role="listbox"
                 aria-label="Notes"
+                // Skeleton rows carry no options, so without this an assistive tech reads the
+                // still-loading list as an empty one rather than as pending.
+                aria-busy={loading && notes.length === 0 ? true : undefined}
             >
                 {loading && notes.length === 0 ? (
                     // §09's loading state: rows in the shape of the rows that are coming, at the

@@ -96,6 +96,8 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
     const [loading, setLoading] = useState(true);
     const [items, setItems] = useState<AttachmentRow[]>([]);
     const [pending, setPending] = useState<PendingDelete | null>(null);
+    /** A delete is running. The confirm closes on click, so the guard has to live out here. */
+    const [busy, setBusy] = useState(false);
     const [sort, setSort] = useState<AttachmentSort>('recent');
     // The attachment being viewed full-size (null = none), resolved to an object URL. `ref` is kept so
     // the open lightbox image can subscribe and stay protected from LRU eviction while it's on screen.
@@ -215,6 +217,7 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
 
     const runDelete = useCallback(async () => {
         if (!pending) return;
+        setBusy(true);
         try {
             for (const ref of pending.refs) {
                 await store.removeAttachment(ref);
@@ -227,6 +230,8 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
             onError(err instanceof Error ? err.message : 'Failed to delete attachment');
             await load(); // resync after a partial failure
             setPending(null);
+        } finally {
+            setBusy(false);
         }
     }, [pending, store, cache, onError, load]);
 
@@ -255,6 +260,10 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                         {orphans.length > 0 ? (
                             <Button
                                 className="ui-button_danger"
+                                // The confirm dismisses itself the moment it's pressed, while the
+                                // deletes are still running — without this, a second press re-queues
+                                // removals for files already gone (an error toast + a full resync).
+                                disabled={busy}
                                 onClick={() =>
                                     setPending({
                                         refs: orphans.map((o) => o.ref),
@@ -376,6 +385,7 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                                                 <Button
                                                     icon={<Trash size={15} />}
                                                     aria-label={`Delete ${item.name}`}
+                                                    disabled={busy}
                                                     onClick={() =>
                                                         setPending({
                                                             refs: [item.ref],

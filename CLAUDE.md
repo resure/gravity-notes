@@ -110,6 +110,11 @@ npm run format       # Prettier write (covers CSS/MD/JSON too)
 npm run format:check # Prettier check (used in CI)
 npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config.ts
 
+# README hero screenshots (assets/sol-{light,dark}.png), from the REAL app via headless Chromium.
+# Needs `npm run dev` running in another shell and `chromium` on PATH. Regenerate after any visible
+# shell change — a hand-updated screenshot rots silently.
+node scripts/screenshot.mjs
+
 # Desktop app (Tauri 2, macOS arm64). Needs Rust ≥ 1.88 (rustup recommended).
 npm run tauri:dev    # run the desktop app (dev config: blue icon + "Sol Dev" name/title)
 npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/target/release/bundle
@@ -117,14 +122,25 @@ npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/
 # .app.tar.gz + latest.json); needs rustup's cargo + the Apple/updater signing env vars.
 ```
 
-**App icons.** Two SVG sources: `src-tauri/icon-source.svg` (prod — an amber sun on a warm-dark
-squircle: a disc plus sixteen rays, alternating long and short so it still reads as a sun at 32px)
-and `src-tauri/icon-source-dev.svg` (dev — the same sun in blue). Regenerate with
-`npx tauri icon <1024.png> [-o src-tauri/icons-dev]`, then delete the `android/`, `ios/`, and
-`64x64.png` it emits (macOS-only). **Gotcha:** rasterize the SVG to a _transparent_ 1024px PNG first —
-`qlmanage -t` renders on a white background, so flood-fill it away before `tauri icon`
-(`magick in.png -alpha set -bordercolor white -border 1 -fuzz 8% -fill none -draw "alpha 0,0 floodfill" -shave 1x1 out.png`),
-or every generated asset gets a white box behind the squircle. `npm run tauri:dev` passes
+**App icons.** THREE SVG sources, because the platforms want different SHAPES:
+`src-tauri/icon-source.svg` (prod — an amber sun on a warm-dark squircle: a disc plus sixteen rays,
+alternating long and short so it still reads as a sun at 32px), `src-tauri/icon-source-dev.svg` (dev
+— the same sun in blue), and `src-tauri/icon-source-ios.svg` (**full bleed, fully opaque**). macOS
+supplies its own icon shape, so its art is a squircle with a transparent margin; iOS applies its own
+mask and rejects alpha, so its art must cover every pixel. Feeding the macOS art to the iOS
+generator flattens that margin to WHITE and ships a white frame around a shrunken icon — which is
+exactly what happened once; the iOS source exists to make that unrepeatable.
+
+Regenerate the desktop sets with `npx tauri icon <1024.png> [-o src-tauri/icons-dev]`, then delete
+the `android/`, `ios/`, and `64x64.png` it emits (macOS-only). For iOS, generate from
+`icon-source-ios.svg` into a scratch dir and copy `ios/AppIcon-*.png` over
+`src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/` (18 files; leave `Contents.json` alone).
+**Gotcha:** rasterize each SVG to a _transparent_ 1024px PNG first — `qlmanage -t` renders on a white
+background, so flood-fill it away before `tauri icon`
+(`magick in.png -alpha set -bordercolor white -border 1 -fuzz 8% -fill none -draw "alpha 0,0 floodfill" -shave 1x1 out.png`);
+the full-bleed iOS source needs no flood-fill, having no transparent region to reclaim.
+`magick <icon> -format "%[pixel:p{0,0}]\n" info:` is the check: a macOS corner must be alpha-0, an
+iOS corner must be the opaque body colour, and NEITHER may ever be white. `npm run tauri:dev` passes
 `--config src-tauri/tauri.dev.conf.json` so the dev build gets the blue icon + a distinct name/identifier;
 `tauri:build` and `/release` use the prod config untouched.
 
