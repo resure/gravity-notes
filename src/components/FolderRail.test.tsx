@@ -217,7 +217,7 @@ describe('FolderRail — folder actions', () => {
     it('creates a folder at the root from the header button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.click(screen.getByRole('button', {name: 'New folder'}));
+        await user.click(screen.getByRole('button', {name: 'New Folder'}));
         await user.type(await screen.findByPlaceholderText('Folder name'), 'Projects{Enter}');
         expect(props.onCreateFolder).toHaveBeenCalledWith('', 'Projects');
     });

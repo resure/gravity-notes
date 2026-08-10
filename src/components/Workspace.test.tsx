@@ -749,7 +749,7 @@ describe('Workspace — move picker', () => {
         await user.click(await screen.findByRole('option', {name: /Beta/}));
         fireEvent.keyDown(document, {key: 'Backspace', metaKey: true, shiftKey: true});
         // The confirm dialog appears, naming the selected note (it isn't trashed until confirmed).
-        expect(await screen.findByText(/Move "Beta" to the Trash\?/)).toBeInTheDocument();
+        expect(await screen.findByText(/Move “Beta” to the Trash\?/)).toBeInTheDocument();
     });
 });
 
@@ -770,8 +770,14 @@ describe('Workspace — trash', () => {
 
         // The orb menu's Trash item now shows a count and opens the trash view holding Beta.
         await user.click(await screen.findByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Trash \(1\)/}));
-        const dialog = await screen.findByRole('dialog');
+        // The Trash item's count is now a right-aligned hint, not part of the label text.
+        const trashItem = await screen.findByRole('menuitem', {name: /Trash/});
+        expect(trashItem).toHaveTextContent('1');
+        await user.click(trashItem);
+        // An interactive toast ("Moved “Beta” to Trash") is a `role="dialog"` too — that is the
+        // ARIA pattern for one with buttons — so skip it and take the real modal.
+        const dialogs = await screen.findAllByRole('dialog');
+        const dialog = dialogs.find((el) => !el.classList.contains('ui-toast'))!;
         expect(await within(dialog).findByText('Beta')).toBeInTheDocument();
 
         // Restore it → it leaves the trash (now empty) and is written back to its folder.
@@ -842,7 +848,6 @@ describe('Workspace — storage menu', () => {
 
         const switchToOther = async () => {
             await user.click(screen.getByRole('button', {name: 'Menu'}));
-            fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
             await user.click(await screen.findByRole('menuitem', {name: 'other'}));
         };
 
@@ -876,7 +881,8 @@ describe('Workspace — folder move', () => {
 
         // Rename Work → Archive: the store hard-fails (Archive exists). The optimistic re-prefix
         // briefly points selection at "Archive", but the failed move must revert it to "Work".
-        await user.dblClick(screen.getByText('Work'));
+        // The list's scope header names the folder too — rename the RAIL row.
+        await user.dblClick(within(work).getByText('Work'));
         const input = screen.getByDisplayValue('Work');
         await user.clear(input);
         await user.type(input, 'Archive{Enter}');

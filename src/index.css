@@ -12,6 +12,13 @@ body,
     overscroll-behavior: none;
 }
 
+/* The app root is its own stacking context, so nothing inside it can out-stack a portalled menu,
+   dialog or tooltip — those render as siblings of #root, directly on <body>. Without this the
+   Tauri title bar's drag region wins over an open menu. */
+#root {
+    isolation: isolate;
+}
+
 /* The legacy accent names, kept as ALIASES of the one true `--accent` (tokens.css) while the old
    chrome is still on screen — 26 usages across 7 files read them. There is no accent SETTING any
    more: amber is fixed, so nothing swaps these at runtime.
@@ -90,7 +97,7 @@ body,
        keyboard-focused row is a clear step darker than a merely selected one, so focus reads
        distinctly from selection without either of them borrowing the accent. */
     --note-list-selected-bg: var(--bg-selected);
-    --note-list-focus-bg: color-mix(in srgb, var(--bg-selected) 180%, transparent);
+    --note-list-focus-bg: var(--bg-selected-strong);
 }
 
 /* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in

@@ -14,6 +14,8 @@ import {Workspace} from './components/Workspace';
 import type {ThemePref} from './components/theme';
 import {useNotesStorage} from './hooks/useNotesStorage';
 import {isTauri} from './isTauri';
+import {TooltipProvider} from './ui/Tooltip';
+import {ToastRegion} from './ui/toast';
 
 const toaster = new Toaster();
 
@@ -120,41 +122,50 @@ export function App() {
         <ThemeProvider theme={themePref}>
             <MobileProvider>
                 <ToasterProvider toaster={toaster}>
-                    <ErrorBoundary>
-                        {storage.state === 'ready' && storage.store ? (
-                            <Workspace
-                                // Keyed by workspace: switching remounts the whole tree, so every
-                                // per-workspace piece (list cursor, rail state, editor session,
-                                // corpus) starts clean instead of reconciling across workspaces.
-                                key={storage.activeWorkspaceId ?? 'workspace'}
-                                store={storage.store}
-                                workspaceId={storage.activeWorkspaceId ?? 'workspace'}
-                                storageLabel={storage.storageLabel}
-                                workspaces={storage.workspaces}
-                                // A single-note window's assigned note — only while it still
-                                // shows the workspace it was created for (an in-place workspace
-                                // switch remounts Workspace without a note assignment).
-                                initialNoteId={
-                                    storage.windowNote &&
-                                    storage.windowNote.workspaceId === storage.activeWorkspaceId
-                                        ? storage.windowNote.noteId
-                                        : null
-                                }
-                                themePref={themePref}
-                                onChangeThemePref={setThemePref}
-                                onOpenWorkspace={storage.openWorkspace}
-                                onOpenWorkspaceInNewWindow={storage.openInNewWindow}
-                                onOpenNoteInNewWindow={storage.openNoteInNewWindow}
-                                onRemoveWorkspace={storage.removeWorkspace}
-                                onRefreshWorkspaces={storage.refreshWorkspaces}
-                                onOpenFolder={() => void storage.pickFolder()}
-                                onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
-                                supportsFolders={storage.supportsFolders}
-                            />
-                        ) : (
-                            <FolderGate storage={storage} />
-                        )}
-                    </ErrorBoundary>
+                    {/* The new providers sit INSIDE the Gravity ones for the duration of the
+                        migration: the toast region owns failures and the update prompt, the tooltip
+                        provider owns §07's shared 420ms/0ms delay. Both leave the Gravity wrappers
+                        behind in Pass 5 without moving. */}
+                    <ToastRegion>
+                        <TooltipProvider>
+                            <ErrorBoundary>
+                                {storage.state === 'ready' && storage.store ? (
+                                    <Workspace
+                                        // Keyed by workspace: switching remounts the whole tree, so every
+                                        // per-workspace piece (list cursor, rail state, editor session,
+                                        // corpus) starts clean instead of reconciling across workspaces.
+                                        key={storage.activeWorkspaceId ?? 'workspace'}
+                                        store={storage.store}
+                                        workspaceId={storage.activeWorkspaceId ?? 'workspace'}
+                                        storageLabel={storage.storageLabel}
+                                        workspaces={storage.workspaces}
+                                        // A single-note window's assigned note — only while it still
+                                        // shows the workspace it was created for (an in-place workspace
+                                        // switch remounts Workspace without a note assignment).
+                                        initialNoteId={
+                                            storage.windowNote &&
+                                            storage.windowNote.workspaceId ===
+                                                storage.activeWorkspaceId
+                                                ? storage.windowNote.noteId
+                                                : null
+                                        }
+                                        themePref={themePref}
+                                        onChangeThemePref={setThemePref}
+                                        onOpenWorkspace={storage.openWorkspace}
+                                        onOpenWorkspaceInNewWindow={storage.openInNewWindow}
+                                        onOpenNoteInNewWindow={storage.openNoteInNewWindow}
+                                        onRemoveWorkspace={storage.removeWorkspace}
+                                        onRefreshWorkspaces={storage.refreshWorkspaces}
+                                        onOpenFolder={() => void storage.pickFolder()}
+                                        onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
+                                        supportsFolders={storage.supportsFolders}
+                                    />
+                                ) : (
+                                    <FolderGate storage={storage} />
+                                )}
+                            </ErrorBoundary>
+                        </TooltipProvider>
+                    </ToastRegion>
                     <ToasterComponent />
                 </ToasterProvider>
             </MobileProvider>

@@ -52,10 +52,19 @@ export function useShortcuts(actions: ShortcutActions): void {
             if (event.repeat) return; // a held key shouldn't fire the action repeatedly
             // A modal dialog owns the keyboard while it's open — don't let global chords act on the
             // workspace behind it (e.g. ⌘N creating a stray note behind the ⌃R switcher, or ⌘⇧⌫
-            // deleting a note behind a picker). Gravity modals render role="dialog" and unmount when
-            // closed, so its presence means one is open. The dialog's own keys are handled by its
-            // own listeners, not this hook.
-            if (document.querySelector('[role="dialog"]')) return;
+            // deleting a note behind a picker). Modals render role="dialog" — or role="alertdialog"
+            // for a confirm, which is the SAME contract and would otherwise leave every global chord
+            // live behind a "Move to Trash?" prompt — and unmount when closed, so the presence of
+            // either means one is open. The dialog's own keys are handled by its own listeners, not
+            // this hook. (Never render a dialog `keepMounted`: it would silence every chord for the
+            // rest of the session.)
+            // The `:not(.ui-toast)` is load-bearing, not defensive: an interactive toast is a
+            // `role="dialog"` too (that is the ARIA pattern for one with buttons in it), and
+            // without the exclusion a single failure toast would silence every chord in the app
+            // for as long as it was on screen.
+            if (document.querySelector('[role="dialog"]:not(.ui-toast), [role="alertdialog"]')) {
+                return;
+            }
             // An editing surface that already acted on this chord marks it handled, and a global
             // twin must not fire on top of it. `stopPropagation` cannot express that: the editors
             // handle keys through React's root listener while this hook listens on `document`, and

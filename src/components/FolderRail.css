@@ -1,177 +1,286 @@
+/* The folder rail — §04.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   236px on `--bg-panel`. Rows are 32px at 14/500 — the SAME type as the note list — so the two
+   panes read as one app rather than as a tree beside a list. No border between the panes: the tint
+   step does that job, here and everywhere else in the shell. */
+
 .folder-rail {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
+    width: var(--rail-width, 236px);
     height: 100%;
-    width: var(--rail-width, 200px);
-    flex-shrink: 0;
-    border-right: 1px solid var(--g-color-line-generic);
-    background-color: var(--g-color-base-generic-ultralight);
+    flex: none;
+    background: var(--bg-panel);
+    color: var(--text-2);
+    font-family: var(--font-ui);
 }
 
 .folder-rail__items {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 0 8px;
     overflow-y: auto;
-    overscroll-behavior: contain; /* keep scroll momentum inside the rail (no chaining to the shell) */
-    padding: 6px 0;
 }
 
-/* One folder (or "All Notes") row: caret + icon + name + count/actions. A steady 30px height and a
-   fixed caret slot keep every row aligned whether or not it has a chevron or a badge. */
+.folder-rail__spacer {
+    flex: 1;
+    min-height: 8px;
+}
+
+/* Mono caps, the same label the note list uses over a time group. */
+.folder-rail__group-label {
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 24px;
+    margin: 2px 8px 0;
+    padding: 0 10px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
+}
+
+.folder-rail__group-label_spaced {
+    margin-top: 10px;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────────────────────────
+   The hit area is inset 8px and rounded — identical to a note row, so selection reads the same in
+   both panes. */
+
 .folder-rail__row {
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 30px;
-    padding-inline-end: 8px;
-    cursor: pointer;
+    box-sizing: border-box;
+    flex: none;
+    width: calc(100% - 16px);
+    height: 32px;
+    margin: 0 8px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: start;
+    cursor: default;
     user-select: none;
 }
 
-/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
 @media (hover: hover) {
     .folder-rail__row:hover {
-        background-color: var(--g-color-base-simple-hover);
+        background: var(--bg-hover);
     }
 }
 
+/* Selection is neutral, and it never animates: picking a folder must feel like it was already
+   picked. */
 .folder-rail__row_selected {
-    background-color: var(--note-list-selected-bg);
+    background: var(--bg-selected);
 }
 
-@media (hover: hover) {
-    /* Re-assert over the hover fill above (same specificity → later wins). */
-    .folder-rail__row_selected:hover {
-        background-color: var(--note-list-selected-bg);
-    }
+.folder-rail__row_selected .folder-rail__name {
+    font-weight: 600;
+    color: var(--text-1);
 }
 
-/* The focused (cursor) row reuses the notes-pane focus wash so an *actually focused* folder reads
-   distinct from a merely-selected (active) one. Plain :focus, not :focus-visible — the cursor lands
-   here via a programmatic .focus() (arrowing/selecting), which WebKit doesn't flag as focus-visible,
-   so the stronger state would otherwise never show. */
+.folder-rail__row_selected .folder-rail__count {
+    color: var(--text-2);
+}
+
+/* Keyboard focus is a step darker than mere selection, so "the rail has the keyboard" is visible
+   without borrowing the accent. `:focus`, NOT `:focus-visible`: rows are focused programmatically
+   (arrow keys, the ← from the list), and WebKit does not set :focus-visible for a scripted focus. */
 .folder-rail__row:focus {
     outline: none;
-    background-color: var(--note-list-focus-bg);
+    background: var(--bg-selected-strong);
 }
 
-/* A row hovered as a drag-and-drop target (a note moving in, or a folder being reparented):
-   a solid brand ring + tint makes "drop INTO this folder" unmistakable. */
 .folder-rail__row_drop-target {
-    background-color: var(--note-list-focus-bg);
-    outline: 2px solid var(--g-color-line-brand);
-    outline-offset: -2px;
-    border-radius: 4px;
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* Fixed-width caret slot, so folder icons line up whether or not a folder has subfolders. */
+/* Indent: one 12px column per level, each carrying the hairline guide that keeps five levels
+   legible in a 236px column. */
+.folder-rail__guides {
+    display: flex;
+    flex: none;
+    align-self: stretch;
+}
+
+.folder-rail__guide {
+    width: 8px;
+    flex: none;
+    align-self: stretch;
+    margin-left: 4px;
+    border-left: 1px solid var(--line);
+}
+
+.folder-rail__guide + .folder-rail__guide {
+    margin-left: 0;
+}
+
+/* The caret column is reserved on every row — a leaf folder and a parent align at the icon. */
 .folder-rail__caret {
-    display: inline-flex;
+    flex: none;
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    flex-shrink: 0;
-    color: var(--g-color-text-hint);
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-4);
 }
 
 .folder-rail__caret_button {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    border-radius: 3px;
-    cursor: pointer;
-    color: var(--g-color-text-hint);
+    cursor: default;
 }
 
 @media (hover: hover) {
     .folder-rail__caret_button:hover {
-        color: var(--g-color-text-primary);
-        background-color: var(--g-color-base-generic-hover);
+        color: var(--text-2);
     }
 }
 
 .folder-rail__icon {
-    flex-shrink: 0;
-    color: var(--g-color-text-secondary);
+    flex: none;
+    color: var(--text-4);
 }
 
-.folder-rail__pin {
-    flex-shrink: 0;
-    /* Follow the workspace accent (amber/blue/gray), like the orb and the note list's pin — the two
-       pin glyphs sit side by side, so they must share one color. */
-    color: var(--gn-orange);
+.folder-rail__row_selected .folder-rail__icon {
+    color: var(--text-3);
 }
 
 .folder-rail__name {
     flex: 1;
     min-width: 0;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* The note-count badge: quiet, tabular, right-aligned at a steady inset. */
+.folder-rail__pin {
+    flex: none;
+    color: var(--text-3);
+}
+
+/* Counts are right-aligned and tabular, so a column of them doesn't shimmer as notes are added. */
 .folder-rail__count {
-    flex-shrink: 0;
-    color: var(--g-color-text-hint);
-    font-size: 12px;
-    line-height: 1;
+    flex: none;
+    font-size: var(--fs-ui-sm);
+    line-height: var(--lh-ui-sm);
+    color: var(--text-4);
     font-variant-numeric: tabular-nums;
 }
 
-/* The ⋯ menu reveals on hover/focus in a fixed-width trailing slot (the width of the s icon button),
-   present on every row — incl. the empty spacer on "All Notes" — so the count keeps a single aligned
-   position across all rows and stays visible when the menu appears (it no longer takes the count's place). */
-.folder-rail__actions,
-.folder-rail__actions-spacer {
-    flex-shrink: 0;
-    width: 24px;
-}
-
+/* Chrome arrives on demand: the ⋯ is absent until the pointer or the keyboard is in the row, and
+   it takes the count's place rather than adding a column. */
 .folder-rail__actions {
-    display: flex;
-    justify-content: center;
-    opacity: 0;
+    display: none;
+    flex: none;
+    margin-right: -4px;
 }
 
-.folder-rail__row:focus-within .folder-rail__actions {
-    opacity: 1;
-}
-
-/* Hover-reveal, pointer-only: on touch this revealed content is what swallowed the tap. */
 @media (hover: hover) {
     .folder-rail__row:hover .folder-rail__actions {
-        opacity: 1;
+        display: flex;
+    }
+
+    .folder-rail__row:hover .folder-rail__count {
+        display: none;
     }
 }
 
-/* Inline name field for the new-folder and rename editors: borderless (view="clear") with no leading
-   pad, so the editable text sits exactly where the static folder name was — no rightward jump when
-   you start renaming. A faint row tint signals edit mode in place of the (removed) input border. */
+.folder-rail__row:focus-within .folder-rail__actions {
+    display: flex;
+}
+
+/* Touch has no hover, so the ⋯ would never appear — show it on the selected row instead. */
+@media (hover: none) {
+    .folder-rail__row_selected .folder-rail__actions {
+        display: flex;
+    }
+}
+
+/* ── Inline editors ───────────────────────────────────────────────────────────────────────────
+   Renaming happens in place: no field, no border, no box — the name itself becomes editable. */
+
 .folder-rail__input {
     flex: 1;
     min-width: 0;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    outline: none;
 }
 
-.folder-rail .folder-rail__input .g-text-input__control {
-    padding-inline-start: 0;
+.folder-rail__input::selection {
+    background: var(--accent-soft);
 }
 
-.folder-rail__row:has(.folder-rail__input) {
-    background-color: var(--g-color-base-generic);
+/* ── Trash + footer ───────────────────────────────────────────────────────────────────────── */
+
+.folder-rail__row_trash {
+    color: var(--text-3);
 }
 
-/* First-run hint shown in the rail body when there are no folders yet. */
-.folder-rail__hint {
-    padding: 12px 16px;
-    text-align: center;
+.folder-rail__row_trash .folder-rail__count {
+    color: var(--text-4);
 }
 
-/* A quiet "New Folder" affordance docked at the bottom (Apple-Notes / Things style). */
+/* One hairline, and only because a group ends here. */
 .folder-rail__footer {
-    flex-shrink: 0;
-    border-top: 1px solid var(--g-color-line-generic);
-    padding: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    flex: none;
+    height: 36px;
+    padding: 0 18px;
+    border: 0;
+    border-top: 1px solid var(--line);
+    background: none;
+    color: var(--text-3);
+    font-family: inherit;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    text-align: start;
+    cursor: default;
 }
 
-.folder-rail__footer .g-button__text {
-    justify-content: flex-start;
-    width: 100%;
-    color: var(--g-color-text-secondary);
+@media (hover: hover) {
+    .folder-rail__footer:hover {
+        background: var(--bg-hover);
+        color: var(--text-1);
+    }
+}
+
+.folder-rail__hint {
+    padding: 6px 18px 10px;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-4);
 }

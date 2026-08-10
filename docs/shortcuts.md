@@ -39,7 +39,7 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
 | `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, in a plain textarea                                                     |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
-| `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
+| `⌘⇧I`            | This note’s menu — per-note font and text width, plus its file actions                                                                    |
 | `⌘K`             | Insert a link over the selected text (with nothing selected it still steps notes)                                                         |
 | `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |

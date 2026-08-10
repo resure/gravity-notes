@@ -1,229 +1,193 @@
+/* The title bar — §04.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   44px, frameless, and the whole strip is the window's drag region except its controls (the
+   `data-tauri-drag-region` attribute is on the <header>; anything nested is a control and drags
+   nothing). Traffic lights are positioned by the SYSTEM — the shell installs an empty unified
+   NSToolbar and macOS lays them out; never hand-position them, macOS 26 re-runs title-bar layout
+   and reverts hand-set frames.
+
+   The search field is centred on the WINDOW, not on the editor, and the Orb rides beside it at a
+   fixed offset — which is why both are absolutely positioned rather than sitting in the flex flow.
+   The flow itself only carries the pane toggles (left) and the sync dot + note ⋯ (right), so a long
+   note title or a wide sidebar can never nudge the search off centre. */
+
 .topbar {
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
+    gap: 2px;
+    height: 44px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--bg-panel), var(--bg-paper) 55%),
+        var(--bg-panel)
+    );
+    color: var(--text-1);
+    font-family: var(--font-ui);
+}
+
+/* Desktop app: inset past the system-positioned traffic lights. The cluster is ~78px on macOS 26;
+   the extra keeps the first pane toggle from reading as a fourth window button. */
+.tauri-app:not(.ios) .topbar {
+    padding-left: 92px;
+}
+
+.topbar__panes {
+    display: flex;
+    gap: 2px;
+    margin-left: 2px;
+}
+
+/* ── The Orb ───────────────────────────────────────────────────────────────────────────────────
+   A flat 19px amber disc in a 26px target. It is the app's mark — not an accent use — so it never
+   recolours with state; the sync dot at the right does that. Positioned relative to the centred
+   search field so the two read as one group at any window width. */
+
+.topbar__orb-slot {
+    position: absolute;
+    left: 50%;
+    margin-left: -236px;
+    display: flex;
+}
+
+.topbar__orb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    cursor: default;
+}
+
+.topbar__orb-disc {
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    background: oklch(0.72 0.155 58);
+    transition: transform var(--dur-1) var(--ease);
+}
+
+.topbar__orb:active .topbar__orb-disc {
+    transform: scale(0.94);
+}
+
+/* ── Search ────────────────────────────────────────────────────────────────────────────────── */
+
+.topbar__search {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 404px;
+}
+
+/* ── Right cluster: sync dot, then the note ⋯ ──────────────────────────────────────────────── */
+
+.topbar__right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+}
+
+.topbar__sync {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 2px;
+    font-size: 11.5px;
+    color: var(--text-3);
+    white-space: nowrap;
+}
+
+.topbar__sync-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    transition:
+        background var(--dur-2) var(--ease),
+        opacity var(--dur-2) var(--ease);
+}
+
+/* Writing: the same amber, dimmed — a state, not an alarm. */
+.topbar__sync_saving .topbar__sync-dot {
+    opacity: 0.55;
+}
+
+.topbar__sync_error .topbar__sync-dot,
+.topbar__sync_conflict .topbar__sync-dot {
+    background: var(--danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.topbar__sync_error .topbar__sync-word,
+.topbar__sync_conflict .topbar__sync-word {
+    color: var(--danger);
+}
+
+/* The ⋯ is quiet until wanted, like every other piece of chrome in the app. */
+.topbar__note-actions {
+    flex: none;
+    color: var(--text-2);
+}
+
+/* ── Mobile (≤700px) ──────────────────────────────────────────────────────────────────────────
+   One row, everything in flow: Back · orb · search · ⋯. The absolute centring above would put the
+   404px field off the edge of a phone, and there are no traffic lights to clear on iOS. */
+
+.topbar_mobile {
+    height: auto;
     gap: 8px;
     padding: 6px 12px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
-    /* Anchors the note-actions ⋯, which the desktop layout pins to the right edge (see below). */
-    position: relative;
-}
-
-/* Desktop app (Tauri): the native title bar is hidden (titleBarStyle "Overlay") and this strip plays
-   its part. Center the orb + a constrained-width search as a "command center" (VS Code style). The
-   traffic lights sit far left, clear of the centered group even at the min window width, and the empty
-   bar on either side is the window drag handle (data-tauri-drag-region on the <header>); the orb and
-   search stay clickable. The web build has no .tauri-app class, so it keeps the full-width search. */
-.tauri-app .topbar {
-    justify-content: center;
-}
-
-.tauri-app .topbar__search {
-    flex: none;
-    width: clamp(320px, 40vw, 520px);
-}
-
-/* Desktop: the orb + search are a centered "command center", so the ⋯ can't ride along in that group
-   or it shifts the search off-center. Pin it to the window's right edge instead (it sits in the empty
-   drag area), leaving the centered search at its full width. The web build keeps it in flow (the
-   full-width search already runs to the right edge, with the ⋯ right after it). */
-.tauri-app .topbar__note-actions {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-/* …but on the mobile editor pane the bar is a plain flex row (Back button ← → ⋯), not the
-   command-center. Keep the ⋯ in the flex flow so it's vertically centered WITH the Back button
-   instead of absolute-centered against the whole safe-area-padded header (which floated it up into
-   the notch area, out of line with Back). The Back button's `margin-right: auto` still pins it right.
-
-   `relative` (NOT `static`) is load-bearing: Gravity's Button paints its hover/focus layers as
-   `position: absolute; inset: 0` pseudo-elements, which resolve against the nearest POSITIONED
-   ancestor. A static button hands them to `.topbar` (position: relative) instead, so they stretch
-   across the ENTIRE header and swallow every tap in it — tapping Back then opened this ⋯ popover.
-   `relative` lays out identically to static while keeping the layers on the button, once the
-   `right`/`top` the desktop rule above sets are cleared — under `relative` those would otherwise
-   apply as a visual OFFSET rather than a position. Longhands, not the `inset` shorthand: the app's
-   iOS deployment target is 14.0 and `inset` only landed in WebKit 14.1, where the dropped
-   declaration would leave the ⋯ shifted by exactly that offset. */
-.tauri-app .topbar_mobile .topbar__note-actions {
-    position: relative;
-    top: auto;
-    right: auto;
-    bottom: auto;
-    left: auto;
-    transform: none;
-}
-
-/* Mobile (web): viewport-fit=cover lets the page draw edge-to-edge, so pad the bar for the device
-   safe areas (notch / rounded corners / landscape sensor housing). max() keeps the normal 6/12px on
-   non-notched screens (inset = 0), so it's inert on desktop and the Tauri build. */
-.topbar_mobile {
     padding-top: max(6px, env(safe-area-inset-top));
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
 }
 
-/* A NARROW Tauri window switches to the mobile layout, but the native overlay titlebar still floats
-   the macOS traffic lights at the top-left. Undo the desktop command-center centering (left-align
-   like the web build) and inset the bar's leading content past the lights so the orb / Back button
-   clear them with a comfortable gap — sitting flush against the cluster made the round orb read as a
-   4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room.
-   Higher specificity than the web `.topbar_mobile` above, so this padding-left wins on desktop.
-   Scoped to :not(.ios): iOS is also a Tauri build but has no traffic lights, so it keeps the plain
-   safe-area padding from `.topbar_mobile` and left-aligns without the 96px inset. */
-.tauri-app .topbar_mobile {
-    justify-content: flex-start;
-}
-
+/* A narrow Tauri window still floats the macOS traffic lights, so keep the inset there. */
 .tauri-app:not(.ios) .topbar_mobile {
     padding-left: 96px;
 }
 
-/* On mobile the search is the hero again (full remaining width), not the desktop's fixed clamp. */
-.tauri-app .topbar_mobile .topbar__search {
+.topbar_mobile .topbar__orb-slot,
+.topbar_mobile .topbar__search {
+    position: static;
+    margin-left: 0;
+    transform: none;
+}
+
+.topbar_mobile .topbar__search {
     flex: 1;
     width: auto;
-}
-
-/* macOS only: the traffic-light inset already clears the lights, so drop the Back button's web
-   nudge toward the edge. On iOS there's no inset, so the nudge (from `.topbar__back`) stays. */
-.tauri-app:not(.ios) .topbar_mobile .topbar__back {
-    margin-left: 0;
-}
-
-/* The search is the hero: it fills from the orb up to the right edge. */
-.topbar__search {
-    flex: 1;
     min-width: 0;
 }
 
-/* DropdownMenu wraps the switcher in this div (it's the popup anchor); keep it from stretching. */
-.topbar__menu-anchor {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
+.topbar_mobile .topbar__right {
+    gap: 6px;
 }
 
-/* The open note's ⋯ "Note appearance" button, pinned at the bar's right edge (after the flex:1
-   search). A little transparent so it stays quiet next to the search; full-strength on hover. */
-.topbar__note-actions {
-    flex-shrink: 0;
-    opacity: 0.6;
-    transition: opacity 0.12s ease;
-}
-/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
-@media (hover: hover) {
-    .topbar__note-actions:hover {
-        opacity: 1;
-    }
+/* The sync word is chrome the phone has no room for; the dot alone still carries the state. */
+.topbar_mobile .topbar__sync-word {
+    display: none;
 }
 
-/* The orange orb = the app mark and the menu trigger: a small, flat disc in the app icon's orange —
-   no gradient, shadow, or outline, so it reads as one clean dot. Its color doubles as the save
-   indicator (it recolors for error/conflict and pulses while saving). */
-.topbar__menu-orb {
-    box-sizing: border-box;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background-color: var(--gn-orange);
-    /* The orb is the app's mark and light source — a soft halo makes it read as luminous. */
-    box-shadow: 0 0 12px -2px var(--gn-orb-halo);
-    cursor: pointer;
-    transition:
-        transform 0.1s ease,
-        box-shadow 0.2s ease,
-        background-color 0.2s ease;
-}
-
-/* No size change on hover; only a small press feedback stays. */
-.topbar__menu-orb:active {
-    transform: scale(0.95);
-}
-
-.topbar__menu-orb:focus-visible {
-    outline: 2px solid var(--g-color-line-focus);
-    outline-offset: 2px;
-}
-
-/* Saving: a slow, very gentle pulse — a shallow opacity dip so it reads as a quiet breath, not a
-   blink (kept subtle on purpose; the menu's status line spells out the state). Driven by a `_pulsing`
-   class (not `_saving`) so TopBar can ease it OUT when saving stops instead of snapping — see the
-   freeze-and-release effect there. */
-.topbar__menu-orb_pulsing {
-    animation: topbar-orb-blink 1.8s ease-in-out infinite;
-}
-
-@keyframes topbar-orb-blink {
-    0%,
-    100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.72;
-    }
-}
-
-/* Something needs attention: recolor the disc (the menu's status line says what). */
-.topbar__menu-orb_error {
-    background-color: var(--g-color-text-danger);
-}
-
-.topbar__menu-orb_conflict {
-    background-color: var(--g-color-text-warning);
-}
-
-/* Honor a reduced-motion preference: hold the orb steady instead of pulsing. */
-@media (prefers-reduced-motion: reduce) {
-    .topbar__menu-orb_pulsing {
-        animation: none;
-    }
-}
-
-/* Small status swatch in the read-only menu line, colored by state (mirrors the orb). */
-.topbar__menu-status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin: 0 4px;
-    border-radius: 50%;
-    background-color: var(--g-color-text-positive);
-}
-.topbar__menu-status-dot_saving {
-    background-color: var(--gn-orange);
-}
-.topbar__menu-status-dot_error {
-    background-color: var(--g-color-text-danger);
-}
-.topbar__menu-status-dot_conflict {
-    background-color: var(--g-color-text-warning);
-}
-
-/* Keyboard hints trailing a menu item (⌘\, ⌘/) — quiet, so the label leads. */
-.topbar__menu-kbd {
-    color: var(--g-color-text-hint);
-    font-size: 12px;
-}
-
-/* The storage label is context, not an action — cap its width so a long folder name can't blow out
-   the menu. */
-.topbar__menu-storage {
-    max-width: 260px;
-}
-
-/* ── Mobile editor pane (≤700px) ────────────────────────────────────────────────────────────────
-   An icon-only Back leading the one-row bar (‹ · orb · search · ⋯). No `margin-right: auto` here:
-   the search's `flex: 1` already takes the slack and pins the ⋯ to the right edge, and pushing from
-   here would instead shove the orb and search away from the chevron. */
 .topbar__back {
-    flex-shrink: 0;
-    /* -8px pulls the chevron toward the window edge, past the button's own padding. */
+    flex: none;
+    /* Pull the chevron toward the window edge, past the button's own padding. */
     margin-left: -8px;
+}
+
+.tauri-app:not(.ios) .topbar_mobile .topbar__back {
+    margin-left: 0;
 }
 
 /* A control that belongs to the OTHER pane: still laid out (so the orb and search keep exactly the
@@ -234,4 +198,24 @@
 .topbar__note-actions_placeholder {
     visibility: hidden;
     pointer-events: none;
+}
+
+/* ── Orb-menu bits ─────────────────────────────────────────────────────────────────────────── */
+
+/* A workspace's dot in the menu's icon column: amber for the open one, a neutral mark for the
+   rest. §07 renders the list this way rather than with folder glyphs — the point of the row is
+   "which vault", and one of them is lit. */
+.topbar__ws-dot {
+    /* Block, not the inline default: a span ignores width/height and auto margins, so the dot
+       would render as nothing at all. */
+    display: block;
+    width: 7px;
+    height: 7px;
+    margin: 0 auto;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-1) 18%, transparent);
+}
+
+.topbar__ws-dot_active {
+    background: oklch(0.72 0.155 58);
 }

@@ -1,0 +1,100 @@
+/* Dialogs — the top of the stack.
+   Radius 12, shadow-4, and a 22% scrim (§08). The scrim is deliberately shallow: this app's dialogs
+   are settings and pickers, not interruptions, and at 50% the workspace behind them looks switched
+   off rather than waiting. */
+
+.ui-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(28, 24, 18, 0.22);
+    transition: opacity var(--dur-2) var(--ease);
+}
+
+[data-theme='dark'] .ui-dialog-backdrop,
+.g-root_theme_dark .ui-dialog-backdrop {
+    background: rgba(0, 0, 0, 0.42);
+}
+
+.ui-dialog-backdrop[data-starting-style],
+.ui-dialog-backdrop[data-ending-style] {
+    opacity: 0;
+}
+
+.ui-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 1001;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    width: var(--ui-dialog-width, 480px);
+    /* Never wider than the phone it is on, notch included. */
+    max-width: calc(
+        100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
+    max-height: calc(100vh - 64px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-4);
+    color: var(--text-1);
+    font-family: var(--font-ui);
+    outline: none;
+    transition:
+        opacity var(--dur-2) var(--ease),
+        transform var(--dur-2) var(--ease);
+}
+
+.ui-dialog[data-starting-style],
+.ui-dialog[data-ending-style] {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+}
+
+.ui-dialog[data-ending-style] {
+    transition-duration: calc(var(--dur-2) / 2);
+    transition-timing-function: var(--ease-in);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-dialog,
+    .ui-dialog-backdrop {
+        transition: none;
+    }
+    .ui-dialog[data-starting-style],
+    .ui-dialog[data-ending-style] {
+        transform: translate(-50%, -50%);
+    }
+}
+
+.ui-dialog__title {
+    flex: none;
+    margin: 0;
+    padding: 18px 22px 0;
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+}
+
+.ui-dialog__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px 22px 18px;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-2);
+}
+
+.ui-dialog__footer {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 22px 18px;
+}

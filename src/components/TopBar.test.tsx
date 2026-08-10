@@ -1,6 +1,6 @@
 import {createRef, useRef, useState} from 'react';
 
-import {fireEvent, screen} from '@testing-library/react';
+import {fireEvent, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -24,7 +24,6 @@ const SEARCH = 'Search or create a note…';
 
 function setup(overrides: Record<string, unknown> = {}) {
     const props = {
-        storageLabel: 'notes',
         workspaces: WORKSPACES,
         activeWorkspaceId: 'tauri:/Users/me/notes',
         isDesktop: true,
@@ -42,8 +41,12 @@ function setup(overrides: Record<string, unknown> = {}) {
         trashCount: 0,
         onOpenHelp: vi.fn(),
         onOpenSettings: vi.fn(),
+        onOpenAbout: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
+        railOpen: false,
+        onToggleRail: vi.fn(),
+        collapsed: false,
         onToggleCollapsed: vi.fn(),
         saveState: 'idle',
         query: '',
@@ -58,13 +61,22 @@ function setup(overrides: Record<string, unknown> = {}) {
         onClose: vi.fn(),
         onEnterList: vi.fn(),
         onFocusList: vi.fn(),
-        noteOpen: false,
-        appearanceOpen: false,
-        onToggleAppearance: vi.fn(),
-        onCloseAppearance: vi.fn(),
+        note: null,
+        noteMenuOpen: false,
+        onNoteMenuOpenChange: vi.fn(),
         noteAppearance: {editorFont: 'default', textWidth: 'default'},
         onSetNoteAppearance: vi.fn(),
-        onResetNoteAppearance: vi.fn(),
+        previewMode: false,
+        onTogglePreview: vi.fn(),
+        onToggleSource: vi.fn(),
+        notePinned: false,
+        onTogglePin: vi.fn(),
+        onRenameNote: vi.fn(),
+        onMoveNote: vi.fn(),
+        onDuplicateNote: vi.fn(),
+        onExportNote: vi.fn(),
+        onCopyNoteLink: vi.fn(),
+        onDeleteNote: vi.fn(),
         ...overrides,
     };
     const view = renderWithProviders(<TopBar {...(props as TopBarProps)} />);
@@ -187,7 +199,6 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
     const noop = () => {};
     return (
         <TopBar
-            storageLabel="notes"
             workspaces={[]}
             activeWorkspaceId={null}
             isDesktop={false}
@@ -204,8 +215,12 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             trashCount={0}
             onOpenHelp={noop}
             onOpenSettings={noop}
+            onOpenAbout={noop}
             themePref="light"
             onChangeThemePref={noop}
+            railOpen={false}
+            onToggleRail={noop}
+            collapsed={false}
             onToggleCollapsed={noop}
             saveState="idle"
             query={query}
@@ -220,13 +235,22 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             onClose={noop}
             onEnterList={noop}
             onFocusList={noop}
-            noteOpen={false}
-            appearanceOpen={false}
-            onToggleAppearance={noop}
-            onCloseAppearance={noop}
+            note={null}
+            noteMenuOpen={false}
+            onNoteMenuOpenChange={noop}
             noteAppearance={{editorFont: 'default', textWidth: 'default'}}
             onSetNoteAppearance={noop}
-            onResetNoteAppearance={noop}
+            previewMode={false}
+            onTogglePreview={noop}
+            onToggleSource={noop}
+            notePinned={false}
+            onTogglePin={noop}
+            onRenameNote={noop}
+            onMoveNote={noop}
+            onDuplicateNote={noop}
+            onExportNote={noop}
+            onCopyNoteLink={noop}
+            onDeleteNote={noop}
         />
     );
 }
@@ -282,10 +306,10 @@ describe('TopBar — inline autocomplete', () => {
 describe('TopBar — orb menu', () => {
     it('exposes export / import / open-folder in the orb menu (and reports the open)', async () => {
         const user = userEvent.setup();
-        const {props} = setup({storageLabel: 'my-notes'});
+        const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        expect(props.onMenuOpen).toHaveBeenCalledTimes(1);
         await user.click(await screen.findByRole('menuitem', {name: /Export all notes/}));
+        expect(props.onMenuOpen).toHaveBeenCalledTimes(1);
         expect(props.onExport).toHaveBeenCalledTimes(1);
 
         await user.click(screen.getByRole('button', {name: 'Menu'}));
@@ -305,47 +329,37 @@ describe('TopBar — orb menu', () => {
         expect(screen.queryByRole('menuitem', {name: /Open Folder/})).not.toBeInTheDocument();
     });
 
-    it('switches to a recent workspace from the Open Recent submenu', async () => {
+    it('switches to another workspace from the top of the orb menu', async () => {
         const user = userEvent.setup();
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        // Hover opens the submenu (deterministic in jsdom; click would toggle it).
-        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
         await user.click(await screen.findByRole('menuitem', {name: 'work'}));
         expect(props.onOpenWorkspace).toHaveBeenCalledWith('tauri:/Users/me/work');
         expect(props.onOpenWorkspaceInNewWindow).not.toHaveBeenCalled();
     });
 
-    it('⌘-clicking a recent opens it in a new window on desktop', async () => {
+    it('⌘-clicking a workspace opens it in a new window on desktop', async () => {
         const user = userEvent.setup();
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
         fireEvent.click(await screen.findByRole('menuitem', {name: 'work'}), {metaKey: true});
         expect(props.onOpenWorkspaceInNewWindow).toHaveBeenCalledWith('tauri:/Users/me/work');
         expect(props.onOpenWorkspace).not.toHaveBeenCalled();
     });
 
-    it('clicking the current workspace in Open Recent is a no-op', async () => {
+    it('clicking the workspace that is already open is a no-op', async () => {
         const user = userEvent.setup();
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
-        // Two menu items are named "notes": the disabled storage-label line and the current
-        // recent — the recent is the enabled one.
-        const items = await screen.findAllByRole('menuitem', {name: 'notes'});
-        const recent = items.find((el) => el.getAttribute('aria-disabled') !== 'true');
-        expect(recent).toBeDefined();
-        await user.click(recent!);
+        await user.click(await screen.findByRole('menuitem', {name: 'notes'}));
         expect(props.onOpenWorkspace).not.toHaveBeenCalled();
         expect(props.onOpenWorkspaceInNewWindow).not.toHaveBeenCalled();
     });
 
-    it('opens the workspace switcher from the Open Recent submenu', async () => {
+    it('opens the workspace switcher from the orb menu', async () => {
         const user = userEvent.setup();
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
         await user.click(await screen.findByRole('menuitem', {name: /Workspaces…/}));
         expect(props.onOpenSwitcher).toHaveBeenCalledTimes(1);
     });
@@ -371,65 +385,105 @@ describe('TopBar — orb menu', () => {
         const {props} = setup({themePref: 'system'});
         await user.click(screen.getByRole('button', {name: 'Menu'}));
         // Hover opens the Theme submenu (deterministic in jsdom; click would toggle it).
-        fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: 'Theme'}));
-        await user.click(await screen.findByRole('menuitem', {name: 'Dark'}));
+        // The row's accessible name carries its current value ("Theme System"). fireEvent, not
+        // userEvent: the popup keeps `pointer-events: none` through its open transition, which
+        // never completes under jsdom.
+        fireEvent.click(await screen.findByRole('menuitem', {name: /^Theme/}));
+        fireEvent.click(await screen.findByRole('menuitem', {name: 'Dark'}));
         expect(props.onChangeThemePref).toHaveBeenCalledWith('dark');
     });
 
-    it('reflects the autosave state on the orb and the menu status line', async () => {
+    it('opens the About box from the orb menu', async () => {
         const user = userEvent.setup();
-        setup({saveState: 'saving'});
-        const orb = screen.getByRole('button', {name: 'Menu'});
-        expect(orb).toHaveClass('topbar__menu-orb_saving');
-        expect(orb).toHaveAttribute('title', 'Saving…');
-        await user.click(orb);
-        expect(await screen.findByRole('menuitem', {name: /Saving…/})).toBeInTheDocument();
+        const {props} = setup();
+        await user.click(screen.getByRole('button', {name: 'Menu'}));
+        await user.click(await screen.findByRole('menuitem', {name: /About/}));
+        expect(props.onOpenAbout).toHaveBeenCalledTimes(1);
     });
 });
 
-describe('TopBar — orb save-pulse', () => {
-    // The normal stop path (hold the class until the next animation-cycle boundary) is NOT covered
-    // here: React's onAnimationIteration never fires from fireEvent.animationIteration under jsdom
-    // (verified with a minimal repro), so only the reduced-motion early-stop is testable.
-    it('keeps breathing right after saving ends (the stop waits for a cycle boundary)', () => {
-        const {props, view} = setup({saveState: 'saving'});
-        const orb = screen.getByRole('button', {name: 'Menu'});
-        expect(orb).toHaveClass('topbar__menu-orb_pulsing');
-        view.rerender(<TopBar {...({...props, saveState: 'saved'} as TopBarProps)} />);
-        // Still breathing — the class is only dropped at the next animation-cycle boundary.
-        expect(orb).toHaveClass('topbar__menu-orb_pulsing');
+describe('TopBar — sync dot', () => {
+    // The orb is the app MARK, not a status light: save state lives in the dot + word at the
+    // right, which is what replaced the toast that used to fire on every save.
+    it('reads "Saved" at rest', () => {
+        setup({saveState: 'saved'});
+        expect(screen.getByRole('status')).toHaveTextContent('Saved');
     });
 
-    it('stops immediately under prefers-reduced-motion (no iteration will ever arrive)', () => {
-        const original = window.matchMedia;
-        window.matchMedia = ((query: string) => ({
-            ...original(query),
-            matches: query.includes('prefers-reduced-motion'),
-        })) as typeof window.matchMedia;
-        try {
-            const {props, view} = setup({saveState: 'saving'});
-            const orb = screen.getByRole('button', {name: 'Menu'});
-            expect(orb).toHaveClass('topbar__menu-orb_pulsing');
-            view.rerender(<TopBar {...({...props, saveState: 'saved'} as TopBarProps)} />);
-            expect(orb).not.toHaveClass('topbar__menu-orb_pulsing');
-        } finally {
-            window.matchMedia = original;
-        }
+    it('reads "Writing" mid-save', () => {
+        setup({saveState: 'saving'});
+        expect(screen.getByRole('status')).toHaveTextContent('Writing');
+    });
+
+    it('turns red and says so when a save failed', () => {
+        setup({saveState: 'error'});
+        const sync = screen.getByRole('status');
+        expect(sync).toHaveTextContent('Failed');
+        expect(sync).toHaveClass('topbar__sync_error');
+    });
+});
+
+describe('TopBar — pane toggles', () => {
+    it('toggles the folder rail, reporting its state as aria-pressed', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({railOpen: true});
+        const button = screen.getByRole('button', {name: 'Folders'});
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        await user.click(button);
+        expect(props.onToggleRail).toHaveBeenCalledTimes(1);
+    });
+
+    it('toggles the notes list, which reads pressed while it is docked', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({collapsed: true});
+        const button = screen.getByRole('button', {name: 'Notes list'});
+        expect(button).toHaveAttribute('aria-pressed', 'false');
+        await user.click(button);
+        expect(props.onToggleCollapsed).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('TopBar — note menu', () => {
+    it('acts on the open note, and offers appearance inline rather than as a submenu', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({note: NOTES[0], noteMenuOpen: true});
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        // The strips are real controls inside the popup, not rows in the arrow-key ring.
+        expect(await screen.findByRole('group', {name: 'Note font'})).toBeInTheDocument();
+        expect(screen.getByRole('group', {name: 'Note text width'})).toBeInTheDocument();
+        await user.click(screen.getByRole('menuitem', {name: /Copy link to note/}));
+        expect(props.onCopyNoteLink).toHaveBeenCalledTimes(1);
+    });
+
+    it('sets a per-note font from the inline strip', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({note: NOTES[0], noteMenuOpen: true});
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        await user.click(
+            within(await screen.findByRole('group', {name: 'Note font'})).getByText('Serif'),
+        );
+        expect(props.onSetNoteAppearance).toHaveBeenCalledWith('editorFont', 'serif');
+    });
+
+    it('has no ⋯ at all with no note open', () => {
+        setup({note: null, noteMenuOpen: true});
+        expect(screen.queryByRole('button', {name: 'Note actions'})).not.toBeInTheDocument();
     });
 });
 
 describe('TopBar — narrow panes', () => {
-    it('keeps note appearance visible when narrow chrome has no mobile push pane', () => {
-        setup({mobile: true, mobilePane: undefined, noteOpen: true});
-        expect(screen.getByRole('button', {name: 'Note appearance'})).toBeInTheDocument();
+    it('keeps the note menu visible when narrow chrome has no mobile push pane', () => {
+        setup({mobile: true, mobilePane: undefined, note: NOTES[0]});
+        expect(screen.getByRole('button', {name: 'Note actions'})).toBeInTheDocument();
         expect(screen.queryByRole('button', {name: 'Back to notes'})).not.toBeInTheDocument();
     });
 
-    it('shows note appearance only on the mobile editor pane', () => {
-        const {props, view} = setup({mobile: true, mobilePane: 'list', noteOpen: true});
-        expect(screen.queryByRole('button', {name: 'Note appearance'})).not.toBeInTheDocument();
+    it('keeps the ⋯ slot on the list pane but hides it from everything', () => {
+        // The placeholder reserves the geometry so the orb and search don't move between panes.
+        const {props, view} = setup({mobile: true, mobilePane: 'list', note: NOTES[0]});
+        expect(screen.queryByRole('button', {name: 'Note actions'})).not.toBeInTheDocument();
         view.rerender(<TopBar {...({...props, mobilePane: 'editor'} as TopBarProps)} />);
         expect(screen.getByRole('button', {name: 'Back to notes'})).toBeInTheDocument();
-        expect(screen.getByRole('button', {name: 'Note appearance'})).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: 'Note actions'})).toBeInTheDocument();
     });
 });

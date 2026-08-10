@@ -1,58 +1,97 @@
-import {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import type {
-    KeyboardEvent as ReactKeyboardEvent,
-    MouseEvent as ReactMouseEvent,
-    RefObject,
-} from 'react';
-
-import {
-    ArrowDownToLine,
-    ArrowUpFromLine,
-    ArrowsRotateRight,
-    ChevronLeft,
-    CircleArrowUp,
-    CircleQuestion,
-    ClockArrowRotateLeft,
-    Database,
-    Ellipsis,
-    Folder,
-    FolderOpen,
-    Gear,
-    LayoutSideContent,
-    Picture,
-    TrashBin,
-} from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, TextInput} from '@gravity-ui/uikit';
+import {useLayoutEffect, useState} from 'react';
+import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
 import {useHasHover} from '../hooks/useIsNarrow';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
-import type {NoteAppearance} from '../hooks/useSettings';
+import type {EditorFontPref, NoteAppearance, TextWidthPref} from '../hooks/useSettings';
 import {isDesktopTauri} from '../isTauri';
 import {isOpenInNewWindowChord} from '../shortcuts';
 import type {NoteMeta} from '../storage/types';
+import {Button} from '../ui/Button';
+import {Input} from '../ui/Input';
+import {Menu, MenuItem, MenuPanel, MenuSeparator, MenuSub} from '../ui/Menu';
+import {ToggleGroup} from '../ui/ToggleGroup';
+import {Kbd} from '../ui/bits';
+import {
+    ArrowRight,
+    Check,
+    ChevronLeft,
+    CircleArrowUp,
+    Code,
+    Contrast,
+    Copy,
+    Database,
+    Ellipsis,
+    Export,
+    Eye,
+    Folder,
+    FolderOpen,
+    Gear,
+    House,
+    Import,
+    Keyboard,
+    Link,
+    NewWindow,
+    PaneLeft,
+    PaneRight,
+    Paperclip,
+    Pencil,
+    Pin,
+    PinSlash,
+    Refresh,
+    Search,
+    Trash,
+} from '../ui/icons';
 
-import {NoteAppearancePopover} from './NoteAppearancePopover';
 import {THEME_OPTIONS, type ThemePref} from './theme';
 
 import './TopBar.css';
 
-/** How many recents the "Open Recent" submenu shows; the ⌃R switcher lists them all. */
-const MAX_RECENT_MENU = 8;
+/** How many workspaces the orb menu lists inline; the ⌃R switcher lists them all. */
+const MAX_RECENT_MENU = 6;
+
+/** The per-note appearance strips (§07). "Default" means inherit the app setting. */
+const NOTE_FONT_OPTIONS: {value: EditorFontPref; content: string}[] = [
+    {value: 'default', content: 'Default'},
+    {value: 'sans', content: 'Sans'},
+    {value: 'serif', content: 'Serif'},
+    {value: 'mono', content: 'Mono'},
+];
+
+/**
+ * Width, per §07's strip — four segments, and `normal` is deliberately not one of them: at note
+ * level the choice is "inherit, or one of the three departures from it", and a fifth segment in a
+ * 276px menu would be unreadable. An explicit `normal` is still reachable from Settings, which is
+ * where the app-wide default is set in the first place.
+ */
+const NOTE_WIDTH_OPTIONS: {value: TextWidthPref; content: string; label?: string}[] = [
+    {value: 'default', content: 'Default'},
+    {value: 'narrow', content: 'Narrow'},
+    {value: 'wide', content: 'Wide'},
+    {value: 'unlimited', content: 'Unlim.', label: 'No limit'},
+];
+
+/** Sync state, as §04's dot + word. Amber saved · dim amber writing · red failed. */
+const SYNC_TEXT: Record<SaveState, string> = {
+    idle: 'Saved',
+    saved: 'Saved',
+    saving: 'Writing',
+    error: 'Failed',
+    conflict: 'Conflict',
+};
 
 export interface TopBarProps {
-    /** Active storage label (folder name, or "In this browser"); shown in the menu. */
-    storageLabel: string | null;
-    /** Known workspaces, most recently opened first — feeds the "Open Recent" submenu. */
+    /** Known workspaces, most recently opened first — the top of the orb menu. */
     workspaces: WorkspaceInfo[];
     activeWorkspaceId: string | null;
-    /** Desktop shell: ⌘-click on a recent opens it in a new window. */
+    /** Desktop shell: ⌘-click on a workspace opens it in a new window. */
     isDesktop: boolean;
     /** Whether folder-on-disk workspaces are available (shows "Open Folder…"). */
     supportsFolders: boolean;
-    /** Switch this window to a recent workspace. */
+    /** Switch this window to another workspace. */
     onOpenWorkspace: (id: string) => void;
-    /** Desktop only: open a recent workspace in its own window (⌘-click). */
+    /** Desktop only: open a workspace in its own window (⌘-click). */
     onOpenWorkspaceInNewWindow: (id: string) => void;
     /** Open the folder picker (adds/opens a workspace in this window). */
     onOpenFolder: () => void;
@@ -89,15 +128,20 @@ export interface TopBarProps {
     onOpenHelp: () => void;
     /** Open the app settings dialog (⌘,). */
     onOpenSettings: () => void;
+    /** Open the About box. */
+    onOpenAbout: () => void;
     /** Open the software-update dialog + kick off a check. Native shell only; omit to hide the item. */
     onCheckForUpdates?: () => void;
     /** Whether an update is already known to be available — turns the item into a call to action. */
     updateAvailable?: boolean;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    /** Toggle the sidebar collapsed/docked. */
+    /** Folder rail shown / hidden (⌘⇧\), and the note list collapsed / docked (⌘\). */
+    railOpen: boolean;
+    onToggleRail: () => void;
+    collapsed: boolean;
     onToggleCollapsed: () => void;
-    /** Autosave status, surfaced as the orb's pulse + a read-only line in the menu. */
+    /** Autosave status — the sync dot at the bar's right edge. */
     saveState: SaveState;
     /** Search box (nvALT find-or-create) and its keyboard coordination with the list. */
     query: string;
@@ -125,37 +169,43 @@ export interface TopBarProps {
     onEnterList: (id: string) => void;
     /** Enter on an empty box: move focus onto the previously selected note's row. */
     onFocusList: () => void;
-    /** Whether a note is open — shows the ⋯ "Note appearance" button at the bar's right edge. */
-    noteOpen: boolean;
-    /** Open state of the note-appearance popover (Workspace-owned, so ⌘⇧I can toggle it too). */
-    appearanceOpen: boolean;
-    /** Toggle the note-appearance popover (the ⋯ button + the ⌘⇧I shortcut). */
-    onToggleAppearance: () => void;
-    /** Close the note-appearance popover (Esc / outside-click). */
-    onCloseAppearance: () => void;
-    /** Per-note appearance overrides for the open note (drives the popover). */
+
+    // ── The open note's own menu (the ⋯ at the far right) ────────────────────────────────────────
+    /** The open note, or null — the ⋯ menu acts on it. */
+    note: NoteMeta | null;
+    /** Open state of the note menu (Workspace-owned, so ⌘⇧I can toggle it too). */
+    noteMenuOpen: boolean;
+    onNoteMenuOpenChange: (open: boolean) => void;
     noteAppearance: NoteAppearance;
     onSetNoteAppearance: <K extends keyof NoteAppearance>(key: K, value: NoteAppearance[K]) => void;
-    onResetNoteAppearance: () => void;
+    /** Read-only preview (⌘⇧P) and blocks↔source (⌘⇧;), both toggles on the open note. */
+    previewMode: boolean;
+    onTogglePreview: () => void;
+    onToggleSource: () => void;
+    notePinned: boolean;
+    onTogglePin: () => void;
+    onRenameNote: () => void;
+    onMoveNote: () => void;
+    onDuplicateNote: () => void;
+    /** Reveal in Finder — present only on the native desktop backend (else the row is hidden). */
+    onRevealNote?: () => void;
+    onExportNote: () => void;
+    /** Copy the note's `[[Title]]` wiki link to the clipboard. */
+    onCopyNoteLink: () => void;
+    onDeleteNote: () => void;
 }
 
-/** Status line text for the menu, by autosave state. */
-const STATUS_TEXT: Record<SaveState, string> = {
-    idle: 'All changes saved',
-    saving: 'Saving…',
-    saved: 'All changes saved',
-    error: "Save failed — changes aren't on disk",
-    conflict: 'This note changed on disk',
-};
-
 /**
- * The slim nvALT top bar: an orange orb (the app mark) on the left opens the one menu that holds
- * storage, sidebar, theme, help, and a read-only save-status line; the orb itself doubles as the
- * autosave indicator (it pulses while saving). The rest of the bar is the full-width "search or
- * create" box. This component owns the search keyboard model; the list lives in `NoteList`.
+ * The 44px title bar (§04). Frameless: the whole strip is the window's drag region except for the
+ * controls in it.
+ *
+ * Its one structural rule is §07's — "what is this app doing" and "what is this note doing" are
+ * never in the same list. The **Orb** on the left holds everything app-wide (workspaces, import and
+ * export, trash, theme, settings); the **⋯** on the right is the open note's own menu, and nothing
+ * else. The search field sits optically centred on the WINDOW, not on the editor, and the sync dot
+ * carries the save state that used to fire a toast on every keystroke.
  */
 export function TopBar({
-    storageLabel,
     workspaces,
     activeWorkspaceId,
     isDesktop,
@@ -177,10 +227,14 @@ export function TopBar({
     onMobileBack,
     onOpenHelp,
     onOpenSettings,
+    onOpenAbout,
     onCheckForUpdates,
     updateAvailable,
     themePref,
     onChangeThemePref,
+    railOpen,
+    onToggleRail,
+    collapsed,
     onToggleCollapsed,
     saveState,
     query,
@@ -195,55 +249,24 @@ export function TopBar({
     onClose,
     onEnterList,
     onFocusList,
-    noteOpen,
-    appearanceOpen,
-    onToggleAppearance,
-    onCloseAppearance,
+    note,
+    noteMenuOpen,
+    onNoteMenuOpenChange,
     noteAppearance,
     onSetNoteAppearance,
-    onResetNoteAppearance,
+    previewMode,
+    onTogglePreview,
+    onToggleSource,
+    notePinned,
+    onTogglePin,
+    onRenameNote,
+    onMoveNote,
+    onDuplicateNote,
+    onRevealNote,
+    onExportNote,
+    onCopyNoteLink,
+    onDeleteNote,
 }: TopBarProps) {
-    // The ⋯ "Note appearance" button (right edge) that the popover anchors to; null until it mounts.
-    const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
-
-    // The orb's save-pulse: a `_pulsing` class (see TopBar.css) applied while saving, and — so a quick
-    // save doesn't cut the breath off mid-dip — held until the pulse reaches a cycle boundary after
-    // saving ends. We ride the CSS `animationiteration` event for that boundary instead of timing it by
-    // hand: saving-ended arms `pendingStop`, and the next iteration (opacity back at 1) drops the class.
-    // Under prefers-reduced-motion the animation is `none`, so no iteration would ever fire to consume
-    // the pending stop — drop the class immediately instead (otherwise it lingers all session and a
-    // mid-session reduce-motion toggle would resume a phantom pulse).
-    const [orbPulsing, setOrbPulsing] = useState(false);
-    const pulsePendingStopRef = useRef(false);
-    useEffect(() => {
-        if (saveState === 'saving') {
-            pulsePendingStopRef.current = false; // a fresh save cancels any pending stop
-            setOrbPulsing(true);
-        } else if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            pulsePendingStopRef.current = false; // no animation runs — no iteration will arrive
-            setOrbPulsing(false);
-        } else {
-            pulsePendingStopRef.current = true; // let the breath finish, then stop (see the orb below)
-        }
-    }, [saveState]);
-    // An armed pending-stop waits on an animation-iteration event — but if reduce-motion flips ON
-    // inside that window, the animation becomes `none` and the event never arrives, stranding the
-    // pulse class. Watch the preference and consume the pending stop the moment it flips on.
-    // (Guarded: jsdom's matchMedia stub may lack addEventListener on the MediaQueryList.)
-    useEffect(() => {
-        if (typeof window.matchMedia !== 'function') return undefined;
-        const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-        if (typeof query.addEventListener !== 'function') return undefined;
-        const onChange = (event: MediaQueryListEvent) => {
-            if (event.matches && pulsePendingStopRef.current) {
-                pulsePendingStopRef.current = false;
-                setOrbPulsing(false);
-            }
-        };
-        query.addEventListener('change', onChange);
-        return () => query.removeEventListener('change', onChange);
-    }, []);
-
     const inList = (id: string | null): id is string =>
         Boolean(id) && notes.some((n) => n.id === id);
 
@@ -334,172 +357,196 @@ export function TopBar({
         }
     };
 
-    const themeIcon = (THEME_OPTIONS.find((o) => o.value === themePref) ?? THEME_OPTIONS[2]).icon;
-    const needsAttention = saveState === 'error' || saveState === 'conflict';
     // Drives the keyboard-only menu entries below (see the "Keyboard shortcuts" item).
     const hasHover = useHasHover();
+    const themeLabel =
+        THEME_OPTIONS.find((option) => option.value === themePref)?.label ?? 'System';
+    // On mobile the ⋯ belongs to the editor pane; while browsing the list it is laid out but inert.
+    const noteMenuActive = note !== null && mobilePane !== 'list';
 
-    // One menu, in groups (dividers between): read-only status · storage · sidebar / theme / help.
-    const menuItems = [
-        [
-            {
-                text: STATUS_TEXT[saveState],
-                iconStart: (
-                    <span
-                        className={`topbar__menu-status-dot topbar__menu-status-dot_${saveState}`}
-                    />
-                ),
-                theme: needsAttention ? ('danger' as const) : undefined,
-                disabled: true,
-                action: () => {},
-            },
-        ],
-        [
-            {
-                text: storageLabel ?? 'Storage',
-                iconStart: <Icon data={Folder} />,
-                className: 'topbar__menu-storage',
-                disabled: true,
-                action: () => {},
-            },
-            {
-                text: 'Export all notes…',
-                iconStart: <Icon data={ArrowDownToLine} />,
-                action: onExport,
-            },
-            {
-                text: 'Import .md files…',
-                iconStart: <Icon data={ArrowUpFromLine} />,
-                action: onImport,
-            },
-            {
-                text: 'Manage attachments…',
-                iconStart: <Icon data={Picture} />,
-                action: onManageAttachments,
-            },
-            {
-                text: trashCount > 0 ? `Trash (${trashCount})` : 'Trash',
-                iconStart: <Icon data={TrashBin} />,
-                action: onOpenTrash,
-            },
-            {
-                text: 'Open Recent',
-                iconStart: <Icon data={ClockArrowRotateLeft} />,
-                items: [
-                    // Recents (most recent first, the current one check-marked). Plain click
-                    // switches this window; ⌘-click (desktop) opens a new window.
-                    workspaces.slice(0, MAX_RECENT_MENU).map((ws) => ({
-                        text: ws.name,
-                        iconStart: <Icon data={ws.backend === 'indexeddb' ? Database : Folder} />,
-                        selected: ws.id === activeWorkspaceId,
-                        // The uikit action gets a React mouse event on click but a NATIVE
-                        // KeyboardEvent on Enter — both carry the modifier flags the shared chord
-                        // reads (⌘ on macOS, Ctrl elsewhere).
-                        action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
-                            if (ws.id === activeWorkspaceId) return;
-                            if (isDesktop && isOpenInNewWindowChord(event)) {
-                                onOpenWorkspaceInNewWindow(ws.id);
-                            } else {
-                                onOpenWorkspace(ws.id);
-                            }
-                        },
-                    })),
-                    [
-                        {
-                            text: 'Workspaces…',
-                            iconEnd: <span className="topbar__menu-kbd">⌃R</span>,
-                            action: onOpenSwitcher,
-                        },
-                    ],
-                ],
-            },
-            ...(supportsFolders
-                ? [
-                      {
-                          text: 'Open Folder…',
-                          iconStart: <Icon data={FolderOpen} />,
-                          // ⌘-click / ⌘↵ (desktop; Ctrl elsewhere) opens the picked folder in its
-                          // OWN window — the same shared chord as the recents above.
-                          action: (event: ReactMouseEvent<HTMLElement> | KeyboardEvent) => {
-                              if (
-                                  isDesktop &&
-                                  isOpenInNewWindowChord(event) &&
-                                  onOpenFolderInNewWindow
-                              ) {
-                                  onOpenFolderInNewWindow();
-                              } else {
-                                  onOpenFolder();
-                              }
-                          },
-                      },
-                  ]
-                : []),
-            {
-                text: 'Reload notes',
-                iconStart: <Icon data={ArrowsRotateRight} />,
-                action: onReload,
-            },
-        ],
-        [
-            // Sidebar collapse is a MULTI-PANE affordance: the mobile layout is a single pane that
-            // pushes list↔editor, so there's no sidebar to collapse there (and no ⌘\ to press) —
-            // the item would toggle invisible state. Hidden rather than disabled: it's not a
-            // temporarily-unavailable action, it simply doesn't exist in this layout.
-            ...(mobile
-                ? []
-                : [
-                      {
-                          text: 'Toggle sidebar',
-                          iconStart: <Icon data={LayoutSideContent} />,
-                          iconEnd: <span className="topbar__menu-kbd">{'⌘\\'}</span>,
-                          action: onToggleCollapsed,
-                      },
-                  ]),
-            {
-                text: 'Theme',
-                iconStart: <Icon data={themeIcon} />,
-                items: THEME_OPTIONS.map((o) => ({
-                    text: o.label,
-                    iconStart: <Icon data={o.icon} />,
-                    selected: themePref === o.value,
-                    action: () => onChangeThemePref(o.value),
-                })),
-            },
-            {
-                text: 'Settings…',
-                iconStart: <Icon data={Gear} />,
-                iconEnd: <span className="topbar__menu-kbd">⌘,</span>,
-                action: onOpenSettings,
-            },
-            // A sheet of keyboard chords is dead weight with no keyboard to press them on. Gated on
-            // the POINTER, not the width: a narrow desktop window still has a keyboard and would
-            // lose its only entry point to this dialog, whereas a full-screen phone has neither.
-            ...(hasHover
-                ? [
-                      {
-                          text: 'Keyboard shortcuts',
-                          iconStart: <Icon data={CircleQuestion} />,
-                          iconEnd: <span className="topbar__menu-kbd">⌘/</span>,
-                          action: onOpenHelp,
-                      },
-                  ]
-                : []),
-        ],
-        // The native shell can self-update; the web build omits the handler, hiding this group.
-        ...(onCheckForUpdates
-            ? [
-                  [
-                      {
-                          text: updateAvailable ? 'Install update…' : 'Check for Updates…',
-                          iconStart: (
-                              <Icon data={updateAvailable ? CircleArrowUp : ArrowsRotateRight} />
-                          ),
-                          action: onCheckForUpdates,
-                      },
-                  ],
-              ]
-            : []),
-    ];
+    const orbMenu = (
+        <>
+            {/* Workspaces first: §07 — "switching vaults is the only thing in here you do more than
+                once a week". Plain click switches this window; ⌘-click opens a new one. */}
+            {workspaces.slice(0, MAX_RECENT_MENU).map((ws) => (
+                <MenuItem
+                    key={ws.id}
+                    icon={
+                        ws.id === activeWorkspaceId ? (
+                            <span className="topbar__ws-dot topbar__ws-dot_active" />
+                        ) : ws.backend === 'indexeddb' ? (
+                            <Database size={16} />
+                        ) : (
+                            <span className="topbar__ws-dot" />
+                        )
+                    }
+                    onClick={(event) => {
+                        if (ws.id === activeWorkspaceId) return;
+                        if (isDesktop && isOpenInNewWindowChord(event)) {
+                            onOpenWorkspaceInNewWindow(ws.id);
+                        } else {
+                            onOpenWorkspace(ws.id);
+                        }
+                    }}
+                >
+                    {ws.name}
+                </MenuItem>
+            ))}
+            {supportsFolders ? (
+                <MenuItem
+                    icon={<FolderOpen size={16} />}
+                    onClick={(event) => {
+                        // ⌘-click / ⌘↵ (desktop; Ctrl elsewhere) opens the picked folder in its OWN
+                        // window — the same shared chord as the workspaces above.
+                        if (isDesktop && isOpenInNewWindowChord(event) && onOpenFolderInNewWindow) {
+                            onOpenFolderInNewWindow();
+                        } else {
+                            onOpenFolder();
+                        }
+                    }}
+                >
+                    Open Folder…
+                </MenuItem>
+            ) : null}
+            <MenuItem icon={<NewWindow size={16} />} hint="⌃R" onClick={onOpenSwitcher}>
+                Workspaces…
+            </MenuItem>
+
+            <MenuSeparator />
+            <MenuItem icon={<Export size={16} />} onClick={onExport}>
+                Export all notes…
+            </MenuItem>
+            <MenuItem icon={<Import size={16} />} onClick={onImport}>
+                Import .md files…
+            </MenuItem>
+            <MenuItem icon={<Paperclip size={16} />} onClick={onManageAttachments}>
+                Manage attachments…
+            </MenuItem>
+            <MenuItem
+                icon={<Trash size={16} />}
+                hint={trashCount > 0 ? String(trashCount) : undefined}
+                onClick={onOpenTrash}
+            >
+                Trash
+            </MenuItem>
+            <MenuItem icon={<Refresh size={16} />} onClick={onReload}>
+                Reload notes
+            </MenuItem>
+
+            <MenuSeparator />
+            {/* Sidebar collapse is a MULTI-PANE affordance: the mobile layout is a single pane that
+                pushes list↔editor, so there's no sidebar to collapse there (and no ⌘\ to press). */}
+            {mobile ? null : (
+                <MenuItem icon={<PaneRight size={16} />} hint={'⌘\\'} onClick={onToggleCollapsed}>
+                    Toggle sidebar
+                </MenuItem>
+            )}
+            <MenuSub icon={<Contrast size={16} />} label="Theme" hint={themeLabel}>
+                {THEME_OPTIONS.map((option) => (
+                    <MenuItem
+                        key={option.value}
+                        icon={themePref === option.value ? <Check size={16} /> : undefined}
+                        onClick={() => onChangeThemePref(option.value)}
+                    >
+                        {option.label}
+                    </MenuItem>
+                ))}
+            </MenuSub>
+            <MenuItem icon={<Gear size={16} />} hint="⌘," onClick={onOpenSettings}>
+                Settings…
+            </MenuItem>
+            {/* A sheet of keyboard chords is dead weight with no keyboard to press them on. Gated on
+                the POINTER, not the width: a narrow desktop window still has a keyboard and would
+                lose its only entry point to this dialog, whereas a full-screen phone has neither. */}
+            {hasHover ? (
+                <MenuItem icon={<Keyboard size={16} />} hint="⌘/" onClick={onOpenHelp}>
+                    Keyboard shortcuts
+                </MenuItem>
+            ) : null}
+
+            <MenuSeparator />
+            {onCheckForUpdates ? (
+                <MenuItem
+                    icon={updateAvailable ? <CircleArrowUp size={16} /> : <Refresh size={16} />}
+                    onClick={onCheckForUpdates}
+                >
+                    {updateAvailable ? 'Install update…' : 'Check for Updates…'}
+                </MenuItem>
+            ) : null}
+            <MenuItem icon={<House size={16} />} onClick={onOpenAbout}>
+                About Gravity Notes
+            </MenuItem>
+        </>
+    );
+
+    const noteMenu = note ? (
+        <>
+            {/* Appearance is an inline strip, not a submenu — two toggle groups inside the popup,
+                committing live behind it (§07). `MenuPanel` keeps them out of the arrow-key ring. */}
+            <MenuPanel label="Font">
+                <ToggleGroup
+                    aria-label="Note font"
+                    options={NOTE_FONT_OPTIONS}
+                    value={noteAppearance.editorFont ?? 'default'}
+                    onChange={(value) => onSetNoteAppearance('editorFont', value)}
+                />
+            </MenuPanel>
+            <MenuPanel label="Text width">
+                <ToggleGroup
+                    aria-label="Note text width"
+                    options={NOTE_WIDTH_OPTIONS}
+                    value={noteAppearance.textWidth ?? 'default'}
+                    onChange={(value) => onSetNoteAppearance('textWidth', value)}
+                />
+            </MenuPanel>
+            <MenuSeparator />
+            <MenuItem
+                icon={previewMode ? <Check size={16} /> : <Eye size={16} />}
+                hint="⌘⇧P"
+                onClick={onTogglePreview}
+            >
+                Read-only preview
+            </MenuItem>
+            <MenuItem icon={<Code size={16} />} hint="⌘⇧;" onClick={onToggleSource}>
+                Markup instead of blocks
+            </MenuItem>
+
+            <MenuSeparator />
+            <MenuItem
+                icon={notePinned ? <PinSlash size={16} /> : <Pin size={16} />}
+                onClick={onTogglePin}
+            >
+                {notePinned ? 'Unpin' : 'Pin to top'}
+            </MenuItem>
+            <MenuItem icon={<Pencil size={16} />} hint="F2" onClick={onRenameNote}>
+                Rename
+            </MenuItem>
+            <MenuItem icon={<ArrowRight size={16} />} hint="⌘⇧M" onClick={onMoveNote}>
+                Move to…
+            </MenuItem>
+            <MenuItem icon={<Copy size={16} />} hint="⌘D" onClick={onDuplicateNote}>
+                Duplicate
+            </MenuItem>
+            {onRevealNote ? (
+                <MenuItem icon={<Folder size={16} />} onClick={onRevealNote}>
+                    Reveal in Finder
+                </MenuItem>
+            ) : null}
+
+            <MenuSeparator />
+            <MenuItem icon={<Export size={16} />} onClick={onExportNote}>
+                Export this note…
+            </MenuItem>
+            <MenuItem icon={<Link size={16} />} onClick={onCopyNoteLink}>
+                Copy link to note
+            </MenuItem>
+
+            <MenuSeparator />
+            <MenuItem icon={<Trash size={16} />} hint="⌘⇧⌫" danger onClick={onDeleteNote}>
+                Delete
+            </MenuItem>
+        </>
+    ) : null;
 
     return (
         // `data-tauri-drag-region` makes the empty strip a window-drag handle — a macOS-desktop
@@ -512,7 +559,7 @@ export function TopBar({
             {/* ONE bar in both mobile panes (orb · search, plus the controls below) rather than two
                 layouts that swap: the menu and search stay reachable from inside a note, and nothing
                 shifts or resizes when you open one. On the editor pane a compact icon-only Back leads
-                the row — the "Notes" label it used to carry cost width the search needs here.
+                the row.
 
                 On the LIST pane the button is still laid out, just hidden (see `_placeholder`): its
                 slot has to stay reserved or the orb and the search box would slide and resize on
@@ -520,98 +567,106 @@ export function TopBar({
                 identical in both panes by construction rather than by arithmetic. */}
             {mobile ? (
                 <Button
-                    view="flat"
                     size="l"
+                    icon={<ChevronLeft size={19} />}
                     className={`topbar__back${mobilePane === 'editor' ? '' : ' topbar__back_placeholder'}`}
                     onClick={onMobileBack}
                     aria-label="Back to notes"
                     aria-hidden={mobilePane !== 'editor'}
                     tabIndex={mobilePane === 'editor' ? undefined : -1}
-                >
-                    <Icon data={ChevronLeft} size={18} />
-                </Button>
-            ) : null}
-            <DropdownMenu
-                switcherWrapperClassName="topbar__menu-anchor"
-                onOpenToggle={(open) => {
-                    if (open) onMenuOpen?.();
-                }}
-                renderSwitcher={(props) => (
-                    <button
-                        {...props}
-                        type="button"
-                        className={`topbar__menu-orb topbar__menu-orb_${saveState}${
-                            orbPulsing ? ' topbar__menu-orb_pulsing' : ''
-                        }`}
-                        aria-label="Menu"
-                        aria-haspopup="true"
-                        title={STATUS_TEXT[saveState]}
-                        // Stop the pulse only at a cycle boundary, so it never cuts off mid-breath.
-                        onAnimationIteration={() => {
-                            if (pulsePendingStopRef.current) {
-                                pulsePendingStopRef.current = false;
-                                setOrbPulsing(false);
-                            }
-                        }}
+                />
+            ) : (
+                // Two 26px pane toggles, immediately after the traffic lights (§04).
+                <div className="topbar__panes">
+                    <Button
+                        icon={<PaneLeft size={15} />}
+                        aria-label="Folders"
+                        pressed={railOpen}
+                        onClick={onToggleRail}
                     />
-                )}
-                items={menuItems}
-            />
-            <TextInput
+                    <Button
+                        icon={<PaneRight size={15} />}
+                        aria-label="Notes list"
+                        pressed={!collapsed}
+                        onClick={onToggleCollapsed}
+                    />
+                </div>
+            )}
+
+            {/* The Orb: the app's own amber disc, flat — no gradient, no bevel. It is the one
+                saturated thing in the chrome and it is the app MARK, not an accent, which is why it
+                doesn't recolour with the save state (the sync dot at the right does that). */}
+            <div className="topbar__orb-slot">
+                <Menu
+                    onOpenChange={(open) => {
+                        if (open) onMenuOpen?.();
+                    }}
+                    align="start"
+                    width={242}
+                    trigger={
+                        <button type="button" className="topbar__orb" aria-label="Menu">
+                            <span className="topbar__orb-disc" />
+                        </button>
+                    }
+                >
+                    {orbMenu}
+                </Menu>
+            </div>
+
+            <Input
                 className="topbar__search"
-                // Match the mobile editor pane's Back button (size "l", 36px) so the bar is
-                // the SAME height in both panes — otherwise it grew by 8px when a note
-                // opened and the whole header visibly jumped. A 36px field is also a far
-                // better touch target than the 28px default.
                 size={mobile ? 'l' : 'm'}
-                controlRef={searchInputRef}
+                ref={searchInputRef}
                 value={displayValue}
-                onUpdate={onSearchUpdate}
+                onChange={(event) => onSearchUpdate(event.target.value)}
                 placeholder="Search or create a note…"
-                // Placeholders aren't a reliable accessible name; name the field explicitly.
-                controlProps={{'aria-label': 'Search or create a note'}}
-                hasClear
+                aria-label="Search or create a note"
+                icon={<Search size={12} />}
+                trailing={mobile ? undefined : <Kbd>⌘L</Kbd>}
+                onClear={() => {
+                    setCompleting(false);
+                    onQueryChange('');
+                }}
                 onKeyDown={onSearchKeyDown}
             />
-            {/* The open note's "⋯" appearance menu, pinned at the bar's right edge (always visible, so
-                no scroll-position juggling). Active when a note is open — but on mobile only on the
-                editor pane, not while browsing the list. On mobile it's rendered even when inactive,
-                as a hidden placeholder, so the bar's layout doesn't change between panes (see the
-                Back button above); elsewhere it's simply absent. */}
-            {mobile || (noteOpen && mobilePane !== 'list') ? (
-                <>
-                    <Button
-                        ref={setAppearanceAnchor}
-                        view="flat"
-                        size="m"
-                        className={`topbar__note-actions${
-                            noteOpen && mobilePane !== 'list'
-                                ? ''
-                                : ' topbar__note-actions_placeholder'
-                        }`}
-                        aria-label="Note appearance"
-                        aria-haspopup="dialog"
-                        aria-expanded={appearanceOpen}
-                        aria-hidden={!(noteOpen && mobilePane !== 'list')}
-                        tabIndex={noteOpen && mobilePane !== 'list' ? undefined : -1}
-                        onClick={onToggleAppearance}
+
+            <div className="topbar__right">
+                {/* Sync dot + word — §04's replacement for the toast that used to fire on every
+                    save. The spec's grey "offline" state has no source in a local-first app with no
+                    server, so it is deliberately omitted. */}
+                <div
+                    className={`topbar__sync topbar__sync_${saveState}`}
+                    role="status"
+                    aria-live="polite"
+                >
+                    <span className="topbar__sync-dot" />
+                    <span className="topbar__sync-word">{SYNC_TEXT[saveState]}</span>
+                </div>
+
+                {/* The open note's own menu. On mobile it keeps its slot even when inert, so the
+                    bar's geometry is identical in both panes; elsewhere it is simply absent. */}
+                {mobile || noteMenuActive ? (
+                    <Menu
+                        open={noteMenuOpen && noteMenuActive}
+                        onOpenChange={onNoteMenuOpenChange}
+                        align="end"
+                        width={276}
+                        trigger={
+                            <Button
+                                icon={<Ellipsis size={15} />}
+                                className={`topbar__note-actions${
+                                    noteMenuActive ? '' : ' topbar__note-actions_placeholder'
+                                }`}
+                                aria-label="Note actions"
+                                aria-hidden={!noteMenuActive}
+                                tabIndex={noteMenuActive ? undefined : -1}
+                            />
+                        }
                     >
-                        <Icon data={Ellipsis} />
-                    </Button>
-                    {/* Only ever anchored to a REAL (visible) button — never to a placeholder. */}
-                    {noteOpen && mobilePane !== 'list' ? (
-                        <NoteAppearancePopover
-                            open={appearanceOpen}
-                            anchor={appearanceAnchor}
-                            onClose={onCloseAppearance}
-                            noteAppearance={noteAppearance}
-                            onSet={onSetNoteAppearance}
-                            onReset={onResetNoteAppearance}
-                            workspaceLabel={storageLabel}
-                        />
-                    ) : null}
-                </>
-            ) : null}
+                        {noteMenu}
+                    </Menu>
+                ) : null}
+            </div>
         </header>
     );
 }
