@@ -751,6 +751,41 @@ describe('Workspace — move picker', () => {
         // The confirm dialog appears, naming the selected note (it isn't trashed until confirmed).
         expect(await screen.findByText(/Move “Beta” to the Trash\?/)).toBeInTheDocument();
     });
+
+    it('deletes the OPEN note from its ⋯ menu even when the list is not showing it', async () => {
+        // The confirmation lives in Workspace precisely for this: a live search can filter the open
+        // note out of the list, and routing the request through the list's own lookup silently
+        // dropped it.
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await user.dblClick(await screen.findByRole('option', {name: /Beta/}));
+        // A query that matches neither note leaves the list empty while Beta stays open.
+        await user.type(screen.getByPlaceholderText('Search or create a note…'), 'zzzz');
+        await waitFor(() => expect(screen.queryByRole('option', {name: /Beta/})).toBeNull());
+
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
+        await user.click(await screen.findByRole('button', {name: 'Move to Trash'}));
+        await waitFor(async () => {
+            const ids = (await store.list()).map((n) => n.id);
+            expect(ids).not.toContain('Beta.md');
+        });
+    });
+
+    it('renames the OPEN note through its own title field, not the list', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await user.dblClick(await screen.findByRole('option', {name: /Beta/}));
+        await user.type(screen.getByPlaceholderText('Search or create a note…'), 'zzzz');
+        await waitFor(() => expect(screen.queryByRole('option', {name: /Beta/})).toBeNull());
+
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
+        // The title field takes focus with its text selected, ready to be typed over — a frame
+        // later, once the menu has finished closing over it.
+        const title = screen.getByDisplayValue('Beta');
+        await waitFor(() => expect(document.activeElement).toBe(title));
+    });
 });
 
 describe('Workspace — trash', () => {

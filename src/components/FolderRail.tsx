@@ -466,7 +466,14 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         inputRef: typeof renameInputRef,
         placeholder?: string,
     ) => (
-        <div className="folder-rail__row folder-rail__row_editing">
+        // A treeitem like the row it stands in for: it sits inside `role="tree"`, which owns only
+        // treeitem / group children.
+        <div
+            className="folder-rail__row folder-rail__row_editing"
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-selected={false}
+        >
             {renderGuides(depth)}
             <span className="folder-rail__caret" />
             <Folder size={15} className="folder-rail__icon" />
@@ -628,7 +635,12 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 <div className="folder-rail__group-label">Library</div>
                 <div role="tree" aria-label="Folders">
                     {renderAllNotes()}
-                    <div className="folder-rail__group-label folder-rail__group-label_spaced">
+                    {/* Decoration, not a node of the tree — `role="tree"` may own only treeitem /
+                        group children, and a bare div inside one is announced as an unnamed item. */}
+                    <div
+                        className="folder-rail__group-label folder-rail__group-label_spaced"
+                        role="presentation"
+                    >
                         Folders
                     </div>
                     {/* A new root folder sits at the top; a new subfolder renders under its parent. */}

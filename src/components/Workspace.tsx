@@ -5,6 +5,7 @@ import {useAppUpdater} from '../hooks/useAppUpdater';
 import {useBacklinks} from '../hooks/useBacklinks';
 import {useCorpus} from '../hooks/useCorpus';
 import {useDebouncedValue} from '../hooks/useDebouncedValue';
+import {useHeldValue} from '../hooks/useHeldValue';
 import {useIsNarrow} from '../hooks/useIsNarrow';
 import {useNoteHistory} from '../hooks/useNoteHistory';
 import {useNoteNavigation} from '../hooks/useNoteNavigation';
@@ -28,6 +29,7 @@ import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNote, exportNotes, importNotes} from '../storage/transfer';
 import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
+import {AlertDialog} from '../ui/Dialog';
 import {Chip} from '../ui/bits';
 import {Eye} from '../ui/icons';
 import {toast} from '../ui/toast';
@@ -1158,8 +1160,26 @@ export function Workspace({
         [railOpen, browseRelative],
     );
 
+    /**
+     * The pending "Move to Trash?" confirmation. It lives HERE, not in the note list, because it has
+     * to be reachable for any note the user can act on — including the OPEN one, which the list may
+     * not be showing at all (a live search, or a different folder selected). Routing it through the
+     * list meant its `notes.find` lookup missed, and Delete silently did nothing.
+     */
+    const [deletingNote, setDeletingNote] = useState<{id: string; title: string} | null>(null);
+    const requestDelete = useCallback(
+        (id: string) => {
+            const title = notes.notes.find((n) => n.id === id)?.title ?? titleFromFileName(id);
+            setDeletingNote({id, title});
+        },
+        [notes.notes],
+    );
+    // Keep the title rendered through the dialog's close transition: `deletingNote` clears on
+    // confirm/cancel, so reading it directly would blank the body mid-close.
+    const deletingView = useHeldValue(deletingNote);
+
     // Delete = move to Trash (recoverable). Keep selection on a neighbor when the open note goes, and
-    // confirm the move with a toast so the user knows where it went (the confirm dialog lives in the list).
+    // confirm the move with a toast so the user knows where it went.
     const handleDelete = useCallback(
         (id: string) => {
             const ids = visibleIds;
@@ -1340,7 +1360,7 @@ export function Workspace({
             if (nav.selectedId) handleDuplicate(nav.selectedId);
         },
         deleteSelected: () => {
-            if (nav.selectedId) listRef.current?.requestDelete(nav.selectedId);
+            if (nav.selectedId) requestDelete(nav.selectedId);
         },
         openWorkspaces: openSwitcher,
     });
@@ -1453,10 +1473,14 @@ export function Workspace({
                     onTogglePin={() => {
                         if (notes.note) notes.togglePin(notes.note.id);
                     }}
-                    // Rename / delete route through the LIST, which owns both interactions (in-place
-                    // rename, the Trash confirm) — the same paths F2 and ⌘⇧⌫ take.
+                    // Rename the OPEN note in its own title field, not in the list: the list may
+                    // not be showing this note (a search, another folder), and its inline rename
+                    // would then silently do nothing. Deferred a frame: the menu item takes focus
+                    // as it is activated and the popup unmounts after that, so claiming the title
+                    // synchronously would just be overwritten. (The menu also opts out of its own
+                    // focus restore for this one item — see TopBar's `finalFocus`.)
                     onRenameNote={() => {
-                        if (notes.note) listRef.current?.startRename(notes.note.id);
+                        requestAnimationFrame(() => editorRef.current?.renameTitle());
                     }}
                     onMoveNote={() => {
                         if (notes.note) setMovingNoteId(notes.note.id);
@@ -1470,7 +1494,7 @@ export function Workspace({
                     onExportNote={handleExportNote}
                     onCopyNoteLink={handleCopyNoteLink}
                     onDeleteNote={() => {
-                        if (notes.note) listRef.current?.requestDelete(notes.note.id);
+                        if (openNoteId) requestDelete(openNoteId);
                     }}
                 />
 
@@ -1551,7 +1575,7 @@ export function Workspace({
                             }
                             onReveal={handleReveal}
                             onRename={handleRename}
-                            onDelete={handleDelete}
+                            onDelete={requestDelete}
                             sortMode={notes.metadata.sort}
                             onSortChange={notes.setSortMode}
                             pinnedIds={notes.metadata.pinned}
@@ -1644,6 +1668,21 @@ export function Workspace({
                         )}
                     </main>
                 </div>
+
+                <AlertDialog
+                    open={deletingNote !== null}
+                    onClose={() => setDeletingNote(null)}
+                    title="Move to Trash"
+                    confirmLabel="Move to Trash"
+                    onConfirm={() => {
+                        if (deletingNote) handleDelete(deletingNote.id);
+                    }}
+                    danger
+                >
+                    {deletingView
+                        ? `Move “${deletingView.title}” to the Trash? You can restore it later from the Trash.`
+                        : ''}
+                </AlertDialog>
 
                 <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
                 <SettingsDialog

@@ -124,6 +124,13 @@ describe('inline HTML → Markdown', () => {
                 'see <a href="https://example.com/a" data-autolink="" rel="noopener noreferrer">https://example.com/a</a> now',
             ),
         ).toBe('see <https://example.com/a> now');
+        // A label edited away from its href stops being an autolink: the text the user typed
+        // inside the rendered link has to survive, and `<…>` can only hold one of the two halves.
+        expect(
+            inlineHtmlToMarkdown(
+                '<a href="https://example.com/a" data-autolink="">https://example.com/abcd</a>',
+            ),
+        ).toBe('[https://example.com/abcd](https://example.com/a)');
         // An ordinary link keeps the `[label](href)` spelling — the two never trade places.
         expect(inlineHtmlToMarkdown('<a href="https://x.dev">https://x.dev</a>')).toBe(
             '[https://x.dev](https://x.dev)',

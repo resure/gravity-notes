@@ -18,14 +18,12 @@ import type {
 
 import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
-import {useHeldValue} from '../hooks/useHeldValue';
 import {buildListRows} from '../listGroups';
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {isOpenInNewWindowChord} from '../shortcuts';
 import {basename, dirname} from '../storage/noteText';
 import type {NoteMeta, SortMode} from '../storage/types';
 import {Button} from '../ui/Button';
-import {AlertDialog} from '../ui/Dialog';
 import {Menu, MenuItem, MenuSeparator} from '../ui/Menu';
 import {Select} from '../ui/Select';
 import {Chip} from '../ui/bits';
@@ -79,8 +77,6 @@ export interface NoteListHandle {
     focusRow(id: string): void;
     /** Begin inline-renaming the given note (used by the global F2 shortcut). */
     startRename(id: string): void;
-    /** Open the delete-confirmation for the given note (used by the global ⌘⇧⌫ shortcut). */
-    requestDelete(id: string): void;
 }
 
 export interface NoteListProps {
@@ -122,6 +118,10 @@ export interface NoteListProps {
     /** Reveal a note in Finder — present only on the native desktop backend (else hidden). */
     onReveal?: (id: string) => void;
     onRename: (id: string, nextTitle: string) => void;
+    /**
+     * ASK to delete a note. The confirmation lives in `Workspace`, not here: it has to be reachable
+     * for the OPEN note too, which the list may not be showing (a live search, another folder).
+     */
     onDelete: (id: string) => void;
     sortMode: SortMode;
     onSortChange: (mode: SortMode) => void;
@@ -362,7 +362,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 ) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
-    const [deleting, setDeleting] = useState<{id: string; title: string} | null>(null);
     // The note + anchor for the one open action menu (null = closed). A single shared menu serves
     // both the row's ⋯ button and the right-click context menu: mounting a Menu (and building its
     // items) per row would be a large render cost on a folder with thousands of notes. The anchor is
@@ -380,6 +379,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
     const searching = query.trim().length > 0;
 
+    // Today's local midnight, recomputed every render but only CHANGING once a day — the memo key
+    // that keeps "Today" from meaning yesterday. Without it a window left open across midnight kept
+    // its labels until something else happened to invalidate the list.
+    const dayStart = new Date().setHours(0, 0, 0, 0);
+
     // Group labels interleaved into the ordered list (Pinned / Today / … , or A B C under a title
     // sort). A live search is ranked rather than sorted, so it gets no labels — see listGroups.ts.
     const rows = useMemo(
@@ -390,7 +394,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 created: createdById,
                 grouped: !searching,
             }),
-        [notes, sortMode, pinnedSet, createdById, searching],
+
+        // the grouping; `buildListRows` reads the wall clock itself.
+        [notes, sortMode, pinnedSet, createdById, searching, dayStart],
     );
     const rowIndexById = useMemo(() => {
         const map = new Map<string, number>();
@@ -545,23 +551,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 const note = notes.find((n) => n.id === id);
                 if (note) beginRename(id, note.title);
             },
-            requestDelete(id: string) {
-                const note = notes.find((n) => n.id === id);
-                if (note) setDeleting({id, title: note.title});
-            },
         }),
         [focusableId, notes, searchInputRef, beginRename, focusRowById],
     );
-
-    const confirmDelete = () => {
-        if (deleting) onDelete(deleting.id);
-        setDeleting(null);
-    };
-
-    // Keep the title rendered through the dialog's close transition: `deleting` clears on
-    // confirm/cancel, so reading off it directly would blank the body mid-close. Display-only —
-    // confirmDelete still reads live `deleting`.
-    const deletingView = useHeldValue(deleting);
 
     // --- Stable per-row callbacks (constant identity; read current state via `live`). ---
 
@@ -843,19 +835,6 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 )}
             </div>
 
-            <AlertDialog
-                open={deleting !== null}
-                onClose={() => setDeleting(null)}
-                title="Move to Trash"
-                confirmLabel="Move to Trash"
-                onConfirm={confirmDelete}
-                danger
-            >
-                {deletingView
-                    ? `Move “${deletingView.title}” to the Trash? You can restore it later from the Trash.`
-                    : ''}
-            </AlertDialog>
-
             {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
                 cursor, for a right-click) opened it, so the list needs no per-row Menu instance.
                 §07: file actions only — no appearance, no view state; those belong to the note that
@@ -927,7 +906,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                             icon={<Trash size={16} />}
                             hint="⌘⇧⌫"
                             danger
-                            onClick={() => setDeleting({id: menu.note.id, title: menu.note.title})}
+                            onClick={() => onDelete(menu.note.id)}
                         >
                             Delete
                         </MenuItem>

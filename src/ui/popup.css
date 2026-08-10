@@ -157,21 +157,6 @@
     background: var(--line);
 }
 
-/* A mono caps label over a group, matching the rail's "Library"/"Folders" and the list's time
-   groups — the app has exactly one way of labelling a group. */
-.ui-pop__group-label {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 10px;
-    font-family: var(--font-mono);
-    font-size: var(--fs-label);
-    line-height: var(--lh-label);
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    color: var(--text-4);
-}
-
 /* Arbitrary content inside a menu (the note menu's appearance strips): same 10px gutter as a row,
    and explicitly OUT of the arrow-key ring — see `Menu.Panel`. */
 .ui-pop__panel {

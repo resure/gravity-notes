@@ -213,7 +213,10 @@ function prefixed(content: string, indent: string, marker: string): string[] {
  */
 function imageSize(block: Block): string {
     const {width, height} = block.image ?? {};
-    if (!width && !height) return '';
+    // Explicitly against `undefined`, not falsiness: the parser accepts `=0x0` (only a wholly empty
+    // `=x` is refused), so a falsy test would read that back and then drop the suffix on the way
+    // out — a rewrite of markup the parser demonstrably understood.
+    if (width === undefined && height === undefined) return '';
     return ` =${width ?? ''}x${height ?? ''}`;
 }
 

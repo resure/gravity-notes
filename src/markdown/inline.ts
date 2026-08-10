@@ -167,13 +167,20 @@ export function inlineHtmlToMarkdown(html: string): string {
     let codeDepth = 0;
     // The delimiter the open <code> chose, held so the matching close can repeat it.
     let codeFence = '`';
-    const openLinks: {href: string; autolink: boolean}[] = [];
+    // `start` is where this anchor's content begins in `out`, so an autolink whose label has been
+    // EDITED can rewind and re-emit itself in the `[label](href)` form (see the closing tag below).
+    const openLinks: {href: string; autolink: boolean; start: number; text: string}[] = [];
 
     const pushText = (text: string) => {
-        // An autolink's label IS its destination, written back as `<href>` when the anchor closes —
-        // so the text between the tags carries no information and must not be emitted twice.
-        if (openLinks[openLinks.length - 1]?.autolink) return;
         const decoded = decodeEntities(text);
+        const open = openLinks[openLinks.length - 1];
+        // An autolink's label IS its destination, so while it still matches the href the text
+        // carries no information and must not be emitted twice — but it is a live contentEditable,
+        // and text typed inside one has to survive. Collect it and let the close decide.
+        if (open?.autolink) {
+            open.text += decoded;
+            return;
+        }
         out += codeDepth > 0 ? decoded : escapeMarkdownText(decoded);
     };
 
@@ -235,14 +242,26 @@ export function inlineHtmlToMarkdown(html: string): string {
                 // spellings never trade places on disk. Without the flag every autolink would
                 // re-serialize as `[url](url)`, which is a different (and uglier) file than the one
                 // that was opened, on a surface that rewrites the whole note per keystroke.
-                if (link?.autolink) out += `<${link.href}>`;
-                else out += `](${encodeLinkDestination(link?.href ?? '')})`;
+                if (link?.autolink) {
+                    // The caret can sit inside a rendered link, so its label is editable. Once it
+                    // stops matching the href it is no longer an autolink and has to be written in
+                    // the form that can hold both halves — otherwise every character typed inside
+                    // one would be dropped on the next serialize, which is per keystroke here.
+                    out = out.slice(0, link.start);
+                    if (link.text === '' || link.text === link.href) out += `<${link.href}>`;
+                    else {
+                        out += `[${escapeMarkdownText(link.text)}](${encodeLinkDestination(link.href)})`;
+                    }
+                } else out += `](${encodeLinkDestination(link?.href ?? '')})`;
             } else {
+                const autolink = tag.attrs['data-autolink'] !== undefined;
                 openLinks.push({
                     href: tag.attrs.href ?? '',
-                    autolink: tag.attrs['data-autolink'] !== undefined,
+                    autolink,
+                    start: out.length,
+                    text: '',
                 });
-                if (!openLinks[openLinks.length - 1].autolink) out += '[';
+                if (!autolink) out += '[';
             }
             continue;
         }

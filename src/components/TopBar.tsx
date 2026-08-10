@@ -1,4 +1,4 @@
-import {useLayoutEffect, useState} from 'react';
+import {useLayoutEffect, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 
 import {useHasHover} from '../hooks/useIsNarrow';
@@ -359,6 +359,8 @@ export function TopBar({
 
     // Drives the keyboard-only menu entries below (see the "Keyboard shortcuts" item).
     const hasHover = useHasHover();
+    // Set by the note menu's Rename, read by that menu's `finalFocus` — see both below.
+    const renameRequestedRef = useRef(false);
     const themeLabel =
         THEME_OPTIONS.find((option) => option.value === themePref)?.label ?? 'System';
     // On mobile the ⋯ belongs to the editor pane; while browsing the list it is laid out but inert.
@@ -518,7 +520,15 @@ export function TopBar({
             >
                 {notePinned ? 'Unpin' : 'Pin to top'}
             </MenuItem>
-            <MenuItem icon={<Pencil size={16} />} hint="F2" onClick={onRenameNote}>
+            <MenuItem
+                icon={<Pencil size={16} />}
+                hint="F2"
+                onClick={() => {
+                    // Tells the menu's `finalFocus` to leave the caret where this puts it.
+                    renameRequestedRef.current = true;
+                    onRenameNote();
+                }}
+            >
                 Rename
             </MenuItem>
             <MenuItem icon={<ArrowRight size={16} />} hint="⌘⇧M" onClick={onMoveNote}>
@@ -634,10 +644,15 @@ export function TopBar({
                 {/* Sync dot + word — §04's replacement for the toast that used to fire on every
                     save. The spec's grey "offline" state has no source in a local-first app with no
                     server, so it is deliberately omitted. */}
+                {/* `aria-live="off"` on purpose: this is ambient state, not an event. The dot
+                    flips saving→saved on every debounced autosave, so a live region would read
+                    "Writing", "Saved" over a screen-reader user twice a paragraph. It stays a
+                    `status` so it can be read on demand, and the two states that DO need
+                    announcing already have their own — the conflict banner and the error toast. */}
                 <div
                     className={`topbar__sync topbar__sync_${saveState}`}
                     role="status"
-                    aria-live="polite"
+                    aria-live="off"
                 >
                     <span className="topbar__sync-dot" />
                     <span className="topbar__sync-word">{SYNC_TEXT[saveState]}</span>
@@ -651,6 +666,14 @@ export function TopBar({
                         onOpenChange={onNoteMenuOpenChange}
                         align="end"
                         width={276}
+                        // Every item returns focus to the ⋯ — except Rename, which has just put
+                        // the caret in the note's title field. Restoring focus over that would
+                        // take it straight back out again, so that one case opts out.
+                        finalFocus={() => {
+                            if (!renameRequestedRef.current) return undefined;
+                            renameRequestedRef.current = false;
+                            return false;
+                        }}
                         trigger={
                             <Button
                                 icon={<Ellipsis size={15} />}
