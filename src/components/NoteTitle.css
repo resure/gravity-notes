@@ -27,17 +27,23 @@
        title-row already applies --editor-gutter, so the input adds the same 4px. (Preview mode lines
        both up at gutter + 4px too — see NotePreview.css.) */
     padding: 0 0 0 4px;
-    color: var(--g-color-text-primary);
-    /* Follow the editor-font setting (like the .yfm body), falling back to the inherited app font. */
-    font-family: var(--gn-editor-font, inherit);
-    font-size: 1.6rem;
-    font-weight: 500;
-    line-height: 1.25;
+    color: var(--text-1);
+    /* PT Serif 28/34 at 400 — §03's `--fs-h1`, and letter for letter what the editor renders an H1
+       BLOCK as (blockEditor/editor.css). The two sit directly on top of each other, so anything
+       else reads as two different documents; a note's title IS its heading.
+
+       Deliberately NOT `--gn-editor-font`: the editor-font setting picks the face for the note's
+       BODY. §03 gives the serif exactly three jobs — note titles, the editor's H1/H2, and the serif
+       body option — so a note set in mono still has a serif title. */
+    font-family: var(--font-serif);
+    font-size: var(--fs-h1);
+    line-height: var(--lh-h1);
+    font-weight: 400;
+    letter-spacing: -0.005em;
 }
 
 .note-title::placeholder {
-    color: var(--g-color-text-secondary);
-    font-weight: 500;
+    color: var(--text-4);
 }
 
 .note-title[readonly] {
