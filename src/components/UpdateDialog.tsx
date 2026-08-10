@@ -107,7 +107,11 @@ function Waiting({label}: {label: string}) {
     return (
         <div className="update-dialog__progress">
             <Progress value={null} aria-label={label} />
-            <p className="update-dialog__sub">{label}</p>
+            {/* aria-hidden: the same string is already the Progress's own (visually hidden)
+                accessible name, and announcing it twice is worse than not announcing it here. */}
+            <p className="update-dialog__sub" aria-hidden="true">
+                {label}
+            </p>
         </div>
     );
 }
@@ -165,15 +169,19 @@ export function UpdateDialog({open, updater, onClose}: UpdateDialogProps) {
             onClose={busy ? () => {} : onClose}
             title={captionFor(status, errorContext)}
             width={480}
+            // Undefined, not an empty fragment: while downloading there is nothing to offer, and a
+            // present-but-empty footer is still 18px of padding under the progress bar.
             footer={
-                <>
-                    {cancelLabel ? <Button onClick={onClose}>{cancelLabel}</Button> : null}
-                    {applyLabel ? (
-                        <Button variant="raised" onClick={onApply}>
-                            {applyLabel}
-                        </Button>
-                    ) : null}
-                </>
+                cancelLabel || applyLabel ? (
+                    <>
+                        {cancelLabel ? <Button onClick={onClose}>{cancelLabel}</Button> : null}
+                        {applyLabel ? (
+                            <Button variant="raised" onClick={onApply}>
+                                {applyLabel}
+                            </Button>
+                        ) : null}
+                    </>
+                ) : undefined
             }
         >
             <UpdateBody updater={updater} />

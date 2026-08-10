@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
 import {useHeldValue} from '../hooks/useHeldValue';
-import {useListboxNav} from '../hooks/useListboxNav';
+import {domIdPart, useListboxNav} from '../hooks/useListboxNav';
 import {dirname} from '../storage/noteText';
 import type {NoteMeta, NotesMetadata} from '../storage/types';
 import {type MoveTargetRow, buildMoveTargets} from '../tree';
@@ -151,7 +151,7 @@ export function MoveToDialog({
             // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus
             <div
                 key={entry.key}
-                id={`move-to-opt-${entry.key}`}
+                id={`move-to-opt-${domIdPart(entry.key)}`}
                 ref={(el) => registerRow(entry.key, el)}
                 className={
                     'move-to__row' +
@@ -206,7 +206,6 @@ export function MoveToDialog({
             title={noteView ? `Move “${noteView.title}” to…` : 'Move'}
             width={420}
             initialFocus={inputRef}
-            className="move-to-dialog"
             footer={<Button onClick={onClose}>Cancel</Button>}
         >
             <Input
@@ -218,7 +217,9 @@ export function MoveToDialog({
                 role="combobox"
                 aria-expanded
                 aria-controls="move-to-listbox"
-                aria-activedescendant={activeKey ? `move-to-opt-${activeKey}` : undefined}
+                aria-activedescendant={
+                    activeKey ? `move-to-opt-${domIdPart(activeKey)}` : undefined
+                }
                 aria-label="Filter folders"
             />
             <div className="move-to__list" id="move-to-listbox" role="listbox">

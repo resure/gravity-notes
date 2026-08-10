@@ -2,7 +2,12 @@ import {invoke} from '@tauri-apps/api/core';
 
 import {isIos} from '../isTauri';
 
-import {LEGACY_METADATA_FILENAME, METADATA_FILENAME, parseMetadata} from './metadata';
+import {
+    LEGACY_METADATA_FILENAME,
+    METADATA_FILENAME,
+    parseMetadata,
+    parseSidecarText,
+} from './metadata';
 import {
     ATTACHMENTS_DIR,
     MD_EXT,
@@ -434,17 +439,6 @@ export class TauriNoteStore implements NoteStore {
         let entry: {content: string; modifiedMs: number} | null;
         try {
             entry = await this.readNote(METADATA_FILENAME);
-            if (!entry) {
-                // No Sol sidecar: adopt a Gravity Notes one if the vault has it, copying it under
-                // the new name so this runs exactly once per vault. The legacy file stays where it
-                // is — an older install opening the same folder keeps working (PLAN.md D7). A
-                // failed copy is survivable: we still parse the legacy bytes, and retry next launch.
-                const legacy = await this.readNote(LEGACY_METADATA_FILENAME);
-                if (legacy) {
-                    entry = legacy;
-                    await this.write(METADATA_FILENAME, legacy.content).catch(() => {});
-                }
-            }
         } catch (err) {
             // Preserve the desktop store's tolerant-corruption contract: Rust's strict
             // read_to_string rejects a present sidecar with invalid UTF-8 before JSON.parse can
@@ -455,14 +449,31 @@ export class TauriNoteStore implements NoteStore {
             if (!isIos && isInvalidUtf8Read(err)) return parseMetadata({});
             throw err;
         }
-        if (!entry) return parseMetadata({}); // no dotfile yet → fresh defaults
-        try {
-            return parseMetadata(JSON.parse(entry.content));
-        } catch {
-            // Present but unparseable (corrupt JSON): degrade to fresh defaults, matching the FS/IDB
-            // backends — the bytes were readable and are genuinely malformed, so resetting is correct.
-            return parseMetadata({});
-        }
+        const sol = parseSidecarText(entry ? entry.content : null);
+        if (sol) return sol;
+
+        // No USABLE Sol sidecar. Adopt a Gravity Notes one if the vault has it, copying it under
+        // the new name so this runs exactly once per vault; the legacy file stays where it is, so
+        // an older install opening the same folder keeps working (PLAN.md D7).
+        //
+        // Keyed on "usable" rather than "absent" for the reason spelled out in fileSystemStore:
+        // a truncated or empty `.sol-notes.json` must not shadow a good legacy one forever. The
+        // legacy read is `.catch`-ed rather than left to propagate — before the rename nothing read
+        // this file, and an unreadable one (a dataless iCloud copy while offline) must not make the
+        // whole vault unopenable when fresh defaults were always the right answer without it.
+        const legacyEntry = await this.readNote(LEGACY_METADATA_FILENAME).catch(() => null);
+        const legacy = parseSidecarText(legacyEntry ? legacyEntry.content : null);
+        // Present but unparseable, with nothing to fall back to: degrade to fresh defaults, matching
+        // the FS/IDB backends — the bytes were readable and are genuinely malformed.
+        if (!legacy || !legacyEntry) return parseMetadata({});
+
+        // Re-check absence as late as possible: two windows on one vault can both read the legacy
+        // file, and without this the slower one's copy reverts metadata the faster one already
+        // migrated and updated. A failed copy is survivable — `notes_write` is temp+rename, so it
+        // leaves no partial file, and adoption simply retries next launch.
+        const current = await this.readNote(METADATA_FILENAME).catch(() => null);
+        if (!current) await this.write(METADATA_FILENAME, legacyEntry.content).catch(() => {});
+        return legacy;
     }
 
     async writeMetadata(meta: NotesMetadata): Promise<void> {

@@ -202,6 +202,18 @@ describe('FileSystemNoteStore', () => {
             expect(dir.paths().some((p) => p.startsWith('Legacy'))).toBe(false);
         });
 
+        it('removeFolder refuses a non-empty folder WITHOUT stripping its marker', async () => {
+            // The caller's guard reads an in-memory snapshot that an external change can outdate.
+            // If the marker were dropped before the emptiness check, a refused removal would leave
+            // the folder alive but unmarked — and the next auto-prune would delete it silently.
+            await store.createFolder('', 'Keep');
+            dir.seedFile('Keep/External.md', 'appeared underneath us');
+
+            await expect(store.removeFolder('Keep')).rejects.toThrow(/not empty/);
+            expect(dir.paths()).toContain('Keep/.solkeep');
+            expect(dir.paths()).toContain('Keep/External.md');
+        });
+
         it('an auto-prune spares a folder held by either marker spelling', async () => {
             dir.seedFile('Legacy/.gnkeep', '');
             await store.create('Note', 'Legacy');
@@ -840,6 +852,38 @@ describe('FileSystemNoteStore', () => {
                 await (await dir.getFileHandle('.sol-notes.json')).getFile()
             ).text();
             expect(JSON.parse(copied).sort).toBe('title');
+        });
+
+        it('falls back to the legacy sidecar when the Sol one is EMPTY (a failed migration write)', async () => {
+            // `getFileHandle(create: true)` makes the file before writeFile fills it, so a write
+            // that dies leaves 0 bytes behind. Keyed on absence alone, that empty file would shadow
+            // the real metadata forever and the next write would persist defaults over it.
+            dir.seedFile('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}), 10);
+            dir.seedFile('.sol-notes.json', '', 11);
+            expect((await store.readMetadata()).sort).toBe('title');
+        });
+
+        it('falls back to the legacy sidecar when the Sol one is truncated', async () => {
+            dir.seedFile('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}), 10);
+            dir.seedFile('.sol-notes.json', '{"version":1,"sort":"cre', 11);
+            expect((await store.readMetadata()).sort).toBe('title');
+        });
+
+        it('still resets to defaults for a corrupt Sol sidecar with no legacy to fall back to', async () => {
+            dir.seedFile('.sol-notes.json', 'not json{', 10);
+            expect((await store.readMetadata()).sort).toBe('updated');
+        });
+
+        it('opens on defaults when the legacy sidecar exists but cannot be READ', async () => {
+            // An unreadable legacy file (a dataless iCloud copy while offline, a directory of that
+            // name) must not make the whole vault unopenable — before the rename nothing read it,
+            // and defaults were always the right answer for a vault with no Sol sidecar.
+            const original = dir.getFileHandle.bind(dir);
+            dir.getFileHandle = ((name: string, opts?: {create?: boolean}) =>
+                name === '.gravity-notes.json'
+                    ? Promise.reject(new DOMException('nope', 'NotAllowedError'))
+                    : original(name, opts)) as typeof dir.getFileHandle;
+            await expect(store.readMetadata()).resolves.toMatchObject({sort: 'updated'});
         });
 
         it('lets the new sidecar win outright when both exist (never re-reads the legacy one)', async () => {

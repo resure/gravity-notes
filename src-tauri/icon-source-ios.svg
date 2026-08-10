@@ -1,0 +1,40 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- The iOS variant of icon-source.svg: FULL BLEED and fully opaque.
+       iOS applies its own squircle mask and rejects alpha in an app icon, so this source has to
+       cover every pixel. Handing it the macOS art instead — a squircle with a transparent margin —
+       flattens that margin to WHITE and ships a white frame around a shrunken icon.
+       Same disc and rays, scaled by 1024/824 (the inverse of the macOS squircle's inset) so they
+       carry the same weight once the mask is applied. -->
+  <defs>
+    <linearGradient id="body" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2B2721"/>
+      <stop offset="1" stop-color="#171410"/>
+    </linearGradient>
+    <linearGradient id="disc" x1="512" y1="224" x2="512" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFA24A"/>
+      <stop offset="1" stop-color="#C9762A"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#body)"/>
+
+  <g stroke="#DB8833" stroke-linecap="round">
+    <line x1="512.0" y1="166.5" x2="512.0" y2="62.1" stroke-width="35"/>
+    <line x1="756.3" y1="267.7" x2="830.1" y2="193.9" stroke-width="35"/>
+    <line x1="857.5" y1="512.0" x2="961.9" y2="512.0" stroke-width="35"/>
+    <line x1="756.3" y1="756.3" x2="830.1" y2="830.1" stroke-width="35"/>
+    <line x1="512.0" y1="857.5" x2="512.0" y2="961.9" stroke-width="35"/>
+    <line x1="267.7" y1="756.3" x2="193.9" y2="830.1" stroke-width="35"/>
+    <line x1="166.5" y1="512.0" x2="62.1" y2="512.0" stroke-width="35"/>
+    <line x1="267.7" y1="267.7" x2="193.9" y2="193.9" stroke-width="35"/>
+    <line x1="644.2" y1="192.8" x2="668.9" y2="133.1" stroke-width="35"/>
+    <line x1="831.2" y1="379.8" x2="890.9" y2="355.1" stroke-width="35"/>
+    <line x1="831.2" y1="644.2" x2="890.9" y2="668.9" stroke-width="35"/>
+    <line x1="644.2" y1="831.2" x2="668.9" y2="890.9" stroke-width="35"/>
+    <line x1="379.8" y1="831.2" x2="355.1" y2="890.9" stroke-width="35"/>
+    <line x1="192.8" y1="644.2" x2="133.1" y2="668.9" stroke-width="35"/>
+    <line x1="192.8" y1="379.8" x2="133.1" y2="355.1" stroke-width="35"/>
+    <line x1="379.8" y1="192.8" x2="355.1" y2="133.1" stroke-width="35"/>
+  </g>
+  <circle cx="512" cy="512" r="288" fill="url(#disc)"/>
+</svg>

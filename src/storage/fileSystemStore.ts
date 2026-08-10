@@ -1,4 +1,9 @@
-import {LEGACY_METADATA_FILENAME, METADATA_FILENAME, parseMetadata} from './metadata';
+import {
+    LEGACY_METADATA_FILENAME,
+    METADATA_FILENAME,
+    parseMetadata,
+    parseSidecarText,
+} from './metadata';
 import {
     ATTACHMENTS_DIR,
     FOLDER_MARKER,
@@ -10,6 +15,7 @@ import {
     basename,
     canonicalBody,
     dirname,
+    isFolderMarker,
     isReservedSegment,
     joinPath,
     previewFromContent,
@@ -220,27 +226,46 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async readMetadata(): Promise<NotesMetadata> {
-        let text = await this.readSidecar(METADATA_FILENAME);
-        if (text === null) {
-            // No Sol sidecar: adopt a Gravity Notes one if the vault has it, copying it under the
-            // new name so this runs exactly once per vault. The legacy file stays where it is —
-            // an older install opening the same folder keeps working (PLAN.md D7).
-            const legacy = await this.readSidecar(LEGACY_METADATA_FILENAME);
-            if (legacy === null) return parseMetadata({}); // no dotfile at all → fresh defaults
-            text = legacy;
-            try {
-                const handle = await this.dir.getFileHandle(METADATA_FILENAME, {create: true});
-                await writeFile(handle, legacy);
-            } catch {
-                // A read-only vault (or a transient failure) just means we adopt it again next
-                // launch — the legacy bytes we're about to parse are still the right answer now.
-            }
-        }
+        const sol = parseSidecarText(await this.readSidecar(METADATA_FILENAME));
+        if (sol) return sol;
+
+        // No USABLE Sol sidecar. Adopt a Gravity Notes one if the vault has it, copying it under
+        // the new name so this runs exactly once per vault; the legacy file stays where it is, so
+        // an older install opening the same folder keeps working (PLAN.md D7).
+        //
+        // "Usable", not merely "absent", is load-bearing. `getFileHandle(create: true)` below
+        // creates the file BEFORE `writeFile` fills it, so a write that fails (quota, permission
+        // revoked, tab closed mid-write) leaves a 0-byte `.sol-notes.json` behind. Keying the
+        // fall-through on absence alone would let that empty file shadow a perfectly good legacy
+        // sidecar forever — pins, sort, per-note appearance and the trash registry all silently
+        // replaced by defaults on the next write, with the real data sitting right there on disk.
+        // The same reasoning covers a truncated or corrupt Sol sidecar: preferring slightly stale
+        // legacy metadata to none at all is the better failure.
+        //
+        // A legacy read that FAILS (rather than reporting absence) degrades to "no legacy" instead
+        // of propagating: before the rename nothing read this file at all, and an unreadable one —
+        // a dataless iCloud copy while offline, say — must not make the whole vault unopenable
+        // when fresh defaults were always the correct answer for a vault with no Sol sidecar.
+        const legacyText = await this.readSidecar(LEGACY_METADATA_FILENAME).catch(() => null);
+        const legacy = parseSidecarText(legacyText);
+        if (!legacy || legacyText === null) return parseMetadata({});
+
         try {
-            return parseMetadata(JSON.parse(text));
+            // Re-check absence as late as possible. Two windows on one vault (the desktop routinely
+            // runs a main window and a note window against the same folder) can both read the
+            // legacy file; without this, the slower one's copy lands on top of metadata the faster
+            // one has already migrated AND updated, reverting it to the legacy snapshot.
+            if ((await this.readSidecar(METADATA_FILENAME)) === null) {
+                const handle = await this.dir.getFileHandle(METADATA_FILENAME, {create: true});
+                await writeFile(handle, legacyText);
+            }
         } catch {
-            return parseMetadata({}); // corrupt JSON → fresh defaults rather than crashing
+            // Read-only vault, or the write failed. Drop the empty file `create: true` may have
+            // left so it can't shadow the legacy sidecar next launch; the legacy bytes we already
+            // parsed are still the right answer now, and adoption retries next launch.
+            await this.dir.removeEntry(METADATA_FILENAME).catch(() => {});
         }
+        return legacy;
     }
 
     async writeMetadata(meta: NotesMetadata): Promise<void> {
@@ -496,8 +521,17 @@ export class FileSystemNoteStore implements NoteStore {
     async removeFolder(path: string): Promise<void> {
         const dir = await this.resolveDir(path);
         if (!dir) return; // already gone
-        // Drop BOTH marker spellings: a folder created by Gravity Notes carries `.gnkeep`, and
-        // leaving it behind would make the directory non-empty and the removal below throw.
+        // Emptiness is checked FIRST, before any marker is dropped — the same discipline as the Rust
+        // twin (`notes_remove_dir`). Dropping the marker and only then failing `removeEntry` on a
+        // folder that turned out to be non-empty would strip the keep-alive marker off a folder left
+        // in place, and the next auto-prune would delete it silently. The caller's guard reads an
+        // in-memory snapshot, which an external change can outdate, so this must hold on its own.
+        for await (const entry of dir.values()) {
+            if (entry.kind === 'file' && isFolderMarker(entry.name)) continue;
+            throw new Error(`"${path}" is not empty`);
+        }
+        // Only markers remain — drop BOTH spellings, since a folder created by Gravity Notes
+        // carries `.gnkeep` and leaving it behind would make the directory non-empty.
         for (const marker of [FOLDER_MARKER, LEGACY_FOLDER_MARKER]) {
             try {
                 await dir.removeEntry(marker);
@@ -506,7 +540,7 @@ export class FileSystemNoteStore implements NoteStore {
             }
         }
         const parent = await this.resolveDir(dirname(path));
-        // Non-recursive: only an empty directory is removed (the caller ensures it holds no notes).
+        // Non-recursive: only an empty directory is removed.
         if (parent) await parent.removeEntry(basename(path));
     }
 

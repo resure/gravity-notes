@@ -91,7 +91,6 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-[data-theme='dark'] .ui-button_raised,
 [data-theme='dark'] .ui-button_raised {
     /* Lighter than its pane, lit along the top edge — the dark inversion of "paper + highlight". */
     background: color-mix(in oklab, var(--bg-paper), white 4%);
@@ -125,8 +124,27 @@
     }
 }
 
-/* Destructive confirm. Danger is not an accent and never stands in for one — it appears only on
-   the button that answers "yes, delete it". */
+/* ── danger ────────────────────────────────────────────────────────────────────────────────────
+   Destructive. Danger is not an accent and never stands in for one — it marks the control that
+   destroys something, and nothing else.
+
+   The modifier has to read on its OWN, not only in combination with `filled`: a dialog footer's
+   destructive action ("Empty Trash", "Delete unused") is a quiet button sitting beside "Close",
+   and a rule scoped to `.ui-button_filled.ui-button_danger` left those two looking identical —
+   the irreversible one indistinguishable from the safe one. */
+.ui-button_danger {
+    color: var(--danger);
+}
+
+@media (hover: hover) {
+    .ui-button_danger:hover {
+        background: color-mix(in srgb, var(--danger) 10%, transparent);
+        color: var(--danger);
+    }
+}
+
+/* Filled + danger is the confirm button inside an AlertDialog: the one place the colour is a
+   surface rather than a word, because it IS the answer to "yes, delete it". */
 .ui-button_filled.ui-button_danger {
     background: var(--danger);
     color: white;
@@ -135,6 +153,7 @@
 @media (hover: hover) {
     .ui-button_filled.ui-button_danger:hover {
         background: color-mix(in oklab, var(--danger), black 12%);
+        color: white;
     }
 }
 
