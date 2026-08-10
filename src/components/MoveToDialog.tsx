@@ -1,13 +1,14 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import {ChevronDown, ChevronRight, Folder, House} from '@gravity-ui/icons';
-import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
-
 import {useHeldValue} from '../hooks/useHeldValue';
 import {useListboxNav} from '../hooks/useListboxNav';
 import {dirname} from '../storage/noteText';
 import type {NoteMeta, NotesMetadata} from '../storage/types';
 import {type MoveTargetRow, buildMoveTargets} from '../tree';
+import {Button} from '../ui/Button';
+import {Dialog} from '../ui/Dialog';
+import {Input} from '../ui/Input';
+import {ChevronDown, ChevronRight, Folder, House} from '../ui/icons';
 
 import {highlightMatch} from './highlightMatch';
 
@@ -93,8 +94,8 @@ export function MoveToDialog({
     };
 
     // Shared filter-list keyboard model (↑/↓ skip-disabled, ↵ commit, Esc close) on a document
-    // listener — see useListboxNav for why it can't be input-scoped (Gravity's Dialog can park
-    // focus off the input, silencing an onKeyDown handler).
+    // listener — see useListboxNav for why it can't be input-scoped (a dialog's focus manager can
+    // park focus on the popup container, silencing an onKeyDown handler).
     const {activeIndex, setActiveIndex, registerRow} = useListboxNav<Entry>({
         open,
         items: entries,
@@ -177,20 +178,19 @@ export function MoveToDialog({
                             toggleCollapse(entry.path);
                         }}
                     >
-                        <Icon data={entry.collapsed ? ChevronRight : ChevronDown} size={14} />
+                        {entry.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                     </button>
                 ) : (
                     <span className="move-to__caret" />
                 )}
-                <Icon
-                    className="move-to__icon"
-                    data={entry.isRoot ? House : Folder}
-                    size={16}
-                    aria-hidden
-                />
-                <Text className="move-to__name" ellipsis>
+                {entry.isRoot ? (
+                    <House size={15} className="move-to__icon" />
+                ) : (
+                    <Folder size={15} className="move-to__icon" />
+                )}
+                <span className="move-to__name">
                     {highlightMatch(entry.name, ql, 'move-to__match')}
-                </Text>
+                </span>
                 {entry.disabled ? <span className="move-to__hint">current</span> : null}
             </div>
         );
@@ -198,42 +198,36 @@ export function MoveToDialog({
 
     return (
         // initialFocus hands the filter input to the Dialog's focus manager; otherwise it focuses
-        // the dialog container, where the document-level key handler (useListboxNav) still works
+        // the popup container, where the document-level key handler (useListboxNav) still works
         // but type-to-filter wouldn't land in the input.
         <Dialog
             open={open}
             onClose={onClose}
-            size="s"
-            disableBodyScrollLock
+            title={noteView ? `Move “${noteView.title}” to…` : 'Move'}
+            width={420}
             initialFocus={inputRef}
+            className="move-to-dialog"
+            footer={<Button onClick={onClose}>Cancel</Button>}
         >
-            <Dialog.Header caption={noteView ? `Move “${noteView.title}” to…` : 'Move'} />
-            <Dialog.Body>
-                <TextInput
-                    controlRef={inputRef}
-                    autoComplete={false}
-                    placeholder="Filter folders…"
-                    value={query}
-                    onUpdate={setQuery}
-                    controlProps={{
-                        role: 'combobox',
-                        'aria-expanded': true,
-                        'aria-controls': 'move-to-listbox',
-                        'aria-activedescendant': activeKey ? `move-to-opt-${activeKey}` : undefined,
-                        'aria-label': 'Filter folders',
-                    }}
-                />
-                <div className="move-to__list" id="move-to-listbox" role="listbox">
-                    {entries.length === 0 ? (
-                        <div className="move-to__empty">
-                            <Text color="secondary">No folders match “{q}”</Text>
-                        </div>
-                    ) : (
-                        entries.map(renderEntry)
-                    )}
-                </div>
-            </Dialog.Body>
-            <Dialog.Footer textButtonCancel="Cancel" onClickButtonCancel={onClose} />
+            <Input
+                ref={inputRef}
+                placeholder="Filter folders…"
+                autoComplete="off"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                role="combobox"
+                aria-expanded
+                aria-controls="move-to-listbox"
+                aria-activedescendant={activeKey ? `move-to-opt-${activeKey}` : undefined}
+                aria-label="Filter folders"
+            />
+            <div className="move-to__list" id="move-to-listbox" role="listbox">
+                {entries.length === 0 ? (
+                    <div className="move-to__empty">No folders match “{q}”</div>
+                ) : (
+                    entries.map(renderEntry)
+                )}
+            </div>
         </Dialog>
     );
 }

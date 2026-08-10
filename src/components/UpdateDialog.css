@@ -1,18 +1,38 @@
 .update-dialog {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding-bottom: 4px;
+    gap: 10px;
 }
 
-/* Loader + label stacks: checking, indeterminate download, restarting. */
-.update-dialog__center {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 0;
-    text-align: center;
+.update-dialog__line {
+    margin: 0;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-1);
+}
+
+.update-dialog__version {
+    margin: 0;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 600;
+    letter-spacing: -0.003em;
+    color: var(--text-1);
+}
+
+.update-dialog__sub {
+    margin: 0;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.update-dialog__error {
+    margin: 0;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--danger);
 }
 
 /* Release notes — the manifest's `notes` (changelog), rendered as Markdown (.yfm) and scrollable
@@ -21,17 +41,17 @@
     max-height: 240px;
     overflow-y: auto;
     padding: 12px;
-    border: 1px solid var(--g-color-line-generic);
-    border-radius: var(--g-border-radius-m);
-    background: var(--g-color-base-generic);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--bg-panel-2);
     word-break: break-word;
     /* This is app CHROME wearing the `.yfm` class for typography — pin the app font explicitly,
-       or the `.g-root .yfm` editor-font remap (index.css) would restyle the release notes to
-       whatever note-content font (even a per-note override) happens to be active. */
-    font-family: var(--g-font-family-sans);
-    font-size: var(--g-text-body-1-font-size);
-    line-height: var(--g-text-body-1-line-height);
-    color: var(--g-color-text-primary);
+       or the `.yfm` editor-font remap (index.css) would restyle the release notes to whatever
+       note-content font (even a per-note override) happens to be active. */
+    font-family: var(--font-ui);
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-1);
 }
 
 .update-dialog__notes_plain {
@@ -49,12 +69,15 @@
 .update-dialog__notes.yfm :where(h1, h2, h3, h4, h5, h6) {
     margin-top: 12px;
     margin-bottom: 4px;
-    font-size: var(--g-text-subheader-1-font-size);
-    line-height: var(--g-text-subheader-1-line-height);
+    font-family: var(--font-ui);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 600;
 }
 
 .update-dialog__progress {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding: 4px 0;
 }

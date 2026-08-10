@@ -7,7 +7,7 @@ import type {BacklinkSource} from '../wikiLinks';
 
 import './BacklinksPanel.css';
 
-const COLLAPSED_KEY = 'gravity-notes:backlinks-collapsed';
+const COLLAPSED_KEY = 'sol:backlinks-collapsed';
 
 interface BacklinksPanelProps {
     /** Notes that link to the open note (already ranked); the panel hides itself when empty. */

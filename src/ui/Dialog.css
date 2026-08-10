@@ -11,8 +11,7 @@
     transition: opacity var(--dur-2) var(--ease);
 }
 
-[data-theme='dark'] .ui-dialog-backdrop,
-.g-root_theme_dark .ui-dialog-backdrop {
+[data-theme='dark'] .ui-dialog-backdrop {
     background: rgba(0, 0, 0, 0.42);
 }
 

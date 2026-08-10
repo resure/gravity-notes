@@ -76,7 +76,6 @@ function renderPane(props: Partial<ComponentPropsWithRef<typeof EditorPane>> = {
             onUploadFile={async () => 'Attachments/x.png'}
             wikiNotes={[]}
             onOpenWikiLink={() => {}}
-            onSetIcon={() => {}}
             {...props}
         />,
     );

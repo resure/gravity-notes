@@ -13,7 +13,7 @@ describe('ShortcutsDialog', () => {
         const visible = SHORTCUTS.filter((shortcut) => !shortcut.desktopOnly);
         expect(visible.length).toBeLessThan(SHORTCUTS.length); // the filter has something to do
         // One row per descriptor; descriptions can repeat (e.g. two chords both make a New note).
-        expect(document.querySelectorAll('.shortcuts-dialog__row')).toHaveLength(visible.length);
+        expect(document.querySelectorAll('.shortcuts__row')).toHaveLength(visible.length);
         for (const shortcut of visible) {
             expect(screen.getAllByText(shortcut.description).length).toBeGreaterThan(0);
         }

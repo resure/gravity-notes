@@ -1,10 +1,11 @@
 import {useEffect, useState} from 'react';
 
-import {ArrowRotateLeft, Folder, TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, Icon, Spin, Text} from '@gravity-ui/uikit';
-
 import {formatCrumb} from '../storage/noteText';
 import type {TrashedNote} from '../storage/types';
+import {Button} from '../ui/Button';
+import {AlertDialog, Dialog} from '../ui/Dialog';
+import {Skeleton} from '../ui/bits';
+import {Folder, Refresh, Trash} from '../ui/icons';
 
 import './TrashDialog.css';
 
@@ -49,8 +50,9 @@ function formatAgo(ts: number): string {
 /**
  * The Trash bin: lists soft-deleted notes (title, the folder they came from, and how long ago they
  * were deleted) and lets the user Restore one to its original folder, permanently delete one, or
- * empty the whole Trash. Deletes are irreversible, so both Delete and Empty are confirmed; Restore
- * isn't (it's safe). The list + actions live in `useNotes`; this is presentation only.
+ * empty the whole Trash. Deletes are irreversible, so both Delete and Empty are confirmed through
+ * an AlertDialog; Restore isn't (it's safe). The list + actions live in `useNotes` — this is
+ * presentation only.
  */
 export function TrashDialog({
     open,
@@ -87,130 +89,113 @@ export function TrashDialog({
 
     return (
         <>
-            <Dialog open={open} onClose={onClose} size="m" disableBodyScrollLock>
-                <Dialog.Header caption="Trash" />
-                <Dialog.Body>
-                    {loading ? (
-                        <div className="trash__center">
-                            <Spin />
-                        </div>
-                    ) : notes.length === 0 ? (
-                        <div className="trash__center">
-                            <Text color="secondary">
-                                Trash is empty. Deleted notes land here, ready to restore.
-                            </Text>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="trash__toolbar">
-                                <Text color="secondary" variant="caption-2">
-                                    {notes.length} note{notes.length === 1 ? '' : 's'} · restore to
-                                    recover, or delete permanently
-                                </Text>
+            <Dialog
+                open={open}
+                onClose={onClose}
+                title="Trash"
+                width={520}
+                footer={
+                    <>
+                        {notes.length > 0 ? (
+                            <Button
+                                className="ui-button_danger"
+                                onClick={() => setPending({kind: 'empty'})}
+                            >
+                                Empty Trash ({notes.length})
+                            </Button>
+                        ) : null}
+                        <Button onClick={onClose}>Close</Button>
+                    </>
+                }
+            >
+                {loading ? (
+                    // Skeleton rows, not a spinner (§09) — the shape of what's coming, in place.
+                    <div className="trash__list">
+                        {[0, 1, 2].map((i) => (
+                            <div className="trash__row" key={i}>
+                                <div className="trash__meta">
+                                    <Skeleton width={160} />
+                                    <Skeleton width={96} className="trash__skeleton-sub" />
+                                </div>
                             </div>
-                            <div className="trash__list">
-                                {notes.map((note) => {
-                                    const crumb = formatCrumb(note.originalPath);
-                                    return (
-                                        <div className="trash__row" key={note.id}>
-                                            <div className="trash__meta">
-                                                <Text
-                                                    className="trash__name"
-                                                    ellipsis
-                                                    title={note.title}
-                                                >
-                                                    {note.title || 'Untitled'}
-                                                </Text>
-                                                <div className="trash__sub">
-                                                    {crumb ? (
-                                                        <span className="trash__folder">
-                                                            <Icon
-                                                                data={Folder}
-                                                                size={12}
-                                                                aria-hidden
-                                                            />
-                                                            <Text
-                                                                color="secondary"
-                                                                variant="caption-2"
-                                                            >
-                                                                {crumb}
-                                                            </Text>
-                                                        </span>
-                                                    ) : null}
-                                                    <Text color="secondary" variant="caption-2">
-                                                        {crumb ? '· ' : ''}deleted{' '}
-                                                        {formatAgo(note.trashedAt)}
-                                                    </Text>
-                                                </div>
-                                            </div>
-                                            <Button
-                                                view="flat"
-                                                size="m"
-                                                aria-label={`Restore ${note.title}`}
-                                                onClick={() => onRestore(note.id)}
-                                            >
-                                                <Icon data={ArrowRotateLeft} />
-                                                Restore
-                                            </Button>
-                                            <Button
-                                                view="flat"
-                                                size="m"
-                                                aria-label={`Delete ${note.title} permanently`}
-                                                onClick={() =>
-                                                    setPending({
-                                                        kind: 'purge',
-                                                        id: note.id,
-                                                        title: note.title,
-                                                    })
-                                                }
-                                            >
-                                                <Icon data={TrashBin} />
-                                            </Button>
+                        ))}
+                    </div>
+                ) : notes.length === 0 ? (
+                    <div className="trash__empty">
+                        <Trash size={26} className="trash__empty-glyph" />
+                        <p className="trash__empty-line">Trash is empty</p>
+                        <p className="trash__empty-hint">
+                            Deleted notes land here, ready to restore.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <p className="trash__count">
+                            {notes.length} note{notes.length === 1 ? '' : 's'} · restore to recover,
+                            or delete permanently
+                        </p>
+                        <div className="trash__list">
+                            {notes.map((note) => {
+                                const crumb = formatCrumb(note.originalPath);
+                                return (
+                                    <div className="trash__row" key={note.id}>
+                                        <div className="trash__meta">
+                                            <span className="trash__name" title={note.title}>
+                                                {note.title || 'Untitled'}
+                                            </span>
+                                            <span className="trash__sub">
+                                                {crumb ? (
+                                                    <span className="trash__folder">
+                                                        <Folder size={12} />
+                                                        {crumb}
+                                                    </span>
+                                                ) : null}
+                                                <span>
+                                                    {crumb ? '· ' : ''}deleted{' '}
+                                                    {formatAgo(note.trashedAt)}
+                                                </span>
+                                            </span>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    )}
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonCancel="Close"
-                    onClickButtonCancel={onClose}
-                    textButtonApply={notes.length > 0 ? `Empty Trash (${notes.length})` : undefined}
-                    propsButtonApply={{view: 'outlined-danger'}}
-                    onClickButtonApply={
-                        notes.length > 0 ? () => setPending({kind: 'empty'}) : undefined
-                    }
-                />
+                                        <Button
+                                            icon={<Refresh size={15} />}
+                                            aria-label={`Restore ${note.title}`}
+                                            onClick={() => onRestore(note.id)}
+                                        >
+                                            Restore
+                                        </Button>
+                                        <Button
+                                            icon={<Trash size={15} />}
+                                            aria-label={`Delete ${note.title} permanently`}
+                                            onClick={() =>
+                                                setPending({
+                                                    kind: 'purge',
+                                                    id: note.id,
+                                                    title: note.title,
+                                                })
+                                            }
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
             </Dialog>
 
-            <Dialog
+            <AlertDialog
                 open={pending !== null}
                 onClose={() => setPending(null)}
-                onEnterKeyDown={confirmPending}
-                size="s"
-                disableBodyScrollLock
+                title={pending?.kind === 'empty' ? 'Empty Trash' : 'Delete permanently'}
+                confirmLabel="Delete"
+                onConfirm={confirmPending}
+                danger
             >
-                <Dialog.Header
-                    caption={pending?.kind === 'empty' ? 'Empty Trash' : 'Delete permanently'}
-                />
-                <Dialog.Body>
-                    <Text>
-                        {pending?.kind === 'empty'
-                            ? `Permanently delete all ${notes.length} note${notes.length === 1 ? '' : 's'} in the Trash? This can't be undone.`
-                            : pending?.kind === 'purge'
-                              ? `Permanently delete “${pending.title || 'Untitled'}”? This can't be undone.`
-                              : ''}
-                    </Text>
-                </Dialog.Body>
-                <Dialog.Footer
-                    textButtonApply="Delete"
-                    textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'outlined-danger'}}
-                    onClickButtonApply={confirmPending}
-                    onClickButtonCancel={() => setPending(null)}
-                />
-            </Dialog>
+                {pending?.kind === 'empty'
+                    ? `Permanently delete all ${notes.length} note${notes.length === 1 ? '' : 's'} in the Trash? This can’t be undone.`
+                    : pending?.kind === 'purge'
+                      ? `Permanently delete “${pending.title || 'Untitled'}”? This can’t be undone.`
+                      : ''}
+            </AlertDialog>
         </>
     );
 }

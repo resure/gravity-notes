@@ -1,60 +1,55 @@
-/* Cap the modal width: Gravity's size="m" is 720px, wider than these rows need. --g-dialog-width is
-   the public override the Dialog's `width` reads (falls back to the size preset). */
-.settings-dialog-modal {
-    --g-dialog-width: 600px;
-}
+/* Settings — §08.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   620px, one section, a 150px label column. No cards, no dividers between rows: the section label
+   over a hairline is the only structure the dialog needs, and at two rows anything more would be
+   scaffolding around nothing. */
 
-.settings-dialog {
+.settings {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    /* Dialog.Body supplies the horizontal padding; add bottom room so the last card breathes. */
-    padding-bottom: 28px;
 }
 
-/* Each section is a subtle card. Sections are separated only by the flex gap above — there are
-   deliberately NO divider lines between rows. The card border auto-themes; the faint fill is
-   theme-mirrored below (no single Gravity token matches a ~3% overlay). */
-.settings-dialog__section {
-    border: 1px solid var(--g-color-line-generic);
-    border-radius: 12px;
-    padding: 6px 18px;
+/* The same object the rail and the list use over a group — 10px mono caps, over a hairline. */
+.settings__section-label {
+    margin: 0 0 4px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
 }
 
-.g-root_theme_dark .settings-dialog__section {
-    background: rgba(255, 255, 255, 0.03);
-}
-
-.g-root_theme_light .settings-dialog__section {
-    background: rgba(0, 0, 0, 0.02);
-}
-
-.settings-dialog__section-head {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding: 14px 0 10px;
-}
-
-.settings-dialog__section-title {
-    letter-spacing: -0.01em;
-}
-
-/* Rows are a two-column grid, so the control sits at a fixed spot near its label rather than
-   floating to the far edge. Toggle rows keep the Switch at the right (platform convention). */
-.settings-dialog__row {
+.settings__row {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 150px 1fr;
     align-items: center;
     column-gap: 16px;
     padding: 13px 0;
 }
 
-/* Picker rows are the shared AppearanceChoiceRow (`appearance-choice_row`, appearanceControls.css). */
+.settings__label {
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    letter-spacing: -0.003em;
+    color: var(--text-1);
+}
 
-.settings-dialog__label {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-width: 0;
+.settings__note {
+    margin: 6px 0 0;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
+}
+
+/* Below the dialog's own width the label column stops earning its 150px — stack instead, the way
+   the note menu's strips already do. */
+@media (max-width: 620px) {
+    .settings__row {
+        grid-template-columns: 1fr;
+        row-gap: 8px;
+    }
 }

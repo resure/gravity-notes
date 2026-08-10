@@ -1328,33 +1328,11 @@
 
 /* ---------- theming ---------- */
 
-/* The palette above is Notion's, and hard-coded light. In the dark theme remap the tokens onto
-   Gravity's own color variables rather than inventing a second palette: the editor then follows the
-   app's theme (and any future theme) for free, at the cost of looking like Gravity rather than like
-   Notion in the dark — the right trade for a surface embedded in someone else's app. */
-.g-root_theme_dark {
-    /* Re-tint the ink channels first: every rgba(var(--n-ink), α) in the rules above — strike-through
-       text, table borders, selection washes, hover fills — flips with this single line. */
+/* The whole of the dark theme. Everything else in the palette above resolves a Sol token, which
+   already re-declares itself under `[data-theme='dark']`; the ink CHANNEL is the one value CSS
+   can't derive from an oklch token, because a dozen rules build their own alpha from it. */
+[data-theme='dark'] {
     --n-ink: 235, 235, 235;
-    --n-text: var(--g-color-text-primary);
-    --n-text-light: var(--g-color-text-secondary);
-    --n-text-lighter: var(--g-color-text-hint);
-    --n-placeholder: var(--g-color-text-hint);
-    --n-icon: var(--g-color-text-secondary);
-    --n-hover: var(--g-color-base-simple-hover);
-    --n-border: var(--g-color-line-generic);
-    --n-code-red: var(--g-color-text-danger);
-    --n-code-bg: var(--g-color-base-generic);
-    --n-gray-bg: var(--g-color-base-generic);
-    --n-callout-bg: var(--g-color-base-generic);
-    /* Gravity's floating-surface colour — the same fill its own popups use, so the editor's menus
-       read as part of the app rather than as a light-theme card left behind in the dark. */
-    --n-surface: var(--g-color-base-float);
-    --n-overlay-shadow: 0 0 0 1px var(--g-color-line-generic), 0 8px 20px rgba(0, 0, 0, 0.4);
-}
-
-.g-root_theme_dark .gn-block-editor .simple-table td {
-    background: var(--g-color-base-background);
 }
 
 /* Overlay portal host (see OverlayPortal.tsx): carries the scope class so the rules above still

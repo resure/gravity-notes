@@ -1358,12 +1358,12 @@ describe('useNotes — trash', () => {
         const store = new ControllableStore();
         store.seed('Work/A.md', 'body');
         const onError = vi.fn();
+        // Icons have no UI any more (the picker is cut), but the sidecar field keeps flowing so a
+        // vault opened by an older build doesn't lose it — including across trash → restore.
+        await store.writeMetadata({...(await store.readMetadata()), icons: {'Work/A.md': 'Star'}});
         const hook = renderHook(() => useNotes(store, onError));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        act(() => {
-            hook.result.current.setIcon('Work/A.md', 'Star');
-        });
-        expect(hook.result.current.metadata.icons['Work/A.md']).toBe('Star');
+        await waitFor(() => expect(hook.result.current.metadata.icons['Work/A.md']).toBe('Star'));
 
         await act(async () => {
             await hook.result.current.trash('Work/A.md');
@@ -1416,88 +1416,6 @@ describe('useNotes — trash', () => {
         expect(hook.result.current.metadata.appearances['Work/A.md']).toEqual({
             editorFont: 'serif',
         });
-    });
-
-    it('adoptNoteAppearances folds legacy overrides in without clobbering sidecar entries', async () => {
-        const store = new ControllableStore();
-        store.seed('A.md', 'a');
-        store.seed('B.md', 'b');
-        const onError = vi.fn();
-        const hook = renderHook(() => useNotes(store, onError));
-        await waitFor(() => expect(hook.result.current.ready).toBe(true));
-        act(() => {
-            hook.result.current.setNoteAppearance('A.md', {editorFont: 'mono'});
-        });
-
-        await act(async () => {
-            await hook.result.current.adoptNoteAppearances({
-                'A.md': {editorFont: 'serif'}, // already in the sidecar — must NOT win
-                'B.md': {textWidth: 'wide'}, // new — adopted
-            });
-        });
-
-        expect(hook.result.current.metadata.appearances).toEqual({
-            'A.md': {editorFont: 'mono'},
-            'B.md': {textWidth: 'wide'},
-        });
-    });
-
-    it('adoptNoteAppearances attaches a trashed note’s override to its TrashEntry (restore reinstates it)', async () => {
-        const store = new ControllableStore();
-        store.seed('Work/A.md', 'body');
-        const onError = vi.fn();
-        const hook = renderHook(() => useNotes(store, onError));
-        await waitFor(() => expect(hook.result.current.ready).toBe(true));
-        await act(async () => {
-            await hook.result.current.trash('Work/A.md');
-        });
-        await act(async () => {
-            await hook.result.current.refreshTrash();
-        });
-
-        // The legacy layer knew this note by its ORIGINAL path; the migration hands it over keyed
-        // that way, and the entry carries it until a restore.
-        await act(async () => {
-            await hook.result.current.adoptNoteAppearances(
-                {},
-                {'Work/A.md': {editorFont: 'serif'}},
-            );
-        });
-
-        const trashId = hook.result.current.trashedNotes[0].id;
-        await act(async () => {
-            await hook.result.current.restoreFromTrash(trashId);
-        });
-        expect(hook.result.current.metadata.appearances['Work/A.md']).toEqual({
-            editorFont: 'serif',
-        });
-    });
-
-    it('adoptNoteAppearances resolves false on a failed sidecar write (caller keeps its source)', async () => {
-        const store = new ControllableStore();
-        store.seed('A.md', 'a');
-        const onError = vi.fn();
-        const hook = renderHook(() => useNotes(store, onError));
-        await waitFor(() => expect(hook.result.current.ready).toBe(true));
-
-        store.writeMetadata = async () => {
-            throw new Error('disk full');
-        };
-        let landed = true;
-        await act(async () => {
-            landed = await hook.result.current.adoptNoteAppearances({
-                'A.md': {editorFont: 'serif'},
-            });
-        });
-        expect(landed).toBe(false);
-        expect(onError).toHaveBeenCalled();
-
-        // Nothing to adopt writes nothing — trivially landed, so stray keys still get cleaned up.
-        let noop = false;
-        await act(async () => {
-            noop = await hook.result.current.adoptNoteAppearances({});
-        });
-        expect(noop).toBe(true);
     });
 
     it('purges one trashed note and empties the rest', async () => {

@@ -18,7 +18,6 @@ import * as checkboxExtension from '@diplodoc/transform/lib/plugins/checkbox';
 // markdown/toMarkdown.ts. Without it markdown-it can't parse the destination at all and the whole
 // image degrades to literal text in preview.
 import * as imsizeExtension from '@diplodoc/transform/lib/plugins/imsize';
-import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
 import {openExternalUrl} from '../openExternal';
@@ -263,10 +262,10 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             {rendered.error ? (
                 // Surface a transform failure instead of a silent blank pane; the editor body keeps
                 // the actual content, so the user can switch back and keep working.
-                <Text color="danger" className="note-preview__error">
+                <p className="note-preview__error">
                     Couldn’t render a preview of this note. Switch back to the editor to keep
                     editing.
-                </Text>
+                </p>
             ) : (
                 <div
                     className="note-preview__body yfm"

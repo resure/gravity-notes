@@ -14,17 +14,14 @@ import {useNotes} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
 import {
     type NoteAppearance,
-    clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
     noteAppearanceOf,
-    readLegacyNoteAppearances,
     useSettings,
-    useWorkspaceSettings,
 } from '../hooks/useSettings';
 import {useShortcuts} from '../hooks/useShortcuts';
 import {useSwipeBack} from '../hooks/useSwipeBack';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
-import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
+import {orderNotes} from '../storage/metadata';
 import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
 import {exportNote, exportNotes, importNotes} from '../storage/transfer';
 import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
@@ -97,34 +94,11 @@ const SEARCH_DEBOUNCE_MS = 120;
 
 // Per-workspace UI state (layout + rail selection) lives under workspace-namespaced keys, so each
 // workspace keeps its own sidebar/rail arrangement across switches and windows.
-const nsKey = (workspaceId: string, suffix: string) => `gravity-notes:${workspaceId}:${suffix}`;
+const nsKey = (workspaceId: string, suffix: string) => `sol:${workspaceId}:${suffix}`;
 
-// The pre-workspace (un-namespaced) UI-state keys. Consumed once — as the defaults for the first
-// workspace opened after the upgrade (the migrated one) — then deleted, so a later "set back to
-// default" in that workspace can't fall through to a stale global value.
-const LEGACY_SIDEBAR_KEY = 'gravity-notes:sidebar-collapsed';
-const LEGACY_EXPANDED_FOLDERS_KEY = 'gravity-notes:expanded-folders';
-const LEGACY_SELECTED_FOLDER_KEY = 'gravity-notes:selected-folder';
-const LEGACY_RAIL_OPEN_KEY = 'gravity-notes:rail-open';
-// The pre-inversion key (a *collapsed* set, expanded-by-default). Its meaning flipped, so the old
-// value can't be reused; clear it once on load so it doesn't linger as dead localStorage.
-const LEGACY_COLLAPSED_FOLDERS_KEY = 'gravity-notes:collapsed-folders';
-
-/**
- * Read a per-workspace UI key, adopting (and consuming) the pre-workspace global value the first
- * time nothing namespaced exists. Runs in state initializers — the write is idempotent, so a
- * StrictMode double-init is harmless.
- */
-function readWorkspaceKey(workspaceId: string, suffix: string, legacyKey: string): string | null {
-    const key = nsKey(workspaceId, suffix);
-    const value = localStorage.getItem(key);
-    if (value !== null) return value;
-    const legacy = localStorage.getItem(legacyKey);
-    if (legacy !== null) {
-        localStorage.setItem(key, legacy);
-        localStorage.removeItem(legacyKey);
-    }
-    return legacy;
+/** Read a per-workspace UI key. */
+function readWorkspaceKey(workspaceId: string, suffix: string): string | null {
+    return localStorage.getItem(nsKey(workspaceId, suffix));
 }
 
 /** Re-prefix a folder path (or note id) when its `from` ancestor folder moves/renames to `to`. */
@@ -134,9 +108,7 @@ function reprefixPath(path: string, from: string, to: string): string {
 
 function loadExpandedFolders(workspaceId: string): Set<string> {
     try {
-        const raw = JSON.parse(
-            readWorkspaceKey(workspaceId, 'expanded-folders', LEGACY_EXPANDED_FOLDERS_KEY) ?? '[]',
-        );
+        const raw = JSON.parse(readWorkspaceKey(workspaceId, 'expanded-folders') ?? '[]');
         return new Set(
             Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [],
         );
@@ -266,8 +238,7 @@ export function Workspace({
 
     // The tree is collapsed by default; this persists the folders the user has explicitly expanded
     // (the exceptions). A toggle rebuilds the set immutably. Note windows start from the defaults
-    // and skip both the read (readWorkspaceKey CONSUMES the legacy un-namespaced keys — a note
-    // window must not eat the main window's migration) and the write.
+    // and skip the write: their transient layout must not clobber the full views'.
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() =>
         noteWindow ? new Set() : loadExpandedFolders(workspaceId),
     );
@@ -278,8 +249,6 @@ export function Workspace({
             JSON.stringify([...expandedFolders]),
         );
     }, [noteWindow, workspaceId, expandedFolders]);
-    // One-time cleanup of the orphaned pre-inversion key (its semantics flipped, so it's unusable).
-    useEffect(() => localStorage.removeItem(LEGACY_COLLAPSED_FOLDERS_KEY), []);
     const toggleCollapse = useCallback((path: string) => {
         setExpandedFolders((prev) => {
             const next = new Set(prev);
@@ -292,9 +261,7 @@ export function Workspace({
     // The folder selected in the rail (null = All Notes), persisted across reloads. A note window
     // always starts at All Notes (its list is hidden anyway, and ⌘N should create predictably).
     const [selectedFolder, setSelectedFolder] = useState<string | null>(() =>
-        noteWindow
-            ? null
-            : readWorkspaceKey(workspaceId, 'selected-folder', LEGACY_SELECTED_FOLDER_KEY),
+        noteWindow ? null : readWorkspaceKey(workspaceId, 'selected-folder'),
     );
     useEffect(() => {
         if (noteWindow) return;
@@ -311,9 +278,7 @@ export function Workspace({
     // Whether the folder rail is shown. Off by default, so the app stays a 2-pane nvALT view
     // until you reach for folders; persisted across reloads (never in a note window — closed).
     const [railOpen, setRailOpen] = useState(
-        () =>
-            !noteWindow &&
-            readWorkspaceKey(workspaceId, 'rail-open', LEGACY_RAIL_OPEN_KEY) === 'true',
+        () => !noteWindow && readWorkspaceKey(workspaceId, 'rail-open') === 'true',
     );
     useEffect(() => {
         if (noteWindow) return;
@@ -365,10 +330,9 @@ export function Workspace({
     const [helpOpen, setHelpOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const {settings, setSetting} = useSettings();
-    const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
-    // Per-note overrides for the OPEN note (the innermost appearance layer), read from the metadata
-    // sidecar — stored like icons, so a rename/move re-keys them and they travel with the folder.
-    // With no note open the override is undefined, so the effective appearance is app+workspace.
+    // Per-note overrides for the OPEN note (the inner appearance layer), read from the metadata
+    // sidecar — keyed by note id, so a rename/move re-keys them and they travel with the folder.
+    // With no note open the override is undefined, so the effective appearance is the app's.
     const openNoteId = notes.note?.id ?? null;
     const noteAppearance = useMemo(
         () =>
@@ -391,32 +355,6 @@ export function Workspace({
         },
         [openNoteId, notes.metadata.appearances, notes.setNoteAppearance],
     );
-    // One-time migration of the legacy localStorage per-note overrides into the sidecar (they used to
-    // strand on every rename/move). Gated on `ready` so it can't race the sidecar's initial load.
-    // Live ids adopt into `appearances`; an override whose note sits in the Trash attaches to its
-    // TrashEntry (matched by original path) so a restore reinstates it; only truly-gone ids drop.
-    // Keys are cleared only when the adoption verifiably LANDED on disk (adopt resolves false on a
-    // failed sidecar write), so a crash or write failure mid-way just retries next launch (adoption
-    // is idempotent: an existing sidecar entry wins).
-    const appearanceMigrationRef = useRef(false);
-    useEffect(() => {
-        if (!notes.ready || appearanceMigrationRef.current) return;
-        appearanceMigrationRef.current = true;
-        const legacy = readLegacyNoteAppearances(workspaceId);
-        if (legacy.keys.length === 0) return; // pristine (the forever-after case) — nothing to do
-        const liveIds = new Set(notes.notes.map((n) => n.id));
-        const trashedIds = new Set(notes.metadata.trashed.map(trashEntryOriginalId));
-        const live: Record<string, NoteAppearanceOverride> = {};
-        const trashed: Record<string, NoteAppearanceOverride> = {};
-        for (const [id, override] of Object.entries(legacy.overrides)) {
-            if (liveIds.has(id)) live[id] = override;
-            else if (trashedIds.has(id)) trashed[id] = override;
-        }
-        void notes.adoptNoteAppearances(live, trashed).then((landed) => {
-            if (landed) clearLegacyNoteAppearanceKeys(legacy.keys);
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot: reads notes state at ready-time only
-    }, [notes.ready, workspaceId]);
     // The open note's ⋯ menu — appearance strips plus the note's own file actions. Its state lives
     // here (the trigger is in the TopBar) so ⌘⇧I can toggle it too. Closed whenever the editing
     // SESSION changes (another note opened, or the note closed) — keyed on sessionId, NOT note id,
@@ -426,7 +364,7 @@ export function Workspace({
     const noteClosed = notes.note === null;
     useEffect(() => setNoteMenuOpen(false), [notes.sessionId, noteClosed]);
 
-    // Apply the effective appearance (note override → workspace → app) to <html> as data-attributes
+    // Apply the effective appearance (note override → app) to <html> as data-attributes
     // that index.css reads: `data-editor-font` swaps the editor/preview/title font,
     // `data-text-width` the content column width. useLayoutEffect (not useEffect) so the
     // swap lands before paint — on a workspace switch the tree remounts (keyed in App), so this runs
@@ -434,11 +372,7 @@ export function Workspace({
     // Deps are the RESOLVED strings, not the source objects — those change identity on every note
     // switch (and on unrelated settings toggles), and each re-run is a remove+set attribute pair
     // that dirties style for the whole subtree for a no-op.
-    const {editorFont, textWidth} = effectiveAppearance(
-        settings,
-        workspaceSettings,
-        noteAppearance,
-    );
+    const {editorFont, textWidth} = effectiveAppearance(settings, noteAppearance);
     useLayoutEffect(() => {
         const root = document.documentElement;
         root.setAttribute('data-editor-font', editorFont);
@@ -547,9 +481,7 @@ export function Workspace({
         return () => window.removeEventListener('scroll', onScroll, true);
     }, []);
     const [collapsed, setCollapsed] = useState(
-        () =>
-            noteWindow ||
-            readWorkspaceKey(workspaceId, 'sidebar-collapsed', LEGACY_SIDEBAR_KEY) === 'true',
+        () => noteWindow || readWorkspaceKey(workspaceId, 'sidebar-collapsed') === 'true',
     );
     useEffect(() => {
         if (noteWindow) return;
@@ -1336,12 +1268,10 @@ export function Workspace({
         openSettings: () => setSettingsOpen(true),
         renameSelected: () => {
             // F2 fires even while typing. Context-aware: a focused folder row → rename the folder;
-            // the whole in-editor title row (the title input handles F2 itself; its icon-picker
-            // button is a sibling of the input) and any floating layer — every Sol popup renders
-            // `.ui-pop`, every remaining uikit popup `.g-popup`, and every modal `[role="dialog"]` —
-            // are no-ops: a list rename from there would yank focus out from under the open layer
-            // (and even commit on blur behind a modal); otherwise rename the selected note.
-            // `.g-popup` stays in the selector until the last uikit popup goes in Pass 5.
+            // the whole in-editor title row (the title input handles F2 itself) and any floating
+            // layer — every popup renders `.ui-pop`, every modal `[role="dialog"]` — are no-ops:
+            // a list rename from there would yank focus out from under the open layer (and even
+            // commit on blur behind a modal); otherwise rename the selected note.
             const el = document.activeElement;
             if (el instanceof HTMLElement) {
                 const folderRow = el.closest('.folder-rail__row[data-path]');
@@ -1349,7 +1279,7 @@ export function Workspace({
                     railRef.current?.startRename(folderRow.getAttribute('data-path') ?? '');
                     return;
                 }
-                if (el.closest('.note-title-row, .ui-pop, .g-popup, [role="dialog"]')) return;
+                if (el.closest('.note-title-row, .ui-pop, [role="dialog"]')) return;
             }
             if (nav.selectedId) listRef.current?.startRename(nav.selectedId);
         },
@@ -1554,6 +1484,7 @@ export function Workspace({
                                 selectedFolder ? (selectedFolder.split('/').pop() ?? null) : null
                             }
                             showCrumbs={searching || selectedFolder === null}
+                            loading={!notes.ready}
                             snippetById={snippetById}
                             searchInputRef={searchInputRef}
                             onBrowse={nav.browse}
@@ -1643,9 +1574,6 @@ export function Workspace({
                                         onUploadFile={handleUploadFile}
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
-                                        icon={notes.metadata.icons[notes.note.id]}
-                                        onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
-                                        showNoteIcons={settings.showNoteIcons}
                                     />
                                 </div>
                                 <BacklinksPanel
@@ -1690,9 +1618,6 @@ export function Workspace({
                     onClose={() => setSettingsOpen(false)}
                     settings={settings}
                     setSetting={setSetting}
-                    workspaceSettings={workspaceSettings}
-                    setWorkspaceSetting={setWorkspaceSetting}
-                    workspaceLabel={storageLabel}
                 />
 
                 <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />

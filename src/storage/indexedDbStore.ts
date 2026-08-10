@@ -28,8 +28,8 @@ import {
     type NotesMetadata,
 } from './types';
 
-const DB_NAME = 'gravity-notes-data';
-const DB_VERSION = 3;
+const DB_NAME = 'sol-data';
+const DB_VERSION = 1;
 const NOTES_STORE = 'notes';
 const KV_STORE = 'kv';
 /** Object store holding binary media attachments, keyed by their `Attachments/<name>` reference. */
@@ -444,11 +444,11 @@ export class IndexedDbNoteStore implements NoteStore {
                     if (!db.objectStoreNames.contains(KV_STORE)) {
                         db.createObjectStore(KV_STORE);
                     }
-                    // v2: media attachments, keyed by their `Attachments/<name>` reference.
+                    // Media attachments, keyed by their `Attachments/<name>` reference.
                     if (!db.objectStoreNames.contains(ATTACHMENTS_STORE)) {
                         db.createObjectStore(ATTACHMENTS_STORE, {keyPath: 'id'});
                     }
-                    // v3: trashed notes, keyed by their `.trash/<leaf>.md` id.
+                    // Trashed notes, keyed by their `.trash/<leaf>.md` id.
                     if (!db.objectStoreNames.contains(TRASH_STORE)) {
                         db.createObjectStore(TRASH_STORE, {keyPath: 'id'});
                     }

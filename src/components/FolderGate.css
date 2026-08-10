@@ -1,44 +1,132 @@
+/* The folder gate — §09's first-run screen, and the one empty state allowed to fill the window.
+   No card: a bordered box floating on the desk would imply there is something behind it. */
+
 .folder-gate {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     padding: 24px;
-    background-color: var(--g-color-base-background);
+    background: var(--bg-desk);
+    font-family: var(--font-ui);
 }
 
-.folder-gate__card {
+.folder-gate__panel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
-    max-width: 440px;
-    padding: 32px;
+    gap: 6px;
+    width: 100%;
+    max-width: 420px;
     text-align: center;
 }
 
-.folder-gate__icon {
-    color: var(--g-color-text-secondary);
+.folder-gate__glyph {
+    margin-bottom: 10px;
+    color: var(--text-4);
+    opacity: 0.8;
+}
+
+.folder-gate__title {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: var(--fs-h2);
+    line-height: var(--lh-h2);
+    font-weight: 400;
+    letter-spacing: -0.005em;
+    color: var(--text-1);
+}
+
+.folder-gate__body {
+    margin: 0;
+    max-width: 340px;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-2);
 }
 
 .folder-gate__actions {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 14px;
+}
+
+.folder-gate__note,
+.folder-gate__error {
+    margin: 10px 0 0;
+    max-width: 340px;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
 }
 
 .folder-gate__error {
-    margin-top: 4px;
+    color: var(--danger);
 }
 
-/* Recent workspaces under the storage choice: a quiet caption + full-width flat buttons. */
+/* The bootstrap wait: a short bar, not a spinner (§09), and only after 300ms. */
+.folder-gate__wait {
+    width: 120px;
+}
+
+/* Recent workspaces under the storage choice. Rows are the note list's own type, so a recent here
+   reads like the workspace it will open. */
 .folder-gate__recents {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 1px;
     align-self: stretch;
-    margin-top: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--g-color-line-generic);
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.folder-gate__recents-label {
+    margin: 0 0 4px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-4);
+}
+
+.folder-gate__recent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: -0.003em;
+    text-align: start;
+}
+
+@media (hover: hover) {
+    .folder-gate__recent:hover {
+        background: var(--bg-hover);
+    }
+}
+
+.folder-gate__recent-icon {
+    flex: none;
+    color: var(--text-4);
+}
+
+.folder-gate__recent-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
