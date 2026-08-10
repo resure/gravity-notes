@@ -1,7 +1,9 @@
 /* The note title: a borderless, heading-styled input sitting between an h1 and an h2.
    Left/right padding uses the shared --editor-gutter (set on .workspace__editor, the same
    value the editor body uses) so the title and the first body line share a left edge. The
-   top gap gives it breathing room under the top bar; the body adds its own gap below. */
+   top gap is §04's 30px — the paper has to start somewhere, and 12px read as the title being
+   pinned to the underside of the title bar now that the bar is a flush 44px with a hairline
+   rather than a padded row. The body adds its own gap below. */
 
 /* Row wrapping the icon button + title input. The gutter lives here so the icon button
    and input share the same left edge as the body text. */
@@ -9,7 +11,7 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 12px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
+    padding: 30px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
 }
 
 .note-title {
