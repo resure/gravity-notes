@@ -88,10 +88,7 @@ export default function SlashMenu({
                                 onClick={() => onSelect(item)}
                             >
                                 <div className="menu-item-icon">{item.icon}</div>
-                                <div className="menu-item-copy">
-                                    <div className="menu-item-label">{item.label}</div>
-                                    <div className="menu-item-description">{item.description}</div>
-                                </div>
+                                <div className="menu-item-label">{item.label}</div>
                                 {item.hint && <div className="menu-item-hint">{item.hint}</div>}
                             </div>
                         ))}

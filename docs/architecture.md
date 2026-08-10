@@ -89,6 +89,20 @@ Chrome arrives on demand throughout: the row's ⋯ appears only under the pointe
 place rather than adding a column), folder actions the same, and hover is suppressed on the row
 directly above or below the selection so two washes of the same family never read as one block.
 
+**The writing surface** is 680px of measure, centred in the pane and independent of the window: body
+copy at 15/24, and H1/H2 in PT Serif at 400 — the same voice as the note title above them, so a
+heading inside a note reads as a smaller instance of its title rather than as bold body copy. The
+block's furniture is split across both margins (drag handle left, insert right) and invisible until
+the pointer is inside the block, which is also when the block itself takes a 2.8% wash that bleeds
+6px past the measure — a band of paper, not a card.
+
+Everything that floats above the paper — the slash menu, the block menu, the format bar, the `[[`
+picker — is the same 12px card with 32px rows that the app's menus are, and all four are anchored to
+the CARET rather than to a trigger element. That is why they stay hand-rolled rather than becoming
+Base UI menus, and why they are portaled to `<body>` in viewport coordinates: the editor pane
+scrolls, clips its overflow, and carries a `transform`, which would otherwise both re-anchor a
+`position: fixed` overlay to the pane and cut it off.
+
 ## Workspaces & windows
 
 Every opened folder/store is a **workspace**, remembered (with recency) in an IndexedDB registry

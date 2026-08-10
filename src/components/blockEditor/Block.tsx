@@ -286,7 +286,7 @@ function Block({
                     onDragStart={(e) => handlers.onDragStart(e, block.id)}
                     onDragEnd={handlers.onDragEnd}
                 >
-                    <DragIcon />
+                    <DragIcon size={9} />
                 </button>
             </div>
             <div className="handles handle-slot handle-slot_right" contentEditable={false}>
@@ -298,7 +298,7 @@ function Block({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => handlers.onPlusClick(e, block.id)}
                 >
-                    <PlusIcon />
+                    <PlusIcon size={12} />
                 </button>
             </div>
             <div className="block-body">{body}</div>

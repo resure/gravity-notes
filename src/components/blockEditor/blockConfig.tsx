@@ -24,21 +24,18 @@ export interface MenuItemDef {
     hint?: string;
     keywords: string[];
     icon: ReactNode;
-    description: string;
 }
 
 export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'text',
         label: 'Text',
-        description: 'Start writing with plain text.',
         keywords: ['text', 'plain', 'paragraph', 'p'],
         icon: <TextIcon />,
     },
     {
         type: 'heading1',
         label: 'Heading 1',
-        description: 'Big section heading.',
         hint: '#',
         keywords: ['heading', 'h1', '1', 'title'],
         icon: <H1Icon />,
@@ -46,7 +43,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'heading2',
         label: 'Heading 2',
-        description: 'Medium section heading.',
         hint: '##',
         keywords: ['heading', 'h2', '2', 'subheading'],
         icon: <H2Icon />,
@@ -54,7 +50,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'heading3',
         label: 'Heading 3',
-        description: 'Small section heading.',
         hint: '###',
         keywords: ['heading', 'h3', '3', 'subheading'],
         icon: <H3Icon />,
@@ -62,7 +57,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'todo',
         label: 'To-do list',
-        description: 'Track tasks with a to-do list.',
         hint: '[]',
         keywords: ['todo', 'to-do', 'task', 'checkbox', 'check'],
         icon: <TodoIcon />,
@@ -70,7 +64,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'bulleted',
         label: 'Bulleted list',
-        description: 'Create a simple bulleted list.',
         hint: '-',
         keywords: ['bullet', 'bulleted', 'list', 'unordered', 'ul'],
         icon: <BulletedIcon />,
@@ -78,7 +71,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'numbered',
         label: 'Numbered list',
-        description: 'Create a list with numbering.',
         hint: '1.',
         keywords: ['numbered', 'number', 'list', 'ordered', 'ol'],
         icon: <NumberedIcon />,
@@ -86,7 +78,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'toggle',
         label: 'Toggle list',
-        description: 'Hide content inside a toggle.',
         hint: '>',
         keywords: ['toggle', 'disclosure', 'collapse', 'details'],
         icon: <ToggleIcon />,
@@ -94,14 +85,12 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'table',
         label: 'Table',
-        description: 'Add a simple table to this page.',
         keywords: ['table', 'grid', 'rows', 'columns', 'cells'],
         icon: <TableIcon />,
     },
     {
         type: 'quote',
         label: 'Quote',
-        description: 'Capture a quote.',
         hint: '"',
         keywords: ['quote', 'blockquote', 'citation'],
         icon: <QuoteIcon />,
@@ -109,7 +98,6 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'divider',
         label: 'Divider',
-        description: 'Visually divide blocks.',
         hint: '---',
         keywords: ['divider', 'separator', 'hr', 'rule', 'line'],
         icon: <DividerIcon />,
@@ -117,14 +105,12 @@ export const MENU_ITEMS: MenuItemDef[] = [
     {
         type: 'callout',
         label: 'Callout',
-        description: 'Make writing stand out.',
         keywords: ['callout', 'banner', 'notice', 'info'],
         icon: <CalloutIcon />,
     },
     {
         type: 'code',
         label: 'Code',
-        description: 'Capture a code snippet.',
         hint: '```',
         keywords: ['code', 'codeblock', 'snippet', 'pre'],
         icon: <CodeIcon />,

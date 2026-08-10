@@ -12,6 +12,13 @@ body,
     overscroll-behavior: none;
 }
 
+/* Text selection is one of the accent's five permitted uses (§03), and it is app-wide: the note
+   body, an inline rename, the search box. 35% is the weight §06 renders it at — enough to read as
+   a highlight over paper without hiding the glyphs under it. */
+::selection {
+    background: rgba(var(--gn-accent-rgb), 0.35);
+}
+
 /* Anything that is a button acts like one under the pointer. A type selector (specificity 0,0,1)
    so any component with a reason to differ — the block editor's drag handle wants `grab`, a
    read-only field wants `default` — still wins with a single class. Disabled buttons are excluded:
@@ -138,10 +145,11 @@ button:not(:disabled) {
    app chrome (`--g-font-family-sans`) or the raw Markdown source view.
    Set on `.g-root` so the family can reference `--g-font-family-sans`, which lives there. */
 .g-root {
-    /* Sans — the native system font (default). 15px matches YFM's own base size. */
+    /* Sans — the native system font (default). 15/24, §03's `--fs-body` / `--lh-body`: the body
+       copy of the note is the one text in the app the type scale is really about. */
     --gn-editor-font: var(--g-font-family-sans);
     --gn-editor-font-size: 15px;
-    --gn-editor-line-height: 1.35;
+    --gn-editor-line-height: 1.6;
     /* Lists get a little more air than body copy — sans's tight default made bullet/numbered lists
        feel cramped. serif/mono keep their body rhythm (set in their own blocks below). */
     --gn-editor-list-line-height: 1.45;
@@ -205,22 +213,29 @@ button:not(:disabled) {
 }
 
 /* ── Text-width setting ─────────────────────────────────────────────────────────────────────────
-   `--gn-text-width` caps the measure of the note-content column and centers it in the pane. Stamped
-   on <html> as `data-text-width` by `Workspace` (effective across app → workspace → note). Applied to
-   the WYSIWYG editor content, the read-only preview body, and the note title — all inset by the same
-   `--editor-gutter`, so their left edges stay aligned when centered. `unlimited` = no cap (fills the
-   pane, today's behavior). NOT applied to the raw Markup editor (parity with the editor-font scoping).
-   Values are first guesses — tune later. */
+   §06 puts the MEASURE — the width of the text itself — at 680px. What the centering rule below
+   caps is the whole column, text plus the 36px gutter on either side, so each value here is the
+   measure plus 72.
+
+   Not written as `calc(measure + 2 * var(--editor-gutter))`: a custom property is substituted where
+   it is DECLARED, not where it is used, so a `var(--editor-gutter)` in a `:root` declaration
+   resolves against `:root` — which has no gutter — and silently takes the fallback. (Outside the
+   editor pane the gutter is 16px rather than 36, so the measure there runs 40px wider; those
+   surfaces are narrower than the cap anyway, so it never binds.)
+
+   Stamped on <html> as `data-text-width` by `Workspace` (effective across app → note).
+   `unlimited` = no cap (fills the pane). NOT applied to the raw Markup editor (parity with the
+   editor-font scoping). */
 :root {
-    --gn-text-width: 52rem;
+    --gn-text-width: 752px; /* 680 measure */
 }
 :root[data-text-width='narrow'] {
-    --gn-text-width: 42rem;
+    --gn-text-width: 632px; /* 560 measure */
 }
 /* No 'normal' block — it IS the :root default above (mirrors data-editor-font, which has no 'sans'
    rule); the stamped attribute simply matches no override and falls through. */
 :root[data-text-width='wide'] {
-    --gn-text-width: 72rem;
+    --gn-text-width: 952px; /* 880 measure */
 }
 :root[data-text-width='unlimited'] {
     --gn-text-width: none;

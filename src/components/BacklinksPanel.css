@@ -1,33 +1,80 @@
-/* "Linked references" drawer beneath the editor. Lives in the .workspace__editor flex column as a
-   sibling below .workspace__panes, so it sits at the bottom; the editor pane gives up the height.
-   Shares the editor's horizontal gutter so its text lines up with the note body. */
+/* "Linked references" — §04's bottom bar. It lives in the .workspace__editor flex column as a
+   sibling below .workspace__panes, so it sits at the foot of the pane and the editor gives up the
+   height. Shares the editor's horizontal gutter, so its text lines up with the note body. */
 .backlinks {
-    flex-shrink: 0;
+    flex: none;
     display: flex;
     flex-direction: column;
-    max-height: 33%;
+    /* Closed it is the 40px trigger; open it grows to at most 300px and scrolls inside itself
+       (§04), rather than taking a share of the pane and pushing the writing surface around. */
+    max-height: 300px;
     overflow: hidden;
-    padding: 0 var(--editor-gutter, 16px);
-    border-top: 1px solid var(--g-color-line-generic);
+    border-top: 1px solid var(--line);
+    background: color-mix(in oklab, var(--bg-paper), var(--bg-panel-2) 45%);
+    font-family: var(--font-ui);
 }
 
 .backlinks__header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
+    box-sizing: border-box;
+    flex: none;
     width: 100%;
-    padding: 8px 0;
+    height: 40px;
+    padding: 0 var(--editor-gutter, 16px);
     border: none;
     background: none;
-    color: var(--g-color-text-secondary);
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
     text-align: left;
-    cursor: pointer;
 }
+
 /* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this header is the
    collapse toggle, so a swallowed tap reads as "the panel won't open". */
 @media (hover: hover) {
     .backlinks__header:hover {
-        color: var(--g-color-text-primary);
+        color: var(--text-1);
+    }
+}
+
+.backlinks__caret {
+    flex: none;
+    opacity: 0.6;
+    transition: transform var(--dur-1) var(--ease);
+}
+
+.backlinks__header[data-panel-open] .backlinks__caret {
+    transform: rotate(90deg);
+}
+
+.backlinks__count {
+    font-weight: 550;
+    color: var(--text-1);
+}
+
+/* Base UI measures the panel and publishes its height as `--collapsible-panel-height`, which is
+   what lets a height transition run from `auto`. It keeps the element MOUNTED while closed
+   (`data-closed`), so the closed height has to be stated here — without it the bar stayed as tall
+   as its contents and "collapsed" did nothing visible. */
+.backlinks__panel {
+    height: var(--collapsible-panel-height);
+    min-height: 0;
+    overflow-y: auto;
+    transition: height var(--dur-2) var(--ease);
+}
+
+.backlinks__panel[data-closed],
+.backlinks__panel[data-starting-style],
+.backlinks__panel[data-ending-style] {
+    height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backlinks__panel {
+        transition: none;
     }
 }
 
@@ -36,8 +83,7 @@
     flex-direction: column;
     gap: 10px;
     margin: 0;
-    padding: 0 0 12px;
-    overflow-y: auto;
+    padding: 0 var(--editor-gutter, 16px) 14px;
     list-style: none;
 }
 
@@ -52,18 +98,23 @@
     padding: 0;
     border: none;
     background: none;
-    cursor: pointer;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    letter-spacing: -0.003em;
+    text-align: left;
 }
-.backlinks__title {
-    color: var(--g-color-text-link);
-}
+
 @media (hover: hover) {
-    .backlinks__source:hover .backlinks__title {
-        color: var(--g-color-text-link-hover);
+    .backlinks__source:hover {
         text-decoration: underline;
     }
 }
 
 .backlinks__context {
     padding-left: 2px;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
 }
