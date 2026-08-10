@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import type {CSSProperties} from 'react';
 
 import {Eye} from '@gravity-ui/icons';
 import {Icon, Label, Text, useToaster} from '@gravity-ui/uikit';
@@ -41,6 +42,7 @@ import {EditorPane, type EditorPaneHandle} from './EditorPane';
 import {FolderRail, type FolderRailHandle} from './FolderRail';
 import {MoveToDialog} from './MoveToDialog';
 import {NoteList, type NoteListHandle} from './NoteList';
+import {PanelResizer, parsePanelWidth} from './PanelResizer';
 import {SettingsDialog} from './SettingsDialog';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
@@ -97,6 +99,46 @@ const SEARCH_DEBOUNCE_MS = 120;
 // workspace keeps its own sidebar/rail arrangement across switches and windows.
 const nsKey = (workspaceId: string, suffix: string) => `gravity-notes:${workspaceId}:${suffix}`;
 
+// The stylesheet's panel widths (Workspace.css `--rail-width` / `--sidebar-width`) — the resting
+// state a divider double-click returns to. `null` width state = "use these".
+const RAIL_DEFAULT_WIDTH = 200;
+const SIDEBAR_DEFAULT_WIDTH = 280;
+// What a divider drag must always leave the editor, no matter the window: enough for a readable
+// column of text. Computed against the panels' width VARIABLES — their 1px borders shave a couple
+// of pixels off in practice — so it's a comfortable floor, not a pixel-exact one.
+const EDITOR_MIN_WIDTH = 320;
+
+/**
+ * One dragged panel width (folder rail / note list), per-workspace like the rest of the layout.
+ * `width` null = the stylesheet default (and no stored key — a reset must not pin today's default
+ * forever); `effective` resolves it. Note windows keep the defaults and never persist, like the
+ * rest of their transient layout. No legacy keys to migrate: the feature postdates workspaces.
+ */
+function usePanelWidth(
+    workspaceId: string,
+    suffix: 'rail-width' | 'sidebar-width',
+    defaultWidth: number,
+    noteWindow: boolean,
+) {
+    const [width, setWidth] = useState<number | null>(() =>
+        noteWindow ? null : parsePanelWidth(localStorage.getItem(nsKey(workspaceId, suffix))),
+    );
+    useEffect(() => {
+        if (noteWindow) return;
+        if (width === null) localStorage.removeItem(nsKey(workspaceId, suffix));
+        else localStorage.setItem(nsKey(workspaceId, suffix), String(width));
+    }, [noteWindow, workspaceId, suffix, width]);
+    return {width, effective: width ?? defaultWidth, set: setWidth};
+}
+
+/** Inline overrides for the panel-width variables — only the dragged ones; absent = stylesheet. */
+function panelWidthVars(railWidth: number | null, sidebarWidth: number | null): CSSProperties {
+    return {
+        ...(railWidth !== null && {'--rail-width': `${railWidth}px`}),
+        ...(sidebarWidth !== null && {'--sidebar-width': `${sidebarWidth}px`}),
+    } as CSSProperties;
+}
+
 // The pre-workspace (un-namespaced) UI-state keys. Consumed once — as the defaults for the first
 // workspace opened after the upgrade (the migrated one) — then deleted, so a later "set back to
 // default" in that workspace can't fall through to a stale global value.
@@ -123,6 +165,14 @@ function readWorkspaceKey(workspaceId: string, suffix: string, legacyKey: string
         localStorage.removeItem(legacyKey);
     }
     return legacy;
+}
+
+/**
+ * The sidebar's class list: the collapsed-overlay width rule needs to know whether the rail's
+ * width belongs in the sum — see Workspace.css.
+ */
+function sidebarClassName(railOpen: boolean): string {
+    return 'workspace__sidebar' + (railOpen ? ' workspace__sidebar_with-rail' : '');
 }
 
 /** Re-prefix a folder path (or note id) when its `from` ancestor folder moves/renames to `to`. */
@@ -320,6 +370,44 @@ export function Workspace({
         localStorage.setItem(nsKey(workspaceId, 'rail-open'), String(railOpen));
     }, [noteWindow, workspaceId, railOpen]);
     const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
+
+    // The dividers' dragged widths (see usePanelWidth above).
+    const rail = usePanelWidth(workspaceId, 'rail-width', RAIL_DEFAULT_WIDTH, noteWindow);
+    const sidebar = usePanelWidth(workspaceId, 'sidebar-width', SIDEBAR_DEFAULT_WIDTH, noteWindow);
+    const setRailWidth = rail.set;
+    const setSidebarWidth = sidebar.set;
+
+    // During a divider drag the live width goes straight onto the root element's CSS variable —
+    // a pointer-rate re-render of the whole workspace (editor included) is real jank — and the
+    // committed value lands in state on release, matching what the DOM already shows.
+    const workspaceRootRef = useRef<HTMLDivElement>(null);
+    // Written by attachBodyEl (a callback ref, so the element also lands in state for swipe-back).
+    const bodyRef = useRef<HTMLDivElement | null>(null);
+    const setPanelVar = useCallback((name: '--rail-width' | '--sidebar-width', width: number) => {
+        workspaceRootRef.current?.style.setProperty(name, `${width}px`);
+    }, []);
+    // Reset also clears the live inline var: with state already null there is no re-render to
+    // sweep up a value a drag wrote directly to the DOM.
+    const resetRailWidth = useCallback(() => {
+        setRailWidth(null);
+        workspaceRootRef.current?.style.removeProperty('--rail-width');
+    }, [setRailWidth]);
+    const resetSidebarWidth = useCallback(() => {
+        setSidebarWidth(null);
+        workspaceRootRef.current?.style.removeProperty('--sidebar-width');
+    }, [setSidebarWidth]);
+    // Drag caps, sampled at gesture start: however wide the OTHER panel currently sits, the
+    // editor keeps at least EDITOR_MIN_WIDTH of the body row.
+    const railMaxWidth = useCallback(() => {
+        const body = bodyRef.current;
+        if (!body) return Number.MAX_SAFE_INTEGER;
+        return body.clientWidth - sidebar.effective - EDITOR_MIN_WIDTH;
+    }, [sidebar.effective]);
+    const sidebarMaxWidth = useCallback(() => {
+        const body = bodyRef.current;
+        if (!body) return Number.MAX_SAFE_INTEGER;
+        return body.clientWidth - (railOpen ? rail.effective : 0) - EDITOR_MIN_WIDTH;
+    }, [railOpen, rail.effective]);
 
     // Drive list MODE (ranked search vs folder scope) off the debounced query, so the list flips in
     // step with the results it shows — not a keystroke ahead of them.
@@ -624,6 +712,11 @@ export function Workspace({
     // note pushes to 'editor', the top bar's Back button returns to 'list'. Ignored on wider
     // viewports, where the desktop multi-pane layout (collapsed/peeked overlay) applies instead.
     const isNarrow = useIsNarrow();
+    // The desktop column layout is the only one with resizable panels — mobile turns the rail into
+    // a drawer and stretches the list to the full width, so a divider there would ride over the
+    // drawer's edge and silently rewrite the DESKTOP widths. Mirrors the body-className branch
+    // (note windows keep the desktop layout at any size).
+    const resizableColumns = !isNarrow || noteWindow;
     const [mobilePane, setMobilePane] = useState<'list' | 'editor'>('list');
     // Reveal-coordination state (see revealNote): the note the mobile pane should push to once it has
     // loaded, plus stable reads of isNarrow / the open note for the callback.
@@ -704,6 +797,12 @@ export function Workspace({
     // must re-run once the nodes mount).
     const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
     const [sidebarEl, setSidebarEl] = useState<HTMLElement | null>(null);
+    // One body element, two consumers: swipe-back needs it in STATE (the hook re-subscribes when
+    // it mounts), the divider caps just read clientWidth at gesture start — the ref above suffices.
+    const attachBodyEl = useCallback((el: HTMLDivElement | null) => {
+        bodyRef.current = el;
+        setBodyEl(el);
+    }, []);
 
     // Return to the list from the editor pane (Back button / Escape) and land keyboard focus on the
     // selected row once the list is on screen — mirrors the desktop Esc-out-of-editor behavior. A
@@ -1328,7 +1427,14 @@ export function Workspace({
 
     return (
         <AttachmentsContext.Provider value={attachmentCache}>
-            <div className="workspace">
+            <div
+                className="workspace"
+                ref={workspaceRootRef}
+                // Persisted panel widths override the stylesheet defaults. React only ever
+                // renders COMMITTED widths here; the same variables are written directly to the
+                // element mid-drag (see setPanelVar above).
+                style={panelWidthVars(rail.width, sidebar.width)}
+            >
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -1427,7 +1533,7 @@ export function Workspace({
                 />
 
                 <div
-                    ref={setBodyEl}
+                    ref={attachBodyEl}
                     className={
                         'workspace__body' +
                         // A single-note window always shows one note with both panels tucked away,
@@ -1441,25 +1547,39 @@ export function Workspace({
                               (collapsed && peeked ? ' workspace__body_peeked' : ''))
                     }
                 >
-                    <aside ref={setSidebarEl} className="workspace__sidebar">
+                    <aside ref={setSidebarEl} className={sidebarClassName(railOpen)}>
+                        {/* Dividers live INSIDE the sidebar so the collapse/peek overlay slides
+                            them along with the panes they resize. */}
                         {railOpen ? (
-                            <FolderRail
-                                ref={railRef}
-                                rows={folderRows}
-                                selectedFolder={selectedFolder}
-                                allNotesCount={notes.notes.length}
-                                onSelectFolder={handleSelectFolder}
-                                onToggleCollapse={toggleCollapse}
-                                onCreateFolder={(parent, name) =>
-                                    void notes.createFolder(parent, name)
-                                }
-                                onRemoveFolder={(path) => void notes.removeFolder(path)}
-                                onMoveFolder={handleMoveFolder}
-                                onTogglePin={notes.togglePin}
-                                onMoveTo={(id, dest) => void notes.move(id, dest)}
-                                onReveal={handleReveal}
-                                onFocusList={() => listRef.current?.focusSelected()}
-                            />
+                            <>
+                                <FolderRail
+                                    ref={railRef}
+                                    rows={folderRows}
+                                    selectedFolder={selectedFolder}
+                                    allNotesCount={notes.notes.length}
+                                    onSelectFolder={handleSelectFolder}
+                                    onToggleCollapse={toggleCollapse}
+                                    onCreateFolder={(parent, name) =>
+                                        void notes.createFolder(parent, name)
+                                    }
+                                    onRemoveFolder={(path) => void notes.removeFolder(path)}
+                                    onMoveFolder={handleMoveFolder}
+                                    onTogglePin={notes.togglePin}
+                                    onMoveTo={(id, dest) => void notes.move(id, dest)}
+                                    onReveal={handleReveal}
+                                    onFocusList={() => listRef.current?.focusSelected()}
+                                />
+                                {resizableColumns ? (
+                                    <PanelResizer
+                                        label="Resize folder rail"
+                                        width={rail.effective}
+                                        getMaxWidth={railMaxWidth}
+                                        onResize={(w) => setPanelVar('--rail-width', w)}
+                                        onCommit={setRailWidth}
+                                        onReset={resetRailWidth}
+                                    />
+                                ) : null}
+                            </>
                         ) : null}
                         {/* Mobile: a dimmed backdrop behind the rail drawer — tap it to dismiss the
                             folder picker without changing the scope (picking a folder also closes
@@ -1516,6 +1636,16 @@ export function Workspace({
                             onClearScope={() => setSelectedFolder(null)}
                             onFocusRail={() => railRef.current?.focusSelected()}
                         />
+                        {resizableColumns ? (
+                            <PanelResizer
+                                label="Resize note list"
+                                width={sidebar.effective}
+                                getMaxWidth={sidebarMaxWidth}
+                                onResize={(w) => setPanelVar('--sidebar-width', w)}
+                                onCommit={setSidebarWidth}
+                                onReset={resetSidebarWidth}
+                            />
+                        ) : null}
                     </aside>
 
                     <main className="workspace__editor">

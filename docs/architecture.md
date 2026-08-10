@@ -61,7 +61,9 @@ menu's Open Recent, the `⌃R` switcher, and launch restore. On the desktop each
 its own native window, plus Apple-Notes-style **per-note windows** (`⌘↵` on a list row) — small,
 panels tucked away, focus-if-open, with `⌘0` bringing back the workspace's main window. The window
 ↔ workspace/note assignments live in the Rust shell, so new windows boot straight into the right
-folder.
+folder. Per-workspace UI layout — sidebar collapsed, rail open, selected folder, and the two
+panel widths (`rail-width` / `sidebar-width`, from dragging the dividers) — lives under
+workspace-namespaced localStorage keys; note windows neither read nor write those.
 
 ## Mobile & iOS
 

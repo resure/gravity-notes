@@ -71,8 +71,19 @@ With the folder rail open (`⌘⇧\`) and a folder focused:
 With the rail closed, a small **folder chip** above the list names the active scope — click it to
 open the rail, `✕` to go back to All Notes. **New note** (`⌘N`) lands in the selected folder.
 
+## Panels
+
+The folder rail and the notes list resize by dragging the divider on their right edge
+(double-click it to reset). With a divider focused (`Tab`):
+
+| Keys           | Action                                 |
+| -------------- | -------------------------------------- |
+| `←` / `→`      | Nudge the width by 16px                |
+| `Home` / `End` | Jump to the narrowest / widest allowed |
+
 ## Mouse
 
 **Right-click** a note or folder for its actions (pin, rename, move, duplicate, delete, …) — the
 same menu the row's `⋯` button opens, at the cursor. **⌘-click** a note row opens it in its own
-window (desktop). Neither moves your selection.
+window (desktop). Neither moves your selection. **Drag** the divider beside the folder rail or
+the notes list to resize it; **double-click** the divider resets the width.

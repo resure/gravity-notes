@@ -967,3 +967,90 @@ describe('Workspace — legacy note-appearance migration', () => {
         expect(localStorage.getItem('gravity-notes:test-ws:note:Gone.md:appearance')).toBeNull();
     });
 });
+
+describe('Workspace — resizable panels', () => {
+    afterEach(() => {
+        localStorage.clear();
+    });
+
+    const workspaceStyle = () => (document.querySelector('.workspace') as HTMLElement).style;
+
+    // jsdom lays nothing out (clientWidth 0), which reads as a zero-width window — the
+    // "leave the editor room" cap would floor every drag. Give the body a real width.
+    const layOutBody = (width: number) => {
+        Object.defineProperty(
+            document.querySelector('.workspace__body') as HTMLElement,
+            'clientWidth',
+            {
+                configurable: true,
+                value: width,
+            },
+        );
+    };
+
+    it('drags the note-list divider live and persists the width on release', async () => {
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        layOutBody(1200);
+        const divider = screen.getByRole('separator', {name: 'Resize note list'});
+
+        fireEvent.pointerDown(divider, {button: 0, clientX: 280, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 340, pointerId: 1});
+        // Mid-drag: the live width is on the element, nothing persisted yet.
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('340px');
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBeNull();
+
+        fireEvent.pointerUp(divider, {pointerId: 1});
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBe('340');
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('340px');
+    });
+
+    it('restores a persisted width on mount and clamps garbage', async () => {
+        localStorage.setItem('gravity-notes:test-ws:sidebar-width', '333');
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('333px');
+        // The untouched rail width stays on the stylesheet default (no inline override).
+        expect(workspaceStyle().getPropertyValue('--rail-width')).toBe('');
+    });
+
+    it('double-click resets the panel to its default and clears the key', async () => {
+        localStorage.setItem('gravity-notes:test-ws:sidebar-width', '333');
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        const divider = screen.getByRole('separator', {name: 'Resize note list'});
+
+        fireEvent.doubleClick(divider);
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('');
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBeNull();
+    });
+
+    it('shows the rail divider only when the rail is open', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        expect(screen.queryByRole('separator', {name: 'Resize folder rail'})).toBeNull();
+
+        await user.click(screen.getByRole('button', {name: 'Folders'}));
+        expect(await screen.findByRole('separator', {name: 'Resize folder rail'})).toBeVisible();
+    });
+
+    it('renders no dividers in the mobile single-pane layout', async () => {
+        // Phone-sim: the ≤700px width query matches while the hover query still reports a mouse.
+        // No divider belongs there — the rail is a drawer and the list fills the width, so a drag
+        // could only rewrite the DESKTOP widths sight unseen.
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            ...original(query),
+            matches: query.includes('max-width'),
+        })) as typeof window.matchMedia;
+        try {
+            renderWorkspace();
+            await screen.findByRole('option', {name: /Alpha/});
+            expect(document.querySelector('.workspace__body_mobile')).not.toBeNull();
+            expect(screen.queryAllByRole('separator')).toHaveLength(0);
+        } finally {
+            window.matchMedia = original;
+        }
+    });
+});

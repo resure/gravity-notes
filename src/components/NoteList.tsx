@@ -869,7 +869,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         {value: 'created', content: 'Created'},
                     ]}
                 />
-                <Button view="normal" size="m" onClick={() => onCreate()}>
+                {/* aria-label keeps the name stable when the tight-width container query (see
+                    NoteList.css) hides the text and leaves the icon. */}
+                <Button
+                    className="note-list__new"
+                    view="normal"
+                    size="m"
+                    aria-label="New"
+                    onClick={() => onCreate()}
+                >
                     <Icon data={Plus} />
                     New
                 </Button>
