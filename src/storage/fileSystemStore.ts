@@ -1,7 +1,8 @@
-import {METADATA_FILENAME, parseMetadata} from './metadata';
+import {LEGACY_METADATA_FILENAME, METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     ATTACHMENTS_DIR,
     FOLDER_MARKER,
+    LEGACY_FOLDER_MARKER,
     MD_EXT,
     PREVIEW_SCAN_BYTES,
     SKIP_DIR_NAMES,
@@ -98,7 +99,7 @@ async function mapPool<T, R>(
  * Notes stored as individual `.md` files in a user-picked directory, accessed through the File
  * System Access API. A note id is its POSIX-relative path from the picked folder (`Work/Sub/Title.md`
  * for a nested note, `Title.md` at the root); the leaf without `.md` is the title. Folders are real
- * directories — created empty with a `.gnkeep` marker, listed recursively, and auto-pruned when a
+ * directories — created empty with a `.solkeep` marker, listed recursively, and auto-pruned when a
  * move/delete empties them (a marked folder survives). Semantics match `IndexedDbNoteStore` and
  * `TauriNoteStore`, so everything above the `NoteStore` seam is backend-agnostic.
  */
@@ -219,15 +220,21 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async readMetadata(): Promise<NotesMetadata> {
-        let text: string;
-        try {
-            const handle = await this.dir.getFileHandle(METADATA_FILENAME);
-            text = await (await handle.getFile()).text();
-        } catch (err) {
-            if (err instanceof DOMException && err.name === 'NotFoundError') {
-                return parseMetadata({}); // no dotfile yet → fresh defaults
+        let text = await this.readSidecar(METADATA_FILENAME);
+        if (text === null) {
+            // No Sol sidecar: adopt a Gravity Notes one if the vault has it, copying it under the
+            // new name so this runs exactly once per vault. The legacy file stays where it is —
+            // an older install opening the same folder keeps working (PLAN.md D7).
+            const legacy = await this.readSidecar(LEGACY_METADATA_FILENAME);
+            if (legacy === null) return parseMetadata({}); // no dotfile at all → fresh defaults
+            text = legacy;
+            try {
+                const handle = await this.dir.getFileHandle(METADATA_FILENAME, {create: true});
+                await writeFile(handle, legacy);
+            } catch {
+                // A read-only vault (or a transient failure) just means we adopt it again next
+                // launch — the legacy bytes we're about to parse are still the right answer now.
             }
-            throw err;
         }
         try {
             return parseMetadata(JSON.parse(text));
@@ -328,7 +335,7 @@ export class FileSystemNoteStore implements NoteStore {
         const srcDir = await this.resolveDir(dirname(id));
         if (srcDir) await srcDir.removeEntry(leaf);
         // Moving the last note out of a folder leaves it empty: prune the source's now-empty
-        // ancestors (a folder kept alive by a .gnkeep marker survives).
+        // ancestors (a folder kept alive by a marker file survives).
         await this.pruneEmptyAncestors(dirname(id));
         const updatedAt = (await destHandle.getFile()).lastModified;
         return {id: newId, title: titleFromFileName(newId), updatedAt};
@@ -480,7 +487,7 @@ export class FileSystemNoteStore implements NoteStore {
         }
         const dir = await this.resolveDir(path, true);
         if (!dir) throw new Error(`Could not create folder "${path}"`);
-        // A `.gnkeep` marker keeps the (otherwise empty) folder alive past the auto-prune.
+        // A `.solkeep` marker keeps the (otherwise empty) folder alive past the auto-prune.
         const marker = await dir.getFileHandle(FOLDER_MARKER, {create: true});
         await writeFile(marker, '');
         return path;
@@ -489,10 +496,14 @@ export class FileSystemNoteStore implements NoteStore {
     async removeFolder(path: string): Promise<void> {
         const dir = await this.resolveDir(path);
         if (!dir) return; // already gone
-        try {
-            await dir.removeEntry(FOLDER_MARKER);
-        } catch {
-            // An implicit folder (no marker) — nothing to drop.
+        // Drop BOTH marker spellings: a folder created by Gravity Notes carries `.gnkeep`, and
+        // leaving it behind would make the directory non-empty and the removal below throw.
+        for (const marker of [FOLDER_MARKER, LEGACY_FOLDER_MARKER]) {
+            try {
+                await dir.removeEntry(marker);
+            } catch {
+                // Not present — an implicit folder, or the other spelling.
+            }
         }
         const parent = await this.resolveDir(dirname(path));
         // Non-recursive: only an empty directory is removed (the caller ensures it holds no notes).
@@ -630,7 +641,7 @@ export class FileSystemNoteStore implements NoteStore {
         return out;
     }
 
-    /** Recursively copy every file under `from` into `to` (creating dirs), `.gnkeep` markers included. */
+    /** Recursively copy every file under `from` into `to` (creating dirs), markers included. */
     private async copyTree(from: string, to: string): Promise<void> {
         const src = await this.resolveDir(from);
         const dest = await this.resolveDir(to, true);
@@ -774,12 +785,29 @@ export class FileSystemNoteStore implements NoteStore {
         }
     }
 
-    /** Whether `dir` holds nothing worth keeping: no note, no `.gnkeep`, no subdir, no temp. */
+    /** Read one sidecar file's text, or `null` when it isn't there. Other failures propagate. */
+    private async readSidecar(name: string): Promise<string | null> {
+        try {
+            const handle = await this.dir.getFileHandle(name);
+            return await (await handle.getFile()).text();
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'NotFoundError') return null;
+            throw err;
+        }
+    }
+
+    /** Whether `dir` holds nothing worth keeping: no note, no marker, no subdir, no temp. */
     private async isPrunable(dir: FileSystemDirectoryHandle): Promise<boolean> {
         for await (const handle of dir.values()) {
-            // The metadata sidecar only ever lives at the root (never pruned); ignore it defensively.
-            if (handle.kind === 'file' && handle.name === METADATA_FILENAME) continue;
-            return false; // a note, a .gnkeep marker, a subdir, or an in-flight temp keeps it
+            // The metadata sidecar only ever lives at the root (never pruned); ignore it
+            // defensively — under either spelling, since a migrated vault has both.
+            if (
+                handle.kind === 'file' &&
+                (handle.name === METADATA_FILENAME || handle.name === LEGACY_METADATA_FILENAME)
+            ) {
+                continue;
+            }
+            return false; // a note, a folder marker, a subdir, or an in-flight temp keeps it
         }
         return true;
     }

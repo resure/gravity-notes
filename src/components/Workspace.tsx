@@ -387,7 +387,7 @@ export function Workspace({
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const [trashOpen, setTrashOpen] = useState(false);
 
-    // Open the About dialog when the native "About Gravity Notes" menu item fires (the Rust menu
+    // Open the About dialog when the native "About Sol" menu item fires (the Rust menu
     // handler emits `menu:about` to the FOCUSED window). Listen on the current window — a plain
     // `listen()` registers the any-target scope, which also receives events aimed at other windows,
     // so every window would open the dialog at once. Desktop only; the API is dynamically imported
@@ -424,7 +424,7 @@ export function Workspace({
             if (!found) return;
             toast({
                 title: 'Update available',
-                content: `Gravity Notes v${found.version} is ready to install.`,
+                content: `Sol v${found.version} is ready to install.`,
                 // No auto-dismiss: there is an action to take, and a notification you can miss is
                 // worse than none.
                 timeout: false,
@@ -718,8 +718,7 @@ export function Workspace({
                 await invoke('set_window_note', {noteId: openNote?.id ?? null});
                 const {getCurrentWindow} = await import('@tauri-apps/api/window');
                 await getCurrentWindow().setTitle(
-                    openNote?.title ??
-                        (storageLabel ? `${storageLabel} — Gravity Notes` : 'Gravity Notes'),
+                    openNote?.title ?? (storageLabel ? `${storageLabel} — Sol` : 'Sol'),
                 );
             } catch {
                 // Best-effort: a failure only leaves the title stale / focus-if-open duplicable.

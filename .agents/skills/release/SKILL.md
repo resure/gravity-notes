@@ -1,11 +1,11 @@
 ---
 name: release
-description: Cut a new signed + notarized macOS release of Gravity Notes. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, launches the built production app for hands-on verification + changelog approval, then tags and publishes a GitHub release with the DMG + auto-update artifacts (.app.tar.gz + latest.json) attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
+description: Cut a new signed + notarized macOS release of Sol. Bumps the version (minor by default), writes CHANGELOG.md, builds/signs/notarizes the .app and .dmg, launches the built production app for hands-on verification + changelog approval, then tags and publishes a GitHub release with the DMG + auto-update artifacts (.app.tar.gz + latest.json) attached. Use when the user runs /release or asks to "cut a release", "ship a version", or "publish a release".
 ---
 
 # Release runbook (signed + notarized macOS build)
 
-This skill ships a distributable build of **Gravity Notes**: bump → changelog →
+This skill ships a distributable build of **Sol**: bump → changelog →
 build/sign/notarize → **verify the built app** → tag → GitHub release with the DMG attached. Follow
 the steps **in order**. The order is deliberate: the production app is built and **launched for
 hands-on verification _before_ anything public** (commit, tag, release) is created — so a failed
@@ -37,7 +37,9 @@ build, or a "this looks wrong" after actually trying the app, leaves only throwa
    Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`, which the build
    script aliases to it), `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (the `.p8` file is readable) —
    **and** the updater key `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
-   `~/Documents/Apple Connect Keys/gravity-notes-updater.key`; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+   `~/Documents/Apple Connect Keys/gravity-notes-updater.key` — still the pre-rename FILENAME,
+   deliberately: Sol keeps Gravity Notes' minisign keypair, so `plugins.updater.pubkey` is
+   unchanged; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
    may be empty). Verify each is set (names only, never values) — without the updater key the build
    can't sign the auto-update bundle and fails:
 
@@ -115,16 +117,16 @@ manifest) in `bundle/macos/` — the script renames the tarball to the space-fre
 Then verify **both** Gatekeeper artifacts pass offline:
 
 ```bash
-APP="src-tauri/target/release/bundle/macos/Gravity Notes.app"
-DMG="src-tauri/target/release/bundle/dmg/Gravity_Notes_${NEW}_aarch64.dmg"
-TARBALL="src-tauri/target/release/bundle/macos/Gravity_Notes_${NEW}_aarch64.app.tar.gz"
+APP="src-tauri/target/release/bundle/macos/Sol.app"
+DMG="src-tauri/target/release/bundle/dmg/Sol_${NEW}_aarch64.dmg"
+TARBALL="src-tauri/target/release/bundle/macos/Sol_${NEW}_aarch64.app.tar.gz"
 LATEST="src-tauri/target/release/bundle/macos/latest.json"
 xcrun stapler validate "$APP"
 xcrun stapler validate "$DMG"
 spctl -a -vvv "$APP"                 # → "accepted", source=Notarized Developer ID
 ```
 
-(`build-mac-release.sh` renames the DMG to the space-free `Gravity_Notes_…` form, so
+(`build-mac-release.sh` renames the DMG to the space-free `Sol_…` form, so
 the file has no spaces; the `.app` path still does, so keep both quoted. `aarch64` =
 the arm64 build.)
 
@@ -134,7 +136,7 @@ Nothing public exists yet — this is the approval gate. **Launch the freshly bu
 the user can verify the changes hands-on** (not a dev build — the real signed/notarized artifact):
 
 ```bash
-osascript -e 'quit app "Gravity Notes"' 2>/dev/null; sleep 1; open "$APP"
+osascript -e 'quit app "Sol"' 2>/dev/null; sleep 1; open "$APP"
 ```
 
 Then present the proposed `## [X.Y.Z]` changelog section (the public release notes) **and** the
@@ -145,7 +147,7 @@ commit/tag/publish.
   so `latest.json`'s in-app "what's new" still matches — no full rebuild needed for text tweaks:
   ```bash
   node scripts/make-latest-json.mjs "$NEW" "$TARBALL.sig" \
-    "https://github.com/resure/gravity-notes/releases/download/v${NEW}/Gravity_Notes_${NEW}_aarch64.app.tar.gz" \
+    "https://github.com/resure/sol/releases/download/v${NEW}/Sol_${NEW}_aarch64.app.tar.gz" \
     "$LATEST"
   ```
 - If the app reveals a **bug / needs code changes**: abort — discard the version edits
@@ -164,7 +166,7 @@ git commit -m "release: v$NEW" -m "Co-Authored-By: Codex Opus 4.8 (1M context) <
 ## Step 6 — Tag and push
 
 ```bash
-git tag -a "v$NEW" -m "Gravity Notes v$NEW"
+git tag -a "v$NEW" -m "Sol v$NEW"
 git push origin main
 git push origin "v$NEW"
 ```
@@ -176,7 +178,7 @@ contains the `.app`):
 
 ```bash
 gh release create "v$NEW" \
-  --title "Gravity Notes v$NEW" \
+  --title "Sol v$NEW" \
   --notes-file <(printf '%s\n' "$NOTES") \
   "$DMG" "$TARBALL" "$LATEST"
 ```

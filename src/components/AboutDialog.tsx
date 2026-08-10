@@ -6,10 +6,10 @@ import {Dialog} from '../ui/Dialog';
 
 import './AboutDialog.css';
 
-const GITHUB_URL = 'https://github.com/resure/gravity-notes';
+const GITHUB_URL = 'https://github.com/resure/sol';
 
 /**
- * The app's About box, opened from the native macOS "About Gravity Notes" menu item (Workspace
+ * The app's About box, opened from the native macOS "About Sol" menu item (Workspace
  * listens for the `menu:about` event the Rust menu handler emits). We render our own dialog rather
  * than the OS panel because the native panel can't show clickable links — Tauri/muda renders its
  * credits as plain text. Links route through {@link openExternalUrl} (the OS browser on desktop,
@@ -39,7 +39,7 @@ export function AboutDialog({open, onClose}: {open: boolean; onClose: () => void
         <Dialog open={open} onClose={onClose} title="About" width={340} className="about-dialog">
             <div className="about">
                 <div className="about__orb" aria-hidden />
-                <div className="about__name">Gravity Notes</div>
+                <div className="about__name">Sol</div>
                 {version ? <div className="about__version">Version {version}</div> : null}
                 <a
                     className="about__link"

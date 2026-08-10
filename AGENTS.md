@@ -4,7 +4,7 @@ Guidance for working in this repository.
 
 ## What this is
 
-**Gravity Notes** — a local-first Markdown note-taking app, shipping as both a **web app** and a
+**Sol** — a local-first Markdown note-taking app, shipping as both a **web app** and a
 **macOS desktop app** (Tauri 2). On first run the user chooses where notes live: a **folder** of
 plain `.md` files or **in-browser** (IndexedDB). Built on [Base UI](https://base-ui.com) for
 behaviour and ~100% our own CSS for looks, with a vendored Notion-style **block editor** as the
@@ -111,14 +111,15 @@ npm run format:check # Prettier check (used in CI)
 npm run typecheck    # tsc (noEmit) for src + tsconfig.node.json for vite.config.ts
 
 # Desktop app (Tauri 2, macOS arm64). Needs Rust ≥ 1.88 (rustup recommended).
-npm run tauri:dev    # run the desktop app (dev config: blue icon + "Gravity Notes Dev" name/title)
+npm run tauri:dev    # run the desktop app (dev config: blue icon + "Sol Dev" name/title)
 npm run tauri:build  # build the signed-less .app / .dmg (arm64) into src-tauri/target/release/bundle
 # Signed + notarized release: the /release skill → scripts/build-mac-release.sh (emits DMG + updater
 # .app.tar.gz + latest.json); needs rustup's cargo + the Apple/updater signing env vars.
 ```
 
-**App icons.** Two SVG sources: `src-tauri/icon-source.svg` (prod — orange disc on a dark squircle)
-and `src-tauri/icon-source-dev.svg` (dev — a blue "supernova" sun). Regenerate with
+**App icons.** Two SVG sources: `src-tauri/icon-source.svg` (prod — an amber sun on a warm-dark
+squircle: a disc plus sixteen rays, alternating long and short so it still reads as a sun at 32px)
+and `src-tauri/icon-source-dev.svg` (dev — the same sun in blue). Regenerate with
 `npx tauri icon <1024.png> [-o src-tauri/icons-dev]`, then delete the `android/`, `ios/`, and
 `64x64.png` it emits (macOS-only). **Gotcha:** rasterize the SVG to a _transparent_ 1024px PNG first —
 `qlmanage -t` renders on a white background, so flood-fill it away before `tauri icon`
@@ -195,7 +196,10 @@ Key modules:
   a second module opening it at a lower version would throw `VersionError` after any upgrade. Each
   `tx()` closes the connection on complete / error / abort (short-lived connections are also why a
   cross-window upgrade can't block).
-- `src/storage/metadata.ts` — the per-store metadata (`.gravity-notes.json` sidecar for the FS store):
+- `src/storage/metadata.ts` — the per-store metadata (`.sol-notes.json` sidecar for the FS store;
+  a `.gravity-notes.json` left by Gravity Notes is COPIED to the new name on the first read and then
+  never read again — the original stays put so the old app can still open the folder, and every
+  sidecar-ignoring check, TS and Rust, knows both names):
   tolerant `parseMetadata`, pure transforms (`withPinToggled`, `withActive`, `reconcile`, …), and
   `orderNotes` (pins first, then the active sort). The `pinned` set holds both note ids and folder
   paths — folders are pinnable too. Per-note `icons` and `appearances` (the ⋯ popover's font/width

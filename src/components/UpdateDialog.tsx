@@ -32,7 +32,7 @@ function formatBytes(bytes: number): string {
 /** Dialog title by phase. A failed check reads gently; only a failed install is an "Update failed". */
 function captionFor(status: UpdaterStatus, errorContext: AppUpdater['errorContext']): string {
     if (status === 'available') return 'Update available';
-    if (status === 'downloading') return 'Updating Gravity Notes';
+    if (status === 'downloading') return 'Updating Sol';
     if (status === 'installed' || status === 'restart-required') return 'Update installed';
     if (status === 'error') return errorContext === 'check' ? 'Check for updates' : 'Update failed';
     return 'Software update';
@@ -61,7 +61,7 @@ function UpdateBody({updater}: {updater: AppUpdater}) {
 
             {showVersion ? (
                 <>
-                    <p className="update-dialog__version">Gravity Notes v{info.version}</p>
+                    <p className="update-dialog__version">Sol v{info.version}</p>
                     <p className="update-dialog__sub">You have v{info.currentVersion}.</p>
                     {info.notes ? <ReleaseNotes notes={info.notes} /> : null}
                 </>
@@ -73,7 +73,7 @@ function UpdateBody({updater}: {updater: AppUpdater}) {
 
             {status === 'restart-required' ? (
                 <p className="update-dialog__line">
-                    Update installed. Quit and reopen Gravity Notes to finish.
+                    Update installed. Quit and reopen Sol to finish.
                 </p>
             ) : null}
 

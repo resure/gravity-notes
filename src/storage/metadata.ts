@@ -1,7 +1,19 @@
 import type {NoteAppearanceOverride, NoteMeta, NotesMetadata, SortMode, TrashEntry} from './types';
 
 /** Sidecar file holding the folder's notes metadata. Not a `.md` file, so `list()` ignores it. */
-export const METADATA_FILENAME = '.gravity-notes.json';
+export const METADATA_FILENAME = '.sol-notes.json';
+
+/**
+ * The pre-Sol sidecar name. A vault written by Gravity Notes still has one, so both folder stores
+ * read it ONCE — when no `.sol-notes.json` exists yet — and immediately write its contents under
+ * the new name. The legacy file is then left in place, untouched and never read again: an older
+ * Gravity Notes install pointed at the same vault keeps working, which is the whole reason the
+ * migration copies rather than renames. If both exist, the new one wins unconditionally.
+ *
+ * Every place that must IGNORE the sidecar (folder-emptiness checks, the note walks) has to know
+ * both names, or a legacy vault's leftover file would read as folder content forever.
+ */
+export const LEGACY_METADATA_FILENAME = '.gravity-notes.json';
 
 /** The metadata for a folder with no pins, no stamps, the default sort, nothing open, empty trash. */
 export const DEFAULT_METADATA: NotesMetadata = {

@@ -25,7 +25,7 @@ const note = (id: string, title: string, updatedAt: number): NoteMeta => ({id, t
 
 describe('METADATA_FILENAME', () => {
     it('is a dotfile so list() (which filters to .md) ignores it', () => {
-        expect(METADATA_FILENAME).toBe('.gravity-notes.json');
+        expect(METADATA_FILENAME).toBe('.sol-notes.json');
         expect(METADATA_FILENAME.endsWith('.md')).toBe(false);
     });
 });

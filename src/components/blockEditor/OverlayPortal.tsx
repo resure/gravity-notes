@@ -8,7 +8,7 @@ import {createPortal} from 'react-dom';
  * Two host constraints force this, and they pull in opposite directions:
  *
  *  - The overlays are `position: fixed` in viewport coordinates, but `fixed` is resolved against the
- *    nearest *transformed* ancestor — and Gravity Notes' editor pane carries a `transform` (a WebKit
+ *    nearest *transformed* ancestor — and Sol's editor pane carries a `transform` (a WebKit
  *    repaint fix) and clips its overflow. Rendered in place, an overlay is silently re-anchored to
  *    the pane and cut off at its edge. So it has to leave the pane.
  *  - But `editor.css` is scoped under `.gn-block-editor` (its class names are generic enough to

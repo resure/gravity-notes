@@ -476,7 +476,7 @@ export function TopBar({
                 </MenuItem>
             ) : null}
             <MenuItem icon={<House size={16} />} onClick={onOpenAbout}>
-                About Gravity Notes
+                About Sol
             </MenuItem>
         </>
     );

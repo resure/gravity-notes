@@ -2,7 +2,7 @@
  * Scope a flat stylesheet under a single root class.
  *
  * The block editor's stylesheet was written for an app that owned the whole page, so it uses
- * generic class names (`.page`, `.content`, `.block`). Dropping it into Gravity Notes unscoped
+ * generic class names (`.page`, `.content`, `.block`). Dropping it into Sol unscoped
  * would let those rules reach anything in the app that happens to match, so every selector is
  * rewritten to sit under the editor's own root — `.editor-root` becomes the scope class itself,
  * everything else becomes a descendant of it.

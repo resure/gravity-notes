@@ -11,7 +11,19 @@ export const MD_EXT = '.md';
  * empty-ancestor prune leaves the folder in place). Git-familiar and visible in Finder. Not used
  * until first-class empty folders land; defined here so every layer shares the one spelling.
  */
-export const FOLDER_MARKER = '.gnkeep';
+export const FOLDER_MARKER = '.solkeep';
+
+/**
+ * The pre-Sol marker name. New folders get `.solkeep`, but a `.gnkeep` written by Gravity Notes
+ * keeps its folder alive indefinitely and must still be removable — recognized, never re-written.
+ * Rust carries its own copy of both names (`src-tauri/src/lib.rs`); keep the two in sync.
+ */
+export const LEGACY_FOLDER_MARKER = '.gnkeep';
+
+/** True for either folder-marker spelling — the new one we write, or the legacy one we honour. */
+export function isFolderMarker(name: string): boolean {
+    return name === FOLDER_MARKER || name === LEGACY_FOLDER_MARKER;
+}
 
 /**
  * The single root-level folder that holds media attachments (images), one spelling shared by every
@@ -182,7 +194,7 @@ export const sanitizeTitle = sanitizeSegment;
 
 /**
  * Whether a folder-name segment collides with storage the backends own and hide from the tree —
- * the root `Attachments/` media folder, or any dot-prefixed name (`.trash`, the `.gravity-notes.json`
+ * the root `Attachments/` media folder, or any dot-prefixed name (`.trash`, the `.sol-notes.json`
  * sidecar, `.gnkeep`, …), all of which the note/folder walks deliberately skip. A *user* folder with
  * such a name would exist on disk but be invisible in the app (its notes would vanish from the tree
  * yet still feed search). Folder create/rename/move reject these so that can't happen.

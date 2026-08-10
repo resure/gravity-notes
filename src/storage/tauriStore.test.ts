@@ -490,8 +490,40 @@ describe('TauriNoteStore', () => {
         expect(await store.readMetadata()).toMatchObject({sort: 'title', active: 'A.md'});
     });
 
+    it('adopts a legacy .gravity-notes.json once, leaving the original in place', async () => {
+        fs.write(
+            '.gravity-notes.json',
+            JSON.stringify({
+                version: 1,
+                sort: 'title',
+                pinned: ['A.md'],
+                created: {},
+                icons: {},
+                appearances: {'A.md': {textWidth: 'wide'}},
+                active: 'A.md',
+                trashed: [],
+            }),
+        );
+
+        const meta = await store.readMetadata();
+        expect(meta.sort).toBe('title');
+        expect(meta.pinned).toEqual(['A.md']);
+        expect(meta.appearances).toEqual({'A.md': {textWidth: 'wide'}});
+
+        // Copied under the new name; the legacy file is left untouched for older installs.
+        expect(fs.raw('.sol-notes.json')).toBeDefined();
+        expect(fs.raw('.gravity-notes.json')).toBeDefined();
+        expect((await store.readMetadata()).sort).toBe('title');
+    });
+
+    it('lets the new sidecar win outright when both exist', async () => {
+        fs.write('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}));
+        fs.write('.sol-notes.json', JSON.stringify({version: 1, sort: 'created'}));
+        expect((await store.readMetadata()).sort).toBe('created');
+    });
+
     it('falls back to default metadata on corrupt JSON', async () => {
-        fs.write('.gravity-notes.json', '{not json');
+        fs.write('.sol-notes.json', '{not json');
         expect(await store.readMetadata()).toEqual({
             version: 1,
             sort: 'updated',

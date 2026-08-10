@@ -1,9 +1,10 @@
 # PLAN — Sol: rewrite Gravity Notes onto Base UI + the block editor
 
-> **Status:** approved direction, ready to execute. Work happens on the current branch
-> (`block-editor`); the project moves to a fork later. This plan is self-contained: an agent
-> picking up any single pass should read **Context**, **Decisions**, the pass's own section, and
-> **Invariants** — and consult the design bundle for pixel truth.
+> **Status:** Passes 0–6 are DONE and on `block-editor`. Only **Pass 7** (mobile & iOS polish,
+> explicitly deferrable) remains. Work happens on the current branch; the project moves to a fork
+> later. This plan is self-contained: an agent picking up any single pass should read **Context**,
+> **Decisions**, the pass's own section, and **Invariants** — and consult the design bundle for
+> pixel truth.
 
 ## Context
 

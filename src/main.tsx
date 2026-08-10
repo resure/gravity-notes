@@ -30,7 +30,7 @@ import {isIos, isTauri} from './isTauri';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {
-    throw new Error('Gravity Notes failed to start: no #root element in the document.');
+    throw new Error('Sol failed to start: no #root element in the document.');
 }
 
 // Desktop shell (Tauri): the OS title bar is hidden (titleBarStyle "Overlay") and our top bar plays

@@ -1,6 +1,6 @@
 # Architecture
 
-How Gravity Notes is put together, what it writes to your disk, and where the edges are.
+How Sol is put together, what it writes to your disk, and where the edges are.
 
 ## Overview
 
@@ -38,7 +38,7 @@ format, in full:
 
 - **A note is a file.** Its id is its POSIX relative path (`Inbox.md`, `Work/Sub/Title.md`); the
   file name without `.md` is the title. Folders are real directories.
-- **`.gravity-notes.json`** — one metadata sidecar at the root: sort mode, pins (notes and
+- **`.sol-notes.json`** — one metadata sidecar at the root: sort mode, pins (notes and
   folders), created stamps, per-note appearance overrides, the open note, and the trash registry
   (plus a dormant `icons` map, kept flowing so an older build's vault survives a write). Losing
   the sidecar loses pins and preferences, never notes.
@@ -47,7 +47,11 @@ format, in full:
   is the only permanent delete.
 - **`Attachments/`** — pasted/dropped images land here as files; notes reference them
   root-relatively (`![…](Attachments/pie.png)`). The stored Markdown never contains `blob:` URLs.
-- **`.gnkeep`** — a marker file that keeps a deliberately-empty folder alive (Git-style).
+- **`.solkeep`** — a marker file that keeps a deliberately-empty folder alive (Git-style).
+- **Opened by Gravity Notes before?** On the first read Sol copies that folder's
+  `.gravity-notes.json` to `.sol-notes.json` and leaves the original untouched, so pins, sort order,
+  per-note appearance and the trash registry all come across and the older app can still open the
+  same folder. `.gnkeep` markers keep working forever; new empty folders get `.solkeep`.
 - **`[[Wiki links]]`** are stored verbatim — `[[Title]]` on disk, Obsidian-compatible round-trip.
 - **Bare URLs** you type are linkified in the editor and normalized to `<url>` on save; a stray
   `Notes.md` never turns into a link (fuzzy linkify is off — `.md` is a real TLD).

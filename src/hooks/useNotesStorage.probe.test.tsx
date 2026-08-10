@@ -189,7 +189,7 @@ describe('useNotesStorage — desktop window/workspace wiring', () => {
 
         expect(invokeMock).toHaveBeenCalledWith('open_workspace_window', {
             wsId: OTHER.id,
-            title: 'Other — Gravity Notes',
+            title: 'Other — Sol',
         });
     });
 });

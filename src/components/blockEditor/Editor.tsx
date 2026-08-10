@@ -748,7 +748,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!el || !root) return;
         const line = caretLineRect(el);
         // VIEWPORT coordinates: the overlays are `position: fixed`. They used to be absolute inside
-        // the editor root, which works when the editor owns the page — but Gravity Notes hosts it in
+        // the editor root, which works when the editor owns the page — but Sol hosts it in
         // a scrolling pane that also carries a `transform` (for a WebKit repaint fix), so a
         // root-relative overlay came out hundreds of pixels off AND was clipped by the pane.
         setSlash({

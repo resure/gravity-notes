@@ -1,4 +1,4 @@
-# Gravity Notes
+# Sol
 
 A simple note-taking app built on [Base UI](https://base-ui.com/) and its own CSS, with a
 Notion-style block editor for the note body. Runs as a **web app** and a **macOS desktop app**
@@ -13,8 +13,8 @@ plain, quiet, out of the way. Every action has a key. The type is set to be read
 Markdown files, and they are yours.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="assets/gravity-notes-light.png">
-  <img alt="Gravity Notes" src="assets/gravity-notes-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/sol-light.png">
+  <img alt="Sol" src="assets/sol-dark.png">
 </picture>
 
 ## Features
@@ -47,10 +47,15 @@ Markdown files, and they are yours.
 ### Download the app (macOS)
 
 Grab the latest `.dmg` from the
-[releases page](https://github.com/resure/gravity-notes/releases/latest) (Apple silicon). The app
-updates itself in place from there. On first run, pick **Open a folder** (plain `.md` files you
-own) or **Store inside the app** — you can switch later, or export/import, from the storage menu
-in the top bar.
+[releases page](https://github.com/resure/sol/releases/latest) (Apple silicon). The app
+updates itself in place from there. On first run, pick **Open Folder…** (plain `.md` files you
+own) — you can switch folders later, or export/import, from the orb menu in the title bar.
+
+Coming from **Gravity Notes**? Sol is a separate app, so it starts at the folder gate: re-pick your
+notes folder and your pins, sort order and Trash come back with it (Sol copies the old
+`.gravity-notes.json` sidecar to `.sol-notes.json` and leaves the original alone, so both apps can
+open the same folder). Notes kept in _in-browser storage_ need an export from Gravity Notes and an
+import into Sol.
 
 ### Run from source
 

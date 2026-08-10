@@ -40,7 +40,7 @@ function changelogNotes() {
     try {
         const lines = readFileSync(join(root, 'CHANGELOG.md'), 'utf8').split('\n');
         const start = lines.findIndex((l) => l.startsWith('## ['));
-        if (start === -1) return `Gravity Notes v${version}`;
+        if (start === -1) return `Sol v${version}`;
         // Guard against a CHANGELOG whose top section lags package.json (separate manual bumps): only
         // use the notes when the section's version matches the build, else don't ship the prior one's.
         const headerVersion = /^##\s*\[([^\]]+)\]/.exec(lines[start])?.[1]?.trim();
@@ -48,7 +48,7 @@ function changelogNotes() {
             console.error(
                 `warning: CHANGELOG top section is [${headerVersion ?? '?'}] but building ${version}; using a generic note`,
             );
-            return `Gravity Notes v${version}`;
+            return `Sol v${version}`;
         }
         let end = lines.findIndex((l, i) => i > start && l.startsWith('## '));
         if (end === -1) end = lines.length;
@@ -56,9 +56,9 @@ function changelogNotes() {
             .slice(start + 1, end)
             .join('\n')
             .trim();
-        return body || `Gravity Notes v${version}`;
+        return body || `Sol v${version}`;
     } catch {
-        return `Gravity Notes v${version}`;
+        return `Sol v${version}`;
     }
 }
 
