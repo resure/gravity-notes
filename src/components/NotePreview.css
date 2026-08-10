@@ -86,11 +86,25 @@
 .note-preview__body.yfm :where(h1, h2, h3, h4, h5, h6) {
     margin-bottom: 4px;
 }
+
+/* The same voice the note title and the editor's heading blocks use (§03): PT Serif at 400. The
+   preview is the same document by another route, so a note must not change typeface when ⌘⇧P
+   turns the blocks into rendered markup. */
+.note-preview__body.yfm :where(h1, h2) {
+    font-family: var(--font-serif);
+    font-weight: 400;
+}
 .note-preview__body.yfm h1 {
     margin-top: 24px;
+    font-size: var(--fs-h1);
+    line-height: var(--lh-h1);
+    letter-spacing: -0.005em;
 }
 .note-preview__body.yfm h2 {
     margin-top: 19px;
+    font-size: var(--fs-h2);
+    line-height: var(--lh-h2);
+    letter-spacing: -0.004em;
 }
 .note-preview__body.yfm h3 {
     margin-top: 15px;
