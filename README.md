@@ -33,6 +33,8 @@ Markdown files, and they are yours.
   watcher), with conflict handling when a note changes underneath you
 - **Multiple workspaces & windows** (desktop): switch folders with `⌃R`, open a workspace — or a
   single note — in its own window
+- **Resizable side panels**: drag the divider beside the folder rail or the notes list
+  (double-click resets, arrow keys nudge) — widths remembered per workspace
 - **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
   per workspace, or per note
 - **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
@@ -90,8 +92,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 
 - Density (line spacing) setting to complement the per-note font/width overrides?
 - Restore all workspace windows on relaunch (today only the last-active one comes back)
-
-- Resizable left panel
 
 - Preserve cmd+z between notes
 - Cmd+z for undoing deleting of notes and moves between folders?
