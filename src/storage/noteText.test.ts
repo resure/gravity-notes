@@ -25,7 +25,7 @@ import {
 
 describe('FOLDER_MARKER', () => {
     it('is a dotfile that is not a note (so list() which filters to .md ignores it)', () => {
-        expect(FOLDER_MARKER).toBe('.gnkeep');
+        expect(FOLDER_MARKER).toBe('.solkeep');
         expect(FOLDER_MARKER.startsWith('.')).toBe(true);
         expect(FOLDER_MARKER.endsWith(MD_EXT)).toBe(false);
     });
@@ -262,7 +262,7 @@ describe('splitExt', () => {
 
     it('treats a dotless name or a leading-dot dotfile as having no extension', () => {
         expect(splitExt('README')).toEqual(['README', '']);
-        expect(splitExt('.gnkeep')).toEqual(['.gnkeep', '']);
+        expect(splitExt('.solkeep')).toEqual(['.solkeep', '']);
     });
 });
 

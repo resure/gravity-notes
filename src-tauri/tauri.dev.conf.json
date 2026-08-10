@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Gravity Notes Dev",
-  "identifier": "com.gravitynotes.desktop.dev",
+  "productName": "Sol Dev",
+  "identifier": "net.resure.sol.dev",
   "app": {
     "windows": [
       {
-        "title": "Gravity Notes Dev",
+        "title": "Sol Dev",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "width": 1100,

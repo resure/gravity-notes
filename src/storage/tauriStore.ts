@@ -2,7 +2,7 @@ import {invoke} from '@tauri-apps/api/core';
 
 import {isIos} from '../isTauri';
 
-import {METADATA_FILENAME, parseMetadata} from './metadata';
+import {LEGACY_METADATA_FILENAME, METADATA_FILENAME, parseMetadata} from './metadata';
 import {
     ATTACHMENTS_DIR,
     MD_EXT,
@@ -434,6 +434,17 @@ export class TauriNoteStore implements NoteStore {
         let entry: {content: string; modifiedMs: number} | null;
         try {
             entry = await this.readNote(METADATA_FILENAME);
+            if (!entry) {
+                // No Sol sidecar: adopt a Gravity Notes one if the vault has it, copying it under
+                // the new name so this runs exactly once per vault. The legacy file stays where it
+                // is — an older install opening the same folder keeps working (PLAN.md D7). A
+                // failed copy is survivable: we still parse the legacy bytes, and retry next launch.
+                const legacy = await this.readNote(LEGACY_METADATA_FILENAME);
+                if (legacy) {
+                    entry = legacy;
+                    await this.write(METADATA_FILENAME, legacy.content).catch(() => {});
+                }
+            }
         } catch (err) {
             // Preserve the desktop store's tolerant-corruption contract: Rust's strict
             // read_to_string rejects a present sidecar with invalid UTF-8 before JSON.parse can

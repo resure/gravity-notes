@@ -31,7 +31,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     state: ErrorBoundaryState = {error: null, componentStack: null};
 
     componentDidCatch(error: Error, info: ErrorInfo): void {
-        console.error('Gravity Notes crashed:', error, info.componentStack);
+        console.error('Sol crashed:', error, info.componentStack);
         this.setState({componentStack: info.componentStack ?? null});
     }
 

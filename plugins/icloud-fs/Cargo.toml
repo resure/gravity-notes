@@ -1,8 +1,8 @@
 [package]
 name = "tauri-plugin-icloud-fs"
 version = "0.1.0"
-authors = ["Gravity Notes"]
-description = "iOS security-scoped folder access (Files picker + bookmark) for Gravity Notes"
+authors = ["Sol"]
+description = "iOS security-scoped folder access (Files picker + bookmark) for Sol"
 edition = "2021"
 rust-version = "1.77.2"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]

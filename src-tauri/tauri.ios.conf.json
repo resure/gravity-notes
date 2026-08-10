@@ -1,4 +1,4 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "identifier": "net.resure.gravitynotes.app"
+  "identifier": "net.resure.sol.app"
 }

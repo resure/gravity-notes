@@ -253,7 +253,7 @@ export function useNotesStorage(): NotesStorage {
             try {
                 const {getCurrentWindow} = await import('@tauri-apps/api/window');
                 if (isStale(seq)) return;
-                await getCurrentWindow().setTitle(`${displayName(entry)} — Gravity Notes`);
+                await getCurrentWindow().setTitle(`${displayName(entry)} — Sol`);
             } catch {
                 // Title stays generic.
             }
@@ -516,7 +516,7 @@ export function useNotesStorage(): NotesStorage {
         }
         try {
             const handle = await window.showDirectoryPicker({
-                id: 'gravity-notes',
+                id: 'sol',
                 mode: 'readwrite',
             });
             if (!(await requestPermission(handle))) {
@@ -583,7 +583,7 @@ export function useNotesStorage(): NotesStorage {
         const {invoke} = await import('@tauri-apps/api/core');
         await invoke('open_workspace_window', {
             wsId: entry.id,
-            title: `${displayName(entry)} — Gravity Notes`,
+            title: `${displayName(entry)} — Sol`,
         });
     }, [refreshWorkspaces]);
 
@@ -708,7 +708,7 @@ export function useNotesStorage(): NotesStorage {
             const {invoke} = await import('@tauri-apps/api/core');
             await invoke('open_workspace_window', {
                 wsId: id,
-                title: `${displayName(entry)} — Gravity Notes`,
+                title: `${displayName(entry)} — Sol`,
             });
         },
         [refreshWorkspaces],

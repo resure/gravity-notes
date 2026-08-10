@@ -7,6 +7,7 @@ import {
     canonicalBody,
     dirname,
     isAttachmentRef,
+    isFolderMarker,
     joinPath,
     sanitizeImportDir,
     sanitizeSegment,
@@ -62,7 +63,7 @@ export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array
         files[name] = strToU8(canonicalBody(note.content));
         noteIds.push(name);
     }
-    // Preserve deliberately-empty folders: a `.gnkeep` marker per empty branch, so an
+    // Preserve deliberately-empty folders: a `.solkeep` marker per empty branch, so an
     // export → import roundtrip rebuilds the same tree. Folders that hold notes are already implied
     // by those notes' nested paths and need no marker.
     const folders = await store.listFolders();
@@ -82,10 +83,7 @@ export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array
  * Export every note as a `.md` file in a single downloaded zip. Works for any backend, and is the
  * way to get plain files out of in-browser storage. Returns the number of notes exported.
  */
-export async function exportNotes(
-    store: NoteStore,
-    filename = 'gravity-notes.zip',
-): Promise<number> {
+export async function exportNotes(store: NoteStore, filename = 'sol.zip'): Promise<number> {
     const {zip, count} = await buildExportZip(store);
     downloadBlob(zip, filename, 'application/zip');
     return count;
@@ -141,7 +139,7 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
         if (lower.endsWith('.zip')) {
             const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
             for (const [path, bytes] of Object.entries(entries)) {
-                if (baseName(path) === FOLDER_MARKER) {
+                if (isFolderMarker(baseName(path))) {
                     // An empty-folder marker (see buildExportZip): recreate the folder so the tree
                     // survives the roundtrip. It's not a note, so it doesn't count toward the total.
                     const dir = sanitizeImportDir(dirname(path));

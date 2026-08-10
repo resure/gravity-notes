@@ -139,12 +139,12 @@ describe('FileSystemNoteStore', () => {
     });
 
     describe('folders: empty folders + prune', () => {
-        it('creates an empty folder kept alive by a .gnkeep marker', async () => {
+        it('creates an empty folder kept alive by a .solkeep marker', async () => {
             const path = await store.createFolder('', 'Projects');
 
             expect(path).toBe('Projects');
             expect(await store.listFolders()).toEqual(['Projects']);
-            expect(dir.paths()).toContain('Projects/.gnkeep');
+            expect(dir.paths()).toContain('Projects/.solkeep');
             // The marker is not a note.
             expect(await store.list()).toEqual([]);
         });
@@ -190,6 +190,25 @@ describe('FileSystemNoteStore', () => {
             expect(dir.paths().some((p) => p.startsWith('Temp/'))).toBe(false);
         });
 
+        it('removeFolder deletes a folder held by the LEGACY .gnkeep marker', async () => {
+            // A folder created by Gravity Notes. If removeFolder only dropped `.solkeep`, the
+            // leftover `.gnkeep` would keep the directory non-empty and removeEntry would throw —
+            // the folder would be undeletable from the web build forever.
+            dir.seedFile('Legacy/.gnkeep', '');
+            expect(await store.listFolders()).toContain('Legacy');
+
+            await store.removeFolder('Legacy');
+            expect(await store.listFolders()).not.toContain('Legacy');
+            expect(dir.paths().some((p) => p.startsWith('Legacy'))).toBe(false);
+        });
+
+        it('an auto-prune spares a folder held by either marker spelling', async () => {
+            dir.seedFile('Legacy/.gnkeep', '');
+            await store.create('Note', 'Legacy');
+            await store.remove('Legacy/Note.md');
+            expect(await store.listFolders()).toContain('Legacy');
+        });
+
         it('removing the last note prunes an implicit folder but keeps a marked one', async () => {
             await store.create('Note', 'Implicit');
             await store.create('Note', 'Marked');
@@ -198,7 +217,7 @@ describe('FileSystemNoteStore', () => {
             await store.remove('Implicit/Note.md');
             await store.remove('Marked/Note.md');
 
-            // Implicit/ vanishes (only existed via its note); Marked/ survives via its .gnkeep.
+            // Implicit/ vanishes (only existed via its note); Marked/ survives via its marker.
             expect(await store.listFolders()).toEqual(['Marked']);
         });
 
@@ -773,7 +792,7 @@ describe('FileSystemNoteStore', () => {
         });
 
         it('returns defaults when the dotfile is corrupt JSON', async () => {
-            dir.seedFile('.gravity-notes.json', 'not json{', 10);
+            dir.seedFile('.sol-notes.json', 'not json{', 10);
             const meta = await store.readMetadata();
             expect(meta).toEqual({
                 version: 1,
@@ -785,6 +804,48 @@ describe('FileSystemNoteStore', () => {
                 active: null,
                 trashed: [],
             });
+        });
+
+        it('adopts a legacy .gravity-notes.json once, leaving the original in place', async () => {
+            // A vault last opened by Gravity Notes. Everything the sidecar holds — pins, sort, the
+            // trash registry, per-note appearance — has to come across on the first read.
+            dir.seedFile(
+                '.gravity-notes.json',
+                JSON.stringify({
+                    version: 1,
+                    sort: 'title',
+                    pinned: ['Ideas.md'],
+                    created: {'Ideas.md': 7},
+                    icons: {'Ideas.md': 'Star'},
+                    appearances: {'Ideas.md': {editorFont: 'serif'}},
+                    active: 'Ideas.md',
+                    trashed: [{id: '.trash/Old.md', title: 'Old', originalPath: '', trashedAt: 5}],
+                }),
+                10,
+            );
+
+            const meta = await store.readMetadata();
+            expect(meta.sort).toBe('title');
+            expect(meta.pinned).toEqual(['Ideas.md']);
+            expect(meta.icons).toEqual({'Ideas.md': 'Star'});
+            expect(meta.appearances).toEqual({'Ideas.md': {editorFont: 'serif'}});
+            expect(meta.active).toBe('Ideas.md');
+            expect(meta.trashed).toHaveLength(1);
+
+            // Copied under the new name, and the legacy file is UNTOUCHED — an older Gravity Notes
+            // install pointed at the same folder has to keep working.
+            expect(dir.paths()).toContain('.sol-notes.json');
+            expect(dir.paths()).toContain('.gravity-notes.json');
+            const copied = await (
+                await (await dir.getFileHandle('.sol-notes.json')).getFile()
+            ).text();
+            expect(JSON.parse(copied).sort).toBe('title');
+        });
+
+        it('lets the new sidecar win outright when both exist (never re-reads the legacy one)', async () => {
+            dir.seedFile('.gravity-notes.json', JSON.stringify({version: 1, sort: 'title'}), 10);
+            dir.seedFile('.sol-notes.json', JSON.stringify({version: 1, sort: 'created'}), 11);
+            expect((await store.readMetadata()).sort).toBe('created');
         });
 
         it('never surfaces the dotfile as a note', async () => {

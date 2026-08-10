@@ -1,4 +1,4 @@
-//! Native filesystem backend for Gravity Notes' folder storage.
+//! Native filesystem backend for Sol's folder storage.
 //!
 //! The web File System Access API is unavailable in macOS WKWebView, so the
 //! folder-of-`.md`-files backend is served by these commands instead. They are
@@ -9,7 +9,7 @@
 //!
 //! `dir` is the absolute path to the user-picked folder; `name` is a note id — now a
 //! POSIX-relative path that may include subfolders (`Work/Sub/Title.md`) — or the
-//! `.gravity-notes.json` metadata sidecar. Every caller-supplied path is run through
+//! `.sol-notes.json` metadata sidecar. Every caller-supplied path is run through
 //! `resolve_within`, which rejects any attempt to escape the picked folder: this is the
 //! ONLY containment defense, since the custom `notes_*` commands are not covered by the
 //! fs-plugin's scope allowlist. Times are returned as epoch-millisecond `f64`s to match
@@ -33,9 +33,22 @@ use tauri::Manager;
 /// Note files end in `.md` (matched case-insensitively, like the web backend).
 const MD_EXT: &str = ".md";
 /// Marker file keeping a deliberately-empty folder alive (mirrors `FOLDER_MARKER` in noteText.ts).
-const FOLDER_MARKER: &str = ".gnkeep";
+const FOLDER_MARKER: &str = ".solkeep";
+/// The pre-Sol marker name (mirrors `LEGACY_FOLDER_MARKER` in noteText.ts). Desktop folder ops go
+/// entirely through these commands — `tauriStore` never sees the TS constant — so BOTH names have
+/// to be honoured here, or a folder created by Gravity Notes (or on the web) could never be deleted
+/// from the desktop app. New folders are only ever written with `FOLDER_MARKER`.
+const LEGACY_FOLDER_MARKER: &str = ".gnkeep";
 /// The metadata sidecar — ignored by the empty-folder prune (it only ever lives at the root).
-const METADATA_FILENAME: &str = ".gravity-notes.json";
+const METADATA_FILENAME: &str = ".sol-notes.json";
+/// The pre-Sol sidecar name (mirrors `LEGACY_METADATA_FILENAME` in metadata.ts). A migrated vault
+/// keeps both files, so both must be ignorable — the TS side owns the copy-once migration itself.
+const LEGACY_METADATA_FILENAME: &str = ".gravity-notes.json";
+
+/// True for either folder-marker spelling — the one we write, or the legacy one we honour.
+fn is_folder_marker(name: &str) -> bool {
+    name == FOLDER_MARKER || name == LEGACY_FOLDER_MARKER
+}
 /// Root-level media-attachments folder (mirrors `ATTACHMENTS_DIR` in noteText.ts). Excluded from the
 /// note walk and folder tree — it's storage, not a user folder.
 const ATTACHMENTS_DIR: &str = "Attachments";
@@ -255,7 +268,7 @@ struct Found {
 
 /// Recursively collect `.md` files under `current`, returning ids relative to `root` with `/`
 /// separators. Skips dot-directories (`.git`, `.obsidian`, …) and never follows symlinks (so the
-/// walk can't escape the folder or loop). Non-`.md` entries — the sidecar, `.gnkeep`, `*.gn-tmp`,
+/// walk can't escape the folder or loop). Non-`.md` entries — the sidecar, the marker, `*.gn-tmp`,
 /// `*.rename-tmp` — are filtered by `is_md`. `full` reads the whole body; otherwise just the head.
 fn collect_md(
     root: &Path,
@@ -457,7 +470,7 @@ fn notes_rename(dir: String, from: String, to: String) -> Result<f64, String> {
     }
     rename_or_copy(&from_path, &to_path).map_err(stringify)?;
     // Moving the last note out of a folder leaves it empty: prune the source's now-empty ancestors
-    // (a folder kept alive by a .gnkeep marker survives). The destination keeps the moved file.
+    // (a folder kept alive by a marker file survives). The destination keeps the moved file.
     if let Some(parent) = from_path.parent() {
         prune_empty_ancestors(Path::new(&dir), parent);
     }
@@ -540,8 +553,8 @@ fn attachment_remove(dir: String, name: String) -> Result<(), String> {
     }
 }
 
-/// Whether `dir` holds nothing worth keeping: no `.md`, no `.gnkeep`, no subdirectory. The sidecar
-/// is ignored; an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
+/// Whether `dir` holds nothing worth keeping: no `.md`, no marker, no subdirectory. The sidecar
+/// is ignored (under either name); an in-flight temp (`*.gn-tmp`/`*.rename-tmp`) marks the dir BUSY (kept), so a prune
 /// can't race a concurrent write. Anything else (a note, a marker, a subdir) keeps the folder.
 fn is_prunable(dir: &Path) -> bool {
     let entries = match fs::read_dir(dir) {
@@ -554,17 +567,17 @@ fn is_prunable(dir: &Path) -> bool {
             Err(_) => return false,
         };
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name == METADATA_FILENAME {
+        if name == METADATA_FILENAME || name == LEGACY_METADATA_FILENAME {
             continue;
         }
-        // A note, the .gnkeep marker, a subdirectory, or an in-flight temp all keep the folder.
+        // A note, a folder marker, a subdirectory, or an in-flight temp all keep the folder.
         return false;
     }
     true
 }
 
 /// Remove now-empty folders from `start` up toward `root` (never removing `root` itself). Stops at
-/// the first folder that is kept (holds a note, a `.gnkeep`, a subdir, or an in-flight temp).
+/// the first folder that is kept (holds a note, a marker, a subdir, or an in-flight temp).
 fn prune_empty_ancestors(root: &Path, start: &Path) {
     let mut dir = start.to_path_buf();
     while dir != root && dir.starts_with(root) {
@@ -578,7 +591,7 @@ fn prune_empty_ancestors(root: &Path, start: &Path) {
     }
 }
 
-/// Create an (initially empty) folder and keep it alive with a `.gnkeep` marker.
+/// Create an (initially empty) folder and keep it alive with a `.solkeep` marker.
 #[tauri::command]
 fn notes_create_folder(dir: String, path: String) -> Result<(), String> {
     let folder = resolve_within(&dir, &path)?;
@@ -586,10 +599,10 @@ fn notes_create_folder(dir: String, path: String) -> Result<(), String> {
     write_atomic(&folder.join(FOLDER_MARKER), b"").map_err(stringify)
 }
 
-/// Remove an empty folder: drop its `.gnkeep`, then remove the (now-empty) directory. Emptiness is
-/// checked *first* (only the marker may remain): otherwise dropping `.gnkeep` and then failing
-/// `remove_dir` on a non-empty folder would strip the keep-alive marker off a folder left in place.
-/// A missing folder is a no-op.
+/// Remove an empty folder: drop its marker (either spelling), then remove the (now-empty)
+/// directory. Emptiness is checked *first* (only markers may remain): otherwise dropping the marker
+/// and then failing `remove_dir` on a non-empty folder would strip the keep-alive marker off a
+/// folder left in place. A missing folder is a no-op.
 #[tauri::command]
 fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     let folder = resolve_within(&dir, &path)?;
@@ -600,11 +613,12 @@ fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     };
     for entry in entries {
         let entry = entry.map_err(stringify)?;
-        if entry.file_name() != FOLDER_MARKER {
+        if !is_folder_marker(&entry.file_name().to_string_lossy()) {
             return Err(format!("\"{path}\" is not empty"));
         }
     }
     let _ = fs::remove_file(folder.join(FOLDER_MARKER));
+    let _ = fs::remove_file(folder.join(LEGACY_FOLDER_MARKER));
     fs::remove_dir(&folder).map_err(stringify)
 }
 
@@ -629,7 +643,7 @@ fn notes_move_dir(dir: String, from: String, to: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Every folder (recursively) relative to the root, including deliberately-empty `.gnkeep` ones.
+/// Every folder (recursively) relative to the root, including deliberately-empty marked ones.
 #[tauri::command]
 fn notes_list_folders(dir: String) -> Result<Vec<String>, String> {
     let root = Path::new(&dir);
@@ -778,7 +792,7 @@ struct NotesChangedPayload {
 /// reports canonicalized absolute paths (`/var` → `/private/var`, symlinks resolved), so
 /// `canon_root` must be the canonicalized watch root or `strip_prefix` misses every event.
 /// Skips what the note walks skip — dot-entries (`.trash/`, `.git/`, `.DS_Store`, the sidecar,
-/// `.gnkeep`), `node_modules`, the root `Attachments/` — plus in-flight write temps. Directory
+/// `.solkeep`), `node_modules`, the root `Attachments/` — plus in-flight write temps. Directory
 /// events are load-bearing: a Finder folder rename reports ONLY the directory paths, no
 /// per-child events. A path that no longer exists can't be classified (was it a note? a
 /// folder?) — include it: a spurious refresh is cheap, a missed deletion is a bug.
@@ -1564,7 +1578,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::
 pub fn run() {
     let builder = tauri::Builder::default();
     // Custom app menu (desktop only — iOS/Android have no menu bar, and `Builder::menu`/`tauri::menu`
-    // aren't compiled there): the macOS "About Gravity Notes" item opens our own dialog (with
+    // aren't compiled there): the macOS "About Sol" item opens our own dialog (with
     // clickable links) instead of the default native panel — muda renders the panel's credits as
     // plain text and ignores `website`, so links can't be clickable there. Everything else mirrors
     // the default menu (Edit's copy/paste/undo, Window, View) so nothing is lost.
@@ -1780,7 +1794,7 @@ mod tests {
         notes_write(s(&dir), "Work/Roadmap.md".into(), "b".into()).unwrap();
         notes_write(s(&dir), "Work/Sub/Deep.md".into(), "c".into()).unwrap();
         // Non-.md and dot-dir contents must be ignored by the walk.
-        fs::write(dir.join(".gravity-notes.json"), "{}").unwrap();
+        fs::write(dir.join(METADATA_FILENAME), "{}").unwrap();
         fs::create_dir_all(dir.join(".hidden")).unwrap();
         fs::write(dir.join(".hidden").join("Secret.md"), "x").unwrap();
         // node_modules is skipped at every depth — picking a project folder must not pull in deps.
@@ -1952,7 +1966,7 @@ mod tests {
         notes_remove(s(&dir), "Work/Note.md".into()).unwrap();
         assert!(!dir.join("Work").exists());
 
-        // Deleting Keep's only note leaves Keep/ alive — its .gnkeep marker is content.
+        // Deleting Keep's only note leaves Keep/ alive — its marker file is content.
         notes_remove(s(&dir), "Keep/Temp.md".into()).unwrap();
         assert!(dir.join("Keep").is_dir());
         assert!(dir.join("Keep").join(FOLDER_MARKER).is_file());
@@ -2172,12 +2186,55 @@ mod tests {
     }
 
     #[test]
+    fn remove_dir_deletes_a_folder_kept_alive_by_the_legacy_marker() {
+        // A folder created by Gravity Notes (or on the web before the rename) carries `.gnkeep`.
+        // If `notes_remove_dir` only knew the new name it would call the folder non-empty and
+        // refuse forever — the legacy marker has to count as "only a marker".
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join("Legacy")).unwrap();
+        fs::write(dir.join("Legacy").join(LEGACY_FOLDER_MARKER), b"").unwrap();
+
+        assert!(notes_remove_dir(s(&dir), "Legacy".into()).is_ok());
+        assert!(!dir.join("Legacy").exists());
+
+        // Both spellings side by side (a folder touched by two builds) also clear.
+        fs::create_dir_all(dir.join("Both")).unwrap();
+        fs::write(dir.join("Both").join(LEGACY_FOLDER_MARKER), b"").unwrap();
+        fs::write(dir.join("Both").join(FOLDER_MARKER), b"").unwrap();
+        assert!(notes_remove_dir(s(&dir), "Both".into()).is_ok());
+        assert!(!dir.join("Both").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn auto_prune_spares_a_folder_held_by_either_marker_and_ignores_either_sidecar() {
+        let dir = temp_dir();
+        // A legacy-marked folder whose only note is deleted must SURVIVE — the marker is content.
+        fs::create_dir_all(dir.join("Legacy")).unwrap();
+        fs::write(dir.join("Legacy").join(LEGACY_FOLDER_MARKER), b"").unwrap();
+        notes_write(s(&dir), "Legacy/Note.md".into(), "x".into()).unwrap();
+        notes_remove(s(&dir), "Legacy/Note.md".into()).unwrap();
+        assert!(dir.join("Legacy").is_dir());
+
+        // Neither sidecar name counts as content: a folder holding only one is still prunable.
+        let sidecar_only = dir.join("Sidecar");
+        fs::create_dir_all(&sidecar_only).unwrap();
+        fs::write(sidecar_only.join(LEGACY_METADATA_FILENAME), "{}").unwrap();
+        assert!(is_prunable(&sidecar_only));
+        fs::write(sidecar_only.join(METADATA_FILENAME), "{}").unwrap();
+        assert!(is_prunable(&sidecar_only));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn remove_dir_refuses_a_non_empty_folder_and_keeps_its_marker() {
         let dir = temp_dir();
         notes_create_folder(s(&dir), "Keep".into()).unwrap();
         notes_write(s(&dir), "Keep/Note.md".into(), "x".into()).unwrap();
 
-        // The folder still holds a note, so removal is refused — and the .gnkeep marker survives.
+        // The folder still holds a note, so removal is refused — and the marker survives.
         assert!(notes_remove_dir(s(&dir), "Keep".into()).is_err());
         assert!(dir.join("Keep").join(FOLDER_MARKER).is_file());
         assert!(dir.join("Keep").join("Note.md").is_file());
@@ -2309,7 +2366,8 @@ mod tests {
         // Noise is dropped: dot-entries (incl. the sidecar + trash), attachments, deps,
         // in-flight write temps, and existing non-md files.
         assert_eq!(rel(&root.join(".DS_Store")), None);
-        assert_eq!(rel(&root.join(".gravity-notes.json")), None);
+        assert_eq!(rel(&root.join(METADATA_FILENAME)), None);
+        assert_eq!(rel(&root.join(LEGACY_METADATA_FILENAME)), None);
         assert_eq!(rel(&root.join(".trash/Old.md")), None);
         assert_eq!(rel(&root.join("Attachments/pic.png")), None);
         assert_eq!(rel(&root.join("node_modules/x.md")), None);

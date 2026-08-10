@@ -1,7 +1,7 @@
 {
-  "name": "gravity-notes",
+  "name": "sol",
   "private": true,
-  "version": "0.7.0",
+  "version": "1.0.0",
   "type": "module",
   "engines": {
     "node": ">=22"

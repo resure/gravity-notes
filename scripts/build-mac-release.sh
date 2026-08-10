@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a signed + notarized "Gravity Notes" .app/.dmg for distribution outside
+# Build a signed + notarized "Sol" .app/.dmg for distribution outside
 # the Mac App Store. Tauri signs with the Developer ID cert (hardened runtime),
 # uploads to Apple for notarization, and staples the app; this script then also
 # notarizes + staples the DMG container so every artifact passes Gatekeeper
@@ -70,10 +70,11 @@ echo "==> Building, signing, and notarizing the app ..."
 npm run tauri:build -- "$@"
 
 # --- rename the DMG to a space-free artifact name ----------------------------
-# productName stays "Gravity Notes" (the app's display name), but the DMG file
-# should have no spaces, so Tauri's "Gravity Notes_<v>_<arch>.dmg" is renamed to
-# "Gravity_Notes_<v>_<arch>.dmg". Done before notarizing so the ticket staples
-# onto the final name (renaming a stapled DMG would be fine too — notarization
+# An artifact name must have no spaces. productName is "Sol", so Tauri already
+# emits a space-free DMG and this is a no-op today — it stays because the rename
+# is a property of the ARTIFACT, not of the current name, and a productName with
+# a space would otherwise ship a URL-hostile file. Done before notarizing so the
+# ticket staples onto the final name (restapling would be fine too — notarization
 # travels with the file's content, not its name).
 RAW_DMG="$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
 DMG="$(dirname "$RAW_DMG")/$(basename "$RAW_DMG" | tr ' ' '_')"
@@ -106,19 +107,24 @@ MACOS_DIR="src-tauri/target/release/bundle/macos"
 # path (not a `ls *.app.tar.gz` glob, which could silently pick a stale renamed tarball from a prior
 # build) and require BOTH it and its .sig before renaming — a build that didn't emit them fails loud,
 # not with a half-renamed bundle dir.
-RAW_TARBALL="$MACOS_DIR/Gravity Notes.app.tar.gz"
+# Must equal productName in tauri.conf.json, exactly.
+RAW_TARBALL="$MACOS_DIR/Sol.app.tar.gz"
 if [[ ! -f "$RAW_TARBALL" || ! -f "$RAW_TARBALL.sig" ]]; then
   echo "error: updater artifacts not found next to the .app:" >&2
   echo "       expected \"$RAW_TARBALL\" and its .sig." >&2
   echo "       Is bundle.createUpdaterArtifacts true and TAURI_SIGNING_PRIVATE_KEY set?" >&2
   exit 1
 fi
-TARBALL="$MACOS_DIR/Gravity_Notes_${VERSION}_aarch64.app.tar.gz"
+TARBALL="$MACOS_DIR/Sol_${VERSION}_aarch64.app.tar.gz"
 if [[ "$RAW_TARBALL" != "$TARBALL" ]]; then
   mv -f "$RAW_TARBALL" "$TARBALL"
   mv -f "$RAW_TARBALL.sig" "$TARBALL.sig"
 fi
-UPDATER_URL="https://github.com/resure/gravity-notes/releases/download/v${VERSION}/Gravity_Notes_${VERSION}_aarch64.app.tar.gz"
+# The TARBALL asset URL that gets embedded INTO latest.json — what an installed app downloads and
+# signature-verifies. NOT the manifest's own endpoint (that lives in tauri.conf.json's
+# plugins.updater.endpoints); pointing this at latest.json would ship a manifest whose download URL
+# is the manifest itself, breaking auto-update for every install at the first patch release.
+UPDATER_URL="https://github.com/resure/sol/releases/download/v${VERSION}/Sol_${VERSION}_aarch64.app.tar.gz"
 LATEST_JSON="$MACOS_DIR/latest.json"
 echo "==> Generating updater manifest: $LATEST_JSON"
 node scripts/make-latest-json.mjs "$VERSION" "$TARBALL.sig" "$UPDATER_URL" "$LATEST_JSON"

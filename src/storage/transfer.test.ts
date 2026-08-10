@@ -48,7 +48,7 @@ describe('transfer — export', () => {
         expect(Object.keys(entries)).toEqual(['Work/Projects/Plan.md']);
     });
 
-    it('emits a .gnkeep marker only for empty folders, deepest per branch', async () => {
+    it('emits a .solkeep marker only for empty folders, deepest per branch', async () => {
         const store = seedStore();
         // Work holds a note (implied by its path); Archive and Archive/2023 are empty.
         const meta = await store.create('Note', 'Work');
@@ -60,7 +60,7 @@ describe('transfer — export', () => {
         const keys = Object.keys(unzipSync(zip)).sort();
         // Work is implied by its note; only the deepest empty folder gets a marker (Archive is
         // rebuilt from Archive/2023's marker on import).
-        expect(keys).toEqual(['Archive/2023/.gnkeep', 'Work/Note.md']);
+        expect(keys).toEqual(['Archive/2023/.solkeep', 'Work/Note.md']);
     });
 });
 
@@ -120,7 +120,7 @@ describe('transfer — import', () => {
         expect((await store.get('Work/Projects/Plan.md')).content).toBe('plan body');
     });
 
-    it('recreates an empty folder from its .gnkeep marker without counting it', async () => {
+    it('recreates an empty folder from its LEGACY .gnkeep marker without counting it', async () => {
         const store = seedStore();
         const zip = zipSync({
             'Top.md': new TextEncoder().encode('top body'),

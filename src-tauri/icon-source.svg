@@ -1,26 +1,44 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- The squircle body: Sol's ink, hue 75, walked dark. Warm, never blue-grey. -->
     <linearGradient id="body" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#24262D"/>
-      <stop offset="1" stop-color="#141620"/>
+      <stop stop-color="#2B2721"/>
+      <stop offset="1" stop-color="#171410"/>
     </linearGradient>
-    <!-- orange disc gradient (lit from the top) -->
-    <linearGradient id="disc" x1="512" y1="216" x2="512" y2="808" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F59A38"/>
-      <stop offset="1" stop-color="#E0781E"/>
+    <!-- The disc, lit from the top — the same amber the app's orb wears. -->
+    <linearGradient id="disc" x1="512" y1="280" x2="512" y2="744" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFA24A"/>
+      <stop offset="1" stop-color="#C9762A"/>
     </linearGradient>
-
     <clipPath id="sq">
       <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
     </clipPath>
   </defs>
 
-  <!-- dark body fills the whole squircle -->
   <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#body)"/>
 
   <g clip-path="url(#sq)">
-    <!-- one big orange circle -->
-    <circle cx="512" cy="512" r="296" fill="url(#disc)"/>
+    <!-- Sol: a disc and its light. Sixteen rays, alternating long and short, so the mark still
+         reads as a sun at 32px, where a single ray is barely two pixels wide. -->
+    <g stroke="#DB8833" stroke-linecap="round">
+      <line x1="512.0" y1="234.0" x2="512.0" y2="150.0" stroke-width="28"/>
+      <line x1="708.6" y1="315.4" x2="768.0" y2="256.0" stroke-width="28"/>
+      <line x1="790.0" y1="512.0" x2="874.0" y2="512.0" stroke-width="28"/>
+      <line x1="708.6" y1="708.6" x2="768.0" y2="768.0" stroke-width="28"/>
+      <line x1="512.0" y1="790.0" x2="512.0" y2="874.0" stroke-width="28"/>
+      <line x1="315.4" y1="708.6" x2="256.0" y2="768.0" stroke-width="28"/>
+      <line x1="234.0" y1="512.0" x2="150.0" y2="512.0" stroke-width="28"/>
+      <line x1="315.4" y1="315.4" x2="256.0" y2="256.0" stroke-width="28"/>
+      <line x1="618.4" y1="255.2" x2="638.3" y2="207.1" stroke-width="28"/>
+      <line x1="768.8" y1="405.6" x2="816.9" y2="385.7" stroke-width="28"/>
+      <line x1="768.8" y1="618.4" x2="816.9" y2="638.3" stroke-width="28"/>
+      <line x1="618.4" y1="768.8" x2="638.3" y2="816.9" stroke-width="28"/>
+      <line x1="405.6" y1="768.8" x2="385.7" y2="816.9" stroke-width="28"/>
+      <line x1="255.2" y1="618.4" x2="207.1" y2="638.3" stroke-width="28"/>
+      <line x1="255.2" y1="405.6" x2="207.1" y2="385.7" stroke-width="28"/>
+      <line x1="405.6" y1="255.2" x2="385.7" y2="207.1" stroke-width="28"/>
+    </g>
+    <circle cx="512" cy="512" r="232" fill="url(#disc)"/>
   </g>
 
   <rect x="101" y="101" width="822" height="822" rx="184" ry="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
