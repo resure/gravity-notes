@@ -172,10 +172,10 @@ fn is_dataless(meta: &fs::Metadata) -> bool {
     // the platform-specific `MetadataExt` differs only by module. On iOS an evicted file is
     // materialized on open by the icloud-fs plugin's coordinated read (`read_note`), which triggers
     // the download; the walks below still skip its content so the list/corpus don't stall.
-    #[cfg(target_os = "macos")]
-    use std::os::macos::fs::MetadataExt;
     #[cfg(target_os = "ios")]
     use std::os::ios::fs::MetadataExt;
+    #[cfg(target_os = "macos")]
+    use std::os::macos::fs::MetadataExt;
     // SF_DATALESS ("file is dataless object") from `<sys/stat.h>` — a super-user/system flag in the
     // high half of `st_flags`, defined there as `0x40000000`. Hand-coded because libc doesn't expose
     // it. Verified against the macOS 26.5 SDK header; if a future SDK ever moves it, the worst case
