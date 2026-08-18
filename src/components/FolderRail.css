@@ -152,12 +152,18 @@
 
    The selected row holding its ⋯ permanently costs it its count — the one folder whose count is
    never shown is the one you are in. A debatable trade, challenge welcome; without it the rail
-   felt inconsistent beside the note list, whose selected item holds its actions the same way. */
+   felt inconsistent beside the note list, whose selected item holds its actions the same way.
+
+   Reveal is relative, not static: .g-button paints its hover wash, press effect and focus ring on
+   abspos ::before/::after with inset: 0, so an un-positioned button would anchor those to the
+   trailing slot (19px wide, shifted by the -5px pull-in). Today uikit's own transform on .g-button
+   happens to make it a containing block anyway, but that's not worth depending on; offset-less
+   relative is identical to static in flex flow. */
 .folder-rail__row_selected .folder-rail__trailing .folder-rail__actions,
 .folder-rail__row:focus .folder-rail__trailing .folder-rail__actions,
 .folder-rail__row_menu-open .folder-rail__trailing .folder-rail__actions,
 .folder-rail__trailing .folder-rail__actions:focus-visible {
-    position: static;
+    position: relative;
     opacity: 1;
     pointer-events: auto;
 }
@@ -172,7 +178,7 @@
 /* Hover-reveal, pointer-only: on touch this revealed content is what swallowed the tap. */
 @media (hover: hover) {
     .folder-rail__row:hover .folder-rail__trailing .folder-rail__actions {
-        position: static;
+        position: relative;
         opacity: 1;
         pointer-events: auto;
     }
