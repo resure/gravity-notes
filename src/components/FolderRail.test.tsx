@@ -180,6 +180,29 @@ describe('FolderRail — folder actions', () => {
         expect(props.onTogglePin).toHaveBeenCalledWith('Work');
     });
 
+    it('Tab steps from a focused row into its ⋯, then on to New Folder', async () => {
+        const user = userEvent.setup();
+        setup({rows: [folder('Work')]});
+        screen.getByRole('treeitem', {name: /Work/}).focus();
+        await user.tab();
+        expect(screen.getByRole('button', {name: 'Work actions'})).toHaveFocus();
+        await user.tab();
+        expect(screen.getByRole('button', {name: 'New folder'})).toHaveFocus();
+    });
+
+    it('marks the row while its menu is open, and unmarks it on close', async () => {
+        const user = userEvent.setup();
+        setup();
+        const row = screen.getByRole('treeitem', {name: /Work/});
+        expect(row).not.toHaveClass('folder-rail__row_menu-open');
+        await user.click(screen.getByRole('button', {name: 'Work actions'}));
+        expect(row).toHaveClass('folder-rail__row_menu-open');
+        // Acting on an item closes the menu — the mark (which keeps the ⋯ revealed while the
+        // menu is up, wherever the pointer is) must clear with it, not linger on button focus.
+        await user.click(await screen.findByRole('menuitem', {name: /Pin to top/}));
+        expect(row).not.toHaveClass('folder-rail__row_menu-open');
+    });
+
     it('removes an empty folder from its menu', async () => {
         const user = userEvent.setup();
         const {props} = setup({rows: [folder('Empty', {noteCount: 0, hasChildren: false})]});

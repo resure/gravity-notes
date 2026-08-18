@@ -423,11 +423,11 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 <Text className="folder-rail__name" ellipsis>
                     All Notes
                 </Text>
+                {/* Last flex item, so the count ends at the row padding — where a folder row's
+                    trailing slot puts its count — keeping the column aligned without a spacer. */}
                 {allNotesCount > 0 ? (
                     <span className="folder-rail__count">{allNotesCount}</span>
                 ) : null}
-                {/* Reserve the same trailing slot as a folder row's ⋯ menu, so counts line up. */}
-                <span className="folder-rail__actions-spacer" aria-hidden />
             </div>
         );
     };
@@ -515,7 +515,10 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 className={
                     'folder-rail__row' +
                     (selected ? ' folder-rail__row_selected' : '') +
-                    (dropTarget === row.path ? ' folder-rail__row_drop-target' : '')
+                    (dropTarget === row.path ? ' folder-rail__row_drop-target' : '') +
+                    // Keeps the ⋯ (and not the count) showing while this row's menu is open,
+                    // however far the pointer wanders (see the reveal rules in FolderRail.css).
+                    (contextMenu?.row.path === row.path ? ' folder-rail__row_menu-open' : '')
                 }
                 style={{paddingInlineStart: indentFor(row.depth)}}
                 role="treeitem"
@@ -574,14 +577,16 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 <Text className="folder-rail__name" ellipsis>
                     {row.name}
                 </Text>
-                {row.noteCount > 0 ? (
-                    <span className="folder-rail__count">{row.noteCount}</span>
-                ) : null}
-                <div className="folder-rail__actions">
+                {/* The count and the ⋯ menu share one trailing slot (see FolderRail.css): the
+                    count shows at rest, the menu takes its place on hover/focus. */}
+                <span className="folder-rail__trailing">
+                    {row.noteCount > 0 ? (
+                        <span className="folder-rail__count">{row.noteCount}</span>
+                    ) : null}
                     <Button
+                        className="folder-rail__actions"
                         view="flat"
                         size="s"
-                        tabIndex={-1}
                         aria-label={`${row.name} actions`}
                         onClick={(e) => {
                             // Open the one shared menu anchored to this button — don't also select
@@ -595,7 +600,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     >
                         <Icon data={Ellipsis} />
                     </Button>
-                </div>
+                </span>
             </div>
         );
     };
