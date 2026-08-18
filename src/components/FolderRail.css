@@ -106,7 +106,7 @@
     min-width: 0;
 }
 
-/* The note-count badge: quiet, tabular, right-aligned at a steady inset. */
+/* The note-count badge: quiet, tabular, flush with the row's edge padding. */
 .folder-rail__count {
     flex-shrink: 0;
     color: var(--g-color-text-hint);
@@ -115,29 +115,76 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* The ⋯ menu reveals on hover/focus in a fixed-width trailing slot (the width of the s icon button),
-   present on every row — incl. the empty spacer on "All Notes" — so the count keeps a single aligned
-   position across all rows and stays visible when the menu appears (it no longer takes the count's place). */
-.folder-rail__actions,
-.folder-rail__actions-spacer {
+/* The trailing slot holds the count OR the ⋯ menu, sized by whichever is showing. At rest it is
+   exactly as wide as the count (nothing when there is none), so the name's ellipsis boundary sits
+   a plain flex-gap from the digits and no gutter is reserved for the menu. On hover/focus the menu
+   takes the count's place — display, not opacity, so the slot re-sizes to the 24px button and the
+   name re-flows to make the room. The count rules are scoped to the slot, keeping the All Notes
+   badge (no menu to reveal) always visible. */
+.folder-rail__trailing {
+    position: relative;
     flex-shrink: 0;
-    width: 24px;
-}
-
-.folder-rail__actions {
     display: flex;
-    justify-content: center;
-    opacity: 0;
+    align-items: center;
 }
 
-.folder-rail__row:focus-within .folder-rail__actions {
+/* Parked state: the ⋯ sits out of flow (so the slot hugs the count and the name's ellipsis stops
+   a plain gap from the digits), invisible and click-through — but still rendered and focusable,
+   so Tab can step from the row into it. Never display: none here: a Tab target that loses its box
+   while focus is being handed over gets dropped, stranding focus on body. The 5px pull-in is felt
+   only in the revealed (in-flow) state: the 24px button carries ~7px of air before its glyph, so
+   without it the name-to-⋯ distance reads wider than the name-to-count it replaces. */
+.folder-rail__trailing .folder-rail__actions {
+    position: absolute;
+    inset-inline-end: 0;
+    opacity: 0;
+    pointer-events: none;
+    margin-inline-start: -5px;
+}
+
+/* Reveal — into the flow — on the selected row, the row's own focus (keyboard nav), while this
+   row's menu is open, or while the ⋯ itself holds keyboard focus (Tab parity with the note
+   list's ⋯). The button leg is :focus-visible, NOT plain :focus: closing the menu can strand
+   pointer-given focus on the button (the panel divider's pointerdown calls preventDefault,
+   suppressing the focus move that would blur it), and a plain-focus reveal would pin the swap
+   after the pointer leaves. A stranded button merely stays parked: invisible, inert, and it
+   yields on the next focus move.
+
+   The selected row holding its ⋯ permanently costs it its count — the one folder whose count is
+   never shown is the one you are in. A debatable trade, challenge welcome; without it the rail
+   felt inconsistent beside the note list, whose selected item holds its actions the same way.
+
+   Reveal is relative, not static: .g-button paints its hover wash, press effect and focus ring on
+   abspos ::before/::after with inset: 0, so an un-positioned button would anchor those to the
+   trailing slot (19px wide, shifted by the -5px pull-in). Today uikit's own transform on .g-button
+   happens to make it a containing block anyway, but that's not worth depending on; offset-less
+   relative is identical to static in flex flow. */
+.folder-rail__row_selected .folder-rail__trailing .folder-rail__actions,
+.folder-rail__row:focus .folder-rail__trailing .folder-rail__actions,
+.folder-rail__row_menu-open .folder-rail__trailing .folder-rail__actions,
+.folder-rail__trailing .folder-rail__actions:focus-visible {
+    position: relative;
     opacity: 1;
+    pointer-events: auto;
+}
+
+.folder-rail__row_selected .folder-rail__trailing .folder-rail__count,
+.folder-rail__row:focus .folder-rail__trailing .folder-rail__count,
+.folder-rail__row_menu-open .folder-rail__trailing .folder-rail__count,
+.folder-rail__trailing:has(.folder-rail__actions:focus-visible) .folder-rail__count {
+    display: none;
 }
 
 /* Hover-reveal, pointer-only: on touch this revealed content is what swallowed the tap. */
 @media (hover: hover) {
-    .folder-rail__row:hover .folder-rail__actions {
+    .folder-rail__row:hover .folder-rail__trailing .folder-rail__actions {
+        position: relative;
         opacity: 1;
+        pointer-events: auto;
+    }
+
+    .folder-rail__row:hover .folder-rail__trailing .folder-rail__count {
+        display: none;
     }
 }
 
