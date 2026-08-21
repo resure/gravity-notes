@@ -4,6 +4,15 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-08-21
+
+### Fixed
+
+- **Folder rail alignment** — note counts now sit flush with the rail's edge instead of floating a
+  column away from it, and a long folder name's ellipsis runs right up to its count. The **⋯** menu
+  takes the count's place on hover or keyboard focus rather than reserving a slot beside it, so the
+  row reads as name → count at rest. Tab still steps from a focused row straight into its menu button.
+
 ## [0.8.0] - 2026-08-10
 
 ### Added
