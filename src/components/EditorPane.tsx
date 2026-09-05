@@ -288,6 +288,8 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
             md: {html: false, linkify: true},
             initial: {markup: note.content, mode: 'wysiwyg'},
             markupConfig: {
+                // Match WYSIWYG: normal rich-text paste becomes Markdown in source mode too.
+                parseHtmlOnPaste: true,
                 extensions: [
                     clipboard.markup,
                     spellcheckCompartment.of(
