@@ -85,6 +85,14 @@ export interface ShortcutDescriptor {
 
 /** Single source of truth for both the global handler and the help dialog. */
 export const SHORTCUTS: ShortcutDescriptor[] = [
+    {keys: 'mod+c', description: 'Copy as Markdown (in the editor)', group: 'Editing'},
+    {keys: 'mod+v', description: 'Paste Markdown or rich text (in the editor)', group: 'Editing'},
+    {keys: 'mod+shift+c', description: 'Copy as plain text (in the editor)', group: 'Editing'},
+    {
+        keys: 'mod+shift+v',
+        description: 'Paste without formatting (in the editor)',
+        group: 'Editing',
+    },
     {keys: 'up', description: 'Preview previous note (or k)', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note (or j)', group: 'Navigation'},
     {

@@ -12,6 +12,19 @@ FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ use
 The app ships two ways from one codebase: a **web app** and a **macOS desktop app** (Tauri 2).
 Everything interesting sits behind one seam.
 
+## Editor clipboard
+
+`src/components/editor/clipboard.ts` adds clipboard handling to both editor modes. Standard copy
+and cut expose Gravity's existing Markdown selection serialization as `text/plain` (and retain
+`text/yfm` for internal transfer); ordinary paste parses Markdown, while rich HTML and image uploads
+keep the editor's existing flow. Ordinary paste in code stays literal.
+
+Shift-copy emits only readable text. Shift-paste reads plain text and strips Markdown through the
+same configured parser, then inserts text without formatting. The shortcuts use the browser
+Clipboard API from a key gesture on the web and the official Tauri clipboard plugin in native
+shells (`src/clipboard.ts`); unavailable or denied access surfaces a toast. Pending reads are
+discarded if the editor state, focus, or lifetime changes, preventing insertion into a different note.
+
 ## The storage seam
 
 All persistence goes through the `NoteStore` interface

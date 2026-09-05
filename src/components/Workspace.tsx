@@ -1713,6 +1713,7 @@ export function Workspace({
                                         onRename={handleEditorRename}
                                         onEscape={handleEditorEscape}
                                         onUploadFile={handleUploadFile}
+                                        onError={onError}
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
                                         icon={notes.metadata.icons[notes.note.id]}

@@ -1681,6 +1681,7 @@ pub fn run() {
     });
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(WindowWorkspaces::default())
         .manage(Watchers::default())
         // A page (re)load without a window teardown — WKWebView's default content-process-crash
