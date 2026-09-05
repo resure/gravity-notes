@@ -1,6 +1,12 @@
-import {Transaction as CmTransaction, Prec} from '@codemirror/state';
+import {
+    EditorSelection as CmSelection,
+    type EditorState as CmState,
+    Transaction as CmTransaction,
+    Prec,
+} from '@codemirror/state';
 import {ViewPlugin} from '@codemirror/view';
 import type {ExtensionBuilder, Parser} from '@gravity-ui/markdown-editor';
+import {ensureSyntaxTree, syntaxTree} from '@gravity-ui/markdown-editor/cm/language';
 import {Fragment, type Node, Slice} from 'prosemirror-model';
 import {Plugin, PluginKey} from 'prosemirror-state';
 import type {EditorView} from 'prosemirror-view';
@@ -95,6 +101,40 @@ function inCode(view: EditorView): boolean {
     );
 }
 
+/** Keep source selections inside code literal, including partial inline-code selections. */
+function sourceInCode(state: CmState, from: number, to: number): boolean {
+    const tree = ensureSyntaxTree(state, to, 100) ?? syntaxTree(state);
+    let inside = false;
+    tree.iterate({
+        from,
+        to,
+        enter({node}) {
+            if (inside) return false;
+            if (node.name === 'InlineCode') {
+                const marks = node.getChildren('CodeMark');
+                inside = from >= marks[0].to && to <= marks[marks.length - 1].from;
+                return false;
+            }
+            if (node.name === 'FencedCode') {
+                const marks = node.getChildren('CodeMark');
+                const start = state.doc.lineAt(marks[0].to).to + 1;
+                const end =
+                    marks.length > 1
+                        ? state.doc.lineAt(marks[marks.length - 1].from).from
+                        : node.to;
+                inside = from >= start && to <= end;
+                return false;
+            }
+            if (node.name === 'CodeBlock') {
+                inside = from >= node.from && to <= node.to;
+                return false;
+            }
+            return !inside;
+        },
+    });
+    return inside;
+}
+
 export function insertUnformattedText(view: EditorView, text: string): void {
     if (!text) return;
     const {schema, tr} = view.state;
@@ -119,11 +159,30 @@ export function insertUnformattedText(view: EditorView, text: string): void {
 /** One parser shared by both modes; it includes the app's Markdown extensions. */
 export function createClipboardExtensions(onError: (message: string) => void) {
     let parser: Parser;
+    let plainMarkdown: (text: string) => string;
     const stripMarkdown = (text: string) => unformattedText(parser.parse(text));
 
     const wysiwyg = (builder: ExtensionBuilder) => {
-        builder.addPlugin(({markupParser}) => {
+        builder.addPlugin(({markupParser, serializer, schema}) => {
             parser = markupParser;
+            // Use the same escaping as WYSIWYG's unmarked text. Raw insertion would turn
+            // literal stars/brackets/headings back into formatting on the next mode switch.
+            plainMarkdown = (text) =>
+                text
+                    .replace(/\r\n?/g, '\n')
+                    .split('\n')
+                    .map((line) =>
+                        serializer.serialize(
+                            schema.nodes.doc.create(
+                                null,
+                                schema.nodes.paragraph.create(
+                                    null,
+                                    line ? schema.text(line) : null,
+                                ),
+                            ),
+                        ),
+                    )
+                    .join('\n');
             let alive = false;
             return new Plugin({
                 key: clipboardPluginKey,
@@ -212,17 +271,28 @@ export function createClipboardExtensions(onError: (message: string) => void) {
                                     );
                                     return ranges.length
                                         ? ranges
-                                              .map((range) =>
-                                                  stripMarkdown(
-                                                      state.sliceDoc(range.from, range.to),
-                                                  ),
-                                              )
+                                              .map((range) => {
+                                                  const text = state.sliceDoc(range.from, range.to);
+                                                  return sourceInCode(state, range.from, range.to)
+                                                      ? text
+                                                      : stripMarkdown(text);
+                                              })
                                               .join('\n')
                                         : null;
                                 },
                                 insertText: (text) =>
                                     view.dispatch({
-                                        ...state.replaceSelection(text),
+                                        ...state.changeByRange((range) => {
+                                            const insert = sourceInCode(state, range.from, range.to)
+                                                ? text
+                                                : plainMarkdown(text);
+                                            return {
+                                                changes: {from: range.from, to: range.to, insert},
+                                                range: CmSelection.cursor(
+                                                    range.from + insert.length,
+                                                ),
+                                            };
+                                        }),
                                         annotations: CmTransaction.userEvent.of('input.paste'),
                                         scrollIntoView: true,
                                     }),
