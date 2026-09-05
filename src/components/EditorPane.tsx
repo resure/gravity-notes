@@ -19,6 +19,7 @@ import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 import {WikiLinkSuggest} from './editor/WikiLinkSuggest';
 import {WikiLinkTooltip} from './editor/WikiLinkTooltip';
 import {attachmentImageExtension} from './editor/attachmentImageExtension';
+import {createClipboardExtensions} from './editor/clipboard';
 import {linkifyTypedUrls} from './editor/linkifyTypedUrls';
 import {freshMarkupState, markupEditorOf} from './editor/markupHistory';
 import {openLinkExtension} from './editor/openLinkExtension';
@@ -127,6 +128,7 @@ export interface EditorPaneHandle {
 }
 
 interface EditorPaneProps {
+    onError?: (message: string) => void;
     note: Note;
     /**
      * Focus intent on a note switch: the body (a commit), the title (a new note), or none (a browse).
@@ -183,6 +185,7 @@ interface EditorBodyHandle {
 }
 
 interface EditorBodyProps {
+    onError: (message: string) => void;
     spellcheck: boolean;
     note: Note;
     /**
@@ -231,6 +234,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         onOpenWikiLink,
         showToolbar,
         spellcheck,
+        onError,
     },
     ref,
 ) {
@@ -238,6 +242,12 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
     // useMarkdownEditor's []-deps — always calls the current one.
     const uploadRef = useRef(onUploadFile);
     uploadRef.current = onUploadFile;
+    const clipboardErrorRef = useRef<(message: string) => void>(() => {});
+    clipboardErrorRef.current = onError;
+    const clipboard = useMemo(
+        () => createClipboardExtensions((message) => clipboardErrorRef.current(message)),
+        [],
+    );
 
     // Same trick for the wiki-link extension (also captured once): the notes list, the open note's id
     // (which can change in place on rename), and the follow-link handler are all read live via refs.
@@ -279,6 +289,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
             initial: {markup: note.content, mode: 'wysiwyg'},
             markupConfig: {
                 extensions: [
+                    clipboard.markup,
                     spellcheckCompartment.of(
                         Prec.highest(
                             CmEditorView.contentAttributes.of({spellcheck: String(spellcheck)}),
@@ -323,6 +334,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
                         return md;
                     });
                     fixedSelectionContext(builder, {config: SELECTION_MENU_CONFIG});
+                    clipboard.wysiwyg(builder);
                     attachmentImageExtension(builder);
                     openLinkExtension(builder);
                     linkifyTypedUrls(builder);
@@ -630,6 +642,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         showToolbar,
         showNoteIcons,
         spellcheck = false,
+        onError = () => {},
     },
     ref,
 ) {
@@ -809,6 +822,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     onOpenWikiLink={onOpenWikiLink}
                     showToolbar={showToolbar}
                     spellcheck={spellcheck}
+                    onError={onError}
                 />
             </div>
         </div>

@@ -25,6 +25,8 @@ Markdown files, and they are yours.
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
 - **Gravity Markdown editor**: WYSIWYG and markup modes, read-only preview, live URLs
+- **Markdown clipboard**: copy/paste with `⌘C` / `⌘V`; add `Shift` to copy or paste plain text,
+  stripping Markdown and rich-text formatting
 - **Optional spellcheck** in both editor modes — toggle “Check spelling” in Settings (off by default)
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible
 - **Full-text search** across titles and bodies, ranked, with match snippets

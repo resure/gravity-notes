@@ -23,6 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-log = "2"
 # Live watching of the notes folder (FSEvents on macOS), for external-edit refresh. The watcher is
 # never invoked on mobile (the frontend doesn't call `notes_watch` there), but the crates compile

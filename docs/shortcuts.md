@@ -34,6 +34,12 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 ## Editing
 
+In the editor body, `⌘C` copies Markdown and `⌘V` pastes Markdown or rich text with formatting.
+`⌘⇧C` copies plain text; `⌘⇧V` removes both Markdown syntax and rich-text formatting before
+inserting plain text (for example, `**bold**` becomes `bold`). Line breaks remain. Ordinary paste
+inside code stays literal. These shortcuts work in both editing modes; title and search fields
+keep their standard text behavior.
+
 | Keys             | Action                                                                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
