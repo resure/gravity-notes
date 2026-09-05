@@ -60,7 +60,83 @@ describe('FileSystemNoteStore', () => {
         });
     });
 
+    it('lists visible non-Markdown files without exposing dotfiles, internals, or notes', async () => {
+        for (const path of [
+            'README',
+            'Work/report.pdf',
+            'Work/Sub/photo.png',
+            'Work/Note.MD',
+            '.hidden.md',
+            '.env',
+            '.DS_Store',
+            '.git/config',
+            'node_modules/pkg/readme',
+            'Attachments/image.png',
+            'Work/Note.md.gn-tmp',
+            'Work/Note.md.rename-tmp',
+        ]) {
+            dir.seedFile(path, 'contents', 1);
+        }
+        expect(await store.listFiles()).toEqual([
+            {id: 'README', name: 'README'},
+            {id: 'Work/report.pdf', name: 'report.pdf'},
+            {id: 'Work/Sub/photo.png', name: 'photo.png'},
+        ]);
+        expect((await store.list()).map((note) => note.id)).toEqual(['Work/Note.MD']);
+        expect((await store.getAll()).map((note) => note.id)).toEqual(['Work/Note.MD']);
+    });
+
+    it('removes a folder containing only housekeeping files', async () => {
+        await store.createFolder('', 'Temp');
+        dir.seedFile('Temp/.DS_Store', 'Finder metadata', 1);
+        await store.removeFolder('Temp');
+        expect(await store.listFolders()).not.toContain('Temp');
+    });
+
+    it.each(['README', 'report.pdf', '.env', '.git/config', '.DS_Store/keep'])(
+        'preserves all contents when %s blocks folder deletion',
+        async (path) => {
+            await store.createFolder('', 'Keep');
+            dir.seedFile('Keep/.DS_Store', 'Finder metadata', 1);
+            // A directory named .DS_Store is not a housekeeping file.
+            if (path.startsWith('.DS_Store/')) {
+                const keep = await dir.getDirectoryHandle('Keep');
+                await keep.removeEntry('.DS_Store');
+            }
+            dir.seedFile(`Keep/${path}`, 'keep me', 2);
+            const before = dir.paths();
+            await expect(store.removeFolder('Keep')).rejects.toThrow('Cannot delete');
+            expect(dir.paths()).toEqual(before);
+        },
+    );
+
+    it('restores the marker and preserves a file arriving after the deletion preflight', async () => {
+        await store.createFolder('', 'Keep');
+        const original = dir.removeEntry.bind(dir);
+        vi.spyOn(dir, 'removeEntry').mockImplementation(async (name, options) => {
+            if (name === 'Keep') dir.seedFile('Keep/arrived', 'keep me', 1);
+            return original(name, options);
+        });
+        await expect(store.removeFolder('Keep')).rejects.toThrow();
+        expect(dir.paths()).toContain('Keep/.gnkeep');
+        expect(dir.paths()).toContain('Keep/arrived');
+    });
+
     describe('folders: nested create / move / rename', () => {
+        it.each(['./.hidden', '.. .idea'])(
+            'keeps notes created or renamed to %j in the listing',
+            async (title) => {
+                const created = await store.create(title);
+                expect((await store.list()).map((note) => note.id)).toContain(created.id);
+                const source = await store.create('Original', 'Work');
+                const renamed = await store.rename(source.id, title);
+                expect((await store.list()).map((note) => note.id)).toContain(renamed.id);
+                expect((await store.getAll()).map((note) => note.id)).toEqual(
+                    expect.arrayContaining([created.id, renamed.id]),
+                );
+            },
+        );
+
         it('creates a note inside a subfolder, creating the directory', async () => {
             const meta = await store.create('Roadmap', 'Work');
 

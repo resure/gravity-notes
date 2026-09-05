@@ -47,6 +47,17 @@ format, in full:
 - **`Attachments/`** — pasted/dropped images land here as files; notes reference them
   root-relatively (`![…](Attachments/pie.png)`). The stored Markdown never contains `blob:` URLs.
 - **`.gnkeep`** — a marker file that keeps a deliberately-empty folder alive (Git-style).
+- **Other files** (including extensionless files) appear as muted, non-editable rows alongside notes.
+  Folder stores expose names and paths through optional `listFiles()` without reading file bodies;
+  these entries have separate counts and never enter note search, editing, autosave, or export.
+  Dotfiles (including dot-named `.md` files), dot-directories, write temporaries, `node_modules`,
+  and the managed root `Attachments/` stay hidden. New note titles have leading dots removed so
+  creating or renaming a note cannot hide it.
+- **Folder deletion** accepts only empty folders or folders containing regular `.gnkeep` / `.DS_Store`
+  files. Menu and keyboard deletion both ask for confirmation, with Cancel focused initially;
+  housekeeping files are removed with the folder after confirmation. Other files, hidden contents, and subfolders block
+  deletion. Both filesystem backends inspect contents before cleanup and delete non-recursively;
+  an entry arriving during deletion is preserved. A failed deletion attempts to restore `.gnkeep`.
 - **`[[Wiki links]]`** are stored verbatim — `[[Title]]` on disk, Obsidian-compatible round-trip.
 - **Bare URLs** you type are linkified in the editor and normalized to `<url>` on save; a stray
   `Notes.md` never turns into a link (fuzzy linkify is off — `.md` is a real TLD).

@@ -85,6 +85,27 @@ describe('Workspace — nvALT navigation', () => {
         );
     }
 
+    it('scopes other files to the chosen folder and excludes them from note search', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Work/Plan.md', 'project plan', 100);
+        dir.seedFile('Work/report.pdf', 'binary', 100);
+        dir.seedFile('Personal/README', 'text', 100);
+        dir.seedFile('Work/.env', 'hidden', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
+        await screen.findByText('report.pdf');
+        expect(screen.getByText('README')).toBeInTheDocument();
+        expect(screen.queryByText('.env')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', {name: 'Folders'}));
+        await user.click(await screen.findByRole('treeitem', {name: /Work/}));
+        expect(screen.getByText('report.pdf')).toBeInTheDocument();
+        expect(screen.queryByText('README')).not.toBeInTheDocument();
+        await user.type(screen.getByRole('textbox', {name: 'Search or create a note'}), 'report');
+        await waitFor(() => expect(screen.queryByText('report.pdf')).not.toBeInTheDocument());
+        expect(screen.queryByRole('option', {name: /report/})).not.toBeInTheDocument();
+    });
+
     it('shows the placeholder until a note is opened, and never a tab strip', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});

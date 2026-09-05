@@ -28,6 +28,7 @@ import {
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
+    type OtherFile,
 } from './types';
 
 /**
@@ -487,16 +488,65 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async removeFolder(path: string): Promise<void> {
+        if (!sanitizeDir(path)) throw new Error('Cannot delete the workspace folder.');
         const dir = await this.resolveDir(path);
         if (!dir) return; // already gone
-        try {
-            await dir.removeEntry(FOLDER_MARKER);
-        } catch {
-            // An implicit folder (no marker) — nothing to drop.
+        const cleanup: string[] = [];
+        for await (const handle of dir.values()) {
+            if (handle.kind === 'file' && [FOLDER_MARKER, '.DS_Store'].includes(handle.name)) {
+                cleanup.push(handle.name);
+            } else {
+                throw new Error(
+                    `Cannot delete “${path}”: it contains “${handle.name}”. Check the folder in your file manager.`,
+                );
+            }
         }
         const parent = await this.resolveDir(dirname(path));
-        // Non-recursive: only an empty directory is removed (the caller ensures it holds no notes).
-        if (parent) await parent.removeEntry(basename(path));
+        if (!parent) return;
+        try {
+            for (const name of cleanup) {
+                try {
+                    await dir.removeEntry(name);
+                } catch (err) {
+                    if (!(err instanceof DOMException && err.name === 'NotFoundError')) throw err;
+                }
+            }
+            // Non-recursive: content arriving after the scan must keep the directory alive.
+            await parent.removeEntry(basename(path));
+        } catch (err) {
+            if (cleanup.includes(FOLDER_MARKER)) {
+                // Preserve the explicit folder marker if a concurrent write or permission error
+                // prevents removal. Never recreate a directory another process already removed.
+                try {
+                    await dir.getFileHandle(FOLDER_MARKER, {create: true});
+                } catch {
+                    /* best effort */
+                }
+            }
+            throw err;
+        }
+    }
+
+    async listFiles(): Promise<OtherFile[]> {
+        const out: OtherFile[] = [];
+        const walk = async (dir: FileSystemDirectoryHandle, prefix: string) => {
+            for await (const handle of dir.values()) {
+                if (handle.name.startsWith('.')) continue;
+                if (handle.kind === 'directory') {
+                    if (isSkippedDir(handle.name) || (!prefix && handle.name === ATTACHMENTS_DIR))
+                        continue;
+                    await walk(handle, `${prefix}${handle.name}/`);
+                } else if (
+                    !handle.name.toLowerCase().endsWith(MD_EXT) &&
+                    !handle.name.endsWith('.gn-tmp') &&
+                    !handle.name.endsWith('.rename-tmp')
+                ) {
+                    out.push({id: `${prefix}${handle.name}`, name: handle.name});
+                }
+            }
+        };
+        await walk(this.dir, '');
+        return out.sort((a, b) => a.id.localeCompare(b.id));
     }
 
     async moveFolder(fromPath: string, toPath: string): Promise<void> {
@@ -573,7 +623,10 @@ export class FileSystemNoteStore implements NoteStore {
                     // Don't descend the root Attachments/ folder — its files aren't notes.
                     if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                     yield* recurse(handle, `${prefix}${handle.name}/`);
-                } else if (handle.name.toLowerCase().endsWith(MD_EXT)) {
+                } else if (
+                    !handle.name.startsWith('.') &&
+                    handle.name.toLowerCase().endsWith(MD_EXT)
+                ) {
                     yield {id: `${prefix}${handle.name}`, handle};
                 }
             }

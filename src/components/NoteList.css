@@ -263,3 +263,29 @@
 .note-list__folder-name {
     min-width: 0;
 }
+
+/* Files share the virtualized scroll area, but have no note editing or drag actions. */
+.note-list__file-count {
+    padding: 4px 16px 8px;
+}
+
+.note-list__file {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    color: var(--g-color-text-secondary);
+}
+
+.note-list__file-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+}
+
+.note-list__file-name {
+    max-width: 100%;
+}

@@ -1252,6 +1252,32 @@ describe('useNotes — folders', () => {
         expect(hook.result.current.metadata.pinned).not.toContain('Temp');
     });
 
+    it('loads and refreshes other files and prevents deleting their folder', async () => {
+        const store = new ControllableStore();
+        await store.createFolder('', 'Work');
+        let files = [{id: 'Work/README', name: 'README'}];
+        const fileStore = Object.assign(store, {listFiles: vi.fn(async () => files)});
+        const remove = vi.spyOn(store, 'removeFolder');
+        const onError = vi.fn();
+        const hook = renderHook(() => useNotes(fileStore, onError));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        expect(hook.result.current.files).toEqual(files);
+        await act(async () => {
+            await hook.result.current.removeFolder('Work');
+        });
+        expect(remove).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledWith('Only empty folders can be deleted.');
+        files = [];
+        await act(async () => {
+            await hook.result.current.refresh();
+        });
+        expect(hook.result.current.files).toEqual([]);
+        await act(async () => {
+            await hook.result.current.removeFolder('Work');
+        });
+        expect(remove).toHaveBeenCalledWith('Work');
+    });
+
     it('removeFolder refuses a folder that still holds a note', async () => {
         const store = new ControllableStore();
         const onError = vi.fn();

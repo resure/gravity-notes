@@ -55,6 +55,32 @@ describe("buildFolderTree — 'expanded-set' mode (the rail)", () => {
 });
 
 describe('buildFolderTree', () => {
+    it('counts files separately and rolls up collapsed subfolders', () => {
+        const files = [
+            {id: 'Work/README', name: 'README'},
+            {id: 'Work/Sub/report.pdf', name: 'report.pdf'},
+        ];
+        const collapsed = buildFolderTree(
+            [],
+            [note('Work/Plan.md')],
+            meta(),
+            new Set(),
+            'expanded-set',
+            files,
+        );
+        expect(collapsed[0]).toMatchObject({path: 'Work', noteCount: 1, fileCount: 2});
+        const expanded = buildFolderTree(
+            [],
+            [note('Work/Plan.md')],
+            meta(),
+            new Set(['Work']),
+            'expanded-set',
+            files,
+        );
+        expect(expanded[0]).toMatchObject({path: 'Work', noteCount: 1, fileCount: 1});
+        expect(expanded[1]).toMatchObject({path: 'Work/Sub', noteCount: 0, fileCount: 1});
+    });
+
     it('is empty when there are no folders (notes alone create none at root)', () => {
         expect(buildFolderTree([], [note('A.md'), note('B.md')], meta(), new Set())).toEqual([]);
     });

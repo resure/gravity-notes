@@ -25,9 +25,12 @@ Markdown files, and they are yours.
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
 - **Gravity Markdown editor**: WYSIWYG and markup modes, read-only preview, live URLs
+- **Optional spellcheck** in both editor modes — toggle “Check spelling” in Settings (off by default)
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible
 - **Full-text search** across titles and bodies, ranked, with match snippets
 - **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**
+- **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;
+  reveal them in Finder on desktop
 - **Images**: paste or drop into a note — stored as files in `Attachments/`, click to zoom
 - **Plays nice with other tools**: external edits show up live in the desktop app (a folder
   watcher), with conflict handling when a note changes underneath you
@@ -83,7 +86,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 
 - Copy pasting wysiwyg should copy markdown, not formatted text
 - Tune line-height
-- Setting for disabling spellcheck
 
 - iCloud dataless files: not-yet-downloaded files list by name/mtime with an empty preview/search
   body, and recover once macOS materializes them (a focus refresh picks up the filled-in preview).

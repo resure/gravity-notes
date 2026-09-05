@@ -24,8 +24,9 @@ import {
     PinSlash,
     TrashBin,
 } from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {Button, Dialog, DropdownMenu, Icon, Text, TextInput} from '@gravity-ui/uikit';
 
+import {useHeldValue} from '../hooks/useHeldValue';
 import {basename, dirname, joinPath, sanitizeSegment} from '../storage/noteText';
 import type {FolderRow} from '../tree';
 
@@ -115,6 +116,19 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
     const [newFolderName, setNewFolderName] = useState('');
     // The folder being inline-renamed (null = none).
     const [renaming, setRenaming] = useState<{path: string; value: string} | null>(null);
+    const [deleting, setDeleting] = useState<string | null>(null);
+    const deletingView = useHeldValue(deleting);
+    const deleteTarget = rows.find((row) => row.path === deleting);
+    const canDelete = Boolean(
+        deleteTarget &&
+        deleteTarget.noteCount === 0 &&
+        deleteTarget.fileCount === 0 &&
+        !deleteTarget.hasChildren,
+    );
+    const confirmDelete = () => {
+        if (deleting && canDelete) onRemoveFolder(deleting);
+        setDeleting(null);
+    };
     // The folder/All-Notes row a drag is hovering (the key), and the folder currently being dragged.
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
@@ -336,7 +350,8 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             else setNewFolderParent(''); // All Notes → a new root folder
         } else if ((event.key === 'Backspace' || event.key === 'Delete') && row) {
             event.preventDefault();
-            if (row.noteCount === 0 && !row.hasChildren) onRemoveFolder(row.path);
+            if (row.noteCount === 0 && row.fileCount === 0 && !row.hasChildren)
+                setDeleting(row.path);
         }
     };
 
@@ -463,7 +478,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
 
     // The per-folder action list, shared by the row's ⋯ menu and the right-click context menu.
     const folderMenuItems = (row: FolderRow) => {
-        const deletable = row.noteCount === 0 && !row.hasChildren;
+        const deletable = row.noteCount === 0 && row.fileCount === 0 && !row.hasChildren;
         return [
             {
                 text: row.pinned ? 'Unpin' : 'Pin to top',
@@ -496,7 +511,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 iconStart: <Icon data={TrashBin} />,
                 // Only a truly empty folder (no notes, no subfolders) can be removed.
                 disabled: !deletable,
-                action: () => onRemoveFolder(row.path),
+                action: () => setDeleting(row.path),
             },
         ];
     };
@@ -580,8 +595,16 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 {/* The count and the ⋯ menu share one trailing slot (see FolderRail.css): the
                     count shows at rest, the menu takes its place on hover/focus. */}
                 <span className="folder-rail__trailing">
-                    {row.noteCount > 0 ? (
-                        <span className="folder-rail__count">{row.noteCount}</span>
+                    {row.noteCount > 0 || row.fileCount > 0 ? (
+                        <span
+                            className="folder-rail__count"
+                            title={`${row.noteCount} notes · ${row.fileCount} files`}
+                        >
+                            {row.noteCount}
+                            {row.fileCount > 0
+                                ? ` · ${row.fileCount} ${row.fileCount === 1 ? 'file' : 'files'}`
+                                : ''}
+                        </span>
                     ) : null}
                     <Button
                         className="folder-rail__actions"
@@ -681,6 +704,30 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                     New Folder
                 </Button>
             </div>
+
+            <Dialog
+                open={deleting !== null}
+                onClose={() => setDeleting(null)}
+                initialFocus="cancel"
+                size="s"
+                disableBodyScrollLock
+            >
+                <Dialog.Header caption="Delete folder" />
+                <Dialog.Body>
+                    <Text>
+                        {deletingView
+                            ? `Delete the folder “${deletingView}”? This cannot be undone.`
+                            : ''}
+                    </Text>
+                </Dialog.Body>
+                <Dialog.Footer
+                    textButtonCancel="Cancel"
+                    textButtonApply="Delete folder"
+                    onClickButtonCancel={() => setDeleting(null)}
+                    onClickButtonApply={confirmDelete}
+                    propsButtonApply={{view: 'outlined-danger', disabled: !canDelete}}
+                />
+            </Dialog>
 
             {/* The one shared action menu — controlled, anchored to whichever row's ⋯ button (or the
                 cursor, for a right-click) opened it, so the rail needs no per-row DropdownMenu. Gravity

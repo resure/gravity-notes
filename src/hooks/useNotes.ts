@@ -27,6 +27,7 @@ import {
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
+    type OtherFile,
     type SortMode,
     type TrashEntry,
     type TrashedNote,
@@ -145,6 +146,7 @@ export interface NoteConflict {
 
 export interface UseNotes {
     notes: NoteMeta[];
+    files: OtherFile[];
     /** Every folder path (POSIX), including deliberately-empty ones — for rendering the tree. */
     folders: string[];
     /** Folder metadata: active sort, pinned ids, created stamps, the open note. */
@@ -278,6 +280,7 @@ export function useNotes(
     initialNoteId?: string | null,
 ): UseNotes {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
+    const [files, setFiles] = useState<OtherFile[]>([]);
     const [folders, setFolders] = useState<string[]>([]);
     const [trashedNotes, setTrashedNotes] = useState<TrashedNote[]>([]);
     const [note, setNote] = useState<Note | null>(null);
@@ -459,7 +462,11 @@ export function useNotes(
     }, []);
 
     const refresh = useCallback(async () => {
-        const [list, folderList] = await Promise.all([store.list(), store.listFolders()]);
+        const [list, folderList, fileList] = await Promise.all([
+            store.list(),
+            store.listFolders(),
+            store.listFiles?.() ?? [],
+        ]);
         // Newest-wins per row: an autosave can land while list() walks the folder, so its
         // bumpInList row (fresher mtime + preview) must survive this snapshot — which was read
         // before the write and would otherwise clobber it back to stale (and the save's own
@@ -472,6 +479,7 @@ export function useNotes(
             });
         });
         setFolders(folderList);
+        setFiles(fileList);
         // Reconcile against notes AND folders, so a pinned empty folder isn't pruned.
         let next = reconcile(metadataRef.current, [...list.map((n) => n.id), ...folderList], {
             recursive: store.listsRecursively,
@@ -499,7 +507,12 @@ export function useNotes(
     // re-read every note. Metadata stays consistent via the with* helpers the mutation already applied,
     // so no reconcile is needed here (an orphaned implicit-folder pin, rare, self-heals on reload).
     const relistFolders = useCallback(async () => {
-        setFolders(await store.listFolders());
+        const [folderList, fileList] = await Promise.all([
+            store.listFolders(),
+            store.listFiles?.() ?? [],
+        ]);
+        setFolders(folderList);
+        setFiles(fileList);
     }, [store]);
 
     const bumpInList = useCallback(
@@ -772,7 +785,8 @@ export function useNotes(
             // behaves the same (the rail also disables the action; this is the authoritative guard).
             const hasNotes = notes.some((n) => n.id.startsWith(`${path}/`));
             const hasSubfolder = folders.some((f) => f.startsWith(`${path}/`));
-            if (hasNotes || hasSubfolder) {
+            const hasFiles = files.some((file) => file.id.startsWith(`${path}/`));
+            if (hasNotes || hasSubfolder || hasFiles) {
                 onError('Only empty folders can be deleted.');
                 return;
             }
@@ -785,7 +799,7 @@ export function useNotes(
                 onError(err instanceof Error ? err.message : 'Failed to remove folder');
             }
         },
-        [store, refresh, onError, notes, folders, stampLocalWrite],
+        [store, refresh, onError, notes, folders, files, stampLocalWrite],
     );
 
     const moveFolder = useCallback(
@@ -1276,11 +1290,12 @@ export function useNotes(
         let cancelled = false;
         void (async () => {
             try {
-                const [list, folderList, raw, trashList] = await Promise.all([
+                const [list, folderList, raw, trashList, fileList] = await Promise.all([
                     store.list(),
                     store.listFolders(),
                     store.readMetadata(),
                     store.listTrash(),
+                    store.listFiles?.() ?? [],
                 ]);
                 if (cancelled) return;
                 const meta = reconcile(raw, [...list.map((n) => n.id), ...folderList], {
@@ -1308,6 +1323,7 @@ export function useNotes(
                 };
                 setNotes(list);
                 setFolders(folderList);
+                setFiles(fileList);
                 setTrashedNotes(display);
                 applyMetadata(reconciled);
                 if (loaded) {
@@ -1665,6 +1681,7 @@ export function useNotes(
 
     return {
         notes,
+        files,
         folders,
         metadata,
         ready,

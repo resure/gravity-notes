@@ -1,4 +1,4 @@
-import {type EditorState, Transaction} from '@codemirror/state';
+import {type EditorState, Transaction, type TransactionSpec} from '@codemirror/state';
 
 /**
  * Markup-mode (CodeMirror) undo isolation for the note-switch content swap.
@@ -22,12 +22,13 @@ import {type EditorState, Transaction} from '@codemirror/state';
  * The bundle editor's markup half, reachable at runtime but absent from the public
  * `MarkdownEditorInstance` type (`editor.markupEditor.cm` is the CodeMirror `EditorView`; the
  * getter lazily CREATES the markup editor on first access — EditorPane leans on that to obtain
- * the pristine template at mount). Kept to the two members we touch.
+ * the pristine template at mount). Kept to the members we touch.
  */
 export interface MarkupEditorHandle {
     cm: {
         state: EditorState;
         setState(state: EditorState): void;
+        dispatch(spec: TransactionSpec): void;
     };
 }
 

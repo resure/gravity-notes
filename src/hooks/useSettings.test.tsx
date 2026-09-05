@@ -18,6 +18,7 @@ import {
 const APP: Settings = {
     showEditorToolbar: false,
     showNoteIcons: false,
+    spellcheck: false,
     editorFont: 'serif',
     accentColor: 'blue',
     textWidth: 'wide',

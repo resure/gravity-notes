@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, fireEvent, screen, within} from '@testing-library/react';
+import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -17,6 +17,7 @@ const folder = (path: string, over: Partial<FolderRow> = {}): FolderRow => ({
     pinned: false,
     hasChildren: false,
     noteCount: 0,
+    fileCount: 0,
     ...over,
 });
 
@@ -203,13 +204,42 @@ describe('FolderRail — folder actions', () => {
         expect(row).not.toHaveClass('folder-rail__row_menu-open');
     });
 
-    it('removes an empty folder from its menu', async () => {
+    it('disables deletion when a folder contains other files', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({rows: [folder('Files', {fileCount: 1})]});
+        await user.click(screen.getByRole('button', {name: 'Files actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
+        expect(props.onRemoveFolder).not.toHaveBeenCalled();
+    });
+
+    it('confirms before removing an empty folder from its menu', async () => {
         const user = userEvent.setup();
         const {props} = setup({rows: [folder('Empty', {noteCount: 0, hasChildren: false})]});
         await user.click(screen.getByRole('button', {name: 'Empty actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
+        expect(props.onRemoveFolder).not.toHaveBeenCalled();
+        expect(await screen.findByRole('dialog')).toHaveTextContent('Delete the folder “Empty”?');
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Cancel'})).toHaveFocus());
+        await user.click(screen.getByRole('button', {name: 'Delete folder'}));
         expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
     });
+
+    it.each(['Cancel', 'Escape'])(
+        'keeps the folder when confirmation is dismissed with %s',
+        async (dismiss) => {
+            const user = userEvent.setup();
+            const {props} = setup({rows: [folder('Empty')]});
+            fireEvent.contextMenu(screen.getByRole('treeitem', {name: /Empty/}));
+            await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
+            await screen.findByRole('dialog');
+            if (dismiss === 'Cancel')
+                await user.click(screen.getByRole('button', {name: 'Cancel'}));
+            else await user.keyboard('{Escape}');
+            expect(props.onRemoveFolder).not.toHaveBeenCalled();
+            await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+            expect(screen.getByRole('treeitem', {name: /Empty/})).toBeInTheDocument();
+        },
+    );
 
     it('reveals a folder in Finder when the backend supports it', async () => {
         const user = userEvent.setup();
@@ -436,16 +466,21 @@ describe('FolderRail — in-rail keys', () => {
         expect(props.onCreateFolder).toHaveBeenCalledWith('Work', 'Plans');
     });
 
-    it('removes an empty focused folder on Backspace', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({
-            rows: [folder('Empty', {noteCount: 0, hasChildren: false})],
-            selectedFolder: 'Empty',
-        });
-        screen.getByRole('treeitem', {name: /Empty/}).focus();
-        await user.keyboard('{Backspace}');
-        expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
-    });
+    it.each(['Backspace', 'Delete'])(
+        'confirms before removing an empty focused folder on %s',
+        async (key) => {
+            const user = userEvent.setup();
+            const {props} = setup({
+                rows: [folder('Empty', {noteCount: 0, hasChildren: false})],
+                selectedFolder: 'Empty',
+            });
+            screen.getByRole('treeitem', {name: /Empty/}).focus();
+            await user.keyboard(`{${key}}`);
+            expect(props.onRemoveFolder).not.toHaveBeenCalled();
+            await user.click(await screen.findByRole('button', {name: 'Delete folder'}));
+            expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
+        },
+    );
 
     it('does not remove a folder that still holds notes', async () => {
         const user = userEvent.setup();

@@ -425,15 +425,25 @@ export function Workspace({
                 notes.metadata,
                 expandedFolders,
                 'expanded-set',
+                notes.files,
             ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [notes.folders, notes.notes, notes.metadata.pinned, expandedFolders],
+        [notes.folders, notes.notes, notes.files, notes.metadata.pinned, expandedFolders],
     );
     // The middle pane: a global ranked list while searching (folders never hide a match), otherwise
     // the selected folder's direct notes ('All Notes' = everything). Both stay ordered.
     const listNotes = useMemo(
         () => (searching ? filteredNotes : notesInFolder(orderedNotes, selectedFolder)),
         [searching, filteredNotes, orderedNotes, selectedFolder],
+    );
+    const listFiles = useMemo(
+        () =>
+            searching
+                ? []
+                : notes.files.filter(
+                      (file) => selectedFolder === null || dirname(file.id) === selectedFolder,
+                  ),
+        [searching, notes.files, selectedFolder],
     );
     // The note ids the cursor moves over (⌘J/⌘K, delete-neighbor).
     const visibleIds = useMemo(() => listNotes.map((note) => note.id), [listNotes]);
@@ -1592,6 +1602,7 @@ export function Workspace({
                             />
                         ) : null}
                         <NoteList
+                            files={listFiles}
                             ref={listRef}
                             notes={listNotes}
                             selectedId={nav.selectedId}
@@ -1707,6 +1718,7 @@ export function Workspace({
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         showToolbar={settings.showEditorToolbar}
+                                        spellcheck={settings.spellcheck}
                                         showNoteIcons={settings.showNoteIcons}
                                     />
                                 </div>

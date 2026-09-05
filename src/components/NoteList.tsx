@@ -20,6 +20,7 @@ import {
     ArrowUpRightFromSquare,
     Copy,
     Ellipsis,
+    File,
     Folder,
     FolderOpen,
     Pencil,
@@ -45,7 +46,7 @@ import {useHeldValue} from '../hooks/useHeldValue';
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {isOpenInNewWindowChord} from '../shortcuts';
 import {dirname, formatCrumb} from '../storage/noteText';
-import type {NoteMeta, SortMode} from '../storage/types';
+import type {NoteMeta, OtherFile, SortMode} from '../storage/types';
 
 import {IconPickerButton, IconPickerPopup} from './IconPicker';
 
@@ -56,6 +57,7 @@ import './NoteList.css';
  * `text/plain` drags can't be moved into a folder. Must match `NOTE_MIME` in FolderRail.
  */
 const NOTE_MIME = 'application/x-gravity-note';
+const NO_FILES: OtherFile[] = [];
 
 /**
  * Perf-regression seam: counts {@link NoteRow} render-body executions. A folder can hold thousands of
@@ -81,6 +83,8 @@ export interface NoteListHandle {
 export interface NoteListProps {
     /** The notes to show — already ordered (pins first, active sort), and folder-scoped or ranked. */
     notes: NoteMeta[];
+    /** Display-only files alongside the notes; never part of note navigation. */
+    files?: OtherFile[];
     selectedId: string | null;
     /** The active search query — for match highlighting and the empty-state hint. */
     query: string;
@@ -378,9 +382,20 @@ const NoteRow = memo(function NoteRow({
     );
 });
 
+/** Distinguish non-editable files from notes without adding a counter to notes-only lists. */
+function ListCounts({notes, files}: {notes: number; files: number}) {
+    if (files === 0) return null;
+    return (
+        <Text className="note-list__file-count" color="secondary" variant="caption-2">
+            {notes} {notes === 1 ? 'note' : 'notes'} · {files} {files === 1 ? 'file' : 'files'}
+        </Text>
+    );
+}
+
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
         notes,
+        files = NO_FILES,
         selectedId,
         query,
         scopeLabel,
@@ -495,11 +510,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     // variable-height (the folder crumb adds a line), so heights are measured per row.
     const scrollRef = useRef<HTMLDivElement>(null);
     const rowVirtualizer = useVirtualizer({
-        count: notes.length,
+        count: notes.length + files.length,
         getScrollElement: () => scrollRef.current,
         estimateSize: () => 56,
         overscan: 8,
-        getItemKey: (index) => notes[index].id,
+        getItemKey: (index) =>
+            index < notes.length ? notes[index].id : `file:${files[index - notes.length].id}`,
         // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
         // so the list always has a keyboard-focusable element and focusing it never needs an async
         // scroll-then-mount — plus any open row popover's anchor row (⋯ menu / icon picker), so
@@ -904,62 +920,124 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 </div>
             ) : null}
 
-            <div
-                ref={scrollRef}
-                className="note-list__items virtual-scroll"
-                role="listbox"
-                aria-label="Notes"
-            >
-                {notes.length === 0 ? (
-                    <div className="note-list__empty">{renderEmpty()}</div>
+            <ListCounts notes={notes.length} files={files.length} />
+            <div ref={scrollRef} className="note-list__items virtual-scroll">
+                {rowVirtualizer.options.count === 0 ? (
+                    <div role="listbox" aria-label="Notes" className="note-list__empty">
+                        {renderEmpty()}
+                    </div>
                 ) : (
                     // Spacer sized to the full list; each visible row is absolutely positioned at its
                     // measured offset. Only the windowed rows (getVirtualItems) are mounted.
                     <div style={{height: rowVirtualizer.getTotalSize(), position: 'relative'}}>
-                        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                            const note = notes[virtualRow.index];
-                            return (
-                                <div
-                                    key={virtualRow.key}
-                                    data-index={virtualRow.index}
-                                    ref={rowVirtualizer.measureElement}
-                                    style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        width: '100%',
-                                        transform: `translateY(${virtualRow.start}px)`,
-                                    }}
-                                >
-                                    <NoteRow
-                                        note={note}
-                                        selected={note.id === selectedId}
-                                        editing={note.id === editingId}
-                                        tabbable={note.id !== editingId && note.id === focusableId}
-                                        pinned={pinnedSet.has(note.id)}
-                                        previewText={
-                                            snippetById?.get(note.id) ?? note.preview ?? ''
-                                        }
-                                        crumb={showCrumbs ? formatCrumb(dirname(note.id)) : ''}
-                                        terms={terms}
-                                        editValue={note.id === editingId ? editValue : ''}
-                                        editInputRef={editInputRef}
-                                        registerRef={registerRef}
-                                        icon={icons[note.id]}
-                                        onOpenIconPicker={onOpenIconPicker}
-                                        showIcons={showIcons}
-                                        onClickRow={onClickRow}
-                                        onDoubleClickRow={onDoubleClickRow}
-                                        onContextMenuRow={onContextMenuRow}
-                                        onKeyDownRow={onKeyDownRow}
-                                        onOpenMenu={onOpenMenu}
-                                        onEditChange={setEditValue}
-                                        onEditCommit={onEditCommit}
-                                        onEditCancel={onEditCancel}
-                                    />
-                                </div>
-                            );
-                        })}
+                        <div role="listbox" aria-label="Notes">
+                            {rowVirtualizer
+                                .getVirtualItems()
+                                .filter((row) => row.index < notes.length)
+                                .map((virtualRow) => {
+                                    const note = notes[virtualRow.index];
+                                    return (
+                                        <div
+                                            key={virtualRow.key}
+                                            data-index={virtualRow.index}
+                                            ref={rowVirtualizer.measureElement}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                transform: `translateY(${virtualRow.start}px)`,
+                                            }}
+                                        >
+                                            <NoteRow
+                                                note={note}
+                                                selected={note.id === selectedId}
+                                                editing={note.id === editingId}
+                                                tabbable={
+                                                    note.id !== editingId && note.id === focusableId
+                                                }
+                                                pinned={pinnedSet.has(note.id)}
+                                                previewText={
+                                                    snippetById?.get(note.id) ?? note.preview ?? ''
+                                                }
+                                                crumb={
+                                                    showCrumbs ? formatCrumb(dirname(note.id)) : ''
+                                                }
+                                                terms={terms}
+                                                editValue={note.id === editingId ? editValue : ''}
+                                                editInputRef={editInputRef}
+                                                registerRef={registerRef}
+                                                icon={icons[note.id]}
+                                                onOpenIconPicker={onOpenIconPicker}
+                                                showIcons={showIcons}
+                                                onClickRow={onClickRow}
+                                                onDoubleClickRow={onDoubleClickRow}
+                                                onContextMenuRow={onContextMenuRow}
+                                                onKeyDownRow={onKeyDownRow}
+                                                onOpenMenu={onOpenMenu}
+                                                onEditChange={setEditValue}
+                                                onEditCommit={onEditCommit}
+                                                onEditCancel={onEditCancel}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                        {files.length > 0 ? (
+                            <div role="list" aria-label="Other files">
+                                {rowVirtualizer
+                                    .getVirtualItems()
+                                    .filter((row) => row.index >= notes.length)
+                                    .map((row) => {
+                                        const file = files[row.index - notes.length];
+                                        return (
+                                            <div
+                                                key={row.key}
+                                                role="listitem"
+                                                data-index={row.index}
+                                                ref={rowVirtualizer.measureElement}
+                                                className="note-list__file"
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 0,
+                                                    left: 0,
+                                                    width: '100%',
+                                                    transform: `translateY(${row.start}px)`,
+                                                }}
+                                            >
+                                                <Icon data={File} size={16} />
+                                                <div
+                                                    className="note-list__file-info"
+                                                    title={`${file.name} — not a Markdown note`}
+                                                >
+                                                    <Text className="note-list__file-name" ellipsis>
+                                                        {file.name}
+                                                    </Text>
+                                                    <Text color="secondary" variant="caption-2">
+                                                        {showCrumbs && dirname(file.id)
+                                                            ? `${formatCrumb(dirname(file.id))} · `
+                                                            : ''}
+                                                        Not editable
+                                                    </Text>
+                                                </div>
+                                                {onReveal ? (
+                                                    <Button
+                                                        view="flat"
+                                                        size="s"
+                                                        aria-label={`Reveal ${file.name} in Finder`}
+                                                        onClick={() => onReveal(file.id)}
+                                                        onKeyDown={(event) =>
+                                                            event.stopPropagation()
+                                                        }
+                                                    >
+                                                        <Icon data={FolderOpen} size={14} />
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        ) : null}
                     </div>
                 )}
             </div>

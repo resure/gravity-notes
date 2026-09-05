@@ -46,10 +46,9 @@ open folder, with per-window-label REFCOUNTED subscriptions — StrictMode makes
 unwatch` a legal wire order, so a set would break — emitting `notes:changed` `{dir, paths}` to each
 subscriber via `emit_to`; `dir` is the RAW path the frontend passed (strict-equals
 `TauriNoteStore.dir`) while `strip_prefix` runs against the canonicalized root — FSEvents resolves
-`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes `.md` leaves (INCLUDING
-dot-named ones — the note walks list `.hidden.md`, only dot DIRS are skipped), existing DIRS
+`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes visible files (Markdown notes AND other files), existing DIRS
 (a Finder folder rename reports ONLY the dir paths), and vanished paths (unclassifiable → include),
-dropping dot dirs/`node_modules`/root-`Attachments/`/write temps (the `WRITE_TMP_SUFFIX`/
+dropping dotfiles/dot dirs/`node_modules`/root-`Attachments/`/write temps (the `WRITE_TMP_SUFFIX`/
 `RENAME_TMP_SUFFIX` consts — the TS stores mint `.rename-tmp`, mirror-commented there); >64 paths,
 a watcher error, or an event on the WATCH ROOT itself (FSEvents' queue-overflow rescan signal, all
 that survives the debouncer) → EMPTY `paths` = "refresh everything"; never drop a `WatcherEntry`
@@ -168,6 +167,13 @@ Key modules:
   (and the move-to picker), encoding the per-level order [pinned folders, folders, pinned notes, notes]
   and synthesizing missing ancestor folders. `notesInFolder` lists a folder's _direct_ children (the
   visible note ids for the middle pane are derived in `Workspace`).
+- `NoteStore.listFiles()` — optional recursive, name-only enumeration of visible non-Markdown files
+  for filesystem backends. `useNotes.files` refreshes alongside notes/folders; `NoteList` renders muted
+  rows in the shared virtualized scroller, outside note keyboard navigation/search/editor/autosave.
+  Folder rows count these separately and disable deletion when present. Explicit folder removal
+  asks for confirmation in `FolderRail` (menu and keyboard, Cancel initially focused), then
+  preflights every entry, removes only regular `.gnkeep` / `.DS_Store` files, then deletes the directory
+  non-recursively. Unknown hidden contents block deletion with an explanatory error.
 - `src/storage/noteText.ts` — pure helpers shared by both backends: `titleFromFileName`,
   `sanitizeTitle`, `canonicalBody`, `previewFromContent`, `uniqueName`. Keeps id/body shape identical.
 - `src/storage/fileSystemStore.ts` — `FileSystemNoteStore` (File System Access API). Trickiest logic:

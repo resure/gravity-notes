@@ -113,9 +113,21 @@ describe('sanitizeSegment', () => {
         expect(sanitizeSegment('///')).toBe('Untitled');
     });
 
-    it('is the implementation behind the back-compat sanitizeTitle alias', () => {
-        expect(sanitizeTitle).toBe(sanitizeSegment);
+    it('sanitizes note titles without allowing an invisible dotfile name', () => {
+        expect(sanitizeTitle('.hidden')).toBe('hidden');
+        expect(sanitizeTitle('...')).toBe('Untitled');
         expect(sanitizeTitle('Work/Plan')).toBe('Work Plan');
+    });
+
+    it.each([
+        ['./.hidden', 'hidden'],
+        ['.. .idea', 'idea'],
+        ['.\\.hidden', 'hidden'],
+        ['.\t.\n.title', 'title'],
+        ['. / .', 'Untitled'],
+        ['.. .release.v2', 'release.v2'],
+    ])('keeps %j visible after sanitizing separators and whitespace', (title, expected) => {
+        expect(sanitizeTitle(title)).toBe(expected);
     });
 });
 
