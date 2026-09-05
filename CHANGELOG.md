@@ -4,6 +4,29 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-09-05
+
+### Added
+
+- **Markdown clipboard** — copy selected text as Markdown with `⌘C`; paste Markdown or rich text
+  with `⌘V`. Add `Shift` to copy or paste plain text, removing Markdown syntax and formatting.
+  Works in both editor modes, with native clipboard access in the desktop app (`Ctrl` outside macOS).
+- **Other files in folders** — extensionless and non-Markdown files appear as muted, non-editable
+  rows with full filenames and separate counts. Reveal them in Finder on desktop.
+- **Optional spellcheck** — enable “Check spelling” in Settings for either editor mode.
+
+### Changed
+
+- Deleting an empty folder now asks for confirmation, with Cancel focused by default. Housekeeping
+  files such as `.gnkeep` and `.DS_Store` are removed with the folder without another prompt.
+
+### Fixed
+
+- Folders containing only housekeeping files can be deleted. Other hidden contents remain protected,
+  and a failed deletion identifies the blocking entry.
+- Creating or renaming a note cannot produce a hidden dotfile, including titles such as `./.hidden`
+  and `.. .idea` that previously disappeared from the list after a refresh.
+
 ## [0.9.0] - 2026-08-21
 
 ### Fixed
