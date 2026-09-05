@@ -9,7 +9,7 @@
  */
 
 import {basename, dirname} from './storage/noteText';
-import type {NoteMeta, NotesMetadata} from './storage/types';
+import type {NoteMeta, NotesMetadata, OtherFile} from './storage/types';
 
 /** One folder row in the rail. */
 export interface FolderRow {
@@ -24,6 +24,8 @@ export interface FolderRow {
     hasChildren: boolean;
     /** Count of notes anywhere under this folder (recursive), for the row badge. */
     noteCount: number;
+    /** Non-Markdown files, counted separately from notes. */
+    fileCount: number;
 }
 
 /**
@@ -32,7 +34,10 @@ export interface FolderRow {
  * universe of rail folders — used by {@link buildFolderTree} and by callers that need to invert a
  * collapse set (e.g. "collapsed unless explicitly expanded").
  */
-export function synthesizeFolderPaths(folders: string[], notes: NoteMeta[]): Set<string> {
+export function synthesizeFolderPaths(
+    folders: string[],
+    notes: Pick<NoteMeta, 'id'>[],
+): Set<string> {
     const all = new Set<string>();
     const addWithAncestors = (path: string) => {
         for (let p = path; p; p = dirname(p)) all.add(p);
@@ -64,13 +69,14 @@ export function buildFolderTree(
     metadata: NotesMetadata,
     state: ReadonlySet<string>,
     mode: FolderDisclosureMode = 'collapsed-set',
+    files: OtherFile[] = [],
 ): FolderRow[] {
     const pinned = new Set(metadata.pinned);
     const isCollapsedFolder = (folder: string) =>
         mode === 'expanded-set' ? !state.has(folder) : state.has(folder);
 
     // Every folder path that should exist, including synthesized ancestors.
-    const allFolders = synthesizeFolderPaths(folders, notes);
+    const allFolders = synthesizeFolderPaths(folders, [...notes, ...files]);
 
     // Child folders keyed by parent path ('' = root).
     const childFolders = new Map<string, string[]>();
@@ -93,6 +99,16 @@ export function buildFolderTree(
         }
     }
 
+    const directFiles = new Map<string, number>();
+    const recursiveFiles = new Map<string, number>();
+    for (const file of files) {
+        const own = dirname(file.id);
+        directFiles.set(own, (directFiles.get(own) ?? 0) + 1);
+        for (let p = own; p; p = dirname(p)) {
+            recursiveFiles.set(p, (recursiveFiles.get(p) ?? 0) + 1);
+        }
+    }
+
     const rows: FolderRow[] = [];
     const emit = (parentPath: string, depth: number) => {
         const level = [...(childFolders.get(parentPath) ?? [])].sort(
@@ -112,6 +128,7 @@ export function buildFolderTree(
                 // Expanded → just this folder's own notes (its subfolders show their own counts
                 // below); collapsed → the recursive rollup that summarizes the hidden subtree.
                 noteCount: (isCollapsed ? recursiveCounts : directCounts).get(folder) ?? 0,
+                fileCount: (isCollapsed ? recursiveFiles : directFiles).get(folder) ?? 0,
             });
             if (!isCollapsed) emit(folder, depth + 1);
         }

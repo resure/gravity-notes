@@ -65,6 +65,11 @@ export function SettingsDialog({
                 <div className="settings-dialog">
                     <Section title="General">
                         <ToggleRow
+                            title="Check spelling"
+                            checked={settings.spellcheck}
+                            onUpdate={(value) => setSetting('spellcheck', value)}
+                        />
+                        <ToggleRow
                             title="Show editor toolbar"
                             checked={settings.showEditorToolbar}
                             onUpdate={(value) => setSetting('showEditorToolbar', value)}

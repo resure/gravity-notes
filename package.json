@@ -25,6 +25,7 @@
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
     "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.1",
     "@diplodoc/color-extension": "^0.1.1",
     "@diplodoc/cut-extension": "^1.0.0",
     "@diplodoc/file-extension": "^0.2.1",

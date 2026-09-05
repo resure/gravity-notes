@@ -10,6 +10,14 @@
  * swaps stay drop-in.
  */
 
+/** A visible file that the app cannot edit as a Markdown note. */
+export interface OtherFile {
+    /** POSIX-relative path. Display-only: never passed to note editing or persistence. */
+    id: string;
+    /** Full filename, including its extension (if any). */
+    name: string;
+}
+
 /** Lightweight descriptor for the notes list (no body loaded). */
 export interface NoteMeta {
     /** Stable identifier. For the FS store this is the file name (e.g. `Ideas.md`). */
@@ -212,7 +220,7 @@ export interface NoteStore {
      * Returns the existing path if it already exists.
      */
     createFolder(parentPath: string, name: string): Promise<string>;
-    /** Remove an empty folder's marker (the caller ensures it holds no notes). */
+    /** Remove a folder containing only regular `.gnkeep` / `.DS_Store` files; reject other contents. */
     removeFolder(path: string): Promise<void>;
     /**
      * Move (or rename) a folder: re-home every note and marker under `fromPath` so it lives under
@@ -227,6 +235,8 @@ export interface NoteStore {
      * implied by a note's path are included alongside explicitly-created empty ones.
      */
     listFolders(): Promise<string[]>;
+    /** Visible non-Markdown files, recursively, without reading their contents. Absent for virtual stores. */
+    listFiles?(): Promise<OtherFile[]>;
     /**
      * Reveal a note, folder, or attachment in the OS file manager (macOS Finder), by its store id,
      * folder path, or `Attachments/<name>` ref. Present only on the native desktop backend, where

@@ -30,6 +30,7 @@ import {
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
+    type OtherFile,
 } from './types';
 
 /** Shapes returned by the Rust `notes_*` commands (see `src-tauri/src/lib.rs`). */
@@ -357,7 +358,17 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async removeFolder(path: string): Promise<void> {
-        await invoke('notes_remove_dir', {dir: this.dir, path});
+        try {
+            await invoke('notes_remove_dir', {dir: this.dir, path});
+        } catch (err) {
+            // Command errors are strings; useNotes surfaces Error.message to the user.
+            throw new Error(String(err));
+        }
+    }
+
+    async listFiles(): Promise<OtherFile[]> {
+        const paths = await invoke<string[]>('notes_list_files', {dir: this.dir});
+        return paths.map((id) => ({id, name: basename(id)}));
     }
 
     async moveFolder(fromPath: string, toPath: string): Promise<void> {

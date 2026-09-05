@@ -54,6 +54,37 @@ function setup(overrides: Partial<NoteListProps> = {}) {
     return {props, ref};
 }
 
+describe('NoteList — other files', () => {
+    it('shows full filenames separately and never opens them as notes', async () => {
+        const user = userEvent.setup();
+        const onReveal = vi.fn();
+        const {props} = setup({
+            files: [
+                {id: 'Work/report.pdf', name: 'report.pdf'},
+                {id: 'README', name: 'README'},
+            ],
+            onReveal,
+        });
+        const files = screen.getByRole('list', {name: 'Other files'});
+        expect(within(files).getAllByRole('listitem')).toHaveLength(2);
+        expect(screen.getAllByRole('option')).toHaveLength(2);
+        expect(screen.getByText('2 notes · 2 files')).toBeInTheDocument();
+        await user.click(within(files).getByText('report.pdf'));
+        expect(props.onBrowse).not.toHaveBeenCalled();
+        expect(props.onCommit).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', {name: 'Reveal report.pdf in Finder'}));
+        expect(onReveal).toHaveBeenCalledWith('Work/report.pdf');
+        expect(props.onDelete).not.toHaveBeenCalled();
+    });
+
+    it('shows files in a folder with no notes instead of the empty-state message', () => {
+        setup({notes: [], files: [{id: 'README', name: 'README'}]});
+        expect(screen.getByText('README')).toBeInTheDocument();
+        expect(screen.queryByText('No notes yet')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Reveal .* in Finder/})).not.toBeInTheDocument();
+    });
+});
+
 describe('formatNoteDate', () => {
     // Freeze "now" so the today-vs-other-day branch can't flip if a test crosses midnight.
     beforeEach(() => {

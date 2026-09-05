@@ -174,11 +174,15 @@ export function sanitizeSegment(title: string): string {
 }
 
 /**
- * Back-compat alias: a note *title* is exactly one leaf segment. Existing `create`/`rename` call
+ * A note *title* is one visible leaf segment. Existing `create`/`rename` call
  * sites keep calling `sanitizeTitle`; nesting is expressed by joining a separately-sanitized folder
  * path, never by what the user types into a title.
  */
-export const sanitizeTitle = sanitizeSegment;
+export function sanitizeTitle(title: string): string {
+    // Strip dots together with whitespace: sanitized separators can leave spaces between dots.
+    // Dotfiles are hidden by the note walks, so new notes and renames must stay visible.
+    return sanitizeSegment(title).replace(/^[.\s]+/, '') || 'Untitled';
+}
 
 /**
  * Whether a folder-name segment collides with storage the backends own and hide from the tree —

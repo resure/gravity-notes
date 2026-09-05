@@ -279,7 +279,7 @@ fn collect_md(
                 continue;
             }
             collect_md(root, &entry.path(), full, out)?;
-        } else if file_type.is_file() && is_md(&name) {
+        } else if file_type.is_file() && !name.starts_with('.') && is_md(&name) {
             let path = entry.path();
             let meta = entry.metadata()?;
             let rel = path
@@ -586,26 +586,101 @@ fn notes_create_folder(dir: String, path: String) -> Result<(), String> {
     write_atomic(&folder.join(FOLDER_MARKER), b"").map_err(stringify)
 }
 
-/// Remove an empty folder: drop its `.gnkeep`, then remove the (now-empty) directory. Emptiness is
-/// checked *first* (only the marker may remain): otherwise dropping `.gnkeep` and then failing
-/// `remove_dir` on a non-empty folder would strip the keep-alive marker off a folder left in place.
+/// Remove a folder containing only regular `.gnkeep` / `.DS_Store` files. Inspect every entry
+/// before cleanup; preserve all other files/directories/symlinks and report what blocks deletion.
 /// A missing folder is a no-op.
 #[tauri::command]
 fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     let folder = resolve_within(&dir, &path)?;
+    if folder == Path::new(&dir) {
+        return Err("Cannot delete the workspace folder.".into());
+    }
+    match fs::symlink_metadata(&folder) {
+        Ok(meta) if meta.is_dir() => (),
+        Ok(_) => return Err("Cannot delete a folder through a symbolic link or file.".into()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.to_string()),
+    }
     let entries = match fs::read_dir(&folder) {
         Ok(entries) => entries,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(err) => return Err(err.to_string()),
     };
+    let mut cleanup = Vec::new();
     for entry in entries {
         let entry = entry.map_err(stringify)?;
-        if entry.file_name() != FOLDER_MARKER {
-            return Err(format!("\"{path}\" is not empty"));
+        let name = entry.file_name();
+        if entry.file_type().map_err(stringify)?.is_file()
+            && (name == FOLDER_MARKER || name == ".DS_Store")
+        {
+            cleanup.push(name);
+        } else {
+            return Err(format!(
+                "Cannot delete “{path}”: it contains “{}”. Use Reveal in Finder to inspect the folder.",
+                name.to_string_lossy()
+            ));
         }
     }
-    let _ = fs::remove_file(folder.join(FOLDER_MARKER));
-    fs::remove_dir(&folder).map_err(stringify)
+    let result = (|| {
+        for name in &cleanup {
+            match fs::remove_file(folder.join(name)) {
+                Ok(()) => (),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+                Err(err) => return Err(err),
+            }
+        }
+        // Never recurse: an entry created after the preflight must prevent deletion.
+        fs::remove_dir(&folder)
+    })();
+    if result.is_err() && cleanup.iter().any(|name| name == FOLDER_MARKER) {
+        // Restore the keep-alive marker without recreating a concurrently removed directory or
+        // overwriting a marker another process has already restored.
+        let _ = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(folder.join(FOLDER_MARKER));
+    }
+    result.map_err(stringify)
+}
+
+/// Display-only files: names/paths only, so binary and iCloud-dataless files are never read.
+#[tauri::command]
+fn notes_list_files(dir: String) -> Result<Vec<String>, String> {
+    fn walk(root: &Path, current: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in fs::read_dir(current)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                if is_skipped_dir(&name) || (current == root && name == ATTACHMENTS_DIR) {
+                    continue;
+                }
+                walk(root, &entry.path(), out)?;
+            } else if kind.is_file()
+                && !is_md(&name)
+                && !name.ends_with(WRITE_TMP_SUFFIX)
+                && !name.ends_with(RENAME_TMP_SUFFIX)
+            {
+                out.push(
+                    entry
+                        .path()
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
+            }
+        }
+        Ok(())
+    }
+    let root = Path::new(&dir);
+    let mut out = Vec::new();
+    walk(root, root, &mut out).map_err(stringify)?;
+    out.sort();
+    Ok(out)
 }
 
 /// Move (or rename) a folder and everything under it from `from` to `to`: create `to`'s parent,
@@ -796,10 +871,7 @@ fn watch_rel_path(canon_root: &Path, path: &Path) -> Option<String> {
     if dirs.iter().any(|segment| is_skipped_dir(segment)) {
         return None;
     }
-    // The leaf gets the same skip rule EXCEPT for `.md` files: the note walks skip dot-DIRS
-    // only and list a dot-named `.hidden.md`, so the watcher must pass its events too — else
-    // an externally-created dot-note is listed but never live-refreshed.
-    if !is_md(leaf) && is_skipped_dir(leaf) {
+    if is_skipped_dir(leaf) {
         return None;
     }
     if segments.first() == Some(&ATTACHMENTS_DIR) {
@@ -812,8 +884,8 @@ fn watch_rel_path(canon_root: &Path, path: &Path) -> Option<String> {
         return Some(segments.join("/"));
     }
     match fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_dir() => Some(segments.join("/")),
-        Ok(_) => None, // an existing non-md file — not note-relevant
+        Ok(meta) if meta.is_dir() || meta.is_file() => Some(segments.join("/")),
+        Ok(_) => None, // symlinks and special files are not listed
         Err(_) => Some(segments.join("/")), // gone/unreadable — unclassifiable, include
     }
 }
@@ -1702,6 +1774,7 @@ pub fn run() {
             notes_remove_dir_all,
             notes_move_dir,
             notes_list_folders,
+            notes_list_files,
             window_workspace,
             set_window_workspace,
             focus_workspace_window,
@@ -2169,6 +2242,76 @@ mod tests {
     }
 
     #[test]
+    fn list_files_shows_visible_files_without_reading_bodies() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join("Work/Sub")).unwrap();
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::create_dir_all(dir.join("Attachments")).unwrap();
+        for path in [
+            "README",
+            "Work/report.pdf",
+            "Work/Sub/image.png",
+            ".env",
+            ".hidden.md",
+            ".git/config",
+            "Attachments/image.png",
+            "Work/draft.md.gn-tmp",
+            "Work/draft.md.rename-tmp",
+        ] {
+            fs::write(dir.join(path), [0xff, 0x00]).unwrap();
+        }
+        fs::write(dir.join("Work/Note.MD"), "a note").unwrap();
+        assert_eq!(
+            notes_list_files(s(&dir)).unwrap(),
+            vec!["README", "Work/Sub/image.png", "Work/report.pdf"]
+        );
+        assert_eq!(notes_list(s(&dir)).unwrap().len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_dir_cleans_housekeeping_but_preserves_other_contents() {
+        let dir = temp_dir();
+        notes_create_folder(s(&dir), "Empty".into()).unwrap();
+        fs::write(dir.join("Empty/.DS_Store"), "Finder metadata").unwrap();
+        notes_remove_dir(s(&dir), "Empty".into()).unwrap();
+        assert!(!dir.join("Empty").exists());
+        for blocker in ["README", "report.pdf", ".env", ".git/config"] {
+            notes_create_folder(s(&dir), "Keep".into()).unwrap();
+            fs::create_dir_all(dir.join("Keep").join(blocker).parent().unwrap()).unwrap();
+            fs::write(dir.join("Keep/.DS_Store"), "Finder metadata").unwrap();
+            fs::write(dir.join("Keep").join(blocker), "keep me").unwrap();
+            let error = notes_remove_dir(s(&dir), "Keep".into()).unwrap_err();
+            assert!(error.contains("contains"));
+            assert!(dir.join("Keep/.gnkeep").exists());
+            assert!(dir.join("Keep/.DS_Store").exists());
+            assert_eq!(
+                fs::read_to_string(dir.join("Keep").join(blocker)).unwrap(),
+                "keep me"
+            );
+            fs::remove_dir_all(dir.join("Keep")).unwrap();
+        }
+        assert!(notes_remove_dir(s(&dir), "".into()).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_dir_never_cleans_a_directory_or_symlink_named_like_housekeeping() {
+        let dir = temp_dir();
+        notes_create_folder(s(&dir), "Keep".into()).unwrap();
+        fs::write(dir.join("important"), "keep me").unwrap();
+        std::os::unix::fs::symlink(dir.join("important"), dir.join("Keep/.DS_Store")).unwrap();
+        assert!(notes_remove_dir(s(&dir), "Keep".into()).is_err());
+        assert!(dir.join("Keep/.gnkeep").exists());
+        fs::remove_file(dir.join("Keep/.DS_Store")).unwrap();
+        fs::create_dir(dir.join("Keep/.DS_Store")).unwrap();
+        assert!(notes_remove_dir(s(&dir), "Keep".into()).is_err());
+        assert!(dir.join("Keep/.gnkeep").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn remove_dir_refuses_a_non_empty_folder_and_keeps_its_marker() {
         let dir = temp_dir();
         notes_create_folder(s(&dir), "Keep".into()).unwrap();
@@ -2296,15 +2439,14 @@ mod tests {
             Some("Work/Sub/Deep.md".into())
         );
         assert_eq!(rel(&root.join("Note.md")), Some("Note.md".into()));
-        // A dot-NAMED note passes: the note walks skip dot-DIRS only and do list `.hidden.md`,
-        // so the watcher must report its changes too (listed-but-never-refreshed otherwise).
-        assert_eq!(rel(&root.join(".hidden.md")), Some(".hidden.md".into()));
+        // Dotfiles are hidden, including dot-named Markdown files.
+        assert_eq!(rel(&root.join(".hidden.md")), None);
         // Existing directories pass: a Finder folder rename reports ONLY the dir paths.
         assert_eq!(rel(&root.join("Work/Sub")), Some("Work/Sub".into()));
         // A vanished path of unknown kind passes (unclassifiable → refresh, cheap).
         assert_eq!(rel(&root.join("Gone")), Some("Gone".into()));
         // Noise is dropped: dot-entries (incl. the sidecar + trash), attachments, deps,
-        // in-flight write temps, and existing non-md files.
+        // and in-flight write temps.
         assert_eq!(rel(&root.join(".DS_Store")), None);
         assert_eq!(rel(&root.join(".gravity-notes.json")), None);
         assert_eq!(rel(&root.join(".trash/Old.md")), None);
@@ -2313,7 +2455,7 @@ mod tests {
         assert_eq!(rel(&root.join("Work/node_modules/y.md")), None);
         assert_eq!(rel(&root.join("Note.md.gn-tmp")), None);
         assert_eq!(rel(&root.join("Note.md.rename-tmp")), None);
-        assert_eq!(rel(&root.join("readme.txt")), None);
+        assert_eq!(rel(&root.join("readme.txt")), Some("readme.txt".into()));
         // The root itself and paths outside it are ignored.
         assert_eq!(rel(&root), None);
         assert_eq!(rel(Path::new("/elsewhere/Note.md")), None);

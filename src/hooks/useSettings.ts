@@ -27,6 +27,8 @@ export interface Settings {
     showEditorToolbar: boolean;
     /** Show a per-note icon in the list + the note title (experimental; the IconPicker feature). */
     showNoteIcons: boolean;
+    /** Enable native spellcheck in both note-body editor modes. Off by default. */
+    spellcheck: boolean;
     /** Font for the editor + preview + title (note content only). Default `sans` (the system font). */
     editorFont: EditorFont;
     /** App accent hue. Default `amber` (the logo orange). */
@@ -38,6 +40,7 @@ export interface Settings {
 const DEFAULTS: Settings = {
     showEditorToolbar: false,
     showNoteIcons: false,
+    spellcheck: false,
     editorFont: 'sans',
     accentColor: 'amber',
     textWidth: 'normal',
@@ -97,6 +100,7 @@ function loadSettings(key: string): Settings {
         return {
             showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
+            spellcheck: bool(raw.spellcheck, DEFAULTS.spellcheck),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
             accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),
             textWidth: oneOf(raw.textWidth, TEXT_WIDTHS, DEFAULTS.textWidth),

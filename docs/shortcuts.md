@@ -64,7 +64,7 @@ With the folder rail open (`⌘⇧\`) and a folder focused:
 | Click a folder              | Scope the notes list to it (**All Notes** shows everything; search stays global) |
 | `F2` / double-click         | Rename the folder                                                                |
 | `n`                         | Create a subfolder                                                               |
-| `⌫`                         | Remove an empty folder                                                           |
+| `⌫`                         | Remove an empty folder (asks to confirm)                                         |
 | Drag a note onto a folder   | File it there                                                                    |
 | Drag a folder onto a folder | Nest it (onto **All Notes** to move it back to the root)                         |
 

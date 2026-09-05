@@ -1,6 +1,7 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 
-import type {EditorState as CmEditorState} from '@codemirror/state';
+import {type EditorState as CmEditorState, Compartment, Prec} from '@codemirror/state';
+import {EditorView as CmEditorView} from '@codemirror/view';
 import {
     MarkdownEditorView,
     useMarkdownEditor,
@@ -163,6 +164,8 @@ interface EditorPaneProps {
     showToolbar?: boolean;
     /** Show the note's title icon (Settings › Show note icons, experimental). */
     showNoteIcons?: boolean;
+    /** Enable native spellcheck in both note-body editor modes. */
+    spellcheck?: boolean;
 }
 
 /** Imperative surface the shell uses to drive the editor body. */
@@ -180,6 +183,7 @@ interface EditorBodyHandle {
 }
 
 interface EditorBodyProps {
+    spellcheck: boolean;
     note: Note;
     /**
      * Bumped by `useNotes` on a real note switch / disk reload (never on an in-place rename/move).
@@ -226,6 +230,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         wikiNotes,
         onOpenWikiLink,
         showToolbar,
+        spellcheck,
     },
     ref,
 ) {
@@ -263,6 +268,7 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         };
     }, []);
 
+    const spellcheckCompartment = useMemo(() => new Compartment(), []);
     const editor = useMarkdownEditor(
         {
             // linkify renders bare URLs as real links in WYSIWYG. Round-trip cost (accepted, like
@@ -271,6 +277,15 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
             // WITHOUT that this option would be unshippable (see the comment there).
             md: {html: false, linkify: true},
             initial: {markup: note.content, mode: 'wysiwyg'},
+            markupConfig: {
+                extensions: [
+                    spellcheckCompartment.of(
+                        Prec.highest(
+                            CmEditorView.contentAttributes.of({spellcheck: String(spellcheck)}),
+                        ),
+                    ),
+                ],
+            },
             // Keep intentionally-blank lines through the WYSIWYG round-trip. Without this the
             // serializer drops empty paragraphs (Markdown can't represent a bare blank line), so
             // saving a note strips the blank lines the user typed for spacing. With it, an empty
@@ -467,6 +482,19 @@ const EditorBody = forwardRef<EditorBodyHandle, EditorBodyProps>(function Editor
         // eslint-disable-next-line react-hooks/exhaustive-deps -- swap on a real session change / content reload, not on every dep
     }, [sessionId, note.content]);
 
+    // CodeMirror explicitly enables spellcheck, overriding the body wrapper's inherited value.
+    // Reconfigure in place to preserve edits/caret/undo, and reapply AFTER a note swap because
+    // its fresh markup state comes from the original template (including its old preference).
+    useEffect(() => {
+        const cm = markupEditorOf(editor)?.cm;
+        if (!cm) return;
+        cm.dispatch({
+            effects: spellcheckCompartment.reconfigure(
+                Prec.highest(CmEditorView.contentAttributes.of({spellcheck: String(spellcheck)})),
+            ),
+        });
+    }, [editor, spellcheck, spellcheckCompartment, sessionId, note.content]);
+
     // Preview mode renders the editor's live buffer, but `editor.getValue()` is a snapshot and the swap
     // effect ABOVE replaces the buffer in an effect (after render) WITHOUT re-rendering — so reading it
     // inline left the preview stuck on the previous note after a switch (title changed, body didn't).
@@ -601,6 +629,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onSetIcon,
         showToolbar,
         showNoteIcons,
+        spellcheck = false,
     },
     ref,
 ) {
@@ -709,12 +738,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             <div
                 ref={bodyWrapRef}
                 className="editor-pane__body"
-                // No red squiggles under a note's prose. `spellcheck` INHERITS, so setting it on the
-                // wrapper covers the editor's contenteditable (and the markup-mode CodeMirror) without
-                // reaching into the editor instance — and it's the only way to reach a DOM the editor
-                // owns. Notes are full of names, code and shorthand that a dictionary flags anyway;
-                // the title (NoteTitle) already opts out the same way.
-                spellCheck={false}
+                // ProseMirror inherits this value; CodeMirror has its own explicit attribute.
+                spellCheck={spellcheck}
                 onMouseDown={(event) => {
                     // Preview mode is read-only — no click handling.
                     if (preview) return;
@@ -783,6 +808,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     wikiNotes={wikiNotes}
                     onOpenWikiLink={onOpenWikiLink}
                     showToolbar={showToolbar}
+                    spellcheck={spellcheck}
                 />
             </div>
         </div>
