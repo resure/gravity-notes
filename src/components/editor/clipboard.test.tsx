@@ -1,4 +1,4 @@
-import {EditorState as CmState} from '@codemirror/state';
+import {EditorSelection as CmSelection, EditorState as CmState} from '@codemirror/state';
 import {EditorView as CmView} from '@codemirror/view';
 import {
     BaseSchema,
@@ -18,6 +18,7 @@ import {
 // @ts-expect-error Runtime-only facet used by the pinned editor; its code-paste handler needs a logger.
 import {LoggerFacet} from '@gravity-ui/markdown-editor/_/core/utils/logger.js';
 import {LinkSpecs} from '@gravity-ui/markdown-editor/_/extensions/markdown/Link/LinkSpecs/index.js';
+import {yfmLang} from '@gravity-ui/markdown-editor/_/markup/codemirror/yfm.js';
 import {AllSelection, EditorState, TextSelection} from 'prosemirror-state';
 import {EditorView} from 'prosemirror-view';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -268,6 +269,123 @@ describe('Markdown clipboard', () => {
             }),
         );
         await vi.waitFor(() => expect(view.state.doc.toString()).toBe('bold and label'));
+    });
+});
+
+describe('plain clipboard in source mode', () => {
+    function source(doc = '', anchor = 0, head = anchor) {
+        const deps = fixture();
+        const root = document.createElement('div');
+        document.body.append(root);
+        const view = new CmView({
+            parent: root,
+            state: CmState.create({
+                doc,
+                selection: {anchor, head},
+                extensions: [
+                    yfmLang(),
+                    deps.clipboard.markup,
+                    CmState.allowMultipleSelections.of(true),
+                ],
+            }),
+        });
+        disposers.push(() => {
+            view.destroy();
+            root.remove();
+        });
+        view.focus();
+        return {...deps, sourceView: view};
+    }
+    function shiftKey(view: CmView, code: 'KeyC' | 'KeyV') {
+        view.contentDOM.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                code,
+                ctrlKey: true,
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true,
+            }),
+        );
+    }
+
+    it.each([
+        '`**literal**`',
+        String.raw`\*\*literal\*\*`,
+        '`# heading`',
+        '`[label](url)`',
+        '```\n**literal**\n# heading\n```',
+    ])('keeps %s unformatted after a source-to-WYSIWYG round trip', async (text) => {
+        vi.stubGlobal('navigator', {clipboard: {readText: vi.fn().mockResolvedValue(text)}});
+        const {sourceView, markupParser} = source();
+        shiftKey(sourceView, 'KeyV');
+        await vi.waitFor(() => expect(sourceView.state.doc.length).toBeGreaterThan(0));
+        const parsed = markupParser.parse(sourceView.state.doc.toString());
+        expect(unformattedText(parsed)).toBe(unformattedText(markupParser.parse(text)));
+        expect(parsed.firstChild?.type.name).toBe('paragraph');
+        expect(parsed.firstChild?.firstChild?.marks).toEqual([]);
+    });
+
+    it.each([
+        ['```js\n', '\n```'],
+        ['~~~\n', '\n~~~'],
+        ['    ', '\n'],
+        ['before `', '` after'],
+        ['before ``', '`` after'],
+        ['```\n', ''],
+    ])('keeps a partial code selection literal in %s', (prefix, suffix) => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', {clipboard: {writeText}});
+        const text = '**literal**';
+        const {sourceView} = source(
+            prefix + text + suffix,
+            prefix.length,
+            prefix.length + text.length,
+        );
+        shiftKey(sourceView, 'KeyC');
+        expect(writeText).toHaveBeenCalledWith(text);
+    });
+
+    it.each(['```\n**literal**\n```', '`**literal**`', '**bold**'])(
+        'still removes markup when the whole %s selection includes delimiters',
+        (text) => {
+            const writeText = vi.fn().mockResolvedValue(undefined);
+            vi.stubGlobal('navigator', {clipboard: {writeText}});
+            const {sourceView, markupParser} = source(text, 0, text.length);
+            shiftKey(sourceView, 'KeyC');
+            expect(writeText).toHaveBeenCalledWith(unformattedText(markupParser.parse(text)));
+        },
+    );
+
+    it.each([
+        ['```js\n', '\n```'],
+        ['~~~\n', '\n~~~'],
+        ['before `', '` after'],
+        ['    ', '\n'],
+    ])('does not add Markdown escapes when pasting inside code in %s', async (prefix, suffix) => {
+        vi.stubGlobal('navigator', {
+            clipboard: {readText: vi.fn().mockResolvedValue('`**literal**`')},
+        });
+        const {sourceView} = source(prefix + 'replace' + suffix, prefix.length, prefix.length + 7);
+        shiftKey(sourceView, 'KeyV');
+        await vi.waitFor(() =>
+            expect(sourceView.state.doc.toString()).toBe(prefix + '**literal**' + suffix),
+        );
+    });
+
+    it('escapes each paste range according to its own context', async () => {
+        vi.stubGlobal('navigator', {
+            clipboard: {readText: vi.fn().mockResolvedValue('`**literal**`')},
+        });
+        const {sourceView, markupParser} = source('prose\n\n```\ncode\n```');
+        sourceView.dispatch({
+            selection: CmSelection.create([CmSelection.range(0, 5), CmSelection.range(11, 15)]),
+        });
+        shiftKey(sourceView, 'KeyV');
+        await vi.waitFor(() => expect(sourceView.state.doc.toString()).not.toContain('prose'));
+        const parsed = markupParser.parse(sourceView.state.doc.toString());
+        expect(parsed.child(0).textContent).toBe('**literal**');
+        expect(parsed.child(0).firstChild?.marks).toEqual([]);
+        expect(parsed.child(1).textContent).toBe('**literal**');
     });
 });
 
