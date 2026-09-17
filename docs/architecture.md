@@ -12,19 +12,6 @@ FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ use
 The app ships two ways from one codebase: a **web app** and a **macOS desktop app** (Tauri 2).
 Everything interesting sits behind one seam.
 
-## Editor clipboard
-
-`src/components/editor/clipboard.ts` adds clipboard handling to both editor modes. Standard copy
-and cut expose Gravity's existing Markdown selection serialization as `text/plain` (and retain
-`text/yfm` for internal transfer); ordinary paste parses Markdown, while rich HTML and image uploads
-keep the editor's existing flow. Ordinary paste in code stays literal.
-
-Shift-copy emits only readable text. Shift-paste reads plain text and strips Markdown through the
-same configured parser, then inserts text without formatting. The shortcuts use the browser
-Clipboard API from a key gesture on the web and the official Tauri clipboard plugin in native
-shells (`src/clipboard.ts`); unavailable or denied access surfaces a toast. Pending reads are
-discarded if the editor state, focus, or lifetime changes, preventing insertion into a different note.
-
 ## The storage seam
 
 All persistence goes through the `NoteStore` interface
@@ -246,6 +233,12 @@ Markdown over anything clever.
   model (fence languages first) shrinks that population; the check stays either way.
 - **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
   deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
+- **Copy/paste is the browser's, not Markdown-aware.** `⌘⇧C` (copy as plain text) and `⌘⇧V` (paste
+  stripping Markdown and rich-text formatting) went with the Gravity editor — they were built as
+  ProseMirror/CodeMirror extensions. Ordinary `⌘C` / `⌘V` work, but copying a selection yields the
+  rendered text rather than its Markdown, and pasting rich HTML doesn't convert. The OS-clipboard
+  helper they used (`src/clipboard.ts`, browser Clipboard API on the web, the Tauri plugin in the
+  app) is still here for a blocks-native port.
 - **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
   (read-only preview highlights them). Two block features have no Markdown spelling and are dropped
   on save: block **colors** and a table's **header-column** flag.
