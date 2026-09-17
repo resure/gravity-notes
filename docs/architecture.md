@@ -59,10 +59,13 @@ format, in full:
   deletion. Both filesystem backends inspect contents before cleanup and delete non-recursively;
   an entry arriving during deletion is preserved. A failed deletion attempts to restore `.gnkeep`.
 - **`[[Wiki links]]`** are stored verbatim — `[[Title]]` on disk, Obsidian-compatible round-trip.
-- **Bare URLs** you type are linkified in the editor and normalized to `<url>` on save; a stray
-  `Notes.md` never turns into a link (fuzzy linkify is off — `.md` is a real TLD).
-- **Blank lines** inside a note persist as `&nbsp;` lines (the editor's `preserveEmptyRows`), so
-  intentional vertical space survives the Markdown round-trip.
+- **Bare URLs** are written exactly as you type them. A CommonMark autolink (`<https://example.com>`)
+  and `[text](url)` render as links; a bare `https://example.com` stays plain text. See the known
+  limitation below — the linkify-as-you-type the previous editor had went with it.
+- **Blank lines** written by an earlier version persist on disk as `&nbsp;` lines. The block editor
+  does **not** understand that spelling: it reads the entity as literal text, so those lines show up
+  as the characters `&nbsp;` rather than as blank rows, and a blank block typed here is dropped on
+  save. See the known limitation below.
 
 ## Workspaces & windows
 
@@ -226,11 +229,25 @@ Markdown over anything clever.
 ## Known limitations
 
 - **A note the block model can't hold opens as raw Markdown.** The block model is smaller than
-  Markdown — headings stop at H3, a fenced code block has nowhere to keep its language, a callout
-  has nowhere to keep its kind, a table has nowhere to keep column alignment, and YAML frontmatter
-  isn't a block at all — and the parser is line-oriented rather than full CommonMark. Any file
-  holding such a construct fails the load-time check and opens on its source instead. Widening the
-  model (fence languages first) shrinks that population; the check stays either way.
+  Markdown — headings stop at H3, a callout has nowhere to keep its kind, and YAML frontmatter isn't
+  a block at all — and the parser is line-oriented rather than full CommonMark. Any file holding
+  such a construct fails the load-time check and opens on its source instead. **Measured: 8 of 65
+  notes (12%) in the demo vault, 4 of 13 in a smaller real one.** What remains is mostly headings
+  deeper than H3 and callout kinds; widening the model is what shrinks it further, and the check
+  stays either way.
+- **Editing a note may normalise how its Markdown is spelled.** The check is no longer byte-exact:
+  a note also passes when the only differences are spellings that mean the same thing — a redundant
+  backslash escape (`\+` → `+`), `_emphasis_` → `*emphasis*`, cell padding, a run of blank lines.
+  Those notes open in blocks, and the first edit rewrites the whole file in the canonical spelling,
+  which will show up in a `git diff` even though nothing was said differently. A note is only
+  accepted if that rewrite also SETTLES — a second save must produce the same bytes — so a file can
+  never drift further on each edit. Structure, words and URLs are still compared verbatim: a
+  heading level or a callout kind changing is a rejection, not a normalisation.
+- **Blank lines written by an earlier version show up as the text `&nbsp;`.** That entity on its own
+  line is this app's on-disk spelling for intentional vertical space, and the block parser has no
+  mapping for it, so it renders literally. It round-trips byte-for-byte, so the check above does
+  **not** divert those notes — the file is never rewritten, but every blank row reads as six stray
+  characters. A blank block typed in the editor is likewise dropped on save.
 - **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
   deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
 - **Copy/paste is the browser's, not Markdown-aware.** `⌘⇧C` (copy as plain text) and `⌘⇧V` (paste

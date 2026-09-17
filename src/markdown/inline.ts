@@ -33,7 +33,12 @@ export function decodeEntities(text: string): string {
                 body[1] === 'x' || body[1] === 'X'
                     ? Number.parseInt(body.slice(2), 16)
                     : Number.parseInt(body.slice(1), 10);
-            return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : whole;
+            // The upper bound matters: `String.fromCodePoint` THROWS a RangeError past U+10FFFF,
+            // and this runs on the save path (blocksToMarkdown), where a throw takes the render
+            // tree to the root ErrorBoundary instead of failing soft.
+            return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+                ? String.fromCodePoint(code)
+                : whole;
         }
         return ENTITIES[body.toLowerCase()] ?? whole;
     });
@@ -341,7 +346,11 @@ function parseInline(text: string): string {
                 i += 2;
                 continue;
             }
-            if (next !== undefined && /[\\`*_~[\]()#+\-.!>]/.test(next)) {
+            // `<` belongs here with the rest: left out, the backslash stayed literal text and the
+            // serializer then escaped IT, so `\<` came back as `\\<` — a visible backslash the user
+            // never typed. CommonMark lets any ASCII punctuation be escaped; this is the subset the
+            // parser can act on.
+            if (next !== undefined && /[\\`*_~[\]()#+\-.!<>]/.test(next)) {
                 plain += next;
                 i += 2;
                 continue;

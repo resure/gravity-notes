@@ -3,7 +3,7 @@ import {describe, expect, it} from 'vitest';
 import type {Block, BlockType} from '../components/blockEditor/types';
 
 import {markdownToBlocks} from './fromMarkdown';
-import {inlineHtmlToMarkdown, inlineMarkdownToHtml} from './inline';
+import {decodeEntities, inlineHtmlToMarkdown, inlineMarkdownToHtml} from './inline';
 import {isRoundTripStable} from './roundTrip';
 import {blocksToMarkdown} from './toMarkdown';
 
@@ -11,7 +11,14 @@ function block(type: BlockType, html: string, over: Partial<Block> = {}): Block 
     return {id: `${type}-${html.slice(0, 8)}`, type, html, depth: 0, ...over};
 }
 
-/** The shape assertions care about — ids are minted fresh on every parse. */
+/**
+ * The shape assertions care about — ids are minted fresh on every parse.
+ *
+ * Formatting memory (`blankBefore`, and a table's `pad`/`widths`) is deliberately excluded: those
+ * record how the SOURCE TEXT was laid out, so a parse always fills them in even when the blocks
+ * they came from never specified any. They are checked where they belong — by the Markdown fixed
+ * point in `expectRoundTrip`, which is the property that actually protects the user's file.
+ */
 function shape(blocks: Block[]) {
     return blocks.map((b) => ({
         type: b.type,
@@ -19,7 +26,7 @@ function shape(blocks: Block[]) {
         depth: b.depth ?? 0,
         ...(b.checked === undefined ? {} : {checked: b.checked}),
         ...(b.collapsed === undefined ? {} : {collapsed: b.collapsed}),
-        ...(b.table ? {table: b.table} : {}),
+        ...(b.table ? {table: {...b.table, pad: undefined, widths: undefined}} : {}),
         ...(b.image ? {image: b.image} : {}),
     }));
 }
@@ -508,8 +515,42 @@ describe('round-trip guard', () => {
         // Each of these is safe ONLY because the guard keeps the block engine from saving it.
         expect(isRoundTripStable('---\ntags: work\n---\n\nbody')).toBe(false); // frontmatter
         expect(isRoundTripStable('#### deep')).toBe(false); // headings stop at H3
-        expect(isRoundTripStable('```python\nx = 1\n```')).toBe(false); // fence info string
         expect(isRoundTripStable('> [!warning] careful')).toBe(false); // callout kind
-        expect(isRoundTripStable('| a | b |\n| :--- | ---: |\n| x | y |')).toBe(false); // alignment
+    });
+
+    it('holds the constructs the model was widened to carry', () => {
+        // Each of these used to fall back to raw source on every note that contained it.
+        expect(isRoundTripStable('```python\nx = 1\n```')).toBe(true); // fence info string
+        expect(isRoundTripStable('~~~\nx\n~~~')).toBe(true); // tilde fence
+        expect(isRoundTripStable('| a | b |\n| :--- | ---: |\n| x | y |')).toBe(true); // alignment
+        expect(isRoundTripStable('| a  | bb |\n| -- | -- |\n| c  | d  |')).toBe(true); // padded
+        expect(isRoundTripStable('## Heading\n- tight list under it')).toBe(true); // tight spacing
+        expect(isRoundTripStable('- one\n\n- loose')).toBe(true); // loose list
+    });
+});
+
+describe('regressions: crashes and drops on the save path', () => {
+    it('leaves an out-of-range numeric entity alone instead of throwing', () => {
+        // `String.fromCodePoint` throws past U+10FFFF, and this runs inside `blocksToMarkdown` —
+        // on the save path, during render — so a throw took the tree to the root ErrorBoundary.
+        expect(() => decodeEntities('a &#999999999; b')).not.toThrow();
+        expect(decodeEntities('a &#999999999; b')).toBe('a &#999999999; b');
+        expect(decodeEntities('a &#x110000; b')).toBe('a &#x110000; b');
+        // Still decodes what it should, either side of the boundary.
+        expect(decodeEntities('&#x10FFFF;')).toBe(String.fromCodePoint(0x10ffff));
+        expect(decodeEntities('a &amp; b')).toBe('a & b');
+    });
+
+    it('sizes a wide table without spreading one argument per row', () => {
+        // `Math.max(...rows)` blew the engine's argument limit on a big pasted table (RangeError).
+        const rows = Array.from({length: 200_000}, () => ['x']);
+        const table = {
+            id: 't',
+            type: 'table' as const,
+            html: '',
+            depth: 0,
+            table: {cells: rows, headerRow: false, headerColumn: false},
+        };
+        expect(() => blocksToMarkdown([table])).not.toThrow();
     });
 });

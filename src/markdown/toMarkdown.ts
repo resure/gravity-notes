@@ -15,7 +15,8 @@
  * flag (GFM tables have no such concept).
  */
 
-import type {Block, BlockType} from '../components/blockEditor/types';
+import {widestRow} from '../components/blockEditor/types';
+import type {Block, BlockType, ColumnAlign, TableData} from '../components/blockEditor/types';
 
 import {
     encodeLinkDestination,
@@ -42,13 +43,10 @@ const INDENT = '  ';
  * blank lines are interior to a single chunk rather than chunks of their own.
  */
 export function blocksToMarkdown(blocks: Block[]): string {
-    const chunks = serializeRange(blocks, 0, blocks.length, 0);
-    const out: string[] = [];
-    for (const chunk of chunks) {
-        if (chunk === '' && out[out.length - 1] === '') continue;
-        out.push(chunk);
-    }
-    return out.join('\n').trim();
+    // No blank-line collapsing here: `blankBefore` already says exactly how many the source had,
+    // and squashing runs of two undid that for every note with a deliberate double gap. Blocks the
+    // editor created carry no count and get exactly one, so a run can only come from the file.
+    return serializeRange(blocks, 0, blocks.length, 0).join('\n').trim();
 }
 
 /** Re-indent every line of a chunk, leaving its blank lines blank. */
@@ -90,19 +88,26 @@ function serializeRange(blocks: Block[], from: number, to: number, baseDepth: nu
         // Leaving a depth ends any list that was running there.
         for (const level of [...ordinals.keys()]) if (level > depth) ordinals.delete(level);
 
-        if (previous && !(LIST_TYPES.has(previous.type) && LIST_TYPES.has(block.type))) {
-            lines.push('');
-        }
+        // `blankBefore` records what the source actually did, and a PARSED block always carries it —
+        // so a tight list under a heading, a loose list, and a deliberate double gap all round-trip
+        // as written. The list-to-list default applies only to blocks the editor itself created,
+        // which carry no count.
+        const gap =
+            block.blankBefore ??
+            (LIST_TYPES.has(previous?.type ?? 'text') && LIST_TYPES.has(block.type) ? 0 : 1);
+        if (previous) for (let blank = 0; blank < gap; blank++) lines.push('');
 
         if (block.type === 'toggle') {
             const end = subtreeEnd(blocks, i + 1, block.depth ?? 0);
-            lines.push(...toggleLines(blocks, block, i, end, indent));
+            // `for…of`, not `push(...lines)`: a table block serializes to one line per row, and
+            // spreading those as ARGUMENTS blows the engine's limit on a big table (RangeError).
+            for (const line of toggleLines(blocks, block, i, end, indent)) lines.push(line);
             previous = block;
             i = end - 1;
             continue;
         }
 
-        lines.push(...blockLines(block, indent, ordinals.get(depth) ?? 1));
+        for (const line of blockLines(block, indent, ordinals.get(depth) ?? 1)) lines.push(line);
         previous = block;
     }
     return lines;
@@ -142,9 +147,12 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
             // text extractor does, correctly, for titles and previews) collapsed the snippet onto
             // one line and autosaved it that way.
             const text = inlineHtmlToCodeText(block.html);
-            const fence = '`'.repeat(Math.max(3, longestBacktickRun(text) + 1));
+            // A `~~~` fence never has to grow: only backticks in the body can close a ``` fence.
+            const fence =
+                block.fence === '~' ? '~~~' : '`'.repeat(Math.max(3, longestBacktickRun(text) + 1));
+            const open = fence + (block.language ?? '');
             // ONE chunk, so the blank-line collapse in `blocksToMarkdown` cannot reach inside it.
-            return [[fence, ...text.split('\n'), fence].map((line) => indent + line).join('\n')];
+            return [[open, ...text.split('\n'), fence].map((line) => indent + line).join('\n')];
         }
 
         case 'table':
@@ -226,22 +234,69 @@ function longestBacktickRun(text: string): number {
     return longest;
 }
 
+/**
+ * The separator cell for a column, carrying its alignment markers.
+ *
+ * `width` is the column's rendered width, or 0 when the table is written compact. The colons are
+ * EXTRA, not carved out of the dashes — `:---` is the conventional compact spelling, so subtracting
+ * them would emit `:--` and rewrite every aligned table it was meant to preserve.
+ */
+function separatorCell(align: ColumnAlign | null | undefined, width: number): string {
+    const colons = align === 'center' ? 2 : align ? 1 : 0;
+    const dashes = Math.max(width ? 1 : 3, width - colons);
+    const rule = '-'.repeat(dashes);
+    if (align === 'center') return `:${rule}:`;
+    if (align === 'right') return `${rule}:`;
+    if (align === 'left') return `:${rule}`;
+    return rule;
+}
+
+/**
+ * A table's Markdown lines, with no block indent. Exported for the PARSER: it decides whether the
+ * source was written column-aligned by rendering the parsed table and comparing — asking the
+ * serializer beats guessing from whitespace, and keeps the two halves honest by construction.
+ */
+export function renderTableLines(table: TableData): string[] {
+    return tableLines({...EMPTY_TABLE_BLOCK, table}, '');
+}
+
+const EMPTY_TABLE_BLOCK: Block = {id: '', type: 'table', html: '', depth: 0};
+
 function tableLines(block: Block, indent: string): string[] {
     const cells = block.table?.cells ?? [];
     if (cells.length === 0) return [];
-    const columns = Math.max(...cells.map((row) => row.length));
-    const render = (row: string[]) =>
-        `${indent}| ${Array.from({length: columns}, (_, column) =>
-            inlineHtmlToMarkdown(row[column] ?? '')
-                .replace(/\|/g, '\\|')
-                .replace(/\n/g, ' '),
-        ).join(' | ')} |`;
+    const columns = widestRow(cells);
+    const align = block.table?.align ?? [];
+    const text = (row: string[], column: number) =>
+        inlineHtmlToMarkdown(row[column] ?? '')
+            .replace(/\|/g, '\\|')
+            .replace(/\n/g, ' ');
 
-    const separator = `${indent}| ${Array.from({length: columns}, () => '---').join(' | ')} |`;
     // GFM has no headerless table, so a table whose first row is data gets an EMPTY header row —
     // which the parser reads back as `headerRow: false` rather than as a real row.
-    if (block.table?.headerRow) {
-        return [render(cells[0]), separator, ...cells.slice(1).map(render)];
-    }
-    return [render(Array.from({length: columns}, () => '')), separator, ...cells.map(render)];
+    const headerRow = block.table?.headerRow;
+    const rows = headerRow ? cells : [Array.from({length: columns}, () => ''), ...cells];
+
+    // 0 when the source was compact; otherwise the width it was written at, never narrower than
+    // the content it has to hold (or than the separator's own three dashes).
+    const written = block.table?.widths;
+    const widths = Array.from({length: columns}, (_, column) =>
+        written
+            ? rows.reduce(
+                  (max, row) => Math.max(max, text(row, column).length),
+                  written[column] ?? 1,
+              )
+            : 0,
+    );
+    const gap = ' '.repeat(block.table?.pad ?? 1);
+    const join = (cells: string[]) => `${indent}|${gap}${cells.join(`${gap}|${gap}`)}${gap}|`;
+    const render = (row: string[]) =>
+        join(
+            Array.from({length: columns}, (_, column) => text(row, column).padEnd(widths[column])),
+        );
+    const separator = join(
+        Array.from({length: columns}, (_, column) => separatorCell(align[column], widths[column])),
+    );
+
+    return [render(rows[0]), separator, ...rows.slice(1).map(render)];
 }

@@ -9,10 +9,11 @@
  * indented (non-fenced) code blocks, reference links, and HTML blocks other than `<details>`.
  */
 
-import type {Block, BlockType, TableData} from '../components/blockEditor/types';
-import {newBlock, uid} from '../components/blockEditor/types';
+import type {Block, BlockType, ColumnAlign, TableData} from '../components/blockEditor/types';
+import {newBlock, uid, widestRow} from '../components/blockEditor/types';
 
 import {inlineMarkdownToHtml} from './inline';
+import {renderTableLines} from './toMarkdown';
 
 /** Nesting is written two spaces per level; four-space files are normalised by the depth clamp. */
 const SPACES_PER_LEVEL = 2;
@@ -75,7 +76,12 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
     };
     // Returns the new open block rather than assigning it, so `open`'s narrowing stays visible to
     // the compiler (an assignment inside a closure is invisible to control-flow analysis).
+    // Blank lines seen since the last block was pushed. The FIRST block has no predecessor, so its
+    // leading blanks are the document's own and are dropped by the trim.
+    let blanksSincePush = 0;
     const push = (block: Block, contentIndent: number): OpenBlock => {
+        if (blocks.length > 0) block.blankBefore = blanksSincePush;
+        blanksSincePush = 0;
         blocks.push(block);
         maxDepth = block.depth ?? baseDepth;
         return {block, contentIndent};
@@ -85,6 +91,7 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         const line = lines[i];
         if (line.blank) {
             open = null;
+            blanksSincePush += 1;
             continue;
         }
         const depth = depthOf(line.indent);
@@ -105,6 +112,9 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
                 body.push(raw.blank ? '' : dedent(raw.lead, line.lead) + raw.rawText);
             }
             const block = newBlock('code', escapeText(body.join('\n')));
+            const info = fence[2].trim();
+            if (info) block.language = info;
+            if (fence[1][0] === '~') block.fence = '~';
             block.depth = depth;
             push(block, line.indent);
             open = null;
@@ -297,19 +307,79 @@ function splitRow(row: string): string[] {
     return cells;
 }
 
+/**
+ * The per-column widths a table was WRITTEN at, or null when its rows disagree (so it was never
+ * column-aligned to begin with). Measured on the raw text between the pipes, minus the one space
+ * of padding either side that the aligned style always carries.
+ */
+function writtenLayout(rows: string[]): {widths?: number[]; pad: number} | null {
+    let pad: number | null = null;
+    let widths: number[] | null = null;
+    let aligned = true;
+    for (const row of rows) {
+        const body = row.trim().replace(/^\|/, '').replace(/\|$/, '');
+        const cells = body.split('|');
+        // `| a | b |` pads every cell by one space; `|a|b|` pads none. A table that mixes the two
+        // is hand-irregular — no layout to reproduce, so it round-trips in the default style.
+        const rowPad = cells.every((cell) => /^ .* $/.test(cell))
+            ? 1
+            : cells.every((cell) => !/^ | $/.test(cell))
+              ? 0
+              : null;
+        if (rowPad === null) return null;
+        if (pad === null) pad = rowPad;
+        else if (pad !== rowPad) return null;
+        // Widths are a SEPARATE question from padding: only a column-aligned table writes every row
+        // at the same widths. An ordinary `| a | b |` table does not, and requiring it to ruled out
+        // the very style it was meant to preserve.
+        const measured = cells.map((cell) => cell.length - 2 * rowPad);
+        if (!widths) widths = measured;
+        else if (widths.length !== measured.length || widths.some((w, i) => w !== measured[i]))
+            aligned = false;
+    }
+    if (pad === null) return null;
+    return aligned && widths ? {widths, pad} : {pad};
+}
+
+/** `:---` / `:--:` / `---:` in the separator row; anything else is the default (no marker). */
+function columnAlign(cell: string): ColumnAlign | null {
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+    if (left && right) return 'center';
+    if (right) return 'right';
+    if (left) return 'left';
+    return null;
+}
+
 function parseTable(rows: string[]): TableData {
     const header = splitRow(rows[0]);
     const body = rows.slice(2).map(splitRow);
-    const columns = Math.max(header.length, ...body.map((row) => row.length), 1);
+    const columns = Math.max(header.length, widestRow(body), 1);
     const pad = (row: string[]) =>
         Array.from({length: columns}, (_, column) => inlineMarkdownToHtml(row[column] ?? ''));
     // An all-empty header row is how a headerless table is written (GFM demands *some* header).
     const headerRow = header.some((cell) => cell !== '');
     const cells = headerRow ? [pad(header), ...body.map(pad)] : body.map(pad);
-    return {
+    const align = splitRow(rows[1]).map(columnAlign);
+    const table: TableData = {
         cells: cells.length > 0 ? cells : [Array.from({length: columns}, () => '')],
         headerRow,
+        // Only carry the array when something is actually marked, so the common table stays clean.
+        ...(align.some(Boolean) ? {align} : {}),
     };
+    // Column-aligned style? Every row has to be written at the SAME widths for that to be true;
+    // anything else is hand-irregular and round-trips compact. Verified against the serializer at
+    // the end, so the flag can never claim a rendering it doesn't actually produce.
+    const layout = writtenLayout(rows);
+    if (layout) {
+        if (layout.widths) table.widths = layout.widths;
+        table.pad = layout.pad;
+        if (renderTableLines(table).join('\n') !== rows.join('\n')) {
+            delete table.widths;
+            delete table.pad;
+        }
+    }
+    return table;
 }
 
 /** Code-block text is stored as escaped HTML, like every other block's content. */
