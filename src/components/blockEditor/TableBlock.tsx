@@ -67,7 +67,6 @@ function TableCell({blockId, row, column, html, header, props, onFocusCell}: Tab
                 role="textbox"
                 aria-label={`Table row ${row + 1}, column ${column + 1}`}
                 aria-multiline="true"
-                spellCheck
                 data-block-id={id}
                 data-block-type="text"
                 data-table-block-id={blockId}

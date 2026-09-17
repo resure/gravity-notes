@@ -16,7 +16,7 @@
  * and cannot be fooled by whatever a browser normalizes the markup into.
  */
 
-import {WIKI_LINK_CLASS} from '../../markdown';
+import {WIKI_LINK_CLASS, decodeEntities} from '../../markdown';
 
 /** Marks a link whose target resolves to no note (styled as "broken", like the Markdown engine's). */
 export const WIKI_LINK_BROKEN_CLASS = 'wiki-link_broken';
@@ -63,7 +63,10 @@ export function decorateWikiLinks(html: string, isBroken: (target: string) => bo
             return;
         }
         out += text.replace(WIKI_LINK, (whole, inner: string) => {
-            const className = isBroken(inner)
+            // This walks HTML, so the target arrives escaped — `[[R&D notes]]` is `[[R&amp;D notes]]`
+            // here. Resolve the DECODED form, or every title holding an `&`, `<` or `>` would read
+            // as broken while ⌘↵ (which reads textContent) followed it perfectly well.
+            const className = isBroken(decodeEntities(inner))
                 ? `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`
                 : WIKI_LINK_CLASS;
             return `<span class="${className}">${whole}</span>`;
@@ -93,9 +96,12 @@ export function decorateWikiLinks(html: string, isBroken: (target: string) => bo
     return out;
 }
 
-/** Every distinct `[[target]]` in a block's html (raw inner text, alias/anchor included). */
+/**
+ * Every distinct `[[target]]` in a block's html (alias/anchor included), decoded back out of its
+ * HTML escaping so callers get the target as the file spells it.
+ */
 export function wikiTargetsIn(html: string): string[] {
     const targets = new Set<string>();
-    for (const match of html.matchAll(WIKI_LINK)) targets.add(match[1]);
+    for (const match of html.matchAll(WIKI_LINK)) targets.add(decodeEntities(match[1]));
     return [...targets];
 }

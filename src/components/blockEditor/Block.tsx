@@ -117,7 +117,9 @@ function Block({
             role="textbox"
             aria-label={`${blockLabel(block.type)} block`}
             aria-multiline="true"
-            spellCheck={block.type !== 'code'}
+            // Left UNSET on prose so it inherits the pane's Settings › Check spelling value
+            // (EditorPane sets it on the body wrapper); a code block always opts out for itself.
+            spellCheck={block.type === 'code' ? false : undefined}
             data-block-id={block.id}
             data-block-type={block.type}
             data-placeholder={placeholder}

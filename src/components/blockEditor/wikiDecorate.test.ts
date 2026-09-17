@@ -67,3 +67,15 @@ describe('wikiTargetsIn', () => {
         expect(wikiTargetsIn('[[A]] [[B|x]] [[A]]')).toEqual(['A', 'B|x']);
     });
 });
+
+describe('decorateWikiLinks — HTML escaping', () => {
+    it('resolves the DECODED target, so a title with an & is not styled broken', () => {
+        // The decorator walks html, where `[[R&D notes]]` arrives as `[[R&amp;D notes]]`.
+        const html = decorateWikiLinks('see [[R&amp;D notes]]', (target) => target !== 'R&D notes');
+        expect(html).toBe('see <span class="wiki-link">[[R&amp;D notes]]</span>');
+    });
+
+    it('reports targets decoded', () => {
+        expect(wikiTargetsIn('[[R&amp;D notes]]')).toEqual(['R&D notes']);
+    });
+});

@@ -4,22 +4,6 @@ import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
-vi.mock('@gravity-ui/markdown-editor', () => ({
-    useMarkdownEditor: () => ({
-        currentMode: 'wysiwyg',
-        setEditorMode: vi.fn(),
-        focus: vi.fn(),
-        moveCursor: vi.fn(),
-        replace: vi.fn(),
-        getValue: () => '',
-        on: () => {},
-        off: () => {},
-    }),
-    MarkdownEditorView: () => null,
-    // EditorPane derives its selection-toolbar config from this at module load.
-    wSelectionMenuConfigByPreset: {full: []},
-}));
-
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {renderWithProviders} from '../test/render';

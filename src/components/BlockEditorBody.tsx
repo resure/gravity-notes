@@ -255,7 +255,8 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         ref={markupRef}
                         className="block-editor-markup"
                         aria-label="Markdown source"
-                        spellCheck={false}
+                        // Unset so it inherits Settings › Check spelling from the pane wrapper,
+                        // the way the blocks surface does — the setting covers both modes.
                         defaultValue={bufferRef.current}
                         onChange={(event) => handleChange(event.target.value)}
                     />
