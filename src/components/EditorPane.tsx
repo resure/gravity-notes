@@ -91,7 +91,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
      * frontmatter, a heading deeper than H3, a construct the small line-oriented parser reads
      * imperfectly — editing in blocks would rewrite parts of the file the user never touched. Open
      * that note on its raw source instead: still fully editable, but nothing re-serializes it, so
-     * the file is left exactly as it is. Keyed on the session, so it is computed once per opened note.
+     * the file is left exactly as it is.
+     *
+     * Keyed on the session, so it is computed once per opened note: this judges the file AS LOADED,
+     * and a full parse + re-serialize is far too expensive to redo per autosave (~8 ms on a 140 KB
+     * note, more in WKWebView) for a question whose answer can't change from the blocks surface —
+     * every save there is `blocksToMarkdown` output, i.e. the guard re-proving its own fixed point.
+     * The one path that CAN change the answer is a hand-edit in the raw-source view, and that is
+     * checked where it belongs, on the way back into blocks — see `toggleMode` in BlockEditorBody.
      */
     const blocksSafe = useMemo(
         () => isRoundTripStable(note.content),
@@ -161,6 +168,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             className="editor-pane"
             onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
+                // Only an UNHANDLED Escape steps out. The editor's floating overlays (block menu,
+                // selection toolbar, slash and `[[` pickers) portal to <body>, but React events
+                // still climb the React tree — so dismissing one used to fire this ladder too and
+                // throw focus to the note list on the same keystroke. Each of them already
+                // `preventDefault()`s what it consumed, and "handled" is exactly what
+                // `defaultPrevented` means; checking it here keeps the rule in one place instead of
+                // asking every present and future overlay to remember to stop propagation.
+                if (event.defaultPrevented) return;
                 // Esc always steps out to the list; preview mode stays on (toggle it with ⌘⇧P).
                 onEscape();
             }}

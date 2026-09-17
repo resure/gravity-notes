@@ -212,7 +212,9 @@ Key modules:
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
   change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a
-  visible image's URL (subscribed entries are never evicted) and get notified if it's re-seeded; `peek`
+  visible image's URL (subscribed entries are never evicted) and get notified when it's FORGOTTEN —
+  `notify` fires only from `forget()`, so a listener must re-run its whole load rather than `peek`
+  (which returns undefined there, and renders as "still loading" instead of broken); `peek`
   is pure (no LRU touch), `resolve` touches. The stored Markdown always keeps the root-relative ref,
   never a blob URL.
 - `src/hooks/useNotesStorage.ts` — the workspace lifecycle (state machine:

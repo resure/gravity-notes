@@ -33,8 +33,8 @@ import '@diplodoc/cut-extension/runtime/styles.css';
 // preview correctly. The plugin set below is what the editor's own surfaces can produce, so nothing
 // leaks through as literal text:
 //   • colorPlugin — `{red}(text)` → <span class="yfm-colorify yfm-colorify--red">. Class-based (the
-//     plugin's default, matching the editor's ColorSpecs toDOM); the colors come from yc-colors.css,
-//     already loaded app-wide (main.tsx), so no inline styles needed.
+//     plugin's default), so both the variables and the `.yfm-colorify--*` rules that read them have
+//     to be present: both live in src/yfm-tokens.css, loaded app-wide from main.tsx.
 //   • cut — `{% cut %}` collapsibles. Its `transform` is a plugin FACTORY (call it to get the
 //     markdown-it plugin); interactivity comes from the runtime imported above.
 //   • disableCommonAnchors — the editor shows no `#` anchor buttons beside headings; diplodoc adds

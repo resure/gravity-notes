@@ -180,8 +180,7 @@
 }
 
 /* A link inside the body is text you can edit; ⌘/Ctrl-click is what OPENS it (Editor.tsx toggles
-   this class while the modifier is down, mirroring the Gravity engine's
-   `.g-prosemirror_mod-pressed` — see EditorPane.css). The bare `cursor: pointer` this replaces
+   this class while the modifier is down). The bare `cursor: pointer` this replaces
    promised a plain click would do something, and back when nothing handled that click the promise
    was kept by the webview navigating away from the app entirely. */
 .gn-block-editor_mod-pressed .content a,
@@ -193,14 +192,58 @@
 
 /* Block furniture sits in the margins on BOTH sides: the drag handle on the left (so the left
    gutter only has to be as wide as one 18px button) and the add button on the right. */
+/* Margin furniture (drag handle, add button) centres on the block's FIRST LINE, not on a guessed
+   pixel height. It used to be `top: 3px` against an 18x24 button, i.e. a centre 15px down — which
+   assumed a 24px line box. No editor font has one: sans/mono are 15px x 1.35 = 20.25px and serif is
+   16px x 1.4 = 22.4px, so the handle sat ~2px below the text it points at, and any change to the
+   font-size or line-height setting moved it again. `--gn-block-line` is the real line box, so the
+   centring follows both settings on its own. */
+.gn-block-editor .block {
+    --gn-block-line: calc(var(--gn-editor-line-height, 1.5) * 1em);
+}
+
 .gn-block-editor .handles {
     position: absolute;
+    /* `.content`'s padding-top — where the first line box actually starts. */
     top: 3px;
+    height: var(--gn-block-line);
     display: flex;
+    align-items: center;
     gap: 1px;
     opacity: 0;
     transition: opacity 100ms ease-in;
     user-select: none;
+}
+
+/* Lists and to-dos run on the list rhythm, which is looser than body copy in sans. */
+.gn-block-editor .block[data-type='bulleted'],
+.gn-block-editor .block[data-type='numbered'],
+.gn-block-editor .block[data-type='todo'] {
+    --gn-block-line: calc(
+        var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.5)) * 1em
+    );
+}
+
+/* Headings size themselves in `em` off the page and set their own 1.3 leading, but they do it on
+   `.content` — which the handles sit outside of, so the product has to be restated here. */
+.gn-block-editor .block[data-type='heading1'] {
+    --gn-block-line: calc(1.3 * 1.875em);
+}
+.gn-block-editor .block[data-type='heading2'] {
+    --gn-block-line: calc(1.3 * 1.5em);
+}
+.gn-block-editor .block[data-type='heading3'] {
+    --gn-block-line: calc(1.3 * 1.25em);
+}
+
+/* These four are offset by their CONTAINER (padding, borders, a divider's rule) rather than by a
+   line box, and their `top` below is calibrated against the old 24px box. Pin them to it so this
+   change moves only what its arithmetic covers. */
+.gn-block-editor .block[data-type='callout'],
+.gn-block-editor .block[data-type='table'],
+.gn-block-editor .block[data-type='code'],
+.gn-block-editor .block[data-type='divider'] {
+    --gn-block-line: 24px;
 }
 
 .gn-block-editor .handle-slot_left {
@@ -253,15 +296,6 @@
     cursor: grabbing;
 }
 
-.gn-block-editor .block[data-type='heading1'] .handles {
-    top: 11px;
-}
-.gn-block-editor .block[data-type='heading2'] .handles {
-    top: 7px;
-}
-.gn-block-editor .block[data-type='heading3'] .handles {
-    top: 5px;
-}
 .gn-block-editor .block[data-type='callout'] .handles {
     top: 16px;
 }
@@ -488,10 +522,17 @@
 
 /* ---------- toggles / nesting ---------- */
 
+/* Centre the disclosure arrow on the summary's FIRST LINE, the same way the margin handles do. A
+   fixed 22px button top-aligned against a 20.25px line box sat ~2px high, and moved again whenever
+   the font-size or line-height setting changed. The 3px either side is `.content`'s own padding, so
+   the column's midpoint lands exactly on the line's. */
 .gn-block-editor .toggle-col {
     width: 24px;
     min-width: 24px;
-    padding-top: 4px;
+    height: calc(6px + var(--gn-block-line));
+    display: flex;
+    align-items: center;
+    justify-content: center;
     user-select: none;
 }
 
@@ -517,7 +558,9 @@
 
 .gn-block-editor .toggle-button span {
     display: block;
-    font-size: 15px;
+    /* `em`, so the arrow tracks the editor font-size setting instead of being pinned to one size —
+       and a touch larger than the text, since ▾ draws small inside its em box. */
+    font-size: 1.15em;
     line-height: 1;
     transform: rotate(0deg);
     transition: transform 120ms ease;

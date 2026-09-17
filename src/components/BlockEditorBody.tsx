@@ -8,6 +8,7 @@ import {
     useState,
 } from 'react';
 
+import {isRoundTripStable} from '../markdown';
 import type {Note, NoteMeta} from '../storage/types';
 
 import {NotePreview} from './NotePreview';
@@ -116,7 +117,14 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         // USER's choice and deliberately survives a note switch; `forceSource` is orthogonal and
         // wins, so a note the block model can't hold is never shown in blocks whatever the flag says.
         const [markup, setMarkup] = useState(false);
-        const source = markup || forceSource;
+        /**
+         * Set when a hand-edit in the raw view made the note unrepresentable, so the blocks surface
+         * stays shut even though `forceSource` (computed from the file as loaded) says otherwise.
+         * Released as soon as the buffer round-trips again, and reset on a note switch — by hand,
+         * because this component is NOT keyed and outlives one (same reason `markup` persists).
+         */
+        const [stuckOnSource, setStuckOnSource] = useState(false);
+        const source = markup || forceSource || stuckOnSource;
 
         // Per-note scroll + caret, keyed by note id: the editor is REBUILT per note (see the class
         // comment), so without this every switch back to a note reopened it at the top with the
@@ -138,6 +146,10 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             sessionRef.current = sessionId;
             restoreRef.current = viewStateByIdRef.current.get(note.id) ?? null;
             bufferRef.current = note.content;
+            // Per-note, unlike `markup`: the next note's representability is decided by its own
+            // `forceSource`. This component is NOT keyed, so it has to be cleared by hand — guarded
+            // because a render-phase dispatch has no eager bailout and would re-render every open.
+            if (stuckOnSource) setStuckOnSource(false);
         } else if (noteIdRef.current !== note.id) {
             // A rename/move re-keys the open note in place (id changes, session doesn't) — carry
             // its saved position to the new id so a later switch-and-back still restores it.
@@ -165,6 +177,18 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             [onChange],
         );
 
+        const toggleSourceMode = () => {
+            if (forceSource) return;
+            if (markup && !isRoundTripStable(bufferRef.current)) {
+                setStuckOnSource(true);
+                return;
+            }
+            // Representable again — release the latch, or `source` would stay true underneath a
+            // flipped `markup` and the blocks surface would never come back.
+            setStuckOnSource(false);
+            setMarkup((on) => !on);
+        };
+
         useImperativeHandle(ref, () => ({
             focus() {
                 // Caret-preserving: the pane calls focus() after moveCursorEnd(), and on any
@@ -178,10 +202,20 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
              * ⌘⇧; — swap the blocks for the raw Markdown they serialize to, and back. A no-op while
              * `forceSource` holds: that note is on source precisely because the block surface would
              * rewrite it.
+             *
+             * The way BACK is guarded separately. `forceSource` is decided once per load, from the
+             * file on disk, but the textarea is fully editable — so a note that loaded clean can be
+             * given frontmatter, an H4 or a fenced language here, and re-entering blocks would parse
+             * that, drop what it can't hold, and autosave the loss. Re-check the LIVE buffer (the
+             * exact bytes about to reach the parser) and latch onto source when it won't survive.
+             *
+             * Deliberately checked HERE rather than by re-keying the pane's memo on `note.content`:
+             * that would re-run a full parse + re-serialize on every autosave, still miss an edit
+             * made inside the 500 ms debounce, and — because the blocks surface can itself emit
+             * text the guard rejects (a soft break before a line starting `---`, `- `, `#`) — could
+             * flip the surface out from under a caret mid-typing.
              */
-            toggleMode() {
-                if (!forceSource) setMarkup((on) => !on);
-            },
+            toggleMode: toggleSourceMode,
             moveCursorToStart() {
                 const target = firstContent(rootRef.current);
                 if (target) placeCaret(target, 'start');
@@ -238,10 +272,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         if (source) {
             return (
                 <div ref={rootRef} className="block-editor-source">
-                    {forceSource ? (
+                    {forceSource || stuckOnSource ? (
                         <p className="block-editor-source__notice">
-                            This note contains Markdown the block editor can’t represent — editing
-                            as source, so nothing else in the file is rewritten.
+                            {stuckOnSource
+                                ? 'Your edits here are Markdown the block editor can’t represent — staying on source, so nothing else in the file is rewritten.'
+                                : 'This note contains Markdown the block editor can’t represent — editing as source, so nothing else in the file is rewritten.'}
                         </p>
                     ) : null}
                     <textarea

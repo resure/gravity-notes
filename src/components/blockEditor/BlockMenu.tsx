@@ -90,6 +90,11 @@ export default function BlockMenu({
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (event.key === 'Escape' || (event.key === 'ArrowLeft' && view !== 'main')) {
+            // Marks it handled for EditorPane's Esc ladder, which skips a handled Escape. NOTE:
+            // opening this menu also selects its block, and the editor's block-selection listener
+            // runs on `document` in the CAPTURE phase — so it still sees this Escape first and
+            // steps out to the note list. Dismissing a submenu therefore leaves the editor today;
+            // fixing that belongs in that listener (it should yield while an overlay is open).
             event.preventDefault();
             if (view === 'main') onClose();
             else setView('main');
@@ -97,6 +102,9 @@ export default function BlockMenu({
         }
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
         event.preventDefault();
+        // The pane reads a bubbled ArrowUp as "caret left the top of the body" and jumps to the note
+        // title; stop it so the arrows stay with the menu they are driving.
+        event.stopPropagation();
         const buttons = [
             ...(ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []),
         ];

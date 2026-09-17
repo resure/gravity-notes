@@ -1,3 +1,4 @@
+import {widestRow} from './types';
 import type {Block, TableData} from './types';
 
 export const MAX_BLOCK_DEPTH = 6;
@@ -160,7 +161,7 @@ export function pasteTableGrid(
 ): TableData {
     if (!matrix.length || !matrix.some((row) => row.length)) return table;
     const targetRows = Math.max(table.cells.length, startRow + matrix.length);
-    const widestPaste = Math.max(...matrix.map((row) => row.length));
+    const widestPaste = widestRow(matrix);
     const targetColumns = Math.max(table.cells[0]?.length ?? 1, startColumn + widestPaste);
     return {
         ...table,

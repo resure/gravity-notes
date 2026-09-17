@@ -5,6 +5,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {openExternalUrl} from '../../openExternal';
 
 import Editor from './Editor';
+import {setCaret} from './caret';
 
 vi.mock('../../openExternal', () => ({openExternalUrl: vi.fn()}));
 
@@ -322,5 +323,276 @@ describe('[[wiki links]] in the body', () => {
         expect(screen.queryByRole('listbox', {name: 'Link to a note'})).toBeInTheDocument();
         type(paragraph, '[[Daily log]]');
         expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Each of these pins a defect that reached the user's `.md` file. They are grouped because they
+ * share one theme: a keystroke or a pointer gesture that quietly rewrote the note.
+ */
+describe('regressions: edits that silently reached disk', () => {
+    it('keeps the paragraph when Backspace lands on one after an image', () => {
+        const onChange = vi.fn();
+        renderEditor('![dot](Attachments/red-dot.png)\n\nkeep me', onChange);
+        const paragraph = screen.getByText('keep me', {selector: '.content'});
+        paragraph.focus();
+        setCaret(paragraph, 'start');
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Backspace'});
+        });
+        // The image block holds no editable text and its serializer never reads `html`, so merging
+        // into it wrote the paragraph into a field nothing writes out — the text just vanished.
+        expect(screen.getByText('keep me', {selector: '.content'})).toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('keeps the paragraph when Backspace lands on one after a table', () => {
+        const onChange = vi.fn();
+        renderEditor('| a | b |\n| --- | --- |\n| 1 | 2 |\n\nkeep me', onChange);
+        const paragraph = screen.getByText('keep me', {selector: '.content'});
+        paragraph.focus();
+        setCaret(paragraph, 'start');
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Backspace'});
+        });
+        expect(screen.getByText('keep me', {selector: '.content'})).toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('does not merge a paragraph into a block hidden inside a collapsed toggle', () => {
+        const onChange = vi.fn();
+        renderEditor(
+            '<details>\n<summary>Summary</summary>\n\nhidden child\n\n</details>\n\ntail text',
+            onChange,
+        );
+        const tail = screen.getByText('tail text', {selector: '.content'});
+        tail.focus();
+        setCaret(tail, 'start');
+        act(() => {
+            fireEvent.keyDown(tail, {key: 'Backspace'});
+        });
+        // Merging into the hidden child moved the text where the user cannot see it, which reads
+        // as a deletion — and autosaved it inside the collapsed section.
+        expect(screen.getByText('tail text', {selector: '.content'})).toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('yields ⌘⇧⌫ to the app (trash the note) instead of deleting the selected blocks', () => {
+        const onChange = vi.fn();
+        renderEditor(NOTE, onChange);
+        const paragraph = document.querySelectorAll<HTMLElement>('.content')[1];
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Escape'});
+        });
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(1);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Backspace', metaKey: true, shiftKey: true});
+        });
+        // The chord opens the app's trash-confirm dialog. Removing the blocks here too meant
+        // CANCELLING that dialog still lost them.
+        expect(document.querySelectorAll('.block')).toHaveLength(6);
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('stops a block-selection chord from also reaching the app', () => {
+        renderEditor(NOTE);
+        const paragraph = document.querySelectorAll<HTMLElement>('.content')[1];
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Escape'});
+        });
+        // The app's global handler listens on `document` in the BUBBLE phase. With a block
+        // selected the contentEditable is blurred, so the target is <body> — outside React's root,
+        // where `claimChord` can't help. ⌘D used to duplicate the block AND write a stray copy of
+        // the whole note into the vault.
+        const reachedApp = vi.fn();
+        document.addEventListener('keydown', reachedApp);
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'd', metaKey: true});
+        });
+        document.removeEventListener('keydown', reachedApp);
+        expect(document.querySelectorAll('.block')).toHaveLength(7);
+        expect(reachedApp).not.toHaveBeenCalled();
+    });
+});
+
+describe('regressions: the refused merge must not become a dead key', () => {
+    it('still removes an EMPTY block sitting after an image', () => {
+        renderEditor('![dot](Attachments/red-dot.png)\n\nscratch');
+        const paragraph = screen.getByText('scratch', {selector: '.content'});
+        paragraph.focus();
+        act(() => {
+            paragraph.innerHTML = '';
+            paragraph.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        setCaret(paragraph, 'start');
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Backspace'});
+        });
+        // Refusing the merge protects TEXT; with nothing to lose, "Enter after an image, changed my
+        // mind, Backspace" has to keep working rather than silently doing nothing.
+        expect(document.querySelectorAll('.block')).toHaveLength(1);
+    });
+});
+
+describe('⌘[ / ⌘] indent and outdent', () => {
+    const LIST = ['- one', '- two'].join('\n');
+
+    it('indents a list item on ⌘] and outdents it on ⌘[', () => {
+        const onChange = vi.fn();
+        renderEditor(LIST, onChange);
+        const second = screen.getByText('two', {selector: '.content'});
+        second.focus();
+
+        act(() => {
+            fireEvent.keyDown(second, {key: ']', code: 'BracketRight', metaKey: true});
+        });
+        expect(onChange).toHaveBeenLastCalledWith('- one\n  - two');
+
+        act(() => {
+            fireEvent.keyDown(second, {key: '[', code: 'BracketLeft', metaKey: true});
+        });
+        expect(onChange).toHaveBeenLastCalledWith(LIST);
+    });
+
+    it('leaves ⌘⌥[ / ⌘⌥] to the app (back / forward through notes)', () => {
+        const onChange = vi.fn();
+        renderEditor(LIST, onChange);
+        const second = screen.getByText('two', {selector: '.content'});
+        second.focus();
+
+        // Option is what tells the two chords apart, so the editor must not claim these — and must
+        // not stop them reaching the global handler on `document`.
+        const reachedApp = vi.fn();
+        document.addEventListener('keydown', reachedApp);
+        act(() => {
+            fireEvent.keyDown(second, {
+                key: '“',
+                code: 'BracketLeft',
+                metaKey: true,
+                altKey: true,
+            });
+        });
+        document.removeEventListener('keydown', reachedApp);
+        expect(onChange).not.toHaveBeenCalled();
+        expect(reachedApp).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('arrow keys while blocks are selected', () => {
+    const selectedIds = () => [...document.querySelectorAll('.block.selected')].map((el) => el.id);
+
+    function selectFirstBlockViaEscape() {
+        const first = document.querySelectorAll<HTMLElement>('.content')[0];
+        first.focus();
+        act(() => {
+            fireEvent.keyDown(first, {key: 'Escape'});
+        });
+    }
+
+    it('moves the selection down and up instead of scrolling the page', () => {
+        renderEditor(NOTE);
+        selectFirstBlockViaEscape();
+        const ids = [...document.querySelectorAll('.block')].map((el) => el.id);
+        expect(selectedIds()).toEqual([ids[0]]);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown'});
+        });
+        expect(selectedIds()).toEqual([ids[1]]);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowUp'});
+        });
+        expect(selectedIds()).toEqual([ids[0]]);
+    });
+
+    it('claims the arrow so the browser does not scroll', () => {
+        renderEditor(NOTE);
+        selectFirstBlockViaEscape();
+        const event = createEvent.keyDown(document.body, {key: 'ArrowDown'});
+        act(() => {
+            fireEvent(document.body, event);
+        });
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('stays put at the ends rather than falling through to a page scroll', () => {
+        renderEditor(NOTE);
+        selectFirstBlockViaEscape();
+        const ids = [...document.querySelectorAll('.block')].map((el) => el.id);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowUp'});
+        });
+        expect(selectedIds()).toEqual([ids[0]]);
+    });
+
+    it('still extends the selection with ⇧, rather than moving it', () => {
+        renderEditor(NOTE);
+        selectFirstBlockViaEscape();
+        const ids = [...document.querySelectorAll('.block')].map((el) => el.id);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        expect(selectedIds()).toEqual([ids[0], ids[1]]);
+    });
+});
+
+describe('⌘⌥↑ / ⌘⌥↓ reorder the selected block', () => {
+    const LIST = ['- one', '- two', '- three'].join('\n');
+
+    function selectBlock(text: string) {
+        const el = screen.getByText(text, {selector: '.content'});
+        el.focus();
+        act(() => {
+            fireEvent.keyDown(el, {key: 'Escape'});
+        });
+    }
+
+    function moveSelected(key: 'ArrowUp' | 'ArrowDown') {
+        act(() => {
+            fireEvent.keyDown(document.body, {key, metaKey: true, altKey: true});
+        });
+    }
+
+    it('moves a block up and back down', () => {
+        const onChange = vi.fn();
+        renderEditor(LIST, onChange);
+
+        selectBlock('two');
+        moveSelected('ArrowUp');
+        expect(onChange).toHaveBeenLastCalledWith(['- two', '- one', '- three'].join('\n'));
+
+        moveSelected('ArrowDown');
+        expect(onChange).toHaveBeenLastCalledWith(LIST);
+    });
+
+    it('keeps the moved block selected so it can be moved again', () => {
+        renderEditor(LIST);
+        selectBlock('three');
+        moveSelected('ArrowUp');
+        moveSelected('ArrowUp');
+        const texts = [...document.querySelectorAll('.block .content')].map((el) => el.textContent);
+        expect(texts).toEqual(['three', 'one', 'two']);
+    });
+
+    it('does nothing at the ends', () => {
+        const onChange = vi.fn();
+        renderEditor(LIST, onChange);
+        selectBlock('one');
+        moveSelected('ArrowUp');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('claims the chord so the app does not also act on it', () => {
+        renderEditor(LIST);
+        selectBlock('two');
+        const reachedApp = vi.fn();
+        document.addEventListener('keydown', reachedApp);
+        moveSelected('ArrowUp');
+        document.removeEventListener('keydown', reachedApp);
+        expect(reachedApp).not.toHaveBeenCalled();
     });
 });

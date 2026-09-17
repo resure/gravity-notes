@@ -42,7 +42,9 @@
 }
 
 /* The colour palette `{red}(text)` (the @diplodoc/color-extension, wired up in NotePreview) renders
-   against. Was `yc-colors.css`. */
+   against. The variables were `yc-colors.css`; the rules that READ them (below) were in a different
+   stylesheet of the same package, `markdown.css` — vendoring only the variables left every
+   `.yfm-colorify--*` span painted in the default foreground. */
 .g-root {
     --yfm-color-text-gray: var(--g-color-text-secondary);
     --yfm-color-text-yellow: var(--g-color-private-yellow-600-solid);
@@ -60,6 +62,31 @@
     --yfm-colorify-green: var(--yfm-color-text-green);
     --yfm-colorify-blue: var(--yfm-color-text-blue);
     --yfm-colorify-violet: var(--yfm-color-text-violet);
+}
+
+.yfm-colorify--black {
+    color: var(--yfm-colorify-black);
+}
+.yfm-colorify--gray {
+    color: var(--yfm-colorify-gray);
+}
+.yfm-colorify--yellow {
+    color: var(--yfm-colorify-yellow);
+}
+.yfm-colorify--orange {
+    color: var(--yfm-colorify-orange);
+}
+.yfm-colorify--red {
+    color: var(--yfm-colorify-red);
+}
+.yfm-colorify--green {
+    color: var(--yfm-colorify-green);
+}
+.yfm-colorify--blue {
+    color: var(--yfm-colorify-blue);
+}
+.yfm-colorify--violet {
+    color: var(--yfm-colorify-violet);
 }
 
 /* The collapse chevron `.yfm-cut` draws is a black SVG baked into the extension's stylesheet, so it

@@ -11,6 +11,7 @@ import {basename, isAttachmentRef} from '../../storage/noteText';
 import {Lightbox} from '../Lightbox';
 
 import {ExpandIcon, PencilIcon} from './icons';
+import {DRAG_SLOP} from './types';
 import type {Block as BlockData, ImageData} from './types';
 
 /** Smallest width (px) a resize drag will allow. */
@@ -63,23 +64,38 @@ export default function AttachmentImage({
             setFailed(true);
             return undefined;
         }
-        // Re-resolve when this exact attachment is deleted from the manager: its object URL has just
-        // been revoked, so the image flips to its broken state at once rather than showing a dead src.
-        const unsubscribe = cache.subscribe(src, () => setUrl(cache.peek(src)));
-        cache
-            .resolve(src)
-            .then((resolved) => {
-                if (resolved) setUrl(resolved);
-                else setFailed(true);
-            })
-            .catch(() => setFailed(true));
-        return unsubscribe;
+        // `failed` latches, so clear it when the ref changes: the new one is unproven, not missing.
+        setFailed(false);
+        // A closure flag, not a retired resource — this only tells a late promise to stop talking,
+        // so it doesn't run into the StrictMode hazard of a cleanup retiring something still live.
+        let alive = true;
+        const load = () => {
+            cache
+                .resolve(src)
+                .catch(() => '')
+                .then((resolved) => {
+                    if (!alive) return;
+                    setUrl(resolved || undefined);
+                    setFailed(!resolved);
+                });
+        };
+        // `notify` fires when this attachment is deleted from the manager — its URL is already
+        // revoked, so re-run the whole load: a bare `peek` would return undefined, which renders as
+        // "still loading" rather than broken.
+        const unsubscribe = cache.subscribe(src, load);
+        load();
+        return () => {
+            alive = false;
+            unsubscribe();
+        };
     }, [cache, src, attachment]);
 
     // Live width during a resize drag; cleared once the committed value catches up (avoids a flash).
     const [dragWidth, setDragWidth] = useState<number | null>(null);
     const imgRef = useRef<HTMLImageElement>(null);
-    const dragRef = useRef<{startX: number; startW: number; max: number} | null>(null);
+    const dragRef = useRef<{startX: number; startW: number; max: number; moved: boolean} | null>(
+        null,
+    );
     /** Detach the active drag's window listeners — set on pointerdown, cleared on pointerup. */
     const dragCleanupRef = useRef<(() => void) | null>(null);
     useEffect(() => {
@@ -94,10 +110,13 @@ export default function AttachmentImage({
         event.stopPropagation();
         const startW = imgRef.current?.getBoundingClientRect().width ?? 0;
         const max = imgRef.current?.parentElement?.clientWidth || 2000;
-        dragRef.current = {startX: event.clientX, startW, max};
+        dragRef.current = {startX: event.clientX, startW, max, moved: false};
         function onMove(e: PointerEvent) {
             const drag = dragRef.current;
             if (!drag) return;
+            // Below the shared slop this is a click, not a resize.
+            if (!drag.moved && Math.abs(e.clientX - drag.startX) < DRAG_SLOP) return;
+            drag.moved = true;
             setDragWidth(
                 Math.round(
                     Math.min(
@@ -116,7 +135,10 @@ export default function AttachmentImage({
             dragCleanupRef.current = null;
             const drag = dragRef.current;
             dragRef.current = null;
-            if (drag && imgRef.current) {
+            // `moved` gates the commit: without it a bare CLICK on the grip writes the image's
+            // current rendered width into the note (` =NNNx`), pinning it to whatever the window
+            // happened to be — an edit the user never asked for, autosaved 500 ms later.
+            if (drag?.moved && imgRef.current) {
                 // Height is cleared with the same edit: the browser keeps the aspect ratio from the
                 // width alone, and leaving a stale height behind would letterbox the image on reload.
                 onUpdate({

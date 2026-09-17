@@ -206,7 +206,12 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest}: Toolbar
                         onChange={(e) => setLinkValue(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') applyLink();
-                            if (e.key === 'Escape') cancelLink();
+                            if (e.key === 'Escape') {
+                                // Mark it handled — EditorPane's Esc ladder skips a
+                                // `defaultPrevented` Escape, so focus stays in the editor.
+                                e.preventDefault();
+                                cancelLink();
+                            }
                         }}
                     />
                 ) : (

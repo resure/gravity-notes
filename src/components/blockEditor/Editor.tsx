@@ -65,7 +65,16 @@ import {
     pasteTableGrid,
     setTableCell,
 } from './documentModel';
-import {isEditableType, newBlock, newTableData, uid} from './types';
+import {
+    BLOCK_COLORS,
+    BLOCK_TYPES,
+    DRAG_SLOP,
+    isEditableType,
+    newBlock,
+    newTableData,
+    uid,
+    widestRow,
+} from './types';
 import type {BlockColor, Block as BlockData, BlockType, TableData} from './types';
 import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
 
@@ -105,47 +114,13 @@ interface SelectionBox {
 type BlocksUpdater = BlockData[] | ((blocks: BlockData[]) => BlockData[]);
 type ChangeMode = 'structural' | 'input' | 'silent';
 
-const BLOCK_TYPES = new Set<BlockType>([
-    'text',
-    'heading1',
-    'heading2',
-    'heading3',
-    'todo',
-    'bulleted',
-    'numbered',
-    'toggle',
-    'table',
-    'quote',
-    'callout',
-    'divider',
-    'code',
-]);
-const BLOCK_COLORS = new Set<BlockColor>([
-    'default',
-    'gray',
-    'brown',
-    'orange',
-    'yellow',
-    'green',
-    'blue',
-    'purple',
-    'pink',
-    'red',
-    'gray_background',
-    'brown_background',
-    'orange_background',
-    'yellow_background',
-    'green_background',
-    'blue_background',
-    'purple_background',
-    'pink_background',
-    'red_background',
-]);
+/** Paste allowlist, built from the shared array so it can never fall behind the union. */
+const BLOCK_TYPE_SET = new Set<BlockType>(BLOCK_TYPES);
+const BLOCK_COLOR_SET = new Set<BlockColor>(BLOCK_COLORS);
 
 /**
- * Set on the editor root while ⌘/Ctrl is held, so CSS can switch links to a pointer cursor — the
- * same affordance the Gravity engine gives them (`g-prosemirror_mod-pressed`, see
- * `editor/openLinkExtension.ts` and `EditorPane.css`). See `.gn-block-editor_mod-pressed` in
+ * Set on the editor root while ⌘/Ctrl is held, so CSS can switch links to a pointer cursor — a
+ * plain click edits the text, ⌘-click opens the link. See `.gn-block-editor_mod-pressed` in
  * `editor.css`.
  */
 const MOD_PRESSED_CLASS = 'gn-block-editor_mod-pressed';
@@ -234,10 +209,7 @@ function normalizeTableData(value: unknown, firstCell = ''): TableData {
         return newTableData(firstCell);
     }
     const source = (value as TableData).cells;
-    const widestRow = source.length
-        ? Math.max(...source.map((row) => (Array.isArray(row) ? row.length : 0)))
-        : 1;
-    const columnCount = Math.max(1, widestRow);
+    const columnCount = Math.max(1, widestRow(source.filter(Array.isArray)));
     const cells = source
         .filter(Array.isArray)
         .map((row) =>
@@ -267,7 +239,7 @@ function normalizeParsedBlocks(blocks: BlockData[]): BlockData[] {
         depth: Math.max(0, Math.min(6, Number(block.depth) || 0)),
         table: block.type === 'table' ? normalizeTableData(block.table) : undefined,
         color:
-            typeof block.color === 'string' && BLOCK_COLORS.has(block.color as BlockColor)
+            typeof block.color === 'string' && BLOCK_COLOR_SET.has(block.color as BlockColor)
                 ? (block.color as BlockColor)
                 : undefined,
     }));
@@ -284,6 +256,24 @@ function documentFromMarkdown(markdown: string, decorate: (html: string) => stri
 /** One block as Markdown — for the plain-text half of a copy. */
 function blockToMarkdown(block: BlockData): string {
     return blocksToMarkdown([{...block, depth: 0}]);
+}
+
+/**
+ * The blocks the reader can actually see: a collapsed toggle hides every deeper block beneath it.
+ * The render needs this, and so does any path that MERGES one block into another — a merge target
+ * the user can't see swallows their text into a collapsed section, which reads as a deletion.
+ */
+function visibleBlockIds(blocks: BlockData[]): Set<string> {
+    const ids = new Set<string>();
+    let collapsedDepth: number | null = null;
+    for (const block of blocks) {
+        const depth = block.depth ?? 0;
+        if (collapsedDepth !== null && depth > collapsedDepth) continue;
+        collapsedDepth = null;
+        ids.add(block.id);
+        if (block.type === 'toggle' && block.collapsed) collapsedDepth = depth;
+    }
+    return ids;
 }
 
 /**
@@ -626,6 +616,69 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setSelectedIds(blockRangeIds(blocksRef.current, anchorId, focusId));
     };
 
+    /**
+     * Where the arrows move FROM while blocks are selected: the selection's moving end, falling
+     * back to the edge of the selected range on the side we're heading. Returns -1 for `focus` when
+     * nothing is selected.
+     */
+    const selectionEnds = (towards: -1 | 1): {focus: number; edge: number} => {
+        const blocks = blocksRef.current;
+        const indexes = blocks
+            .map((block, index) => (selectedIdsRef.current.has(block.id) ? index : -1))
+            .filter((index) => index >= 0);
+        if (!indexes.length) return {focus: -1, edge: -1};
+        // Ascending by construction (map-with-index then filter), so the ends are the min and max.
+        const edge = towards === -1 ? indexes[0] : indexes[indexes.length - 1];
+        const focusId = selectionFocus.current;
+        const found = focusId ? blocks.findIndex((block) => block.id === focusId) : -1;
+        return {focus: found >= 0 ? found : edge, edge};
+    };
+
+    /** The next block in `direction` that the reader can actually see, or null at either end. */
+    const nextVisibleIndex = (from: number, direction: -1 | 1): number | null => {
+        const blocks = blocksRef.current;
+        const visible = visibleBlockIds(blocks);
+        for (let i = from + direction; i >= 0 && i < blocks.length; i += direction) {
+            if (visible.has(blocks[i].id)) return i;
+        }
+        return null;
+    };
+
+    /**
+     * Reorder the selected block by one position. Moves the whole SUBTREE (a collapsed toggle takes
+     * its children with it, as dragging does), and steps over the neighbour's subtree rather than
+     * into it — so one press swaps with the neighbour instead of burrowing through its children.
+     */
+    const moveSelectedBlock = (direction: -1 | 1) => {
+        const blocks = blocksRef.current;
+        const id = [...selectedIdsRef.current][0];
+        const index = blocks.findIndex((block) => block.id === id);
+        if (index < 0) return;
+        const visible = visibleBlockIds(blocks);
+        if (direction === -1) {
+            let target = index - 1;
+            while (target >= 0 && !visible.has(blocks[target].id)) target -= 1;
+            if (target < 0) return;
+            moveBlock(id, blocks[target].id, 'before');
+        } else {
+            // Past the END of our own subtree first, or the target would be our own child.
+            const depth = blocks[index].depth ?? 0;
+            let after = index + 1;
+            while (after < blocks.length && (blocks[after].depth ?? 0) > depth) after += 1;
+            while (after < blocks.length && !visible.has(blocks[after].id)) after += 1;
+            if (after >= blocks.length) return;
+            moveBlock(id, blocks[after].id, 'after');
+        }
+        revealBlock(id);
+    };
+
+    /** Keep the block the selection just moved to on screen (the pane scrolls, not the editor). */
+    const revealBlock = (id: string) => {
+        rootRef.current?.querySelector<HTMLElement>(`[id="${id}"]`)?.scrollIntoView({
+            block: 'nearest',
+        });
+    };
+
     // Every commit of DOM html into block state strips the caret-escape U+200B (see stripZeroWidth):
     // block state is what gets serialized, so this is the last place it can be caught before the
     // character lands in the user's file. Block.tsx compares the two ends zero-width-insensitively,
@@ -709,15 +762,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     /**
      * Take a keystroke for the editor and keep it here.
      *
-     * The app's global shortcuts (`useShortcuts`) listen on `document`, never look at
-     * `defaultPrevented`, and let `mod` chords fire even while a typing surface is focused — so
-     * every chord this editor also binds used to run BOTH handlers: ⌘D duplicated the block AND
-     * wrote a duplicate note file into the vault, ⌘K opened the link input AND switched notes out
-     * from under it, remounting the session over the half-typed link. `preventDefault` alone does
-     * nothing about that (nothing downstream consults it); stopping propagation before the event
-     * reaches `document` is what makes the editor's claim exclusive.
+     * The app's global shortcuts (`useShortcuts`) listen on `document` and let `mod` chords fire
+     * even while a typing surface is focused — so every chord this editor also binds used to run
+     * BOTH handlers: ⌘D duplicated the block AND wrote a duplicate note file into the vault, ⌘K
+     * opened the link input AND switched notes out from under it, remounting the session over the
+     * half-typed link. `preventDefault` alone does nothing about that (the global handler's
+     * `defaultPrevented` check is on the bubble path, which a capture-phase claim never reaches,
+     * and it is phase-blind besides); stopping propagation is what makes the claim exclusive.
+     *
+     * Used from BOTH key paths, which is why the parameter is structural rather than React's
+     * synthetic type: in block-selection mode the contentEditable is blurred, so events land on
+     * `<body>` — an ancestor of React's root container — and are handled by a native listener the
+     * editor registers on `document` in the CAPTURE phase (see the selection effect below). That
+     * listener has to get in before `useShortcuts`, which registers on `document` at Workspace
+     * mount and would otherwise win on registration order.
      */
-    const claimChord = (e: KeyboardEvent<HTMLDivElement>) => {
+    const claimChord = (e: {preventDefault(): void; stopPropagation(): void}) => {
         e.preventDefault();
         e.stopPropagation();
     };
@@ -1055,7 +1115,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!element) return;
         const mod = e.metaKey || e.ctrlKey;
 
-        // The same chords as `onKeyDown` below, claimed the same way \u2014 see claimChord for why
+        // The same chords as `onKeyDown` below, claimed the same way — see claimChord for why
         // preventDefault alone leaks them to the app's global shortcut handler.
         if (mod && !e.altKey) {
             const key = e.key.toLowerCase();
@@ -1330,6 +1390,30 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             focusReq.current = {id: prev.id, pos: 'end'};
             return;
         }
+        // A merge target has to be BOTH editable and visible, or the text being merged is lost:
+        // an image/table block has no editable content element and its serializer never reads
+        // `html`, so the merged text is written into a field nothing ever writes out; a block
+        // hidden under a collapsed toggle swallows it where the user cannot see it.
+        if (!isEditableType(prev.type) || !visibleBlockIds(blocksRef.current).has(prev.id)) {
+            // Nothing to lose when this block is empty — that is the everyday "Enter after an
+            // image, changed my mind, ⌫" gesture, so still remove it. With text in it, refuse:
+            // the caller has already preventDefault'd, so the keystroke is simply dropped.
+            // Losing a keystroke beats losing a paragraph.
+            if (isEmptyHtml(el.innerHTML)) {
+                removeBlocks([block.id]);
+                // `removeBlocks` aims focus at the neighbouring block, but here that neighbour is
+                // the image/table (no editable element) or a hidden one (no element at all), so the
+                // caret would land nowhere and typing would silently stop. Send it somewhere real:
+                // the nearest editable block above, else the note title.
+                const above = findEditableSibling(block.id, -1);
+                if (above && visibleBlockIds(blocksRef.current).has(above.id)) {
+                    focusReq.current = {id: above.id, pos: 'end'};
+                } else {
+                    focusTitleEnd();
+                }
+            }
+            return;
+        }
         const prevEl = refs.current.get(prev.id);
         const joinAt = (prevEl?.textContent ?? htmlToText(prev.html)).length;
         const merged = (isEmptyHtml(prev.html) ? '' : prev.html) + stripZeroWidth(el.innerHTML);
@@ -1378,10 +1462,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // `[[` note picker — same keyboard contract as the slash menu above.
         if (wiki && wiki.blockId === id) {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                e.preventDefault();
                 const n = wikiItems.length;
-                if (n > 0)
-                    setWikiIndex((i) => (e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n));
+                // With no items there is no popup on screen (the render is gated on the same
+                // count), so swallowing the arrows would trap the caret in the block with nothing
+                // explaining why. Drop the picker and let the keystroke navigate, exactly as the
+                // slash menu's empty-list fallback does.
+                if (n === 0) {
+                    setWiki(null);
+                    return;
+                }
+                e.preventDefault();
+                setWikiIndex((i) => (e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n));
                 return;
             }
             if ((e.key === 'Enter' || e.key === 'Tab') && wikiItems.length > 0) {
@@ -1538,6 +1629,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (before !== '') return;
             e.preventDefault();
             handleBackspaceAtStart(block, el);
+            return;
+        }
+
+        // ⌘[ / ⌘] outdent and indent, the Notion/Bear convention. Matched on `code` so it is
+        // layout-independent (and because ⌥ rewrites the character anyway), and only with NO other
+        // modifier: ⌘⌥[ / ⌘⌥] are the app's back/forward and have to reach the global handler.
+        if (
+            mod &&
+            !e.shiftKey &&
+            !e.altKey &&
+            (e.code === 'BracketLeft' || e.code === 'BracketRight')
+        ) {
+            claimChord(e);
+            changeDepth(id, e.code === 'BracketLeft' ? -1 : 1);
             return;
         }
 
@@ -1799,6 +1904,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setBlocks((current) => {
             const at = current.findIndex((candidate) => candidate.id === afterId);
             const next = [...current];
+            // The anchor can be gone by now — `onAttachFile` is awaited above, and the block may
+            // have been merged or deleted while the bytes were being written. `findIndex` returns
+            // -1 then, and `splice(-1 + 1, …)` would silently insert at the TOP of the note.
+            if (at === -1) {
+                next.push(...inserted);
+                return next;
+            }
             // An empty paragraph is replaced rather than left dangling above the image.
             const target = current[at];
             if (target && target.type === 'text' && isEmptyHtml(target.html))
@@ -1829,7 +1941,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     const pasted = parsed
                         .filter(
                             (item) =>
-                                item && BLOCK_TYPES.has(item.type) && typeof item.html === 'string',
+                                item &&
+                                BLOCK_TYPE_SET.has(item.type) &&
+                                typeof item.html === 'string',
                         )
                         .map((item) => ({
                             ...item,
@@ -1956,41 +2070,59 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!ownsDocumentEvent(e.target)) return;
         const selected = selectedIdsRef.current;
         const mod = e.metaKey || e.ctrlKey;
-        if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-            e.preventDefault();
-            const selectedIndexes = blocksRef.current
-                .map((block, index) => (selected.has(block.id) ? index : -1))
-                .filter((index) => index >= 0);
-            if (!selectedIndexes.length) return;
-            const fallback =
-                e.key === 'ArrowUp' ? Math.min(...selectedIndexes) : Math.max(...selectedIndexes);
-            const focusId = selectionFocus.current ?? blocksRef.current[fallback]?.id;
-            const focusIndex = focusId
-                ? blocksRef.current.findIndex((block) => block.id === focusId)
-                : fallback;
+        if (mod && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            // ⌘⌥↑/↓ reorders the selected block. Single selection only: moving a multi-block range
+            // as a unit is a different operation, and doing it one block at a time would shuffle
+            // them past each other rather than move them together.
+            claimChord(e);
+            if (selected.size === 1) moveSelectedBlock(e.key === 'ArrowUp' ? -1 : 1);
+        } else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            claimChord(e);
+            const direction = e.key === 'ArrowUp' ? -1 : 1;
+            const {focus, edge} = selectionEnds(direction);
+            if (focus < 0) return;
             const nextIndex = Math.max(
                 0,
-                Math.min(blocksRef.current.length - 1, focusIndex + (e.key === 'ArrowUp' ? -1 : 1)),
+                Math.min(blocksRef.current.length - 1, focus + direction),
             );
-            const anchorId = selectionAnchor.current ?? blocksRef.current[fallback].id;
+            const anchorId = selectionAnchor.current ?? blocksRef.current[edge].id;
             selectBlockRange(anchorId, blocksRef.current[nextIndex].id);
+            revealBlock(blocksRef.current[nextIndex].id);
+        } else if (!mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            // Move the selection to the previous/next block. Without this the arrows fell through
+            // to the browser and SCROLLED THE PAGE, which is never what an arrow means while a
+            // block is selected. Claiming the chord is also what stops that default scroll.
+            claimChord(e);
+            const direction = e.key === 'ArrowUp' ? -1 : 1;
+            const {focus} = selectionEnds(direction);
+            if (focus < 0) return;
+            // At either end, stay put rather than let the page scroll instead.
+            const nextIndex = nextVisibleIndex(focus, direction);
+            if (nextIndex === null) return;
+            const nextId = blocksRef.current[nextIndex].id;
+            selectSingleBlock(nextId);
+            revealBlock(nextId);
         } else if (e.key === 'Backspace' || e.key === 'Delete') {
-            e.preventDefault();
+            // ⌘⇧⌫ is the app's "move note to Trash" chord, not a block delete — the per-block
+            // handler already yields it, and this one must too. Without the guard the blocks were
+            // removed behind the confirm dialog, so CANCELLING still lost them.
+            if (mod && e.shiftKey) return;
+            claimChord(e);
             removeBlocks([...selected]);
         } else if (e.key === 'Escape') {
             clearBlockSelection();
             // Nothing left in the editor to dismiss: the shell walks focus back to the note list.
             onEscape?.();
         } else if (mod && e.key.toLowerCase() === 'd') {
-            e.preventDefault();
+            claimChord(e);
             duplicateBlocks([...selected], true);
         } else if (mod && e.key.toLowerCase() === 'a') {
-            e.preventDefault();
+            claimChord(e);
             selectionAnchor.current = blocksRef.current[0]?.id ?? null;
             selectionFocus.current = blocksRef.current[blocksRef.current.length - 1]?.id ?? null;
             setSelectedIds(new Set(blocksRef.current.map((b) => b.id)));
         } else if (mod && e.key.toLowerCase() === 'z') {
-            e.preventDefault();
+            claimChord(e);
             restoreHistory(e.shiftKey ? 'redo' : 'undo');
         }
     };
@@ -2036,12 +2168,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const onClipboard = (e: globalThis.ClipboardEvent) =>
             selectionListeners.current.onClipboard(e);
         const onMouseDown = (e: globalThis.MouseEvent) => selectionListeners.current.onMouseDown(e);
-        document.addEventListener('keydown', onKey);
+        // CAPTURE: `useShortcuts` registers its own document listener at Workspace mount, i.e.
+        // before this one, so on the bubble path registration order would give the global handler
+        // the chord first. Capturing puts us ahead of it regardless of mount order.
+        document.addEventListener('keydown', onKey, true);
         document.addEventListener('mousedown', onMouseDown);
         document.addEventListener('copy', onClipboard);
         document.addEventListener('cut', onClipboard);
         return () => {
-            document.removeEventListener('keydown', onKey);
+            document.removeEventListener('keydown', onKey, true);
             document.removeEventListener('mousedown', onMouseDown);
             document.removeEventListener('copy', onClipboard);
             document.removeEventListener('cut', onClipboard);
@@ -2170,7 +2305,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const drag = selectionDrag.current;
         if (!drag || drag.pointerId !== e.pointerId) return;
         const distance = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
-        if (!drag.moved && distance < 4) return;
+        if (!drag.moved && distance < DRAG_SLOP) return;
         drag.moved = true;
         selectionWasDragged.current = true;
         const left = Math.min(drag.startX, e.clientX);
@@ -2254,17 +2389,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
     }
 
-    const visibleIds = new Set<string>();
-    {
-        let collapsedDepth: number | null = null;
-        for (const block of blocks) {
-            const depth = block.depth ?? 0;
-            if (collapsedDepth !== null && depth > collapsedDepth) continue;
-            collapsedDepth = null;
-            visibleIds.add(block.id);
-            if (block.type === 'toggle' && block.collapsed) collapsedDepth = depth;
-        }
-    }
+    const visibleIds = visibleBlockIds(blocks);
 
     const nextHandlers: BlockHandlers = {
         onContentRef: (id, el) => {
