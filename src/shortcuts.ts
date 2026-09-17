@@ -327,6 +327,21 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
     },
     {
+        keys: 'mod+c',
+        description: 'Copy the selection as Markdown',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+shift+c',
+        description: 'Copy the selection as plain text (Markdown stripped)',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+shift+v',
+        description: 'Paste without formatting',
+        group: 'Editing',
+    },
+    {
         keys: 'mod+alt+up',
         description: 'Move the selected block up (⌘⌥↓ moves it down)',
         group: 'Editing',

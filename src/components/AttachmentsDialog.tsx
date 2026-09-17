@@ -4,7 +4,7 @@ import {FolderOpen, TrashBin} from '@gravity-ui/icons';
 import {Button, Dialog, Icon, Label, Select, Spin, Text} from '@gravity-ui/uikit';
 import {useVirtualizer} from '@tanstack/react-virtual';
 
-import {type AttachmentUrlCache} from '../attachments';
+import {type AttachmentUrlCache, useAttachmentUrl} from '../attachments';
 import {attachmentRefsIn} from '../storage/noteText';
 import type {AttachmentMeta, NoteStore} from '../storage/types';
 
@@ -48,38 +48,18 @@ function formatBytes(n: number): string {
 
 /** A small image thumbnail that resolves its attachment ref to an object URL on demand. */
 function Thumb({cache, refPath, alt}: {cache: AttachmentUrlCache; refPath: string; alt: string}) {
-    const [url, setUrl] = useState<string | undefined>(() => cache.peek(refPath));
-    useEffect(() => {
-        let alive = true;
-        // Resolve (reusing a seeded/cached URL when present), then subscribe: the cache never evicts a
-        // subscribed ref, so this on-screen thumbnail can't be revoked out from under its <img> by LRU
-        // eviction; the same subscription re-resolves it (to the placeholder) if the file is deleted.
-        const load = () => {
-            const seeded = cache.peek(refPath);
-            if (seeded) {
-                setUrl(seeded);
-                return;
-            }
-            cache
-                .resolve(refPath)
-                .then((resolved) => {
-                    if (alive) setUrl(resolved || undefined);
-                })
-                .catch(() => {
-                    // Leave the placeholder if it can't be read.
-                });
-        };
-        load();
-        const unsub = cache.subscribe(refPath, load);
-        return () => {
-            alive = false;
-            unsub();
-        };
-    }, [cache, refPath]);
-    return url ? (
-        <img className="attachments__thumb" src={url} alt={alt} />
-    ) : (
-        <span className="attachments__thumb attachments__thumb_loading" />
+    // Shares the editor's resolver (see `useAttachmentUrl`): subscribe so the LRU can't evict a
+    // visible thumbnail, re-run the whole load when the cache notifies, and distinguish "loading"
+    // from "gone". The local copy this replaces peeked first, which returns undefined on the notify
+    // path — `forget()` has already dropped the entry — so deleting an attachment left its
+    // thumbnail on the loading placeholder for good.
+    const {url, failed} = useAttachmentUrl(refPath, cache);
+    if (url) return <img className="attachments__thumb" src={url} alt={alt} />;
+    return (
+        <span
+            className={`attachments__thumb attachments__thumb_${failed ? 'missing' : 'loading'}`}
+            aria-label={failed ? 'Image not found' : undefined}
+        />
     );
 }
 

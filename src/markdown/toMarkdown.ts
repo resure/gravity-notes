@@ -23,6 +23,7 @@ import {
     escapeMarkdownText,
     inlineHtmlToCodeText,
     inlineHtmlToMarkdown,
+    longestRunOf,
 } from './inline';
 
 /** Blocks that render as list items — the only ones packed together without a blank line. */
@@ -81,7 +82,10 @@ function serializeRange(blocks: Block[], from: number, to: number, baseDepth: nu
         const indent = INDENT.repeat(depth);
 
         if (block.type === 'numbered') {
-            ordinals.set(depth, (ordinals.get(depth) ?? 0) + 1);
+            // A run that starts partway through — `5. 6. 7.` after some interrupting prose — keeps
+            // its first number; CommonMark numbers the whole list from it.
+            const running = ordinals.get(depth);
+            ordinals.set(depth, running === undefined ? (block.listStart ?? 1) : running + 1);
         } else {
             ordinals.delete(depth);
         }
@@ -147,9 +151,12 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
             // text extractor does, correctly, for titles and previews) collapsed the snippet onto
             // one line and autosaved it that way.
             const text = inlineHtmlToCodeText(block.html);
-            // A `~~~` fence never has to grow: only backticks in the body can close a ``` fence.
-            const fence =
-                block.fence === '~' ? '~~~' : '`'.repeat(Math.max(3, longestBacktickRun(text) + 1));
+            // The fence has to out-run the longest run of its OWN character in the body, whichever
+            // character it is. Hard-coding `~~~` meant typing a `~~~` line into a tilde-fenced block
+            // closed it early: the rest of the code escaped into the document as prose and the typed
+            // line vanished.
+            const char = block.fence === '~' ? '~' : '`';
+            const fence = char.repeat(Math.max(3, longestRunOf(text, char) + 1));
             const open = fence + (block.language ?? '');
             // ONE chunk, so the blank-line collapse in `blocksToMarkdown` cannot reach inside it.
             return [[open, ...text.split('\n'), fence].map((line) => indent + line).join('\n')];
@@ -175,19 +182,29 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
             return prefixed(content, indent, '## ');
         case 'heading3':
             return prefixed(content, indent, '### ');
+        case 'heading4':
+            return prefixed(content, indent, '#### ');
+        case 'heading5':
+            return prefixed(content, indent, '##### ');
+        case 'heading6':
+            return prefixed(content, indent, '###### ');
         case 'quote':
             // A quote's own line breaks each need the marker, or they'd end the quote. A blank line
             // inside one gets a bare `>`: the parser reads lines after `trimEnd()`, so writing
             // `'> '` there means the file we save differs from the file we'd load back.
             return content.split('\n').map((line) => `${indent}>${line ? ` ${line}` : ''}`);
-        case 'callout':
+        case 'callout': {
+            // `note` is the default for a callout the EDITOR created; one read from a file gives
+            // back the kind and fold marker it came with.
+            const marker = `[!${block.calloutKind ?? 'note'}]${block.calloutFold ?? ''}`;
             return content
                 .split('\n')
                 .map((line, at) =>
                     at === 0
-                        ? `${indent}> [!note]${line ? ` ${line}` : ''}`
+                        ? `${indent}> ${marker}${line ? ` ${line}` : ''}`
                         : `${indent}>${line ? ` ${line}` : ''}`,
                 );
+        }
         case 'bulleted':
             return prefixed(content, indent, '- ');
         case 'numbered':
@@ -200,18 +217,84 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
 }
 
 /**
+ * Anything that would open a DIFFERENT block if it began a line.
+ *
+ * A paragraph is written with no marker of its own, so a line inside one that happens to start with
+ * `#`, `- `, `> ` or `---` was read back as a heading, a list item, a quote or a divider. It was
+ * silent (the bytes matched, so the round-trip check saw nothing wrong) and the divider case LOST
+ * the text outright, since a divider carries none. Soft-broken paragraphs hit it too: type `hello`,
+ * shift+Enter, `- item`, and the second line became a list on the next load.
+ *
+ * One backslash is enough — the parser's block patterns are matched against the raw line, which no
+ * longer starts with the marker, and the inline layer then unescapes any ASCII punctuation.
+ *
+ * Only markers that flip the block type UNCONDITIONALLY are listed here. `<details>` and a leading
+ * `|` need a SECOND line to mean anything (a matching `</details>`, a separator row) and so are
+ * handled by {@link escapeBlockStarts}, which can see the whole block: escaping them
+ * unconditionally would put a backslash in the user's file to fix a problem that usually isn't
+ * there, but a soft-broken paragraph supplies that second line itself — `| a | b |` ⇧↵
+ * `| --- | --- |` came back as a TABLE, with the separator line consumed and gone.
+ */
+// `\s`, not a literal space: the PARSER's block patterns all use `\s+`, so `#\tfoo` is a heading to
+// it. Matching only a space here wrote that line unescaped and it came back as a heading with the
+// tab gone.
+const BLOCK_START = /^(?:#{1,6}(?:\s|$)|[-*+](?:\s|$)|>|`{3,}|~{3,}|-{3,}$|_{3,}$|\*{3,}$)/;
+
+/** An ordered-list marker, whose escapable character is the `.` or `)` — not the digits. */
+const ORDERED_START = /^(\d+)[.)](?=\s|$)/;
+
+/**
+ * Escape a block's lines together, so the rules that need more than one line can see it.
+ *
+ * A `|` line only starts a table when the NEXT line is a separator row; a `<details>` only opens a
+ * toggle when a later line closes it. Escaping either one unconditionally would churn ordinary
+ * prose, so they are escaped exactly when the follow-on that gives them meaning is present.
+ */
+function escapeBlockStarts(lines: string[]): string[] {
+    const closesToggle = lines.some((line) => /^<\/details>\s*$/i.test(line));
+    return lines.map((line, at) => {
+        if (/^\|/.test(line) && isSeparatorLine(lines[at + 1] ?? '')) return `\\${line}`;
+        if (closesToggle && /^<\/?details[\s>]/i.test(line)) return `\\${line}`;
+        return escapeBlockStart(line);
+    });
+}
+
+/** The `| --- | :-: |` row that turns the line above it into a table header. */
+function isSeparatorLine(line: string): boolean {
+    return /^\|(?:\s*:?-+:?\s*\|)+$/.test(line.trim());
+}
+
+function escapeBlockStart(line: string): string {
+    // Only ASCII PUNCTUATION can carry a backslash escape in CommonMark, so `\1.` is not an escape
+    // at all — the backslash stays literal text and the next save escapes THAT, gaining one more
+    // every time. The escape has to land on the marker's punctuation instead: `1\. item`, which the
+    // parser's `\d+[.)]` no longer matches and the inline layer unescapes straight back.
+    const ordered = ORDERED_START.exec(line);
+    if (ordered) return `${ordered[1]}\\${line.slice(ordered[1].length)}`;
+    return BLOCK_START.test(line) ? `\\${line}` : line;
+}
+
+/**
  * Lay a marker in front of a block's content. Continuation lines (a soft break inside the block)
  * are indented to the marker's width, which is what keeps them part of the same list item.
  */
 function prefixed(content: string, indent: string, marker: string): string[] {
-    const [first, ...rest] = content.split('\n');
+    const [first] = content.split('\n');
     const hanging = indent + ' '.repeat(marker.length);
     // An empty block writes its marker with no trailing space. The parser reads lines after
     // `trimEnd()`, so `'- '` reached it as `'-'` — which its `\s+`-requiring patterns rejected,
     // degrading an emptied-out list item into a paragraph containing a literal dash (and an empty
     // to-do into a bullet containing a literal `[ ]`). The parser accepts the bare marker instead.
-    const head = first === '' ? `${indent}${marker.trimEnd()}` : `${indent}${marker}${first}`;
-    return [head, ...rest.map((line) => (line ? `${hanging}${line}` : ''))];
+    // Any line written WITHOUT a marker of its own has to be escaped, or it opens a different block
+    // on the way back in — see `escapeBlockStart`. That is a paragraph's first line (it has no
+    // marker at all) and every block's CONTINUATION lines: a to-do holding `line one` ⇧↵ `- line
+    // two` came back as a to-do plus a nested bullet.
+    // Escaped as a GROUP: the `|` and `<details>` rules need to see the neighbouring lines.
+    const escaped = escapeBlockStarts(content.split('\n'));
+    const [firstEscaped, ...restEscaped] = escaped;
+    const body = marker === '' ? firstEscaped : first;
+    const head = first === '' ? `${indent}${marker.trimEnd()}` : `${indent}${marker}${body}`;
+    return [head, ...restEscaped.map((line) => (line ? `${hanging}${line}` : ''))];
 }
 
 /**
@@ -226,12 +309,6 @@ function imageSize(block: Block): string {
     // out — a rewrite of markup the parser demonstrably understood.
     if (width === undefined && height === undefined) return '';
     return ` =${width ?? ''}x${height ?? ''}`;
-}
-
-function longestBacktickRun(text: string): number {
-    let longest = 0;
-    for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
-    return longest;
 }
 
 /**

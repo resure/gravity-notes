@@ -73,9 +73,17 @@ function canonical(markdown: string): string {
             .replace(/\\([!-/:-@[-`{-~])/g, '$1')
             // `_emphasis_` and `*emphasis*` are the same markup; we always write the asterisk form.
             .replace(/_/g, '*')
+            // `*`, `+` and `-` are the same bullet; we always write the dash.
+            .replace(/^[*+] /gm, '- ')
             // Table cell padding and trailing spaces are layout, not content.
             .replace(/[ \t]+/g, ' ')
             .replace(/^ | $/gm, '')
+            // Inside a TABLE ROW, the spaces around the pipes and the length of the separator's
+            // dash run are layout too — GFM reads `| --- |` and `| ------- |` identically, and a
+            // cell whose text gained an escape widens its whole column, which changes every
+            // separator in the table. Scoped to lines that are a table row so a dash run in prose
+            // or inside a code fence is still compared verbatim.
+            .replace(/^\|.*\|$/gm, (row) => row.replace(/ ?\| ?/g, '|').replace(/-{3,}/g, '---'))
             // A run of blank lines means one blank line.
             .replace(/\n{2,}/g, '\n\n')
             .trim()

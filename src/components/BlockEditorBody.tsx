@@ -76,6 +76,16 @@ function firstContent(root: HTMLElement | null): HTMLElement | null {
     return root?.querySelector<HTMLElement>('.block .content') ?? null;
 }
 
+/**
+ * The last place in the document a caret can go. Tables and images render no `.content`, so a note
+ * ending in one has to fall back to its last table cell — otherwise "click below the note" landed
+ * the caret at the end of the last paragraph, in the middle of the document.
+ */
+function lastEditable(root: HTMLElement | null): HTMLElement | null {
+    const candidates = root?.querySelectorAll<HTMLElement>('.block .content, .table-cell-content');
+    return candidates?.[candidates.length - 1] ?? null;
+}
+
 function placeCaret(element: HTMLElement, position: 'start' | 'end'): void {
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -217,12 +227,28 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
              */
             toggleMode: toggleSourceMode,
             moveCursorToStart() {
+                // Source mode is a textarea, not blocks — without this branch every caret handoff
+                // silently did nothing for exactly the notes that fall back to it, which is the
+                // largest group of all. Arrowing down from the title left the caret wherever the
+                // browser had last put it.
+                const markup = markupRef.current;
+                if (source && markup) {
+                    markup.setSelectionRange(0, 0);
+                    return;
+                }
                 const target = firstContent(rootRef.current);
                 if (target) placeCaret(target, 'start');
             },
             moveCursorEnd() {
-                const blocks = rootRef.current?.querySelectorAll<HTMLElement>('.block .content');
-                const last = blocks?.[blocks.length - 1];
+                const markup = markupRef.current;
+                if (source && markup) {
+                    markup.setSelectionRange(markup.value.length, markup.value.length);
+                    return;
+                }
+                // The LAST block, not the last `.content`: a table renders `.table-cell-content` and
+                // an image renders a `<figure>`, so a note ending in either put the caret at the end
+                // of the last PARAGRAPH — above them — when the user clicked below the note.
+                const last = lastEditable(rootRef.current);
                 if (last) placeCaret(last, 'end');
             },
             /** Enter from the title: open a fresh empty block above everything and land on it. */
@@ -233,15 +259,23 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             },
             /** Backspace-into-the-title only applies when the caret sits in an empty first block. */
             atEmptyFirstLine() {
+                const markup = markupRef.current;
+                if (source && markup) {
+                    // In source mode the equivalent is the caret at the very start of an empty
+                    // first line, which is what makes Backspace mean "leave for the title".
+                    if (document.activeElement !== markup) return false;
+                    return markup.selectionStart === 0 && markup.value.split('\n')[0] === '';
+                }
                 const first = firstContent(rootRef.current);
                 if (!first || document.activeElement !== first) return false;
                 return (first.textContent ?? '') === '';
             },
             removeEmptyFirstLine() {
-                // The first block is empty and the caret is leaving for the title; the block editor
-                // keeps at least one block, so there is nothing to remove — blur so the caret does
-                // not linger in a surface the user has left.
-                firstContent(rootRef.current)?.blur();
+                // The first line is empty and the caret is leaving for the title; both surfaces keep
+                // their content, so there is nothing to remove — blur so the caret does not linger
+                // in a surface the user has left.
+                if (source) markupRef.current?.blur();
+                else firstContent(rootRef.current)?.blur();
             },
             focusPreview() {
                 previewRef.current?.focus();
@@ -259,12 +293,6 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             else if (source) markupRef.current?.focus();
             else editorRef.current?.focus();
         }, [preview, source]);
-
-        // Preview renders the LIVE buffer (what is on screen), not what is on disk, so ⌘⇧P shows
-        // unsaved edits.
-        if (preview) {
-            return <NotePreview ref={previewRef} markup={bufferRef.current} />;
-        }
 
         // Raw Markdown: a plain textarea over the same buffer. Deliberately not CodeMirror — this is
         // the "just let me see the file" escape hatch (and the safe surface for a note the block
@@ -299,26 +327,38 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             );
         }
 
+        // Preview renders the LIVE buffer (what is on screen), not what is on disk, so ⌘⇧P shows
+        // unsaved edits — and the editor stays MOUNTED behind it, merely hidden.
+        //
+        // Replacing it outright cost the whole undo history: ⌘⇧P and back unmounted the editor, so
+        // ⌘Z no longer undid anything typed before the toggle, and the caret was restored from
+        // whatever `initialCaret` held at the last note switch rather than from where the user
+        // actually was. Preview is read-only, so the buffer cannot move underneath it and the
+        // mounted editor stays correct. The SOURCE view above is different and still remounts: the
+        // textarea can rewrite the buffer, and the editor only reads `value` at mount.
         return (
-            <div ref={rootRef}>
-                <BlockEditor
-                    ref={editorRef}
-                    key={sessionId}
-                    value={bufferRef.current}
-                    autofocus={autofocus}
-                    initialCaret={restoreRef.current?.caret ?? null}
-                    notes={wikiNotes}
-                    noteId={note.id}
-                    onChange={handleChange}
-                    onWikiLinkNavigate={onOpenWikiLink}
-                    // Swallowing to null keeps the insert loop simple (it skips the file), and is
-                    // only acceptable because `Workspace.handleUploadFile` has already surfaced the
-                    // failure through the toaster — without that, a failed drop was completely silent.
-                    onAttachFile={(file) => onUploadFile(file).catch(() => null)}
-                    onLeaveTop={onLeaveTop}
-                    onEscape={onEscape}
-                />
-            </div>
+            <>
+                {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
+                <div ref={rootRef} style={preview ? {display: 'none'} : undefined}>
+                    <BlockEditor
+                        ref={editorRef}
+                        key={sessionId}
+                        value={bufferRef.current}
+                        autofocus={autofocus}
+                        initialCaret={restoreRef.current?.caret ?? null}
+                        notes={wikiNotes}
+                        noteId={note.id}
+                        onChange={handleChange}
+                        onWikiLinkNavigate={onOpenWikiLink}
+                        // Swallowing to null keeps the insert loop simple (it skips the file), and is
+                        // only acceptable because `Workspace.handleUploadFile` has already surfaced the
+                        // failure through the toaster — without that, a failed drop was completely silent.
+                        onAttachFile={(file) => onUploadFile(file).catch(() => null)}
+                        onLeaveTop={onLeaveTop}
+                        onEscape={onEscape}
+                    />
+                </div>
+            </>
         );
     },
 );

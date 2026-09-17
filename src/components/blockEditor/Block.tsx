@@ -19,6 +19,8 @@ export interface BlockHandlers {
     onUpdateImage: (id: string, image: Partial<ImageData>) => void;
     onKeyDown: (e: KeyboardEvent<HTMLDivElement>, id: string) => void;
     onPaste: (e: ClipboardEvent<HTMLDivElement>, id: string) => void;
+    /** Copy/cut of a selection INSIDE a block — serialized as Markdown, not rendered text. */
+    onCopyCut: (e: ClipboardEvent<HTMLDivElement>, id: string) => void;
     /** ⌘-click, for following a `[[wiki link]]` under the pointer. */
     onContentMouseDown: (e: MouseEvent<HTMLDivElement>, id: string) => void;
     onFocus: (id: string) => void;
@@ -129,6 +131,8 @@ function Block({
             onMouseDown={(e) => handlers.onContentMouseDown(e, block.id)}
             onKeyDown={(e) => handlers.onKeyDown(e, block.id)}
             onPaste={(e) => handlers.onPaste(e, block.id)}
+            onCopy={(e) => handlers.onCopyCut(e, block.id)}
+            onCut={(e) => handlers.onCopyCut(e, block.id)}
             onFocus={() => handlers.onFocus(block.id)}
             onBlur={() => handlers.onBlur(block.id)}
         />

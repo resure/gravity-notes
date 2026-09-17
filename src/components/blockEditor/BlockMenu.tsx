@@ -84,8 +84,18 @@ export default function BlockMenu({
         const onMouseDown = (event: globalThis.MouseEvent) => {
             if (!ref.current?.contains(event.target as Node)) onClose();
         };
+        // This menu is `position: fixed`, anchored to a handle measured once when it opened. Scroll
+        // the pane and it stayed put while its block moved away. Unlike the caret-anchored menus
+        // there is nothing to follow — scrolling with a click-menu open IS a dismissal — so close.
+        // Captured: `scroll` does not bubble, and it is the PANE that scrolls, not the document.
         document.addEventListener('mousedown', onMouseDown);
-        return () => document.removeEventListener('mousedown', onMouseDown);
+        window.addEventListener('scroll', onClose, true);
+        window.addEventListener('resize', onClose);
+        return () => {
+            document.removeEventListener('mousedown', onMouseDown);
+            window.removeEventListener('scroll', onClose, true);
+            window.removeEventListener('resize', onClose);
+        };
     }, [onClose]);
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

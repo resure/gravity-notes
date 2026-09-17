@@ -6,8 +6,8 @@ import {
     useState,
 } from 'react';
 
-import {useAttachmentCache} from '../../attachments';
-import {basename, isAttachmentRef} from '../../storage/noteText';
+import {useAttachmentCache, useAttachmentUrl} from '../../attachments';
+import {basename} from '../../storage/noteText';
 import {Lightbox} from '../Lightbox';
 
 import {ExpandIcon, PencilIcon} from './icons';
@@ -48,47 +48,7 @@ export default function AttachmentImage({
     const cache = useAttachmentCache();
     const src = block.image?.src ?? '';
     const alt = block.image?.alt ?? '';
-    const attachment = isAttachmentRef(src);
-    const [url, setUrl] = useState<string | undefined>(() => (attachment ? cache?.peek(src) : src));
-    const [failed, setFailed] = useState(false);
-
-    useEffect(() => {
-        if (!src) return undefined;
-        // An absolute URL needs no resolution — only in-vault refs go through the cache.
-        if (!attachment) {
-            setUrl(src);
-            setFailed(false);
-            return undefined;
-        }
-        if (!cache) {
-            setFailed(true);
-            return undefined;
-        }
-        // `failed` latches, so clear it when the ref changes: the new one is unproven, not missing.
-        setFailed(false);
-        // A closure flag, not a retired resource — this only tells a late promise to stop talking,
-        // so it doesn't run into the StrictMode hazard of a cleanup retiring something still live.
-        let alive = true;
-        const load = () => {
-            cache
-                .resolve(src)
-                .catch(() => '')
-                .then((resolved) => {
-                    if (!alive) return;
-                    setUrl(resolved || undefined);
-                    setFailed(!resolved);
-                });
-        };
-        // `notify` fires when this attachment is deleted from the manager — its URL is already
-        // revoked, so re-run the whole load: a bare `peek` would return undefined, which renders as
-        // "still loading" rather than broken.
-        const unsubscribe = cache.subscribe(src, load);
-        load();
-        return () => {
-            alive = false;
-            unsubscribe();
-        };
-    }, [cache, src, attachment]);
+    const {url, failed} = useAttachmentUrl(src, cache);
 
     // Live width during a resize drag; cleared once the committed value catches up (avoids a flash).
     const [dragWidth, setDragWidth] = useState<number | null>(null);

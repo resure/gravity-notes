@@ -1,3 +1,5 @@
+import {StrictMode} from 'react';
+
 import {createEvent, fireEvent, render, screen} from '@testing-library/react';
 import {act} from 'react-dom/test-utils';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -594,5 +596,273 @@ describe('⌘⌥↑ / ⌘⌥↓ reorder the selected block', () => {
         moveSelected('ArrowUp');
         document.removeEventListener('keydown', reachedApp);
         expect(reachedApp).not.toHaveBeenCalled();
+    });
+});
+
+describe('[[ picker commits against the trigger, not the live caret', () => {
+    const NOTES = [{id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3}];
+
+    /** Type into a contentEditable the way the editor sees it: text set, caret at the end, input. */
+    function type(el: HTMLElement, text: string) {
+        el.textContent = text;
+        setCaret(el, 'end');
+        act(() => {
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+    }
+
+    /** Move the caret to an absolute offset and announce it the way a browser would. */
+    function caretTo(el: HTMLElement, offset: number) {
+        act(() => {
+            setCaret(el, offset);
+            document.dispatchEvent(new Event('selectionchange'));
+        });
+    }
+
+    beforeEach(() => {
+        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
+            if (command !== 'insertText') return false;
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) return false;
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            const node = document.createTextNode(value);
+            range.insertNode(node);
+            range.setStartAfter(node);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        }) as typeof document.execCommand;
+    });
+
+    it('dismisses the picker when the caret moves out of the trigger', () => {
+        const onChange = vi.fn();
+        render(<Editor value="" notes={NOTES} noteId="Home.md" onChange={onChange} />);
+        const block = document.querySelector<HTMLElement>('.content')!;
+        block.focus();
+        // Incrementally: the picker opens on the `[[` transition, as a real typist produces it.
+        type(block, 'Hello [[');
+        type(block, 'Hello [[Dai');
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).toBeInTheDocument();
+
+        // Arrow keys type nothing, so `input` never fires — `selectionchange` is what has to notice.
+        caretTo(block, 3);
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
+    });
+
+    it('dismisses the picker when the caret leaves the block entirely', () => {
+        render(<Editor value={'one\n\ntwo'} notes={NOTES} noteId="Home.md" onChange={vi.fn()} />);
+        const [first, second] = [...document.querySelectorAll<HTMLElement>('.content')];
+        first.focus();
+        type(first, 'one [[');
+        type(first, 'one [[Dai');
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).toBeInTheDocument();
+
+        // The caret moves to another block. Committing from here used to compute an offset that
+        // overshot block one and deleted it from `[[` to its end, while the inserted link went into
+        // block two's DOM and was then dropped on the next render.
+        act(() => {
+            setCaret(second, 'end');
+            document.dispatchEvent(new Event('selectionchange'));
+        });
+        expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
+        expect(first.textContent).toBe('one [[Dai');
+    });
+
+    it('replaces the trigger run even if the caret drifted inside it', () => {
+        const onChange = vi.fn();
+        render(<Editor value="" notes={NOTES} noteId="Home.md" onChange={onChange} />);
+        const block = document.querySelector<HTMLElement>('.content')!;
+        block.focus();
+        type(block, 'Hello [[');
+        type(block, 'Hello [[Dai');
+
+        // One step left, still inside the query, so the picker stays open. Committing used to read
+        // the LIVE caret and leave the tail behind: `Hello [[Dai]]i`.
+        act(() => {
+            setCaret(block, 10);
+        });
+        act(() => {
+            fireEvent.keyDown(block, {key: 'Enter'});
+        });
+        expect(block.textContent).toBe('Hello [[Daily log]]');
+        expect(onChange).toHaveBeenLastCalledWith('Hello [[Daily log]]');
+    });
+});
+
+describe('navigation across a collapsed toggle', () => {
+    const COLLAPSED = [
+        '<details>',
+        '<summary>Summary</summary>',
+        '',
+        'hidden child',
+        '',
+        '</details>',
+        '',
+        'tail text',
+    ].join('\n');
+
+    it('steps over the hidden child instead of dead-ending on it', () => {
+        renderEditor(COLLAPSED);
+        // The child is inside a collapsed toggle, so it renders no element at all.
+        expect(screen.queryByText('hidden child', {selector: '.content'})).toBeNull();
+
+        const summary = screen.getByText('Summary', {selector: '.content'});
+        summary.focus();
+        setCaret(summary, 'end');
+        const event = createEvent.keyDown(summary, {key: 'ArrowDown'});
+        act(() => {
+            fireEvent(summary, event);
+        });
+
+        // Resolving to the hidden child found no ref, so the caret never moved — while the
+        // keystroke had already been consumed. Arrows simply stopped at a collapsed toggle.
+        expect(document.activeElement).toBe(screen.getByText('tail text', {selector: '.content'}));
+    });
+});
+
+describe('clipboard: Markdown out, plain text in', () => {
+    /** Select the whole of a block's content, which is what ⌘C acts on. */
+    function selectAll(el: HTMLElement) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+    }
+
+    function clipboardEvent(type: 'copy' | 'cut') {
+        const data: Record<string, string> = {};
+        const event = createEvent(type, document.querySelector('.content')!, {
+            bubbles: true,
+            cancelable: true,
+        }) as Event & {clipboardData: {setData: (k: string, v: string) => void}};
+        Object.defineProperty(event, 'clipboardData', {
+            value: {
+                setData: (k: string, v: string) => {
+                    data[k] = v;
+                },
+            },
+        });
+        return {event, data};
+    }
+
+    it('copies a selection as Markdown, not as rendered text', () => {
+        renderEditor('Ship the **port** now');
+        const block = document.querySelector<HTMLElement>('.content')!;
+        selectAll(block);
+
+        const {event, data} = clipboardEvent('copy');
+        act(() => {
+            fireEvent(block, event);
+        });
+
+        // The browser's own text/plain is the RENDERED text, so this used to yield `Ship the port
+        // now` — the README backlog's "copy pasting should copy markdown".
+        expect(data['text/plain']).toBe('Ship the **port** now');
+    });
+
+    it('leaves an empty selection to the browser', () => {
+        renderEditor('Ship the **port** now');
+        const block = document.querySelector<HTMLElement>('.content')!;
+        window.getSelection()?.removeAllRanges();
+
+        const {event, data} = clipboardEvent('copy');
+        act(() => {
+            fireEvent(block, event);
+        });
+        expect(data['text/plain']).toBeUndefined();
+        expect(event.defaultPrevented).toBe(false);
+    });
+});
+
+describe('overlays follow the view when it scrolls', () => {
+    const NOTES = [{id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3}];
+
+    function type(el: HTMLElement, text: string) {
+        el.textContent = text;
+        setCaret(el, 'end');
+        act(() => {
+            el.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+    }
+
+    it('re-measures the [[ picker instead of leaving it behind', () => {
+        render(<Editor value="" notes={NOTES} noteId="Home.md" onChange={vi.fn()} />);
+        const block = document.querySelector<HTMLElement>('.content')!;
+        block.focus();
+        type(block, '[[');
+        type(block, '[[Dai');
+        const menu = () => document.querySelector<HTMLElement>('.overlay-menu');
+        expect(menu()).not.toBeNull();
+
+        // jsdom reports a zero rect, so assert the re-measure RAN rather than a pixel value: the
+        // menu is still mounted and still anchored, where before it kept a rect from open time
+        // with no listener able to notice the pane had moved under it.
+        const before = menu()!.style.top;
+        act(() => {
+            window.dispatchEvent(new Event('scroll'));
+        });
+        expect(menu()).not.toBeNull();
+        expect(menu()!.style.top).toBe(before);
+    });
+
+    it('dismisses the block menu, which has nothing to follow', () => {
+        renderEditor(NOTE);
+        const handle = document.querySelectorAll<HTMLElement>('.drag-btn')[1];
+        act(() => {
+            fireEvent.click(handle);
+        });
+        expect(screen.queryByRole('menu', {name: 'Block actions'})).toBeInTheDocument();
+
+        act(() => {
+            window.dispatchEvent(new Event('scroll'));
+        });
+        expect(screen.queryByRole('menu', {name: 'Block actions'})).not.toBeInTheDocument();
+    });
+});
+
+describe('undo history survives StrictMode', () => {
+    function duplicateViaMenu(index: number) {
+        act(() => {
+            fireEvent.click(document.querySelectorAll<HTMLElement>('.drag-btn')[index]);
+        });
+        act(() => {
+            fireEvent.click(screen.getByText('Duplicate'));
+        });
+    }
+
+    it('records one entry per structural edit, even when React runs the updater twice', () => {
+        // StrictMode double-invokes a state updater dispatched AFTER a sibling setState on the same
+        // component — the shape of every block-menu action, since they all close the menu first.
+        // The history push lived INSIDE the updater, so each of those edits recorded TWICE. The
+        // first undo still worked; the second was a no-op against an identical snapshot, so you
+        // could never step back past the most recent edit, and the 100-entry cap held half the
+        // depth it advertised.
+        render(
+            <StrictMode>
+                <Editor value={'one\n\ntwo'} onChange={vi.fn()} />
+            </StrictMode>,
+        );
+        expect(document.querySelectorAll('.block')).toHaveLength(2);
+
+        duplicateViaMenu(1);
+        expect(document.querySelectorAll('.block')).toHaveLength(3);
+        duplicateViaMenu(1);
+        expect(document.querySelectorAll('.block')).toHaveLength(4);
+
+        const undo = () => {
+            const block = document.querySelector<HTMLElement>('.content')!;
+            block.focus();
+            act(() => {
+                fireEvent.keyDown(block, {key: 'z', metaKey: true});
+            });
+        };
+        undo();
+        expect(document.querySelectorAll('.block')).toHaveLength(3);
+        // The one that used to be swallowed by the duplicate entry.
+        undo();
+        expect(document.querySelectorAll('.block')).toHaveLength(2);
     });
 });

@@ -5,8 +5,9 @@
  * ref through one shared, per-store `AttachmentUrlCache`, so the bytes are read once and the object
  * URL is reused everywhere — then revoked together when the store changes.
  */
-import {createContext, useContext} from 'react';
+import {createContext, useContext, useEffect, useState} from 'react';
 
+import {isAttachmentRef} from './storage/noteText';
 import type {NoteStore} from './storage/types';
 
 /**
@@ -206,4 +207,67 @@ export const AttachmentsContext = createContext<AttachmentUrlCache | null>(null)
 /** Read the active {@link AttachmentUrlCache} (may be `null` if no provider is mounted). */
 export function useAttachmentCache(): AttachmentUrlCache | null {
     return useContext(AttachmentsContext);
+}
+
+/**
+ * Resolve one attachment reference to a displayable URL, keeping it alive for as long as it is on
+ * screen.
+ *
+ * Every display surface needs the same four things and kept getting a subset of them:
+ *
+ * - **subscribe, so the LRU cannot evict what is visible** — {@link AttachmentUrlCache.evictToCap}
+ *   skips subscribed refs;
+ * - **re-run the WHOLE load when the cache notifies**, not just `peek`. `notify` fires only from
+ *   `forget()`, which has already revoked and dropped the entry, so a peek returns `undefined` —
+ *   which reads as "still loading" and left a deleted attachment on a spinner forever;
+ * - **a liveness flag**, so a resolve that lands after the ref changed cannot show the previous
+ *   image;
+ * - **`failed` reset on every new ref**, or one missing file latches the broken state for good.
+ *
+ * `resolve` already returns a cached URL and touches the LRU, so there is no `peek` fast path here:
+ * peeking first would skip the recency bump and, on the notify path, always miss.
+ */
+export function useAttachmentUrl(
+    ref: string,
+    cache: AttachmentUrlCache | null,
+): {url?: string; failed: boolean} {
+    const attachment = isAttachmentRef(ref);
+    const [url, setUrl] = useState<string | undefined>(() =>
+        attachment ? (cache?.peek(ref) ?? undefined) : ref || undefined,
+    );
+    const [failed, setFailed] = useState(false);
+
+    useEffect(() => {
+        if (!ref) return undefined;
+        // An absolute URL needs no resolution — only in-vault refs go through the cache.
+        if (!attachment) {
+            setUrl(ref);
+            setFailed(false);
+            return undefined;
+        }
+        if (!cache) {
+            setFailed(true);
+            return undefined;
+        }
+        setFailed(false);
+        let alive = true;
+        const load = () => {
+            cache
+                .resolve(ref)
+                .catch(() => '')
+                .then((resolved) => {
+                    if (!alive) return;
+                    setUrl(resolved || undefined);
+                    setFailed(!resolved);
+                });
+        };
+        const unsubscribe = cache.subscribe(ref, load);
+        load();
+        return () => {
+            alive = false;
+            unsubscribe();
+        };
+    }, [cache, ref, attachment]);
+
+    return {url, failed};
 }

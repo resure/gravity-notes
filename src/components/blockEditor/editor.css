@@ -93,6 +93,13 @@
 .gn-block-editor .block[data-type='heading3'] {
     margin-top: 14px;
 }
+.gn-block-editor .block[data-type='heading4'] {
+    margin-top: 12px;
+}
+.gn-block-editor .block[data-type='heading5'],
+.gn-block-editor .block[data-type='heading6'] {
+    margin-top: 10px;
+}
 .gn-block-editor .block[data-type='quote'],
 .gn-block-editor .block[data-type='callout'],
 .gn-block-editor .block[data-type='code'] {
@@ -149,6 +156,22 @@
     font-size: 1.25em;
     font-weight: 600;
     line-height: 1.3;
+}
+.gn-block-editor .block[data-type='heading4'] .content {
+    font-size: 1.1em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+/* H5 and H6 stop shrinking — smaller than body text reads as a caption, not a heading. They lean on
+   weight (and, for H6, colour) instead, which is what Markdown renderers do at this depth. */
+.gn-block-editor .block[data-type='heading5'] .content,
+.gn-block-editor .block[data-type='heading6'] .content {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: var(--gn-editor-line-height, 1.5);
+}
+.gn-block-editor .block[data-type='heading6'] .content {
+    color: var(--n-text-light);
 }
 
 /* inline formatting */
@@ -235,6 +258,10 @@
 .gn-block-editor .block[data-type='heading3'] {
     --gn-block-line: calc(1.3 * 1.25em);
 }
+.gn-block-editor .block[data-type='heading4'] {
+    --gn-block-line: calc(1.3 * 1.1em);
+}
+/* H5/H6 run at body size and body leading, so they take the default line box. */
 
 /* These four are offset by their CONTAINER (padding, borders, a divider's rule) rather than by a
    line box, and their `top` below is calibrated against the old 24px box. Pin them to it so this

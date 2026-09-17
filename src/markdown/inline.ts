@@ -96,7 +96,7 @@ export function escapeMarkdownText(text: string): string {
 }
 
 /** Length of the longest consecutive run of `char` in `text`. */
-function longestRunOf(text: string, char: string): number {
+export function longestRunOf(text: string, char: string): number {
     let longest = 0;
     let current = 0;
     for (const candidate of text) {
@@ -174,7 +174,13 @@ export function inlineHtmlToMarkdown(html: string): string {
     let codeFence = '`';
     // `start` is where this anchor's content begins in `out`, so an autolink whose label has been
     // EDITED can rewind and re-emit itself in the `[label](href)` form (see the closing tag below).
-    const openLinks: {href: string; autolink: boolean; start: number; text: string}[] = [];
+    const openLinks: {
+        href: string;
+        title?: string;
+        autolink: boolean;
+        start: number;
+        text: string;
+    }[] = [];
 
     const pushText = (text: string) => {
         const decoded = decodeEntities(text);
@@ -257,11 +263,18 @@ export function inlineHtmlToMarkdown(html: string): string {
                     else {
                         out += `[${escapeMarkdownText(link.text)}](${encodeLinkDestination(link.href)})`;
                     }
-                } else out += `](${encodeLinkDestination(link?.href ?? '')})`;
+                } else {
+                    // CommonMark's optional title rides after the destination. Without this it was
+                    // read as part of the href, which then contained a space — so the writer wrapped
+                    // the lot in `<>` and the link was rewritten on every save.
+                    const title = link?.title ? ` "${link.title}"` : '';
+                    out += `](${encodeLinkDestination(link?.href ?? '')}${title})`;
+                }
             } else {
                 const autolink = tag.attrs['data-autolink'] !== undefined;
                 openLinks.push({
                     href: tag.attrs.href ?? '',
+                    title: tag.attrs.title,
                     autolink,
                     start: out.length,
                     text: '',
@@ -284,8 +297,19 @@ export function inlineHtmlToMarkdown(html: string): string {
  * Whitespace always needs the wrapper. Parentheses only need it when they are UNBALANCED: the reader
  * counts nesting, so `…/Rust_(programming_language)` closes correctly on its own, and wrapping it
  * anyway meant every note holding a Wikipedia link was rewritten the first time it was saved.
+ *
+ * The one whitespace exception is a YFM image SIZE suffix (`url =206x116`). That space is part of
+ * the image syntax rather than part of the URL, both halves of this module read it back correctly,
+ * and it is what this app itself writes for a sized image — so wrapping it rewrote the file for a
+ * problem that wasn't there.
  */
+// At least one dimension: `=x` is degenerate, and `fromMarkdown` deliberately REFUSES to read it
+// as an image so the note falls back to source. Allowing it here made that refusal round-trip
+// byte-identically, so the guard blessed it and the note opened with a literal `!` and a link.
+const SIZED_IMAGE = /^\S+ =(?:\d+x\d*|\d*x\d+)$/;
+
 export function encodeLinkDestination(href: string): string {
+    if (SIZED_IMAGE.test(href)) return href;
     return /\s/.test(href) || !hasBalancedParens(href) ? `<${href}>` : href;
 }
 
@@ -346,11 +370,12 @@ function parseInline(text: string): string {
                 i += 2;
                 continue;
             }
-            // `<` belongs here with the rest: left out, the backslash stayed literal text and the
-            // serializer then escaped IT, so `\<` came back as `\\<` — a visible backslash the user
-            // never typed. CommonMark lets any ASCII punctuation be escaped; this is the subset the
-            // parser can act on.
-            if (next !== undefined && /[\\`*_~[\]()#+\-.!<>]/.test(next)) {
+            // CommonMark lets ANY ASCII punctuation be backslash-escaped, so unescape all of it.
+            // A narrower set was actively harmful: a character it missed left the backslash as
+            // literal text, and the serializer then escaped THAT — `\<` came back as `\\<` and
+            // `\[\^1\]` as `\[\\^1\]`, visible backslashes the user never typed, multiplying on
+            // every save.
+            if (next !== undefined && /[!-/:-@[-`{-~]/.test(next)) {
                 plain += next;
                 i += 2;
                 continue;
@@ -423,7 +448,8 @@ function parseInline(text: string): string {
             const link = matchLink(text, i);
             if (link) {
                 flush();
-                out += `<a href="${escapeHtml(link.href)}" rel="noopener noreferrer">${parseInline(link.label)}</a>`;
+                const title = link.title ? ` title="${escapeHtml(link.title)}"` : '';
+                out += `<a href="${escapeHtml(link.href)}"${title} rel="noopener noreferrer">${parseInline(link.label)}</a>`;
                 i = link.end;
                 continue;
             }
@@ -449,6 +475,8 @@ function parseInline(text: string): string {
 interface LinkMatch {
     label: string;
     href: string;
+    /** CommonMark's optional link title — the `"…"` after the destination. */
+    title?: string;
     end: number;
 }
 
@@ -467,7 +495,12 @@ function matchLink(text: string, start: number): LinkMatch | null {
     if (depth !== 0 || text[i + 1] !== '(') return null;
     const destination = matchDestination(text, i + 2);
     if (!destination) return null;
-    return {label: text.slice(start + 1, i), href: destination.href, end: destination.end};
+    return {
+        label: text.slice(start + 1, i),
+        href: destination.href,
+        title: destination.title,
+        end: destination.end,
+    };
 }
 
 /**
@@ -482,7 +515,10 @@ function matchLink(text: string, start: number): LinkMatch | null {
  * The bare form now balances nested parens instead of stopping at the first one, which is what
  * CommonMark does and what makes `…/Foo_(bar)` survive without the `<>` wrapper at all.
  */
-function matchDestination(text: string, start: number): {href: string; end: number} | null {
+function matchDestination(
+    text: string,
+    start: number,
+): {href: string; title?: string; end: number} | null {
     let i = start;
     while (i < text.length && /\s/.test(text[i])) i++;
 
@@ -490,10 +526,9 @@ function matchDestination(text: string, start: number): {href: string; end: numb
         const close = text.indexOf('>', i + 1);
         if (close === -1) return null;
         const href = text.slice(i + 1, close);
-        let after = close + 1;
-        while (after < text.length && /\s/.test(text[after])) after++;
-        if (text[after] !== ')') return null;
-        return {href, end: after + 1};
+        const tail = matchTitle(text, close + 1);
+        if (!tail) return null;
+        return {href, title: tail.title, end: tail.end};
     }
 
     let depth = 0;
@@ -503,11 +538,36 @@ function matchDestination(text: string, start: number): {href: string; end: numb
         const char = text[i];
         if (char === '(') depth++;
         else if (char === ')') {
-            if (depth === 0) return {href: text.slice(from, i).trim(), end: i + 1};
+            if (depth === 0) {
+                // The destination may be followed by a TITLE. Splitting it off here is what keeps
+                // `[x](url "Title")` from folding the whole thing into the href — which then had a
+                // space in it, so the writer wrapped it in `<>` and rewrote the link on every save.
+                const raw = text.slice(from, i).trim();
+                const quoted = /^(\S+)\s+"([^"]*)"$/.exec(raw);
+                if (quoted) return {href: quoted[1], title: quoted[2], end: i + 1};
+                return {href: raw, end: i + 1};
+            }
             depth--;
         }
     }
     return null;
+}
+
+/** After a `<…>` destination: optional whitespace, an optional `"title"`, then the closing `)`. */
+function matchTitle(text: string, start: number): {title?: string; end: number} | null {
+    let i = start;
+    while (i < text.length && /\s/.test(text[i])) i++;
+    if (text[i] === '"') {
+        const close = text.indexOf('"', i + 1);
+        if (close === -1) return null;
+        const title = text.slice(i + 1, close);
+        let after = close + 1;
+        while (after < text.length && /\s/.test(text[after])) after++;
+        if (text[after] !== ')') return null;
+        return {title, end: after + 1};
+    }
+    if (text[i] !== ')') return null;
+    return {end: i + 1};
 }
 
 interface EmphasisMatch {

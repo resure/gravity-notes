@@ -229,12 +229,12 @@ Markdown over anything clever.
 ## Known limitations
 
 - **A note the block model can't hold opens as raw Markdown.** The block model is smaller than
-  Markdown — headings stop at H3, a callout has nowhere to keep its kind, and YAML frontmatter isn't
-  a block at all — and the parser is line-oriented rather than full CommonMark. Any file holding
-  such a construct fails the load-time check and opens on its source instead. **Measured: 8 of 65
-  notes (12%) in the demo vault, 4 of 13 in a smaller real one.** What remains is mostly headings
-  deeper than H3 and callout kinds; widening the model is what shrinks it further, and the check
-  stays either way.
+  Markdown — YAML frontmatter isn't a block at all, and the parser is line-oriented rather than full
+  CommonMark, so setext headings, indented code blocks, reference links and HTML blocks other than
+  `<details>` all degrade. Any file holding one fails the load-time check and opens on its source
+  instead, fully editable, with nothing re-serialized. **Measured: 0 of 65 notes in the demo vault
+  and 0 of 13 in a smaller real one now fall back** (they were 45% and 85%); the check stays either
+  way, for the constructs nobody has hit yet.
 - **Editing a note may normalise how its Markdown is spelled.** The check is no longer byte-exact:
   a note also passes when the only differences are spellings that mean the same thing — a redundant
   backslash escape (`\+` → `+`), `_emphasis_` → `*emphasis*`, cell padding, a run of blank lines.
@@ -250,15 +250,15 @@ Markdown over anything clever.
   characters. A blank block typed in the editor is likewise dropped on save.
 - **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
   deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
-- **Copy/paste is the browser's, not Markdown-aware.** `⌘⇧C` (copy as plain text) and `⌘⇧V` (paste
-  stripping Markdown and rich-text formatting) went with the Gravity editor — they were built as
-  ProseMirror/CodeMirror extensions. Ordinary `⌘C` / `⌘V` work, but copying a selection yields the
-  rendered text rather than its Markdown, and pasting rich HTML doesn't convert. The OS-clipboard
-  helper they used (`src/clipboard.ts`, browser Clipboard API on the web, the Tauri plugin in the
-  app) is still here for a blocks-native port.
 - **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
   (read-only preview highlights them). Two block features have no Markdown spelling and are dropped
-  on save: block **colors** and a table's **header-column** flag.
+  on save: block **colors** and a table's **header-column** flag. Both still apply for the session,
+  and both now say so in a toast when you use them — they used to look exactly like the controls
+  beside them that do persist.
+- **A `[[wiki link]]` has no tooltip.** The previous editor showed Open / Edit / Unlink when the
+  caret sat inside one, with the Edit option re-targeting it through the note picker. That went with
+  the Gravity editor and has no replacement: `⌘↵` and `⌘-click` follow a link, and `[[` creates one,
+  but re-pointing or unlinking means editing the literal text.
 - **Bare URLs are not linkified as you type.** `<https://example.com>` (a CommonMark autolink) and
   `[text](url)` render as real links; a bare `https://example.com` stays plain text until you wrap
   it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a

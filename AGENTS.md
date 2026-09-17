@@ -215,8 +215,11 @@ Key modules:
   visible image's URL (subscribed entries are never evicted) and get notified when it's FORGOTTEN —
   `notify` fires only from `forget()`, so a listener must re-run its whole load rather than `peek`
   (which returns undefined there, and renders as "still loading" instead of broken); `peek`
-  is pure (no LRU touch), `resolve` touches. The stored Markdown always keeps the root-relative ref,
-  never a blob URL.
+  is pure (no LRU touch), `resolve` touches. Display surfaces don't hand-roll that dance — they go
+  through the shared `useAttachmentUrl(ref, cache)` hook (subscribe, re-load on notify, a liveness
+  flag, `failed` reset per ref), which is what the editor's image block and the attachments
+  manager's thumbnail each got a different subset of right. The stored Markdown always keeps the
+  root-relative ref, never a blob URL.
 - `src/hooks/useNotesStorage.ts` — the workspace lifecycle (state machine:
   `loading`/`choosing`/`needs-permission`/`ready`); yields a ready `NoteStore` plus the recents list.
   Bootstrap order: the shell's per-window assignment (`readWindowAssignment`: `window_workspace` +
@@ -325,16 +328,25 @@ Key modules:
   parser, not CommonMark: it must recognise exactly what the writer emits (the round trip is the
   design intent — a load/save cycle must not rewrite a file) and degrade everything else to
   paragraphs. Degrading is only SAFE because the fixed point is **verified, not assumed**:
-  `isRoundTripStable` (`roundTrip.ts`) checks `blocksToMarkdown(markdownToBlocks(text)) === text` and
-  `EditorPane` consults it per session, forcing THAT note onto the raw-source surface when it fails
-  (`forceSource` on `BlockEditorBody`). This is load-bearing, not
-  belt-and-braces: the block engine re-serializes the WHOLE document on every keystroke, so anything
-  the parser reads imperfectly is rewritten across the whole note on the first edit anywhere in it —
-  frontmatter, an H4, a fence's language, a callout's kind, a table's alignment. Anything that widens
-  the parser must keep that check as the backstop, and `markdown.test.ts` pins both halves (the
-  regression corpus of notes this once corrupted, and the constructs the guard is expected to reject).
-  Measured against the demo vault, 36/65 notes currently open in blocks; the biggest remaining
-  causes are fence languages and table cell padding.
+  `isRoundTripStable` (`roundTrip.ts`) checks it per note and `EditorPane` consults it per session,
+  forcing THAT note onto the raw-source surface when it fails (`forceSource` on `BlockEditorBody`).
+  This is load-bearing, not belt-and-braces: the block engine re-serializes the WHOLE document on
+  every keystroke, so anything the parser reads imperfectly is rewritten across the whole note on
+  the first edit anywhere in it. Anything that widens the parser must keep that check as the backstop.
+  The check is NOT byte-identity: it also accepts a note whose only differences survive a
+  `canonical()` normalisation — a redundant backslash escape, `_` vs `*` emphasis, a bullet marker,
+  table cell padding, a separator's dash run, a run of blank lines — PROVIDED the rewrite also
+  settles (a second save must produce the same bytes, so a file can never drift further on each
+  edit). Structure, words and URLs are compared verbatim: a heading level or callout kind changing
+  is a rejection, and frontmatter is refused outright. The blocks therefore carry what they were
+  written WITH, not just what they mean — a code fence's info string and fence character, how many
+  blank lines preceded a block, a callout's kind and fold marker, an ordered list's starting number,
+  and a table's column alignment, written widths and cell padding — because reproducing the source's
+  own spelling is what keeps a save from rewriting it. Measured: 0/65 notes in the demo vault and
+  0/13 in a real one now fall back (they were 45% and 85%). Three test layers pin it:
+  `markdown.test.ts` (the regression corpus of notes this once corrupted, plus what the guard must
+  still reject), `roundTrip.property.test.ts` (20k seeded documents from the grammar, asserting the
+  fixed point settles and that the guard never lies), and the vaults themselves.
   `inline.ts` is a hand-rolled scanner for the span level; four rules matter — a `[[wiki link]]` is
   NEVER escaped (it reaches disk as the literal bytes Obsidian writes, which is what the backlink
   scan looks for) but DOES get a style-only wrapper (`WIKI_LINK_CLASS`, whose text is still the

@@ -122,7 +122,9 @@ describe('BlockEditorBody — leaving the raw view', () => {
 
         act(() => ref.current!.toggleMode());
         act(() => {
-            fireEvent.change(textarea()!, {target: {value: '#### too deep'}});
+            fireEvent.change(textarea()!, {
+                target: {value: '---\ntitle: frontmatter the model has no block for\n---\n\nbody'},
+            });
         });
         act(() => ref.current!.toggleMode()); // refused — latched on source
         expect(textarea()).not.toBeNull();
@@ -150,7 +152,9 @@ describe('BlockEditorBody — leaving the raw view', () => {
 
         act(() => ref.current!.toggleMode());
         act(() => {
-            fireEvent.change(textarea()!, {target: {value: '#### too deep'}});
+            fireEvent.change(textarea()!, {
+                target: {value: '---\ntitle: frontmatter the model has no block for\n---\n\nbody'},
+            });
         });
         act(() => ref.current!.toggleMode());
         expect(textarea()).not.toBeNull();
@@ -193,5 +197,146 @@ describe('BlockEditorBody — leaving the raw view', () => {
 
         expect(textarea()).toBeNull();
         expect(document.querySelector('.gn-block-editor')).not.toBeNull();
+    });
+});
+
+describe('BlockEditorBody — preview keeps the editor alive', () => {
+    const props = {
+        onUploadFile: async () => '',
+        onOpenWikiLink: () => {},
+        wikiNotes: [],
+    };
+
+    it('does not remount the editor when preview is toggled', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const {rerender} = render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'body text')}
+                sessionId={1}
+                preview={false}
+                onChange={vi.fn()}
+                {...props}
+            />,
+        );
+        const before = document.querySelector('.gn-block-editor .content');
+        expect(before).not.toBeNull();
+
+        const view = (preview: boolean) => (
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'body text')}
+                sessionId={1}
+                preview={preview}
+                onChange={vi.fn()}
+                {...props}
+            />
+        );
+        rerender(view(true));
+        rerender(view(false));
+
+        // The SAME element, not an equivalent one: a remount would take the editor's undo history
+        // with it, so ⌘Z stopped undoing anything typed before the toggle.
+        expect(document.querySelector('.gn-block-editor .content')).toBe(before);
+    });
+
+    it('shows the preview and hides the editor while previewing', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'body text')}
+                sessionId={1}
+                preview
+                onChange={vi.fn()}
+                {...props}
+            />,
+        );
+        const hidden = document.querySelector<HTMLElement>('.gn-block-editor')?.parentElement;
+        expect(hidden?.style.display).toBe('none');
+        expect(document.querySelector('.note-preview')).not.toBeNull();
+    });
+});
+
+describe('BlockEditorBody — caret handoffs in source mode', () => {
+    const props = {
+        preview: false,
+        onUploadFile: async () => '',
+        onOpenWikiLink: () => {},
+        wikiNotes: [],
+    };
+    const textarea = () => document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!;
+
+    function renderSource(content: string) {
+        const ref = createRef<BlockEditorBodyHandle>();
+        render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', content)}
+                sessionId={1}
+                onChange={vi.fn()}
+                forceSource
+                {...props}
+            />,
+        );
+        return ref;
+    }
+
+    it('puts the caret at the start and end of the source, not nowhere', () => {
+        // These drive Enter/Arrow from the note title and the click-below-the-note gesture. They
+        // looked for `.block .content`, which source mode has none of, so they did nothing at all —
+        // for exactly the notes that fall back to this surface.
+        const ref = renderSource('one\ntwo');
+        textarea().setSelectionRange(3, 3);
+
+        act(() => ref.current!.moveCursorToStart());
+        expect(textarea().selectionStart).toBe(0);
+
+        act(() => ref.current!.moveCursorEnd());
+        expect(textarea().selectionStart).toBe('one\ntwo'.length);
+    });
+
+    it('hands Backspace back to the title only from an empty first line', () => {
+        const ref = renderSource('\nsecond');
+        textarea().focus();
+        textarea().setSelectionRange(0, 0);
+        expect(ref.current!.atEmptyFirstLine()).toBe(true);
+
+        textarea().setSelectionRange(1, 1);
+        expect(ref.current!.atEmptyFirstLine()).toBe(false);
+    });
+
+    it('does not claim Backspace when the first line has text', () => {
+        const ref = renderSource('one\ntwo');
+        textarea().focus();
+        textarea().setSelectionRange(0, 0);
+        expect(ref.current!.atEmptyFirstLine()).toBe(false);
+    });
+});
+
+describe('BlockEditorBody — the end of the note', () => {
+    it('puts the caret in a trailing table, not in the paragraph above it', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'intro paragraph\n\n| a | b |\n| --- | --- |\n| 1 | 2 |')}
+                sessionId={1}
+                preview={false}
+                onChange={vi.fn()}
+                onUploadFile={async () => ''}
+                onOpenWikiLink={() => {}}
+                wikiNotes={[]}
+            />,
+        );
+
+        act(() => ref.current!.moveCursorEnd());
+
+        // It looked for the last `.block .content`; a table renders `.table-cell-content` and an
+        // image a <figure>, so clicking below the note landed the caret at the end of the last
+        // PARAGRAPH — in the middle of the document.
+        const cells = [...document.querySelectorAll<HTMLElement>('.table-cell-content')];
+        const selected = window.getSelection()?.anchorNode ?? null;
+        expect(cells[cells.length - 1].contains(selected)).toBe(true);
     });
 });

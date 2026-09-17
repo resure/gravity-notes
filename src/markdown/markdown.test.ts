@@ -274,8 +274,12 @@ describe('Markdown → blocks', () => {
         ]);
     });
 
-    it('clamps headings deeper than the editor supports', () => {
-        expect(markdownToBlocks('##### deep')[0].type).toBe('heading3');
+    it('reads every heading level, and stops where CommonMark does', () => {
+        expect(markdownToBlocks('#### four')[0].type).toBe('heading4');
+        expect(markdownToBlocks('##### five')[0].type).toBe('heading5');
+        expect(markdownToBlocks('###### six')[0].type).toBe('heading6');
+        // Seven hashes is not a heading in CommonMark — it is a paragraph that starts with them.
+        expect(markdownToBlocks('####### seven')[0].type).toBe('text');
     });
 
     it('normalises four-space nesting to one level per step', () => {
@@ -514,8 +518,6 @@ describe('round-trip guard', () => {
     it('rejects notes whose constructs the block model cannot represent', () => {
         // Each of these is safe ONLY because the guard keeps the block engine from saving it.
         expect(isRoundTripStable('---\ntags: work\n---\n\nbody')).toBe(false); // frontmatter
-        expect(isRoundTripStable('#### deep')).toBe(false); // headings stop at H3
-        expect(isRoundTripStable('> [!warning] careful')).toBe(false); // callout kind
     });
 
     it('holds the constructs the model was widened to carry', () => {
@@ -526,6 +528,28 @@ describe('round-trip guard', () => {
         expect(isRoundTripStable('| a  | bb |\n| -- | -- |\n| c  | d  |')).toBe(true); // padded
         expect(isRoundTripStable('## Heading\n- tight list under it')).toBe(true); // tight spacing
         expect(isRoundTripStable('- one\n\n- loose')).toBe(true); // loose list
+        expect(isRoundTripStable('#### four\n\n###### six')).toBe(true); // headings to H6
+        expect(isRoundTripStable('> [!warning] careful')).toBe(true); // callout kind
+        expect(isRoundTripStable('> [!tip]- folded')).toBe(true); // …and its fold marker
+        expect(isRoundTripStable('2. two\n3. three')).toBe(true); // a list that starts at 2
+        expect(isRoundTripStable('[x](https://a.dev "Title")')).toBe(true); // link title
+        expect(isRoundTripStable('![](Attachments/a.png =206x116)')).toBe(true); // sized image
+    });
+
+    it('does not let a paragraph line be read back as another kind of block', () => {
+        // A paragraph is written with no marker of its own, so a line inside one that starts with a
+        // block marker used to be read back as that block — silently, since the bytes matched. The
+        // divider case lost the text outright, a divider having none to carry.
+        const asText = (text: string) => markdownToBlocks(blocksToMarkdown([block('text', text)]));
+        // `>` lives HTML-escaped in a block's html, which is what the editor stores.
+        for (const text of ['# not a heading', '- not a list', '&gt; not a quote', '---']) {
+            const [parsed] = asText(text);
+            expect([parsed.type, parsed.html]).toEqual(['text', text]);
+        }
+        // Soft-broken paragraphs hit it too: the SECOND line became a list on the next load.
+        const soft = markdownToBlocks(blocksToMarkdown([block('text', 'hello<br>- item')]));
+        expect(soft).toHaveLength(1);
+        expect(soft[0].html).toBe('hello<br>- item');
     });
 });
 

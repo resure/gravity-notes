@@ -333,3 +333,18 @@ export function tryInlineMarkdown(el: HTMLElement): boolean {
     }
     return false;
 }
+
+/**
+ * The current selection as HTML, or '' when nothing is selected.
+ *
+ * The block editor's content IS html, so this is what the clipboard paths serialize to Markdown:
+ * the browser's own `text/plain` gives the RENDERED text, which is how copying `**bold**` out of a
+ * Markdown app used to yield `bold`.
+ */
+export function selectionHtml(): string {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return '';
+    const holder = document.createElement('div');
+    holder.appendChild(selection.getRangeAt(0).cloneContents());
+    return holder.innerHTML;
+}

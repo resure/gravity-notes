@@ -28,6 +28,8 @@ Markdown files, and they are yours.
   the block model can't represent exactly opens on that source instead, so your file is never
   rewritten to fit the editor
 - **Read-only preview** (`⌘⇧P`), rendering full CommonMark
+- **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add
+  `Shift` to copy or paste plain text with the Markdown stripped
 - **Optional spellcheck** — toggle “Check spelling” in Settings (off by default)
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible
 - **Full-text search** across titles and bodies, ranked, with match snippets
@@ -87,7 +89,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 
 ## Backlog
 
-- Copy pasting wysiwyg should copy markdown, not formatted text
 - Tune line-height
 
 - iCloud dataless files: not-yet-downloaded files list by name/mtime with an empty preview/search

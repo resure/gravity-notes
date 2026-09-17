@@ -8,6 +8,9 @@ export const BLOCK_TYPES = [
     'heading1',
     'heading2',
     'heading3',
+    'heading4',
+    'heading5',
+    'heading6',
     'todo',
     'bulleted',
     'numbered',
@@ -70,6 +73,21 @@ export interface Block {
     language?: string;
     /** The fence character a code block was written with, so `~~~` is not rewritten to ```` ``` ````. */
     fence?: '`' | '~';
+    /**
+     * A callout's kind — the `warning` in `> [!warning]`. The parser always read it and then threw
+     * it away, so every callout was rewritten to `[!note]` on save and no note containing one could
+     * round-trip. Obsidian's fold marker (`-` collapsed, `+` expanded) rides along for the same
+     * reason. The editor offers no UI for either; they exist to be given back unchanged.
+     */
+    calloutKind?: string;
+    calloutFold?: '-' | '+';
+    /**
+     * The number an ordered list STARTED at, recorded on its first item. CommonMark takes the list's
+     * numbering from that first marker, so a list written `5. 6. 7.` — a continuation after some
+     * interrupting prose — is not the same document as one written `1. 2. 3.`, and renumbering it
+     * from 1 rewrote the user's file.
+     */
+    listStart?: number;
     /**
      * How many blank lines stood between this block and the one above it in the source. Markdown
      * treats one and two the same, so the serializer used to impose its own rule — which rewrote a

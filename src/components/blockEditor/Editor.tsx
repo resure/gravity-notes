@@ -15,7 +15,15 @@ import type {
     PointerEvent as ReactPointerEvent,
 } from 'react';
 
-import {WIKI_LINK_CLASS, blocksToMarkdown, markdownToBlocks} from '../../markdown';
+import {readClipboardText, writeClipboardText} from '../../clipboard';
+import {
+    WIKI_LINK_CLASS,
+    blocksToMarkdown,
+    inlineHtmlToMarkdown,
+    inlineHtmlToText,
+    inlineMarkdownToHtml,
+    markdownToBlocks,
+} from '../../markdown';
 import {openExternalUrl} from '../../openExternal';
 import type {NoteMeta} from '../../storage/types';
 import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
@@ -46,6 +54,7 @@ import {
     insertPlainTextAtCaret,
     isEmptyHtml,
     isSafeLinkHref,
+    selectionHtml,
     setCaret,
     splitHtmlAtCaret,
     stripZeroWidth,
@@ -473,10 +482,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     mode === 'input' &&
                     typingGroup.current?.blockId === inputId &&
                     now - typingGroup.current.at < 900;
-                if (!sameTypingGroup) {
+                // React may invoke this updater more than once for a single dispatch — always in
+                // StrictMode, and on any interrupted or replayed render — so the push has to be
+                // idempotent. Identity says it: a re-invocation is handed the SAME `current`, while
+                // a genuinely new edit is handed the previous `next`. Without this, every
+                // structural edit recorded twice in dev, so the first ⌘Z restored an identical
+                // snapshot and appeared to do nothing, and the 100-entry cap held half the depth it
+                // claimed. (Typing hid it: `sameTypingGroup` swallowed the second push.)
+                const alreadyRecorded =
+                    historyPast.current[historyPast.current.length - 1]?.blocks === current;
+                if (!sameTypingGroup && !alreadyRecorded) {
                     historyPast.current.push(captureHistory(current));
                     if (historyPast.current.length > 100) historyPast.current.shift();
                 }
+                // The rest is already idempotent: re-assigning the typing group and clearing the
+                // redo stack say the same thing however many times they run.
                 typingGroup.current = mode === 'input' ? {blockId: inputId, at: now} : null;
                 historyFuture.current = [];
             }
@@ -730,11 +750,27 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onLeaveTop?.();
     };
 
+    /**
+     * The next block in `dir` the caret can actually land on: editable (or a table, whose cells
+     * are), AND visible.
+     *
+     * Visibility was missing, and this is the one primitive every arrow, Tab and merge handoff goes
+     * through — ten call sites. A block hidden inside a collapsed toggle renders no element, so the
+     * handoff resolved to it, found no ref, and did nothing while the keystroke had already been
+     * `preventDefault`ed: arrows simply stopped working at a collapsed toggle, with no caret
+     * movement and no explanation.
+     */
     const findEditableSibling = (id: string, dir: -1 | 1): BlockData | null => {
         const bs = blocksRef.current;
+        const visible = visibleBlockIds(bs);
         let i = bs.findIndex((b) => b.id === id) + dir;
         while (i >= 0 && i < bs.length) {
-            if (isEditableType(bs[i].type) || bs[i].type === 'table') return bs[i];
+            const candidate = bs[i];
+            if (
+                visible.has(candidate.id) &&
+                (isEditableType(candidate.type) || candidate.type === 'table')
+            )
+                return candidate;
             i += dir;
         }
         return null;
@@ -907,6 +943,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * back before the trigger means the user is editing elsewhere.
      */
     const syncWikiMenu = (state: WikiState, el: HTMLElement) => {
+        // The caret has to still be IN the trigger block. Arrow keys and clicks move it without
+        // firing `input`, so without this the picker survived as a ghost pinned to a stale rect —
+        // and committing from it addressed offsets in a block that no longer held the selection.
+        const anchorNode = window.getSelection()?.anchorNode ?? null;
+        if (!anchorNode || !el.contains(anchorNode)) {
+            setWiki(null);
+            return;
+        }
         const text = el.textContent ?? '';
         const offset = getCaretOffset(el);
         if (text.slice(state.anchor, state.anchor + 2) !== '[[' || offset < state.anchor + 2) {
@@ -923,6 +967,66 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             setWikiIndex(0);
         }
     };
+
+    /**
+     * Keep the `[[` picker honest about where the caret is.
+     *
+     * It used to re-sync only on `input`, so every caret move that types nothing — an arrow key,
+     * a click, Home/End — left it open with a stale query and a stale anchor rect. `selectionchange`
+     * is the only event that covers all of them. Registered ONLY while the picker is open, so the
+     * common case pays nothing.
+     */
+    useEffect(() => {
+        if (!wiki) return undefined;
+        const onSelectionChange = () => {
+            const state = wikiRef.current;
+            if (!state) return;
+            const el = refs.current.get(state.blockId);
+            // No element means the block is gone; nothing to sync against, so close.
+            if (!el) {
+                setWiki(null);
+                return;
+            }
+            syncWikiMenu(state, el);
+        };
+        document.addEventListener('selectionchange', onSelectionChange);
+        return () => document.removeEventListener('selectionchange', onSelectionChange);
+        // Only the open/closed transition matters: the handler reads the live state through refs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [wiki !== null]);
+
+    /**
+     * Keep the caret-anchored menus attached to the caret when the view moves.
+     *
+     * They are `position: fixed` in VIEWPORT coordinates, measured once when they open. Scrolling
+     * the pane (or resizing the window) moves the caret underneath them, so the menu stayed where
+     * it was and floated over unrelated paragraphs — while still committing into the block it was
+     * opened from. Re-measuring is cheap and only runs while one is open.
+     *
+     * `scroll` is captured because it does not bubble: the pane scrolls, not the document.
+     */
+    useEffect(() => {
+        const open = slash ?? wiki;
+        if (!open) return undefined;
+        const reposition = () => {
+            const state = slashRef.current ?? wikiRef.current;
+            if (!state) return;
+            const el = refs.current.get(state.blockId);
+            if (!el) return;
+            const line = caretLineRect(el);
+            const rect = {x: line.left, top: line.top, bottom: line.bottom};
+            if (slashRef.current) setSlash({...slashRef.current, rect});
+            else if (wikiRef.current) setWiki({...wikiRef.current, rect});
+        };
+        window.addEventListener('scroll', reposition, true);
+        window.addEventListener('resize', reposition);
+        return () => {
+            window.removeEventListener('scroll', reposition, true);
+            window.removeEventListener('resize', reposition);
+        };
+        // Only the open/closed transition matters; the handler reads live state through refs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [slash !== null, wiki !== null]);
 
     /** Commit a picked note (or the "Create …" row, D19: insert-only) as a literal `[[target]]`. */
     const applyWikiItem = (item: WikiSuggestItem) => {
@@ -941,7 +1045,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     .length > 1;
             if (ambiguous) target = item.note.id.replace(/\.md$/i, '');
         }
-        deleteTextRange(el, state.anchor, getCaretOffset(el));
+        // The range to replace comes from the STATE — the `[[` plus the query it was showing — not
+        // from wherever the caret happens to be. Reading the live caret meant an arrow key between
+        // opening the picker and pressing Enter spliced the link at the wrong offset: one step left
+        // turned `Hello [[ab` into `Hello [[ab]]b`, and five steps left dropped it mid-word and left
+        // the trigger behind to be backslash-escaped into the file on the next save.
+        const text = el.textContent ?? '';
+        const end = state.anchor + 2 + state.query.length;
+        // Re-validate before touching anything: the text can have moved under a stale state.
+        if (text.slice(state.anchor, state.anchor + 2) !== '[[' || end > text.length) return;
+        // `deleteTextRange` leaves the caret at `from`, inside this block, so the insert below is
+        // deterministic even if the selection had wandered elsewhere.
+        deleteTextRange(el, state.anchor, end);
         if (el.innerHTML === '<br>') el.innerHTML = '';
         insertPlainTextAtCaret(`[[${target}]]`);
         commitHtml(state.blockId, el);
@@ -1632,6 +1747,43 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
+        // ⌘⇧C copies the selection as PLAIN text — Markdown syntax stripped — where plain ⌘C
+        // copies it as Markdown (see onCopyCut). ⌘⇧V is the mirror: paste text with any Markdown
+        // in it flattened, so a snippet from elsewhere arrives as words rather than as markup.
+        //
+        // Both go through the OS clipboard rather than a clipboard EVENT: a custom chord fires no
+        // copy/paste event, which is what `src/clipboard.ts` exists for.
+        if (mod && e.shiftKey && e.key.toLowerCase() === 'c') {
+            const html = selectionHtml();
+            if (!html) return;
+            claimChord(e);
+            void writeClipboardText(inlineHtmlToText(html)).catch(() => {
+                showToast('Could not write to the clipboard');
+            });
+            return;
+        }
+        if (mod && e.shiftKey && e.key.toLowerCase() === 'v') {
+            claimChord(e);
+            void readClipboardText()
+                .then((text) => {
+                    if (!text) return;
+                    // Flatten any Markdown to its text, then insert literally: `**bold**` arrives
+                    // as `bold`, not as markup to be re-parsed.
+                    const plain = inlineHtmlToText(inlineMarkdownToHtml(text));
+                    // The caret can have moved while the read was in flight — only insert if this
+                    // block still holds it, or the text would land in whatever the user clicked.
+                    const target = refs.current.get(id);
+                    if (!target || !target.contains(window.getSelection()?.anchorNode ?? null))
+                        return;
+                    insertPlainTextAtCaret(plain.replace(/\r\n?/g, '\n'));
+                    commitHtml(id, target);
+                })
+                .catch(() => {
+                    showToast('Could not read the clipboard');
+                });
+            return;
+        }
+
         // ⌘[ / ⌘] outdent and indent, the Notion/Bear convention. Matched on `code` so it is
         // layout-independent (and because ⌥ rewrites the character anyway), and only with NO other
         // modifier: ⌘⌥[ / ⌘⌥] are the app's back/forward and have to reach the global handler.
@@ -1922,6 +2074,25 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const imageFilesFrom = (list: FileList | null | undefined): File[] =>
         [...(list ?? [])].filter((file) => file.type.startsWith('image/'));
+
+    /**
+     * Copy/cut of a selection INSIDE a block, as Markdown.
+     *
+     * The browser's own `text/plain` is the RENDERED text, so copying `**bold**` out of a Markdown
+     * app yielded `bold`. Block-level copy already wrote Markdown (see `onSelectionClipboard`);
+     * this is the in-block half.
+     */
+    const onCopyCut = (e: ClipboardEvent<HTMLDivElement>, id: string) => {
+        const html = selectionHtml();
+        if (!html) return; // nothing selected — let the browser do its thing
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', inlineHtmlToMarkdown(html));
+        if (e.type !== 'cut') return;
+        const el = refs.current.get(id);
+        if (!el) return;
+        window.getSelection()?.deleteFromDocument();
+        commitHtml(id, el);
+    };
 
     const onPaste = (e: ClipboardEvent<HTMLDivElement>, id: string) => {
         e.preventDefault();
@@ -2417,6 +2588,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             ),
         onKeyDown,
         onPaste,
+        onCopyCut,
         onFocus: (id) => setFocusedId(id),
         onBlur: (id) => setFocusedId((cur) => (cur === id ? null : cur)),
         onToggleTodo: (id) =>
@@ -2437,8 +2609,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onTableDeleteColumn: deleteTableColumn,
         onTableToggleHeaderRow: (id) =>
             updateTable(id, (table) => ({...table, headerRow: !table.headerRow})),
-        onTableToggleHeaderColumn: (id) =>
-            updateTable(id, (table) => ({...table, headerColumn: !table.headerColumn})),
+        onTableToggleHeaderColumn: (id) => {
+            updateTable(id, (table) => ({...table, headerColumn: !table.headerColumn}));
+            // GFM tables have a header ROW and nothing else, so this one is presentation only —
+            // unlike the "Header row" toggle beside it, which does persist. Two adjacent, identical
+            // -looking controls behaving differently is exactly what needs saying out loud.
+            showToast('A header column isn’t saved to Markdown');
+        },
         onContentMouseDown,
         onSelectBlock: selectSingleBlock,
         onPlusClick,
@@ -2557,6 +2734,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                             ),
                         );
                         setBlockMenu(null);
+                        // Markdown has no spelling for a block colour, so `toMarkdown` drops it and
+                        // the change effect — which compares serialized output — never fires
+                        // `onChange`. The block visibly turns red and nothing is saved. Say so at
+                        // the moment of the click rather than let the user find out on reopen.
+                        if (color !== 'default')
+                            showToast('Block colours aren’t saved to Markdown');
                     }}
                     onClose={() => setBlockMenu(null)}
                 />

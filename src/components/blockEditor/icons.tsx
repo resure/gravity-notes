@@ -73,6 +73,9 @@ const HeadingIcon = ({size = 18, level}: IconProps & {level: string}) => (
 export const H1Icon = (p: IconProps) => <HeadingIcon {...p} level="1" />;
 export const H2Icon = (p: IconProps) => <HeadingIcon {...p} level="2" />;
 export const H3Icon = (p: IconProps) => <HeadingIcon {...p} level="3" />;
+export const H4Icon = (p: IconProps) => <HeadingIcon {...p} level="4" />;
+export const H5Icon = (p: IconProps) => <HeadingIcon {...p} level="5" />;
+export const H6Icon = (p: IconProps) => <HeadingIcon {...p} level="6" />;
 
 export const TodoIcon = ({size = 18}: IconProps) => (
     <svg {...svgProps(size)}>

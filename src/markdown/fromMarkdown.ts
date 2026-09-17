@@ -69,6 +69,12 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
     let maxDepth = baseDepth;
 
     const depthOf = (indent: number) => {
+        // The FIRST block of a range sits at the base depth whatever its indent: it has nothing to
+        // nest under, the editor refuses to indent it (`changeBlockDepth` returns unchanged for
+        // index 0), and `blocksToMarkdown` trims the document's leading whitespace anyway — so
+        // reading an indent here produced a depth that could never be written back, and the
+        // document could not settle.
+        if (blocks.length === 0) return baseDepth;
         // Clamp to one level deeper than what precedes it, so a four-space-indented foreign file
         // nests one level rather than two.
         const raw = baseDepth + Math.floor(indent / SPACES_PER_LEVEL);
@@ -138,9 +144,27 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
             block.collapsed = !details[1];
             push(block, line.indent);
             open = null;
-            const children = parseLines(inner.slice(summaryAt + 1), depth + 1);
-            blocks.push(...children);
-            maxDepth = Math.max(maxDepth, ...children.map((child) => child.depth ?? 0));
+            // DEDENT the body by the toggle's own indent before reading it. The writer emits a
+            // toggle's children at a depth RELATIVE to the toggle and then indents the whole block
+            // to the toggle's column (`toggleLines` → `indentChunk`); reading that column as part
+            // of the child's depth counted it twice, so a nested toggle's children drifted one
+            // level deeper on every save. It settled, but only after rewriting the file.
+            const rawBody = inner.slice(summaryAt + 1);
+            // Dedent by what the body ACTUALLY shares, never by more. Clamping each line at 0
+            // instead flattened a body indented LESS than its toggle onto column 0, which moved the
+            // `<details>` line but not the `<summary>` and left the document unable to settle.
+            const shared = rawBody.reduce(
+                (least, child) => (child.blank ? least : Math.min(least, child.indent)),
+                line.indent,
+            );
+            const body = rawBody.map((child) =>
+                child.blank ? child : {...child, indent: child.indent - shared},
+            );
+            const children = parseLines(body, depth + 1);
+            // `for…of` and `reduce`, not spreads: a large toggle body passes one argument per
+            // block and throws a RangeError (the same limit `toMarkdown` documents avoiding).
+            for (const child of children) blocks.push(child);
+            maxDepth = children.reduce((max, child) => Math.max(max, child.depth ?? 0), maxDepth);
             i = end;
             continue;
         }
@@ -199,12 +223,19 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
                 body.push(lines[end].text.replace(/^>\s?/, ''));
                 end++;
             }
-            const callout = /^\[!([a-zA-Z]+)\][-+]?\s*/.exec(body[0] ?? '');
+            // Obsidian's custom callouts allow digits and hyphens. `[a-zA-Z]+` alone degraded
+            // `> [!my-note]` to a plain quote — and then the marker got backslash-escaped, so the
+            // file gained `\[!my-note\]` and the callout was gone in Obsidian too.
+            const callout = /^\[!([\w-]+)\]([-+]?)\s*/.exec(body[0] ?? '');
             if (callout) body[0] = body[0].slice(callout[0].length);
             const block = newBlock(
                 callout ? 'callout' : 'quote',
                 inlineMarkdownToHtml(body.join('\n')),
             );
+            if (callout) {
+                block.calloutKind = callout[1];
+                if (callout[2]) block.calloutFold = callout[2] as '-' | '+';
+            }
             block.depth = depth;
             push(block, line.indent);
             open = null;
@@ -215,7 +246,7 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         // ---- heading -----------------------------------------------------------------------
         const heading = /^(#{1,6})(?:\s+(.*))?$/.exec(line.text);
         if (heading) {
-            const level = Math.min(3, heading[1].length) as 1 | 2 | 3;
+            const level = heading[1].length as 1 | 2 | 3 | 4 | 5 | 6;
             const block = newBlock(
                 `heading${level}` as BlockType,
                 inlineMarkdownToHtml(heading[2] ?? ''),
@@ -234,6 +265,12 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
             const block = newBlock(type, inlineMarkdownToHtml((todo ? todo[2] : rest) ?? ''));
             block.depth = depth;
             if (todo) block.checked = todo[1].toLowerCase() === 'x';
+            if (type === 'numbered') {
+                // Only on the first item of a run — the rest simply count on from it.
+                const above = blocks[blocks.length - 1];
+                const continues = above?.type === 'numbered' && (above.depth ?? 0) === depth;
+                if (!continues) block.listStart = Number.parseInt(item[1], 10);
+            }
             open = push(block, line.indent + item[1].length + 1 + (todo ? 4 : 0));
             continue;
         }

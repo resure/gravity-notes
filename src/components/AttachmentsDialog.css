@@ -74,6 +74,14 @@
     display: inline-block;
 }
 
+/* The file is gone, not still arriving — a dashed outline so the row reads as broken rather than
+   as permanently loading, which is what it used to do. */
+.attachments__thumb_missing {
+    display: inline-block;
+    background: transparent;
+    border: 1px dashed var(--g-color-line-generic-accent);
+}
+
 .attachments__meta {
     flex: 1 1 auto;
     min-width: 0;

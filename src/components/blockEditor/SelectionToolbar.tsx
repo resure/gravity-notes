@@ -86,10 +86,17 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest}: Toolbar
         document.addEventListener('selectionchange', update);
         document.addEventListener('mousedown', onMouseDown);
         document.addEventListener('mouseup', onMouseUp);
+        // The bar is `position: fixed` over a selection rect measured when the selection changed.
+        // Scrolling the pane moves the text out from under it, so re-measure — `update` already
+        // reads the LIVE selection, so it needs no new logic. Captured: scroll does not bubble.
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
         return () => {
             document.removeEventListener('selectionchange', update);
             document.removeEventListener('mousedown', onMouseDown);
             document.removeEventListener('mouseup', onMouseUp);
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
         };
     }, [rootRef]);
 

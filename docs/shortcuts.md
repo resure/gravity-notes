@@ -61,6 +61,9 @@ The block editor owns these itself; they do nothing outside the body.
 | `⌘U`        | Underline the selection                                                 |
 | `⌘⇧S`       | Strike through the selection                                            |
 | `⌘E`        | Inline code                                                             |
+| `⌘C`        | Copy the selection as Markdown                                          |
+| `⌘⇧C`       | Copy the selection as plain text (Markdown stripped)                    |
+| `⌘⇧V`       | Paste without formatting                                                |
 | `⌘A`        | Select the block, then every block in the note                          |
 | `⌘]` / `⌘[` | Indent / outdent the block                                              |
 | `Tab`       | Indent a list item (`⇧Tab` outdents); in a table, move to the next cell |

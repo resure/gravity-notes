@@ -8,6 +8,9 @@ import {
     H1Icon,
     H2Icon,
     H3Icon,
+    H4Icon,
+    H5Icon,
+    H6Icon,
     NumberedIcon,
     QuoteIcon,
     TableIcon,
@@ -58,6 +61,30 @@ export const MENU_ITEMS: MenuItemDef[] = [
         hint: '###',
         keywords: ['heading', 'h3', '3', 'subheading'],
         icon: <H3Icon />,
+    },
+    {
+        type: 'heading4',
+        label: 'Heading 4',
+        description: 'Smaller section heading.',
+        hint: '####',
+        keywords: ['heading', 'h4', '4', 'subheading'],
+        icon: <H4Icon />,
+    },
+    {
+        type: 'heading5',
+        label: 'Heading 5',
+        description: 'Smaller still.',
+        hint: '#####',
+        keywords: ['heading', 'h5', '5', 'subheading'],
+        icon: <H5Icon />,
+    },
+    {
+        type: 'heading6',
+        label: 'Heading 6',
+        description: 'The smallest heading.',
+        hint: '######',
+        keywords: ['heading', 'h6', '6', 'subheading'],
+        icon: <H6Icon />,
     },
     {
         type: 'todo',
@@ -170,6 +197,12 @@ export function placeholderFor(
             return 'Heading 2';
         case 'heading3':
             return 'Heading 3';
+        case 'heading4':
+            return 'Heading 4';
+        case 'heading5':
+            return 'Heading 5';
+        case 'heading6':
+            return 'Heading 6';
         case 'text':
             return focused || isOnlyBlock ? "Type '/' for commands" : undefined;
         case 'bulleted':
@@ -199,6 +232,9 @@ export const MARKDOWN_RULES: MarkdownRule[] = [
     {re: /^#$/, type: 'heading1'},
     {re: /^##$/, type: 'heading2'},
     {re: /^###$/, type: 'heading3'},
+    {re: /^####$/, type: 'heading4'},
+    {re: /^#####$/, type: 'heading5'},
+    {re: /^######$/, type: 'heading6'},
     {re: /^[-*+]$/, type: 'bulleted'},
     {re: /^\[\s?\]$/, type: 'todo'},
     {re: /^\[x\]$/i, type: 'todo', checked: true},
