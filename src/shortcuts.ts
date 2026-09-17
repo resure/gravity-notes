@@ -56,12 +56,17 @@ export interface GlobalBinding {
     action: ShortcutAction;
     /** For a 'mod'/'ctrl' binding, also require Shift (default: Shift must be absent). */
     shift?: boolean;
+    /**
+     * Also require Option/Alt (default: it must be absent). On macOS ⌥ REWRITES the character —
+     * ⌥[ is “ — so any binding using this must also set {@link code}, or the key match can't hold.
+     */
+    alt?: boolean;
     /** May fire while a typing surface (input/textarea/contenteditable) is focused. Default: mod/ctrl→true, bare→false. */
     inTyping?: boolean;
     /**
-     * Handle in the capture phase and `stopPropagation`, so the key never reaches the editor. Needed
-     * when the chord collides with an editor binding we must override — e.g. ⌘[/⌘] (history) shadow
-     * the editor's own list outdent/indent (still reachable via Tab/⇧Tab).
+     * Handle in the capture phase and `stopPropagation`, so the key never reaches the editor. For a
+     * chord that collides with an editor binding and must win. Nothing sets it today — ⌘[/⌘] did,
+     * until history moved to ⌘⌥[/⌘⌥] and left those to the editor outright.
      */
     capture?: boolean;
 }
@@ -95,26 +100,28 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+k',
-        description: 'Preview previous note (works while editing)',
+        description: 'Preview previous note — over a selection in the body, insert a link',
         group: 'Navigation',
         global: {trigger: 'mod', key: 'k', action: 'selectPrevNote'},
     },
     {
-        keys: 'mod+[',
+        keys: 'mod+alt+[',
         description: 'Go back (previously viewed note)',
         group: 'Navigation',
-        // Match the physical Bracket key (layout-independent) and grab it in the capture phase so the
-        // editor's ⌘[ list-outdent never also fires — outdent stays on ⇧Tab.
+        // ⌥ over ⇧ because Chrome and Safari both reserve ⌘⇧[ / ⌘⇧] for previous/next tab, so the
+        // web build would never see them. Plain ⌘[ / ⌘] belong to the editor (outdent/indent).
+        // Matched on the physical key: ⌥ REWRITES the character on macOS (⌥[ is “), so `event.key`
+        // is useless here — which is also why no capture-phase grab is needed any more.
         global: {
             trigger: 'mod',
             key: '[',
             code: 'BracketLeft',
             action: 'historyBack',
-            capture: true,
+            alt: true,
         },
     },
     {
-        keys: 'mod+]',
+        keys: 'mod+alt+]',
         description: 'Go forward (next viewed note)',
         group: 'Navigation',
         global: {
@@ -122,7 +129,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
             key: ']',
             code: 'BracketRight',
             action: 'historyForward',
-            capture: true,
+            alt: true,
         },
     },
     {
@@ -136,6 +143,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Navigation',
         // List-scoped: handled by the focused row in NoteList, like plain Enter — no global binding.
         desktopOnly: true,
+    },
+    {
+        keys: 'mod+enter',
+        description: 'Follow the [[wiki link]] under the caret (⌘-click does the same)',
+        group: 'Editing',
+        // Editor-scoped: the block editor's own key handler owns it, like `[[` below.
     },
     {
         keys: 'mod+0',
@@ -250,7 +263,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+d',
-        description: 'Duplicate selected note',
+        description: 'Duplicate the selected note — in the body, duplicate the block',
         group: 'Editing',
         // ⌘D is reserved by browsers (bookmark); the handler preventDefaults it, so it's most
         // dependable in the desktop app — like ⌘N.
@@ -263,6 +276,65 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         // Backspace is unaffected by Shift, so a key match is enough; fires while editing too, but
         // the confirm dialog guards against an accidental delete.
         global: {trigger: 'mod', key: 'Backspace', action: 'deleteSelected', shift: true},
+    },
+    // The block editor owns these itself (its own key handler / input rules), so they carry no
+    // `global` binding — but the ⌘/ sheet renders from THIS list, so a chord missing here is a
+    // chord the user cannot discover. Keep in sync with docs/shortcuts.md.
+    {
+        keys: '/',
+        description: 'Open the block menu at the start of an empty block',
+        group: 'Editing',
+    },
+    {
+        keys: '[[',
+        description:
+            'Open the wiki-link note picker (the last row creates a note that doesn’t exist)',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+b',
+        description: 'Bold the selection',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+i',
+        description: 'Italicise the selection',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+u',
+        description: 'Underline the selection',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+shift+s',
+        description: 'Strike through the selection',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+e',
+        description: 'Inline code',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+a',
+        description: 'Select the block, then every block in the note',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+]',
+        description: 'Indent the block (⌘[ outdents)',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+alt+up',
+        description: 'Move the selected block up (⌘⌥↓ moves it down)',
+        group: 'Editing',
+    },
+    {
+        keys: 'tab',
+        description: 'Indent a list item (⇧Tab outdents); in a table, move to the next cell',
+        group: 'Editing',
     },
     {
         keys: 'mod+/',

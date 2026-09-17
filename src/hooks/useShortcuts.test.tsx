@@ -67,24 +67,41 @@ describe('useShortcuts', () => {
         expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
     });
 
-    it('goes back / forward in history on mod+[ and mod+] (matched by physical key)', () => {
+    it('goes back / forward in history on mod+alt+[ and mod+alt+] (by physical key)', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        // A real ⌘[ keydown carries code 'BracketLeft'; the binding matches the physical key so it
-        // works across layouts. It's handled in the capture phase to beat the editor's list-outdent.
-        press({key: '[', code: 'BracketLeft', metaKey: true});
-        press({key: ']', code: 'BracketRight', metaKey: true});
+        // ⌥ REWRITES the character on macOS — ⌥[ is “ and ⌥] is ‘ — so only the physical key can
+        // identify this chord. Pressing the real keys is what these `key` values represent.
+        press({key: '“', code: 'BracketLeft', metaKey: true, altKey: true});
+        press({key: '‘', code: 'BracketRight', metaKey: true, altKey: true});
         expect(actions.historyBack).toHaveBeenCalledTimes(1);
         expect(actions.historyForward).toHaveBeenCalledTimes(1);
     });
 
-    it('still goes back on mod+[ while typing in an input', () => {
+    it('leaves plain mod+[ / mod+] to the editor (outdent / indent)', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: '[', code: 'BracketLeft', metaKey: true});
+        press({key: ']', code: 'BracketRight', metaKey: true});
+        expect(actions.historyBack).not.toHaveBeenCalled();
+        expect(actions.historyForward).not.toHaveBeenCalled();
+    });
+
+    it('does not fire a non-alt binding when Option is held', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        // The alt flag has to discriminate both ways, or ⌥ would leak into every other mod chord.
+        press({key: 'j', metaKey: true, altKey: true});
+        expect(actions.selectNextNote).not.toHaveBeenCalled();
+    });
+
+    it('still goes back on mod+alt+[ while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
-        press({key: '[', code: 'BracketLeft', metaKey: true});
+        press({key: '“', code: 'BracketLeft', metaKey: true, altKey: true});
         expect(actions.historyBack).toHaveBeenCalledTimes(1);
     });
 

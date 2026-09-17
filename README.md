@@ -46,7 +46,7 @@ Markdown files, and they are yours.
 - **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
   desktop window); an **iOS app** opens an iCloud Drive (or on-device) folder of `.md` files through
   the native Files picker
-- **Autosave**, visited-note history (`⌘[` / `⌘]`), and automatic signed updates in the macOS app
+- **Autosave**, visited-note history (`⌘⌥[` / `⌘⌥]`), and automatic signed updates in the macOS app
 
 ## Getting started
 

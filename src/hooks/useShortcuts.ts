@@ -27,7 +27,7 @@ function matchesChord(event: KeyboardEvent, binding: GlobalBinding): boolean {
     return (
         modifierOk &&
         (binding.shift ? event.shiftKey : !event.shiftKey) &&
-        !event.altKey &&
+        (binding.alt ? event.altKey : !event.altKey) &&
         keyMatches
     );
 }
@@ -46,8 +46,11 @@ export function useShortcuts(actions: ShortcutActions): void {
     actionsRef.current = actions;
 
     useEffect(() => {
-        // Each phase owns the bindings whose `capture` flag matches it: capture-phase bindings (e.g.
-        // ⌘[/⌘]) preempt the editor and stopPropagation; everything else runs on bubble as before.
+        // Each phase owns the bindings whose `capture` flag matches it: a capture-phase binding
+        // preempts the editor and stopPropagations; everything else runs on bubble. NO binding sets
+        // the flag today — ⌘[/⌘] used to, to beat the old editor's list-outdent, but those chords
+        // now belong to the editor outright and history moved to ⌘⇧[/⌘⇧]. Kept for the next chord
+        // that has to win against a surface which handles keys through React's root listener.
         const tryHandle = (event: KeyboardEvent, capturePhase: boolean): void => {
             if (event.repeat) return; // a held key shouldn't fire the action repeatedly
             // A modal dialog owns the keyboard while it's open — don't let global chords act on the

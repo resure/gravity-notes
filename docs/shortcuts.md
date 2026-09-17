@@ -20,7 +20,7 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `↑` / `↓` (or `k` / `j`)            | Preview the previous / next note                                                                                |
 | `⌘J` / `⌘K`                         | Preview next / previous note (works while editing; in **Blocks**, `⌘K` over a selection inserts a link instead) |
-| `⌘[` / `⌘]`                         | Go back / forward through visited notes (browser-style history)                                                 |
+| `⌘⌥[` / `⌘⌥]`                       | Go back / forward through visited notes (browser-style history)                                                 |
 | `Enter`                             | Edit the selected note (in the title → jump to the body)                                                        |
 | `⌘Enter` / `⌘-click` / double-click | Open the selected note in its own window _(desktop)_                                                            |
 | `⌘0`                                | Show this workspace's main window _(desktop; also Window ▸ Main Window)_                                        |
@@ -48,6 +48,33 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's a typing chord)                                                     |
 | `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in the body it duplicates the block               |
 | `⌘⇧⌫`            | Move the selected note to the Trash (asks to confirm; recoverable)                                                                        |
+
+### In the note body
+
+The block editor owns these itself; they do nothing outside the body.
+
+| Keys        | Action                                                                  |
+| ----------- | ----------------------------------------------------------------------- |
+| `/`         | Open the block menu at the start of an empty block                      |
+| `⌘B`        | Bold the selection                                                      |
+| `⌘I`        | Italicise the selection                                                 |
+| `⌘U`        | Underline the selection                                                 |
+| `⌘⇧S`       | Strike through the selection                                            |
+| `⌘E`        | Inline code                                                             |
+| `⌘A`        | Select the block, then every block in the note                          |
+| `⌘]` / `⌘[` | Indent / outdent the block                                              |
+| `Tab`       | Indent a list item (`⇧Tab` outdents); in a table, move to the next cell |
+| `Esc`       | Select the block; again to leave the editor                             |
+
+With a block selected (after `Esc`):
+
+| Keys          | Action                                                   |
+| ------------- | -------------------------------------------------------- |
+| `↑` / `↓`     | Move the selection to the previous / next block          |
+| `⇧↑` / `⇧↓`   | Extend the selection                                     |
+| `⌘⌥↑` / `⌘⌥↓` | Move the block up / down (it takes its children with it) |
+| `⌘D`          | Duplicate the selected block(s)                          |
+| `⌫`           | Delete the selected block(s)                             |
 
 ## General
 
