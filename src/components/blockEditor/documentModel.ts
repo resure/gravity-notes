@@ -30,6 +30,39 @@ export function expandBlockIds(blocks: readonly Block[], ids: Iterable<string>):
     return expanded;
 }
 
+/**
+ * Restore the depth invariant: the first block sits at 0, and no block is more than one level
+ * deeper than the one before it.
+ *
+ * Structural operations move subtrees around VERBATIM — that is what keeps a drag from re-indenting
+ * what it carries — so any of them can leave a block without the parent its depth implies. Markdown
+ * has no way to write that: `blocksToMarkdown` indents from the depth alone, so the file comes back
+ * one level flatter than the screen and the two disagree until the note is reopened. Running this
+ * afterwards means the screen shows what the file will say.
+ */
+export function normalizeDepths(blocks: readonly Block[]): Block[] {
+    // The ancestor chain of the block being emitted, as (depth as written → depth being written).
+    // Renumbering off the chain rather than off the previous block alone is what keeps SIBLINGS
+    // siblings: two list items orphaned by a delete both pop back to the same ancestor and both
+    // land at the same depth, where promoting each relative to its predecessor would have nested
+    // the second under the first.
+    const ancestors: {raw: number; depth: number}[] = [];
+    let changed = false;
+    const output = blocks.map((block) => {
+        const raw = block.depth ?? 0;
+        while (ancestors.length > 0 && ancestors[ancestors.length - 1].raw >= raw) ancestors.pop();
+        const depth = Math.min(
+            MAX_BLOCK_DEPTH,
+            ancestors.length === 0 ? 0 : ancestors[ancestors.length - 1].depth + 1,
+        );
+        ancestors.push({raw, depth});
+        if (depth === raw) return block;
+        changed = true;
+        return {...block, depth};
+    });
+    return changed ? output : (blocks as Block[]);
+}
+
 export function duplicateBlockGroups(
     blocks: readonly Block[],
     ids: Iterable<string>,
@@ -109,6 +142,14 @@ export function changeBlockDepth(
     let end = index + 1;
     while (end < blocks.length && (blocks[end].depth ?? 0) > currentDepth) end += 1;
     const delta = nextDepth - currentDepth;
+    // Indenting is refused outright when a descendant is already at the limit: clamping it while
+    // the parent still moved flattened the child into its sibling, losing a level of the user's
+    // nesting with no sign that anything had been dropped.
+    if (delta > 0) {
+        for (let at = index; at < end; at++) {
+            if ((blocks[at].depth ?? 0) + delta > maxDepth) return blocks as Block[];
+        }
+    }
     return blocks.map((block, blockIndex) =>
         blockIndex >= index && blockIndex < end
             ? {...block, depth: Math.max(0, Math.min(maxDepth, (block.depth ?? 0) + delta))}
@@ -139,7 +180,14 @@ export function addTableRowData(table: TableData): TableData {
 }
 
 export function addTableColumnData(table: TableData): TableData {
-    return {...table, cells: table.cells.map((row) => [...row, ''])};
+    return {
+        ...table,
+        cells: table.cells.map((row) => [...row, '']),
+        // Per-column metadata is positional, so it has to move with the columns — otherwise the
+        // alignment and written width of every column past the edit slide onto its neighbour.
+        align: table.align && [...table.align, null],
+        widths: table.widths && [...table.widths, 0],
+    };
 }
 
 export function deleteTableRowData(table: TableData, row: number): TableData {
@@ -150,7 +198,13 @@ export function deleteTableRowData(table: TableData, row: number): TableData {
 export function deleteTableColumnData(table: TableData, column: number): TableData {
     const columns = table.cells[0]?.length ?? 0;
     if (columns <= 1 || column < 0 || column >= columns) return table;
-    return {...table, cells: table.cells.map((row) => row.filter((_, index) => index !== column))};
+    const without = <T>(list: T[] | undefined) => list?.filter((_, index) => index !== column);
+    return {
+        ...table,
+        cells: table.cells.map((row) => row.filter((_, index) => index !== column)),
+        align: without(table.align),
+        widths: without(table.widths),
+    };
 }
 
 export function pasteTableGrid(
@@ -163,6 +217,8 @@ export function pasteTableGrid(
     const targetRows = Math.max(table.cells.length, startRow + matrix.length);
     const widestPaste = widestRow(matrix);
     const targetColumns = Math.max(table.cells[0]?.length ?? 1, startColumn + widestPaste);
+    const grow = <T>(list: T[] | undefined, fill: T) =>
+        list && Array.from({length: targetColumns}, (_, index) => list[index] ?? fill);
     return {
         ...table,
         cells: Array.from({length: targetRows}, (_, rowIndex) =>
@@ -171,5 +227,7 @@ export function pasteTableGrid(
                 return pasted === undefined ? (table.cells[rowIndex]?.[columnIndex] ?? '') : pasted;
             }),
         ),
+        align: grow(table.align, null),
+        widths: grow(table.widths, 0),
     };
 }

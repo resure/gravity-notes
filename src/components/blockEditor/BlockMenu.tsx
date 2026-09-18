@@ -88,12 +88,21 @@ export default function BlockMenu({
         // the pane and it stayed put while its block moved away. Unlike the caret-anchored menus
         // there is nothing to follow — scrolling with a click-menu open IS a dismissal — so close.
         // Captured: `scroll` does not bubble, and it is the PANE that scrolls, not the document.
+        //
+        // Its OWN scrolling is exempt: the menu is `max-height: 320px; overflow-y: auto` and "Turn
+        // into" is well past that, so scrolling the list to reach Heading 6 — or just arrowing down
+        // to it, since `focus()` scrolls it into view — dismissed the menu the user was reading.
+        const onScroll = (event: Event) => {
+            const target = event.target;
+            if (target instanceof Node && ref.current?.contains(target)) return;
+            onClose();
+        };
         document.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('scroll', onClose, true);
+        window.addEventListener('scroll', onScroll, true);
         window.addEventListener('resize', onClose);
         return () => {
             document.removeEventListener('mousedown', onMouseDown);
-            window.removeEventListener('scroll', onClose, true);
+            window.removeEventListener('scroll', onScroll, true);
             window.removeEventListener('resize', onClose);
         };
     }, [onClose]);

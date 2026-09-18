@@ -42,4 +42,15 @@ describe('system clipboard', () => {
         native.readText.mockRejectedValue(new Error('unavailable'));
         await expect(readClipboardText()).rejects.toThrow('unavailable');
     });
+
+    /**
+     * Outside a secure context there is no `navigator.clipboard` at all. Every caller is shaped
+     * `void read().then(…).catch(() => showToast(…))`, so a SYNCHRONOUS throw escapes before the
+     * `.catch` is attached: no toast, and the keydown handler it was called from dies with it.
+     */
+    it('rejects, rather than throwing, when there is no Clipboard API', async () => {
+        vi.stubGlobal('navigator', {});
+        await expect(readClipboardText()).rejects.toThrow();
+        await expect(writeClipboardText('plain')).rejects.toThrow();
+    });
 });

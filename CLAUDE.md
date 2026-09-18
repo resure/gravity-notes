@@ -374,6 +374,14 @@ Key modules:
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
   Every floating surface's fill is `--n-surface`, remapped in the dark block: the overlays portal to
   `<body>`, so a hard-coded white there painted white text on a white card.
+  Two invariants the structural code keeps, both because the whole document is re-serialized on every
+  keystroke: **nesting is a flat `depth` field**, so no block may sit more than one level deeper than
+  the one before it (Markdown cannot write an orphaned level, and the file would come back flatter
+  than the screen) — every op that moves a subtree verbatim therefore ends in `normalizeDepths`; and
+  **what the reader can see is what an edit may touch** (`visibleBlockIds`), so focus requests,
+  selection extension and merges all skip blocks hidden inside a collapsed toggle, which render no
+  element at all. A TEXT selection across blocks acts on exactly the blocks it covers (`'exact'` in
+  `removeBlocks`), where a BLOCK selection acts on whole subtrees.
   ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
   and IS a textbox; the rules can't tell, and the editor drives focus itself).
 - `src/components/BlockEditorBody.tsx` — the **adapter** between `EditorPane` and the block editor:

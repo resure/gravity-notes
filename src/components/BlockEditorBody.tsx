@@ -201,6 +201,14 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
 
         useImperativeHandle(ref, () => ({
             focus() {
+                // In preview the editor is still MOUNTED (so it keeps its undo history) but hidden,
+                // and a hidden element cannot take focus — `focus()` was therefore a silent no-op
+                // and committing a note while previewing left focus on the list. The preview
+                // surface is what is on screen, so that is what gets it.
+                if (preview) {
+                    previewRef.current?.focus({preventScroll: true});
+                    return;
+                }
                 // Caret-preserving: the pane calls focus() after moveCursorEnd(), and on any
                 // click-to-focus path. Moving to the first block whenever focus is ALREADY in the
                 // body would undo both. Only place the caret when it isn't here yet.
@@ -264,10 +272,15 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                     // In source mode the equivalent is the caret at the very start of an empty
                     // first line, which is what makes Backspace mean "leave for the title".
                     if (document.activeElement !== markup) return false;
+                    // Collapsed, or ⌘A on a note whose first line is blank also starts at 0 — and
+                    // the pane would then hand Backspace to the title instead of deleting the
+                    // selection, swallowing a select-all-and-delete entirely.
+                    if (markup.selectionStart !== markup.selectionEnd) return false;
                     return markup.selectionStart === 0 && markup.value.split('\n')[0] === '';
                 }
                 const first = firstContent(rootRef.current);
                 if (!first || document.activeElement !== first) return false;
+                if (window.getSelection()?.isCollapsed === false) return false;
                 return (first.textContent ?? '') === '';
             },
             removeEmptyFirstLine() {
@@ -356,6 +369,9 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         onAttachFile={(file) => onUploadFile(file).catch(() => null)}
                         onLeaveTop={onLeaveTop}
                         onEscape={onEscape}
+                        // `display: none` hides the editor's own subtree, but its menus portal to
+                        // `<body>` — they need telling.
+                        hidden={preview}
                     />
                 </div>
             </>

@@ -1,3 +1,5 @@
+import {useEffect} from 'react';
+
 import {act, render, waitFor} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -43,6 +45,48 @@ describe('useAttachmentUrl — the resolver every display surface shares', () =>
         await waitFor(() => {
             expect(seen[seen.length - 1].failed).toBe(true);
             expect(seen[seen.length - 1].url).toBeUndefined();
+        });
+        vi.unstubAllGlobals();
+    });
+
+    it('never shows the previous ref’s image while the new one is resolving', async () => {
+        let nextUrl = 0;
+        vi.stubGlobal('URL', {
+            ...URL,
+            createObjectURL: () => `blob:${++nextUrl}`,
+            revokeObjectURL: () => {},
+        });
+        // Only the first file exists: the second resolves to the broken state, which is the case
+        // that made a stale URL stick around forever rather than for one frame.
+        const cache = new AttachmentUrlCache(storeWith({'Attachments/a.png': true}));
+        const seen: Array<{refPath: string; url?: string; failed: boolean}> = [];
+
+        // Recorded in an EFFECT, not in the render body: the fix re-seeds state DURING render, so
+        // React throws that pass away and re-runs it. A render-body probe would see the discarded
+        // pass — which never reaches the screen — and report a stale URL that no user can observe.
+        function Probe({refPath}: {refPath: string}) {
+            const state = useAttachmentUrl(refPath, cache);
+            useEffect(() => {
+                seen.push({refPath, ...state});
+            });
+            return null;
+        }
+        const {rerender} = render(<Probe refPath="Attachments/a.png" />);
+        await waitFor(() => expect(seen[seen.length - 1].url).toBe('blob:1'));
+
+        // The hook outlives the ref — a virtualized row is reused for the next file.
+        await act(async () => {
+            rerender(<Probe refPath="Attachments/b.png" />);
+        });
+        // Not one render of b.png's row may carry a.png's URL: that is b.png's row, labelled
+        // b.png, showing a.png.
+        const asB = seen.filter((s) => s.refPath === 'Attachments/b.png');
+        expect(asB.length).toBeGreaterThan(0);
+        expect(asB.every((s) => s.url !== 'blob:1')).toBe(true);
+        expect(seen[seen.length - 1]).toEqual({
+            refPath: 'Attachments/b.png',
+            url: undefined,
+            failed: true,
         });
         vi.unstubAllGlobals();
     });

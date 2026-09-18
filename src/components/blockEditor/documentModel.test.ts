@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 
 import {
+    MAX_BLOCK_DEPTH,
     addTableColumnData,
     addTableRowData,
     blockRangeIds,
@@ -10,6 +11,7 @@ import {
     duplicateBlockGroups,
     expandBlockIds,
     moveBlockSubtree,
+    normalizeDepths,
     pasteTableGrid,
     setTableCell,
 } from './documentModel';
@@ -17,6 +19,70 @@ import type {Block, TableData} from './types';
 
 const block = (id: string, depth = 0): Block => ({id, depth, type: 'text', html: id});
 const ids = (blocks: readonly Block[]) => blocks.map((item) => item.id);
+
+describe('changeBlockDepth at the depth limit', () => {
+    it('refuses an indent that would flatten a child into its parent', () => {
+        // Clamping the child while the parent still moved lost a level of the user's nesting, with
+        // nothing on screen to say a level had been dropped.
+        const deep = [block('sib', 5), block('parent', 5), block('child', 6)];
+        expect(changeBlockDepth(deep, 'parent', 1)).toBe(deep);
+    });
+});
+
+describe('normalizeDepths', () => {
+    it('pulls a block back to a depth its parent can support', () => {
+        // What a drop leaves behind: `c` carried its own depth to the top of the document, where
+        // there is nothing for it to be nested under. Markdown cannot write that, so the file came
+        // back a level flatter than the screen showed.
+        const out = normalizeDepths([block('c', 2), block('a'), block('b', 1)]);
+        expect(out.map((item) => item.depth)).toEqual([0, 0, 1]);
+    });
+
+    it('leaves a legal document alone, identity included', () => {
+        const legal = [block('a'), block('a1', 1), block('a2', 1), block('b')];
+        expect(normalizeDepths(legal)).toBe(legal);
+    });
+
+    it('closes a gap left by a removed parent without flattening the rest', () => {
+        const out = normalizeDepths([block('a'), block('b1', 2), block('b2', 3), block('c')]);
+        expect(out.map((item) => item.depth)).toEqual([0, 1, 2, 0]);
+    });
+
+    /**
+     * The whole point of the function, asserted over the shapes a delete, drop or paste can leave —
+     * an earlier one-shift-per-run version satisfied every example above and still left 16% of
+     * random documents illegal, which is exactly the screen/file disagreement it exists to remove.
+     */
+    it('always leaves a legal document, whatever it is given', () => {
+        let seed = 12345;
+        const next = (n: number) => {
+            seed = (seed * 1103515245 + 12345) % 2147483648;
+            return seed % n;
+        };
+        for (let run = 0; run < 20000; run++) {
+            const input = Array.from({length: 1 + next(8)}, (_, index) =>
+                block(`b${index}`, next(MAX_BLOCK_DEPTH + 2)),
+            );
+            const out = normalizeDepths(input);
+            expect(out).toHaveLength(input.length);
+            expect(out.map((item) => item.id)).toEqual(input.map((item) => item.id));
+            let previous = -1;
+            for (const item of out) {
+                const depth = item.depth ?? 0;
+                expect(depth).toBeGreaterThanOrEqual(0);
+                expect(depth).toBeLessThanOrEqual(Math.min(MAX_BLOCK_DEPTH, previous + 1));
+                previous = depth;
+            }
+        }
+    });
+
+    it('promotes orphaned siblings together, not one under the other', () => {
+        // What a delete leaves: two list items whose parent is gone. Promoting each on its own
+        // makes the second a CHILD of the first, which is not what was on screen.
+        const out = normalizeDepths([block('childA', 1), block('childB', 1)]);
+        expect(out.map((item) => item.depth)).toEqual([0, 0]);
+    });
+});
 
 describe('nested block operations', () => {
     const nested = [
@@ -119,6 +185,32 @@ describe('table matrix operations', () => {
             ['c', 'x', 'y'],
             ['', 'z', 'w'],
         ]);
+    });
+
+    it('moves per-column metadata with the columns', () => {
+        // `align` and `widths` are POSITIONAL. Leaving them alone slid every column's alignment and
+        // written width onto its neighbour — a silent mis-assignment in the user's file, and the
+        // reason the fields have to be re-keyed here and not just preserved.
+        const aligned: TableData = {
+            cells: [
+                ['a', 'b', 'c'],
+                ['1', '2', '3'],
+            ],
+            align: [null, null, 'right'],
+            widths: [5, 6, 7],
+        };
+        expect(deleteTableColumnData(aligned, 0)).toMatchObject({
+            align: [null, 'right'],
+            widths: [6, 7],
+        });
+        expect(addTableColumnData(aligned)).toMatchObject({
+            align: [null, null, 'right', null],
+            widths: [5, 6, 7, 0],
+        });
+        expect(pasteTableGrid(aligned, 0, 2, [['x', 'y']])).toMatchObject({
+            align: [null, null, 'right', null],
+            widths: [5, 6, 7, 0],
+        });
     });
 
     it('keeps at least one row and one column', () => {

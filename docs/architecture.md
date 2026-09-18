@@ -250,11 +250,18 @@ Markdown over anything clever.
   characters. A blank block typed in the editor is likewise dropped on save.
 - **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
   deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
+- **A selection dragged across blocks acts on whole blocks.** Every block is its own
+  `contentEditable`, but one browser selection extends right across them — and deleting half of one
+  block and half of the next through the browser would edit DOM that React owns, behind its back, so
+  the text came back on the next render. Copy, cut and delete therefore take each block the
+  selection touches in full, the way the same range would behave if selected with `Esc` + `⇧↓`.
 - **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
   (read-only preview highlights them). Two block features have no Markdown spelling and are dropped
   on save: block **colors** and a table's **header-column** flag. Both still apply for the session,
   and both now say so in a toast when you use them — they used to look exactly like the controls
-  beside them that do persist.
+  beside them that do persist. A table whose header cells you empty **entirely** loses that row on
+  reload, for the same reason: GFM has no headerless table, so an empty header row is exactly how
+  one is spelled, and it reads back as a table with no header rather than as a blank one.
 - **A `[[wiki link]]` has no tooltip.** The previous editor showed Open / Edit / Unlink when the
   caret sat inside one, with the Edit option re-targeting it through the note picker. That went with
   the Gravity editor and has no replacement: `⌘↵` and `⌘-click` follow a link, and `[[` creates one,

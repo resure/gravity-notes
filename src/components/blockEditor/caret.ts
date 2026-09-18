@@ -348,3 +348,29 @@ export function selectionHtml(): string {
     holder.appendChild(selection.getRangeAt(0).cloneContents());
     return holder.innerHTML;
 }
+
+/**
+ * How much of `el`'s text `range` actually covers ('' when none of it does).
+ *
+ * Every block is its OWN contentEditable, but one document selection extends right across them —
+ * drag from the middle of one paragraph into the next and the range spans both. Callers need to
+ * know which blocks are really involved, and `Range.intersectsNode` is too generous for that: a
+ * drag that has only just entered the next block ends at its offset 0, covering none of its text
+ * while still "intersecting" it.
+ */
+export function rangeTextWithin(el: HTMLElement, range: Range): string {
+    const contents = document.createRange();
+    contents.selectNodeContents(el);
+    // Disjoint: the range ends before this element starts, or starts after it ends.
+    if (
+        range.compareBoundaryPoints(Range.END_TO_START, contents) >= 0 ||
+        range.compareBoundaryPoints(Range.START_TO_END, contents) <= 0
+    )
+        return '';
+    const clipped = range.cloneRange();
+    if (clipped.compareBoundaryPoints(Range.START_TO_START, contents) < 0)
+        clipped.setStart(contents.startContainer, contents.startOffset);
+    if (clipped.compareBoundaryPoints(Range.END_TO_END, contents) > 0)
+        clipped.setEnd(contents.endContainer, contents.endOffset);
+    return clipped.toString();
+}

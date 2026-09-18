@@ -78,12 +78,19 @@ function canonical(markdown: string): string {
             // Table cell padding and trailing spaces are layout, not content.
             .replace(/[ \t]+/g, ' ')
             .replace(/^ | $/gm, '')
-            // Inside a TABLE ROW, the spaces around the pipes and the length of the separator's
-            // dash run are layout too — GFM reads `| --- |` and `| ------- |` identically, and a
-            // cell whose text gained an escape widens its whole column, which changes every
+            // Inside a TABLE ROW, the spaces around the pipes and the length of a DELIMITER cell's
+            // dash run are layout too — GFM reads `|-|`, `| --- |` and `| ------- |` identically,
+            // and a cell whose text gained an escape widens its whole column, which changes every
             // separator in the table. Scoped to lines that are a table row so a dash run in prose
-            // or inside a code fence is still compared verbatim.
-            .replace(/^\|.*\|$/gm, (row) => row.replace(/ ?\| ?/g, '|').replace(/-{3,}/g, '---'))
+            // or inside a code fence is still compared verbatim, and to cells that are ONLY dashes
+            // and colons so a run inside a cell's text still is.
+            .replace(/^\|.*\|$/gm, (row) =>
+                row
+                    .replace(/ ?\| ?/g, '|')
+                    .split('|')
+                    .map((cell) => (/^:?-+:?$/.test(cell) ? cell.replace(/-+/, '---') : cell))
+                    .join('|'),
+            )
             // A run of blank lines means one blank line.
             .replace(/\n{2,}/g, '\n\n')
             .trim()

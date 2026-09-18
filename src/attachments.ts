@@ -5,7 +5,7 @@
  * ref through one shared, per-store `AttachmentUrlCache`, so the bytes are read once and the object
  * URL is reused everywhere — then revoked together when the store changes.
  */
-import {createContext, useContext, useEffect, useState} from 'react';
+import {createContext, useContext, useEffect, useRef, useState} from 'react';
 
 import {isAttachmentRef} from './storage/noteText';
 import type {NoteStore} from './storage/types';
@@ -232,10 +232,21 @@ export function useAttachmentUrl(
     cache: AttachmentUrlCache | null,
 ): {url?: string; failed: boolean} {
     const attachment = isAttachmentRef(ref);
-    const [url, setUrl] = useState<string | undefined>(() =>
-        attachment ? (cache?.peek(ref) ?? undefined) : ref || undefined,
-    );
+    const seed = () => (isAttachmentRef(ref) ? (cache?.peek(ref) ?? undefined) : ref || undefined);
+    const [url, setUrl] = useState<string | undefined>(seed);
     const [failed, setFailed] = useState(false);
+
+    // Re-seed DURING RENDER when the ref changes, rather than waiting for the effect's resolve to
+    // land. The hook outlives the ref: `AttachmentsDialog`'s virtualized rows reuse one component
+    // for successive files, and an image block's `src` can be edited in place. Leaving the previous
+    // URL in state across that change painted the OLD image under the NEW file's name — briefly for
+    // a cached hit, indefinitely for a ref the cache cannot resolve at all.
+    const seenRef = useRef<{ref: string; cache: AttachmentUrlCache | null}>({ref, cache});
+    if (seenRef.current.ref !== ref || seenRef.current.cache !== cache) {
+        seenRef.current = {ref, cache};
+        setUrl(seed());
+        setFailed(false);
+    }
 
     useEffect(() => {
         if (!ref) return undefined;

@@ -318,8 +318,19 @@ function dedent(lead: string, fenceLead: string): string {
     return lead.startsWith(fenceLead) ? lead.slice(fenceLead.length) : lead;
 }
 
+const PIPED_SEPARATOR = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const BARE_SEPARATOR = /^:?-{2,}:?$/;
+
+/**
+ * A GFM delimiter row. ONE dash is enough where the row has pipes — `|-|-|` is legal GFM and common
+ * in hand-written notes, and demanding two meant such a table opened as paragraphs and then had a
+ * backslash written into the user's file (the serializer's own check, which decides what to escape,
+ * accepts a single dash). Without pipes two are still required: a lone `-` on a line is an empty
+ * list item, not a table.
+ */
 function isSeparatorRow(text: string): boolean {
-    return /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(text.trim());
+    const trimmed = text.trim();
+    return trimmed.includes('|') ? PIPED_SEPARATOR.test(trimmed) : BARE_SEPARATOR.test(trimmed);
 }
 
 /** Split one `| a | b |` row, honouring `\|` escapes. */

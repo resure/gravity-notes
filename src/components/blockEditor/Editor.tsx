@@ -54,6 +54,7 @@ import {
     insertPlainTextAtCaret,
     isEmptyHtml,
     isSafeLinkHref,
+    rangeTextWithin,
     selectionHtml,
     setCaret,
     splitHtmlAtCaret,
@@ -62,6 +63,7 @@ import {
     tryInlineMarkdown,
 } from './caret';
 import {
+    MAX_BLOCK_DEPTH,
     addTableColumnData,
     addTableRowData,
     blockRangeIds,
@@ -71,6 +73,7 @@ import {
     duplicateBlockGroups,
     expandBlockIds,
     moveBlockSubtree,
+    normalizeDepths,
     pasteTableGrid,
     setTableCell,
 } from './documentModel';
@@ -84,7 +87,7 @@ import {
     uid,
     widestRow,
 } from './types';
-import type {BlockColor, Block as BlockData, BlockType, TableData} from './types';
+import type {BlockColor, Block as BlockData, BlockType, ColumnAlign, TableData} from './types';
 import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
 
 import './editor.css';
@@ -226,12 +229,40 @@ function normalizeTableData(value: unknown, firstCell = ''): TableData {
                 sanitizeInlineHtml(typeof row[column] === 'string' ? row[column] : ''),
             ),
         );
+    // Alignment and the written layout come through as well, sized to the squared-up column count.
+    // Dropping them here silently undid the fields themselves: a note with a `---:` column passes
+    // the round-trip check (which runs on the raw parse, where they still exist) and opens in
+    // blocks, and the first keystroke anywhere in the note then wrote the table back left-aligned
+    // and re-spaced — a semantic change to a table the user never touched.
+    const table = value as TableData;
+    const perColumn = <T,>(read: (index: number) => T): T[] =>
+        Array.from({length: columnCount}, (_, index) => read(index));
     return {
         cells: cells.length ? cells : [Array(columnCount).fill('')],
-        headerRow: Boolean((value as TableData).headerRow),
-        headerColumn: Boolean((value as TableData).headerColumn),
+        headerRow: Boolean(table.headerRow),
+        headerColumn: Boolean(table.headerColumn),
+        align: Array.isArray(table.align)
+            ? perColumn((index) => {
+                  const value_ = table.align?.[index];
+                  return COLUMN_ALIGNMENTS.has(value_) ? (value_ as ColumnAlign) : null;
+              })
+            : undefined,
+        widths: Array.isArray(table.widths)
+            ? perColumn((index) => {
+                  const width = table.widths?.[index];
+                  return typeof width === 'number' && Number.isFinite(width) && width >= 0
+                      ? Math.floor(width)
+                      : 0;
+              })
+            : undefined,
+        pad:
+            typeof table.pad === 'number' && Number.isFinite(table.pad) && table.pad >= 0
+                ? Math.floor(table.pad)
+                : undefined,
     };
 }
+
+const COLUMN_ALIGNMENTS = new Set<unknown>(['left', 'center', 'right']);
 
 /**
  * Put parser output through the same normalisation the editor applies to its own state. Markdown
@@ -262,9 +293,16 @@ function documentFromMarkdown(markdown: string, decorate: (html: string) => stri
     return blocks.length ? blocks : [newBlock()];
 }
 
-/** One block as Markdown — for the plain-text half of a copy. */
-function blockToMarkdown(block: BlockData): string {
-    return blocksToMarkdown([{...block, depth: 0}]);
+/**
+ * A run of blocks as Markdown — the plain-text half of a copy.
+ *
+ * Serialized as ONE document, re-based to the shallowest block in it. Per-block serialization at
+ * depth 0 flattened a copied nested list into a single level and dropped the blank lines that
+ * separate blocks, so pasting it anywhere outside this editor gave something the copy never showed.
+ */
+function blocksToClipboardMarkdown(blocks: readonly BlockData[]): string {
+    const base = blocks.reduce((min, block) => Math.min(min, block.depth ?? 0), MAX_BLOCK_DEPTH);
+    return blocksToMarkdown(blocks.map((block) => ({...block, depth: (block.depth ?? 0) - base})));
 }
 
 /**
@@ -334,6 +372,14 @@ export interface EditorProps {
      * owns the note title that sits above, so it decides where focus goes.
      */
     onLeaveTop?(): void;
+    /**
+     * The editor is mounted but not on screen — read-only preview is showing over it. The host keeps
+     * it mounted (a remount would lose the undo history and the caret), so this is what tells it to
+     * stand down: its floating overlays PORTAL to `<body>` at `position: fixed`, so hiding the
+     * editor's own subtree left them visible and clickable on top of a surface documented as
+     * read-only, and their actions still committed edits to the note.
+     */
+    hidden?: boolean;
 }
 
 const EMPTY_NOTES: NoteMeta[] = [];
@@ -350,6 +396,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onLeaveTop,
         onAttachFile,
         onEscape,
+        hidden = false,
     },
     ref,
 ) {
@@ -425,6 +472,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     slashRef.current = slash;
     const wikiRef = useRef(wiki);
     wikiRef.current = wiki;
+    /** Read by async work that resolves after the editor may have gone off screen. */
+    const hiddenRef = useRef(hidden);
+    hiddenRef.current = hidden;
     /** True between compositionstart/end — see commitHtml, which must not rewrite the DOM then. */
     const composingRef = useRef(false);
     const selectedIdsRef = useRef(selectedIds);
@@ -675,17 +725,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const index = blocks.findIndex((block) => block.id === id);
         if (index < 0) return;
         const visible = visibleBlockIds(blocks);
+        const depth = blocks[index].depth ?? 0;
+        // Move among SIBLINGS. Targeting the nearest visible block regardless of depth landed the
+        // move inside somebody else's subtree: with `- A` / `  - B` / `C`, moving C up put it
+        // between A and B, so B — still at depth 1 — became a child of C instead of A.
+        const isSibling = (at: number) =>
+            visible.has(blocks[at].id) && (blocks[at].depth ?? 0) <= depth;
         if (direction === -1) {
             let target = index - 1;
-            while (target >= 0 && !visible.has(blocks[target].id)) target -= 1;
+            while (target >= 0 && !isSibling(target)) target -= 1;
             if (target < 0) return;
             moveBlock(id, blocks[target].id, 'before');
         } else {
             // Past the END of our own subtree first, or the target would be our own child.
-            const depth = blocks[index].depth ?? 0;
             let after = index + 1;
             while (after < blocks.length && (blocks[after].depth ?? 0) > depth) after += 1;
-            while (after < blocks.length && !visible.has(blocks[after].id)) after += 1;
+            while (after < blocks.length && !isSibling(after)) after += 1;
             if (after >= blocks.length) return;
             moveBlock(id, blocks[after].id, 'after');
         }
@@ -1008,7 +1063,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     useEffect(() => {
         const open = slash ?? wiki;
         if (!open) return undefined;
-        const reposition = () => {
+        const reposition = (event?: Event) => {
+            // The menus scroll internally (`max-height` + `overflow-y: auto`), and that scroll says
+            // nothing about where the caret is — re-measuring off it only re-renders the list the
+            // user is scrolling.
+            if (event?.target instanceof Element && event.target.closest('.overlay-menu')) return;
             const state = slashRef.current ?? wikiRef.current;
             if (!state) return;
             const el = refs.current.get(state.blockId);
@@ -1027,6 +1086,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // Only the open/closed transition matters; the handler reads live state through refs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [slash !== null, wiki !== null]);
+
+    /**
+     * Going off screen dismisses every floating overlay. They portal to `<body>` at `position:
+     * fixed`, so hiding the editor's own subtree does not hide them — they stayed on top of the
+     * read-only preview, still clickable, and their actions still committed edits to the note.
+     * Clearing the state as well as skipping the render means coming back does not restore a menu
+     * pinned to a caret rect measured before the toggle.
+     */
+    useEffect(() => {
+        if (!hidden) return;
+        setSlash(null);
+        setWiki(null);
+        setBlockMenu(null);
+    }, [hidden]);
 
     /** Commit a picked note (or the "Create …" row, D19: insert-only) as a literal `[[target]]`. */
     const applyWikiItem = (item: WikiSuggestItem) => {
@@ -1064,24 +1137,54 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // ----- block operations -----
 
-    const removeBlocks = (ids: string[]) => {
+    /**
+     * Remove blocks, and put the caret somewhere sensible afterwards.
+     *
+     * `scope` is what the caller's gesture meant. A BLOCK selection is a selection of subtrees, so
+     * removing one takes its children — `'subtree'`. A TEXT selection means exactly what is
+     * highlighted, and expanding it swallowed children the user watched stay unhighlighted (select
+     * a paragraph and the first line of a list, press Backspace, and the whole list went) —
+     * `'exact'`. Even `'exact'` takes descendants the reader CANNOT see, because a collapsed
+     * toggle's summary is all that was ever on screen to select.
+     */
+    const removeBlocks = (ids: string[], scope: 'subtree' | 'exact' = 'subtree') => {
         const bs = blocksRef.current;
-        const idSet = expandBlockIds(bs, ids);
+        const visible = visibleBlockIds(bs);
+        const idSet = new Set(ids);
+        if (scope === 'subtree') {
+            for (const id of expandBlockIds(bs, ids)) idSet.add(id);
+        } else {
+            for (let i = 0; i < bs.length; i++) {
+                if (!idSet.has(bs[i].id)) continue;
+                const depth = bs[i].depth ?? 0;
+                // Hidden children sit contiguously under their collapsed parent, so the first
+                // visible one ends the run.
+                for (let c = i + 1; c < bs.length && (bs[c].depth ?? 0) > depth; c++) {
+                    if (visible.has(bs[c].id)) break;
+                    idSet.add(bs[c].id);
+                }
+            }
+        }
         const firstIdx = bs.findIndex((b) => idSet.has(b.id));
-        let remaining = bs.filter((b) => !idSet.has(b.id));
+        let remaining = normalizeDepths(bs.filter((b) => !idSet.has(b.id)));
         let focusId: string | null = null;
         if (remaining.length === 0) {
             const nb = newBlock('text');
             remaining = [nb];
             focusId = nb.id;
         } else {
+            // Visibility of what SURVIVES: a block still hidden inside a collapsed toggle can take
+            // no focus request (it renders no element), so aiming at one left the editor with focus
+            // on <body>, no block selected, and every key doing nothing until the user clicked.
+            const stillVisible = visibleBlockIds(remaining);
+            const focusable = (b: BlockData) => stillVisible.has(b.id) && isEditableType(b.type);
             for (let i = firstIdx - 1; i >= 0; i--) {
-                if (!idSet.has(bs[i].id) && isEditableType(bs[i].type)) {
+                if (!idSet.has(bs[i].id) && focusable(bs[i])) {
                     focusId = bs[i].id;
                     break;
                 }
             }
-            if (!focusId) focusId = remaining.find((b) => isEditableType(b.type))?.id ?? null;
+            if (!focusId) focusId = remaining.find(focusable)?.id ?? null;
         }
         setBlocks(remaining);
         clearBlockSelection();
@@ -1096,7 +1199,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             selectionFocus.current = copies[copies.length - 1]?.id ?? null;
             setSelectedIds(new Set(copies.map((c) => c.id)));
         } else {
-            const last = copies[copies.length - 1];
+            // The LAST copy is a hidden child when a collapsed toggle is duplicated, and a hidden
+            // block renders no element for the request to land on — so take the last copy the
+            // reader can actually see.
+            const visible = visibleBlockIds(next);
+            const last = copies.filter((copy) => visible.has(copy.id)).at(-1);
             if (last?.type === 'table')
                 focusReq.current = {id: tableCellId(last.id, 0, 0), pos: 'start'};
             else if (last && isEditableType(last.type))
@@ -1134,13 +1241,35 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const moveBlock = (srcId: string, dstId: string, edge: 'before' | 'after') => {
-        const next = moveBlockSubtree(blocksRef.current, srcId, dstId, edge);
+        // A subtree keeps its own depths through the move — that is what stops a drag from
+        // re-indenting what it carries — so a drop somewhere shallower can land a block deeper
+        // than its new neighbourhood can hold. Markdown cannot write that, so the file came back a
+        // level flatter than the screen and the two disagreed until the note was reopened.
+        const next = normalizeDepths(moveBlockSubtree(blocksRef.current, srcId, dstId, edge));
         if (next !== blocksRef.current) setBlocks(next);
     };
 
     const changeDepth = (id: string, direction: -1 | 1) => {
-        const next = changeBlockDepth(blocksRef.current, id, direction);
+        let next = changeBlockDepth(blocksRef.current, id, direction);
         if (next === blocksRef.current) return;
+        // Indenting under a COLLAPSED toggle would hide the block being indented: it renders no
+        // element, so the caret request lands nowhere and one Tab took both the paragraph and the
+        // keyboard away, with no way back but the mouse. Open the toggle instead, which is what
+        // the user asked for by putting something inside it.
+        if (!visibleBlockIds(next).has(id)) {
+            const index = next.findIndex((block) => block.id === id);
+            const opened = new Set<string>();
+            let level = next[index].depth ?? 0;
+            for (let at = index - 1; at >= 0 && level > 0; at--) {
+                const depth = next[at].depth ?? 0;
+                if (depth >= level) continue; // a sibling or its subtree, not an ancestor
+                level = depth;
+                if (next[at].type === 'toggle' && next[at].collapsed) opened.add(next[at].id);
+            }
+            next = next.map((block) =>
+                opened.has(block.id) ? {...block, collapsed: false} : block,
+            );
+        }
         setBlocks(next);
         focusReq.current = {id, pos: getCaretOffset(refs.current.get(id)!)};
     };
@@ -1393,8 +1522,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             updateTableCell(blockId, row, column, element.innerHTML);
             return;
         }
+        // The trailing newline Excel, Sheets and most web tables put on a copied range is a line
+        // TERMINATOR, not an empty row — pasting it wrote a blank over the cell below the paste.
         const matrix = text
             .replace(/\r/g, '')
+            .replace(/\n$/, '')
             .split('\n')
             .map((line) => line.split('\t'));
         const block = findBlock(blockId);
@@ -1457,10 +1589,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
         const [before, after] = splitHtmlAtCaret(el);
         const continueType = LIST_TYPES.includes(block.type) ? block.type : 'text';
-        const nb = {...newBlock(continueType, after), depth: block.depth ?? 0};
+        const depth = block.depth ?? 0;
+        // Enter in a toggle's summary writes its FIRST CHILD, not a sibling wedged between the
+        // toggle and the children it already has: that cut them loose, and the file got a
+        // `<details>` with an empty body and its content spilled out below. It also means Enter is
+        // how you put something in a toggle, rather than Enter-then-Tab.
+        const intoToggle = block.type === 'toggle' && depth < MAX_BLOCK_DEPTH;
+        const nb = {...newBlock(continueType, after), depth: intoToggle ? depth + 1 : depth};
         const idx = indexOf(block.id);
         setBlocks((bs) => {
-            const arr = bs.map((b) => (b.id === block.id ? {...b, html: before} : b));
+            const arr = bs.map((b) =>
+                b.id === block.id
+                    ? {...b, html: before, collapsed: intoToggle ? false : b.collapsed}
+                    : b,
+            );
             arr.splice(idx + 1, 0, nb);
             return arr;
         });
@@ -1721,6 +1863,25 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
+        // A selection dragged across block boundaries is one document selection over several
+        // separate contentEditables, and every key that would REPLACE it — Backspace, Delete,
+        // Enter — reaches only this block's handler. Both the browser's default and our own
+        // `deleteFromDocument` would then edit the other blocks' React-owned DOM behind React's
+        // back, so the removed text came back on the next render. Whole blocks go instead, which is
+        // what the equivalent block selection does (and what the cut path above settled on).
+        if (
+            (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter') &&
+            !(mod && e.shiftKey) &&
+            crossesBlocks()
+        ) {
+            const spanned = selectionBlockIds();
+            if (spanned.length > 1) {
+                e.preventDefault();
+                removeBlocks(spanned, 'exact');
+                return;
+            }
+        }
+
         if (e.key === 'Enter') {
             if (e.shiftKey && block.type !== 'code') return; // native soft break
             e.preventDefault();
@@ -1772,6 +1933,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     const plain = inlineHtmlToText(inlineMarkdownToHtml(text));
                     // The caret can have moved while the read was in flight — only insert if this
                     // block still holds it, or the text would land in whatever the user clicked.
+                    // `hiddenRef` is checked separately: entering preview moves FOCUS but not the
+                    // document selection, so the anchor test alone still passed and the clipboard
+                    // was written into the note behind a read-only surface.
+                    if (hiddenRef.current) return;
                     const target = refs.current.get(id);
                     if (!target || !target.contains(window.getSelection()?.anchorNode ?? null))
                         return;
@@ -2076,6 +2241,61 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         [...(list ?? [])].filter((file) => file.type.startsWith('image/'));
 
     /**
+     * Cheap "does the selection leave the block it started in?" — two `closest()` walks, so it can
+     * sit on the keystroke path that {@link selectionBlockIds} (an O(blocks) DOM scan) cannot.
+     * A table cell reports its TABLE's id, since that is the block either one belongs to.
+     */
+    const crossesBlocks = (): boolean => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+        const owner = (node: Node | null): string | null => {
+            const start = node instanceof Element ? node : (node?.parentElement ?? null);
+            const el = start?.closest<HTMLElement>('[data-block-id]');
+            return el ? (el.dataset.tableBlockId ?? el.dataset.blockId ?? null) : null;
+        };
+        const anchor = owner(selection.anchorNode);
+        const focus = owner(selection.focusNode);
+        // A focus that left every block — dragged on into the backlinks panel below — counts as
+        // crossing too: the partial path would `deleteFromDocument` across that boundary as well.
+        // Being generous is free, since the caller still acts only when the scan finds >1 block.
+        return (anchor !== null || focus !== null) && anchor !== focus;
+    };
+
+    /**
+     * The blocks a native text selection really covers, in document order. Each block is its own
+     * contentEditable, but a mouse drag extends ONE document selection across them, so this is
+     * routinely more than the block the event fired on.
+     */
+    const selectionBlockIds = (): string[] => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return [];
+        const range = selection.getRangeAt(0);
+        const wrappers = new Map<string, HTMLElement>();
+        for (const el of rootRef.current?.querySelectorAll<HTMLElement>('.block') ?? [])
+            wrappers.set(el.id, el);
+
+        const blocks = blocksRef.current;
+        let first = -1;
+        let last = -1;
+        for (let index = 0; index < blocks.length; index++) {
+            // Editable blocks are measured on their CONTENT element — the wrapper also holds the
+            // list marker, which a range that merely stops at the block's first character would
+            // still cover, pulling in a block the user selected nothing in. Tables and images have
+            // no content element, so there the wrapper is all there is (and has no such prefix).
+            const el = refs.current.get(blocks[index].id) ?? wrappers.get(blocks[index].id);
+            if (!el || rangeTextWithin(el, range) === '') continue;
+            if (first < 0) first = index;
+            last = index;
+        }
+        if (first < 0) return [];
+        // Everything BETWEEN the ends comes too, whether or not it holds text: a divider, an
+        // uncaptioned image or an empty paragraph contributes nothing for the range to cover, and
+        // leaving them behind meant a drag across three blocks deleted two and left the rule in
+        // the middle sitting on its own.
+        return blocks.slice(first, last + 1).map((block) => block.id);
+    };
+
+    /**
      * Copy/cut of a selection INSIDE a block, as Markdown.
      *
      * The browser's own `text/plain` is the RENDERED text, so copying `**bold**` out of a Markdown
@@ -2083,6 +2303,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * this is the in-block half.
      */
     const onCopyCut = (e: ClipboardEvent<HTMLDivElement>, id: string) => {
+        // Across blocks this becomes a WHOLE-BLOCK operation, the same one the block-selection
+        // clipboard handler performs — which is both what Notion does and the only safe answer
+        // here. The partial path below cannot serve it: `deleteFromDocument` would rip nodes out of
+        // the OTHER blocks' React-owned DOM while only this one's state was committed, so the cut
+        // text came straight back on the next render (and left React reconciling against children
+        // that no longer existed).
+        //
+        // `crossesBlocks` gates the scan: `selectionBlockIds` walks every block in the note, and a
+        // plain ⌘C inside one paragraph must not pay that on a long note.
+        if (crossesBlocks()) {
+            const spanned = selectionBlockIds();
+            if (spanned.length > 1) {
+                e.preventDefault();
+                writeBlocksToClipboard(e.clipboardData, spanned, e.type === 'cut', 'exact');
+                return;
+            }
+        }
+
         const html = selectionHtml();
         if (!html) return; // nothing selected — let the browser do its thing
         e.preventDefault();
@@ -2135,13 +2373,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                     candidate.id === id ? first : candidate,
                                 );
                                 arr.splice(idx + 1, 0, ...pasted);
-                                return arr;
+                                return normalizeDepths(arr);
                             });
                         } else {
                             setBlocks((bs) => {
                                 const arr = [...bs];
                                 arr.splice(idx + 1, 0, ...pasted);
-                                return arr;
+                                return normalizeDepths(arr);
                             });
                         }
                         if (lastInserted.type === 'table') {
@@ -2203,7 +2441,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 b.id === id ? {...b, html: beforeHtml + escapeHtml(first)} : b,
             );
             arr.splice(idx + 1, 0, ...rest);
-            return arr;
+            // The pasted depths are ADDED to the host block's, so pasting a nested list deep in one
+            // can push past the limit — and blocks carrying their own depths into a new place can
+            // land deeper than their new neighbourhood holds either way.
+            return normalizeDepths(arr);
         });
         focusReq.current = caretTarget;
     };
@@ -2252,10 +2493,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const direction = e.key === 'ArrowUp' ? -1 : 1;
             const {focus, edge} = selectionEnds(direction);
             if (focus < 0) return;
-            const nextIndex = Math.max(
-                0,
-                Math.min(blocksRef.current.length - 1, focus + direction),
-            );
+            // The next VISIBLE block, like the plain-arrow branch below: extending onto one hidden
+            // inside a collapsed toggle showed nothing new (a hidden block renders no element and
+            // `revealBlock` is a silent no-op on it), so ⇧↑ looked like it had done nothing — and
+            // the next Delete took content the user had never seen highlighted.
+            const nextIndex = nextVisibleIndex(focus, direction);
+            if (nextIndex === null) return;
             const anchorId = selectionAnchor.current ?? blocksRef.current[edge].id;
             selectBlockRange(anchorId, blocksRef.current[nextIndex].id);
             revealBlock(blocksRef.current[nextIndex].id);
@@ -2298,20 +2541,41 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
     };
 
+    /**
+     * Put whole blocks on the clipboard — the app's own JSON for a paste back into the editor, and
+     * Markdown for everywhere else — and remove them when this is a cut.
+     *
+     * `scope` carries the caller's gesture through to the removal, exactly as {@link removeBlocks}
+     * describes: a BLOCK selection is a selection of subtrees, a TEXT selection is what is
+     * highlighted. Cutting had to be told that too, or ⌘X over the same range that Backspace now
+     * handles correctly still took the children the user had watched stay unhighlighted.
+     */
+    const writeBlocksToClipboard = (
+        data: DataTransfer | null,
+        ids: Iterable<string>,
+        cut: boolean,
+        scope: 'subtree' | 'exact' = 'subtree',
+    ) => {
+        const selectedIds =
+            scope === 'subtree' ? expandBlockIds(blocksRef.current, ids) : new Set(ids);
+        const selected = blocksRef.current.filter((block) => selectedIds.has(block.id));
+        if (!selected.length) return;
+        data?.setData('application/x-notion-editor-blocks', JSON.stringify(selected));
+        data?.setData('text/plain', blocksToClipboardMarkdown(selected));
+        const noun = selected.length === 1 ? 'block' : 'blocks';
+        showToast(`${cut ? 'Cut' : 'Copied'} ${selected.length} ${noun}`);
+        if (cut)
+            removeBlocks(
+                selected.map((block) => block.id),
+                scope,
+            );
+    };
+
     const onSelectionClipboard = (e: globalThis.ClipboardEvent) => {
         if (!ownsDocumentEvent(e.target)) return;
-        const expanded = expandBlockIds(blocksRef.current, selectedIdsRef.current);
-        const selected = blocksRef.current.filter((block) => expanded.has(block.id));
-        if (!selected.length) return;
+        if (!expandBlockIds(blocksRef.current, selectedIdsRef.current).size) return;
         e.preventDefault();
-        e.clipboardData?.setData('application/x-notion-editor-blocks', JSON.stringify(selected));
-        e.clipboardData?.setData('text/plain', selected.map(blockToMarkdown).join('\n'));
-        if (e.type === 'cut') {
-            showToast(`Cut ${selected.length} ${selected.length === 1 ? 'block' : 'blocks'}`);
-            removeBlocks(selected.map((block) => block.id));
-        } else {
-            showToast(`Copied ${selected.length} ${selected.length === 1 ? 'block' : 'blocks'}`);
-        }
+        writeBlocksToClipboard(e.clipboardData, selectedIdsRef.current, e.type === 'cut');
     };
 
     // Deliberately NOT scoped to the editor: a click anywhere else is exactly what should drop the
@@ -2684,7 +2948,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 </OverlayPortal>
             )}
 
-            {slash && (
+            {!hidden && slash && (
                 <SlashMenu
                     anchor={slash.rect}
                     items={filteredItems}
@@ -2694,7 +2958,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     onClose={() => setSlash(null)}
                 />
             )}
-            {wiki && wikiItems.length > 0 && (
+            {!hidden && wiki && wikiItems.length > 0 && (
                 <WikiSuggestMenu
                     anchor={wiki.rect}
                     items={wikiItems}
@@ -2704,7 +2968,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     onClose={() => setWiki(null)}
                 />
             )}
-            {blockMenu && menuBlock && (
+            {!hidden && blockMenu && menuBlock && (
                 <BlockMenu
                     x={blockMenu.x}
                     y={blockMenu.y}
@@ -2744,7 +3008,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     onClose={() => setBlockMenu(null)}
                 />
             )}
-            <SelectionToolbar rootRef={rootRef} onSync={syncRichText} linkRequest={linkRequest} />
+            <SelectionToolbar
+                rootRef={rootRef}
+                onSync={syncRichText}
+                linkRequest={linkRequest}
+                hidden={hidden}
+            />
             {toast && (
                 // `position: fixed` again — portaled for the same reason as the overlays above.
                 <OverlayPortal>

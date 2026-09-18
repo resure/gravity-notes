@@ -256,6 +256,38 @@ describe('BlockEditorBody — preview keeps the editor alive', () => {
         expect(hidden?.style.display).toBe('none');
         expect(document.querySelector('.note-preview')).not.toBeNull();
     });
+
+    /**
+     * The editor's floating menus PORTAL to `<body>` at `position: fixed`, so the `display: none`
+     * that hides the editor does nothing to them: an open block menu stayed drawn over the preview,
+     * still clickable, and picking "Turn into ▸ Heading 1" from it restructured the note while the
+     * user was in a surface the UI calls read-only.
+     */
+    it('dismisses an open overlay menu when preview takes over', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const view = (preview: boolean) => (
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'body text')}
+                sessionId={1}
+                preview={preview}
+                onChange={vi.fn()}
+                {...props}
+            />
+        );
+        const {rerender} = render(view(false));
+
+        fireEvent.click(document.querySelector('.drag-btn')!);
+        expect(document.querySelector('.overlay-menu')).not.toBeNull();
+
+        rerender(view(true));
+        expect(document.querySelector('.overlay-menu')).toBeNull();
+
+        // …and coming back does not restore it: its position was measured from a rect that the
+        // preview has since scrolled away.
+        rerender(view(false));
+        expect(document.querySelector('.overlay-menu')).toBeNull();
+    });
 });
 
 describe('BlockEditorBody — caret handoffs in source mode', () => {
@@ -312,6 +344,18 @@ describe('BlockEditorBody — caret handoffs in source mode', () => {
         textarea().setSelectionRange(0, 0);
         expect(ref.current!.atEmptyFirstLine()).toBe(false);
     });
+
+    /**
+     * ⌘A on a note that happens to start with a blank line also reports `selectionStart === 0`. The
+     * pane reads this as "the caret is leaving for the title", swallows the Backspace and blurs —
+     * so select-all-and-delete deleted nothing at all.
+     */
+    it('does not claim Backspace away from a select-all', () => {
+        const ref = renderSource('\nsecond');
+        textarea().focus();
+        textarea().setSelectionRange(0, textarea().value.length);
+        expect(ref.current!.atEmptyFirstLine()).toBe(false);
+    });
 });
 
 describe('BlockEditorBody — the end of the note', () => {
@@ -338,5 +382,28 @@ describe('BlockEditorBody — the end of the note', () => {
         const cells = [...document.querySelectorAll<HTMLElement>('.table-cell-content')];
         const selected = window.getSelection()?.anchorNode ?? null;
         expect(cells[cells.length - 1].contains(selected)).toBe(true);
+    });
+});
+
+describe('BlockEditorBody — focus while previewing', () => {
+    it('focuses the preview surface, not the hidden editor', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('A.md', 'body text')}
+                sessionId={1}
+                preview
+                onChange={vi.fn()}
+                onUploadFile={async () => ''}
+                onOpenWikiLink={() => {}}
+                wikiNotes={[]}
+            />,
+        );
+        act(() => ref.current!.focus());
+        // The editor is mounted behind the preview so it keeps its undo history — but it is
+        // hidden, and a hidden element cannot take focus, so this used to do nothing at all and
+        // committing a note while previewing left focus on the list.
+        expect(document.activeElement).toBe(document.querySelector('.note-preview'));
     });
 });

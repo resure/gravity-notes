@@ -1,6 +1,8 @@
 import {useLayoutEffect, useRef, useState} from 'react';
 import type {ClipboardEvent, KeyboardEvent} from 'react';
 
+import {stripZeroWidth} from './caret';
+import {widestRow} from './types';
 import type {Block} from './types';
 
 export function tableCellId(blockId: string, row: number, column: number): string {
@@ -50,7 +52,10 @@ function TableCell({blockId, row, column, html, header, props, onFocusCell}: Tab
 
     useLayoutEffect(() => {
         const element = ref.current;
-        if (!element || element.innerHTML === html) return;
+        // Zero-width-insensitive, as the paragraph path is (see Block.tsx): cell state never carries
+        // the caret-escape U+200B, but the DOM can — pasted text from the web often does — and
+        // comparing raw then rewrote the element on every render, dropping the caret to its start.
+        if (!element || stripZeroWidth(element.innerHTML) === html) return;
         element.innerHTML = html;
     }, [html]);
 
@@ -93,7 +98,7 @@ export default function TableBlock(props: TableBlockProps) {
     if (!table) return null;
 
     const rows = table.cells.length;
-    const columns = Math.max(1, ...table.cells.map((row) => row.length));
+    const columns = Math.max(1, widestRow(table.cells));
     const preventBlur = (event: React.MouseEvent) => event.preventDefault();
 
     return (

@@ -69,6 +69,10 @@ The block editor owns these itself; they do nothing outside the body.
 | `Tab`       | Indent a list item (`⇧Tab` outdents); in a table, move to the next cell |
 | `Esc`       | Select the block; again to leave the editor                             |
 
+A selection dragged across block boundaries is treated as a selection of whole blocks: copying,
+cutting or deleting it takes each block it touches in full, exactly as if those blocks had been
+selected with `Esc` + `⇧↓`.
+
 With a block selected (after `Esc`):
 
 | Keys          | Action                                                   |

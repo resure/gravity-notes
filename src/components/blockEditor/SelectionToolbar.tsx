@@ -9,6 +9,13 @@ interface ToolbarProps {
     rootRef: RefObject<HTMLDivElement | null>;
     onSync: (blockId: string, html: string) => void;
     linkRequest: number;
+    /**
+     * The editor is off screen (read-only preview is showing over it). A PROP rather than the host
+     * simply not rendering this: the bar portals to `<body>`, so it has to be told — and unmounting
+     * it instead replayed the `linkRequest` effect below on the way back, popping the link box open
+     * over a stale rect and stealing the caret.
+     */
+    hidden?: boolean;
 }
 
 interface ToolbarState {
@@ -41,7 +48,7 @@ function computeActive(): Record<string, boolean> {
     return active;
 }
 
-export default function SelectionToolbar({rootRef, onSync, linkRequest}: ToolbarProps) {
+export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}: ToolbarProps) {
     const [state, setState] = useState<ToolbarState | null>(null);
     const [active, setActive] = useState<Record<string, boolean>>({});
     const [linkMode, setLinkMode] = useState(false);
@@ -51,10 +58,14 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest}: Toolbar
     const mouseIsDown = useRef(false);
     const linkModeRef = useRef(false);
     linkModeRef.current = linkMode;
+    const hiddenRef = useRef(false);
+    hiddenRef.current = Boolean(hidden);
+    /** The counter's value at mount, so a remount cannot replay the last ⌘K as a fresh one. */
+    const seenLinkRequest = useRef(linkRequest);
 
     useEffect(() => {
         const update = () => {
-            if (linkModeRef.current) return;
+            if (linkModeRef.current || hiddenRef.current) return;
             const sel = window.getSelection();
             if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
                 setState(null);
@@ -100,8 +111,25 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest}: Toolbar
         };
     }, [rootRef]);
 
+    /**
+     * Going off screen puts the bar away for good, link editor included.
+     *
+     * Not merely hiding it: `linkMode` and the anchor rect would then still be set on the way back,
+     * so ⌘K → preview → back re-opened the "Paste link" box over a rect measured before the toggle
+     * and took the caret with it (`autoFocus`), which is the very thing being off screen has to
+     * prevent. `update()` cannot do this — it returns early while the link editor is open, by
+     * design, so that typing a URL does not dismiss the box the URL is being typed into.
+     */
     useEffect(() => {
-        if (!linkRequest) return;
+        if (!hidden) return;
+        setLinkMode(false);
+        setState(null);
+        savedRange.current = null;
+    }, [hidden]);
+
+    useEffect(() => {
+        if (linkRequest === seenLinkRequest.current) return;
+        seenLinkRequest.current = linkRequest;
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
         savedRange.current = sel.getRangeAt(0).cloneRange();
@@ -114,7 +142,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest}: Toolbar
         setLinkMode(true);
     }, [linkRequest]);
 
-    if (!state) return null;
+    if (hidden || !state) return null;
 
     const syncSelectionBlock = () => {
         const el = selectionContentEl();

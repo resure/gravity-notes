@@ -54,13 +54,16 @@ function Thumb({cache, refPath, alt}: {cache: AttachmentUrlCache; refPath: strin
     // path — `forget()` has already dropped the entry — so deleting an attachment left its
     // thumbnail on the loading placeholder for good.
     const {url, failed} = useAttachmentUrl(refPath, cache);
-    if (url) return <img className="attachments__thumb" src={url} alt={alt} />;
-    return (
-        <span
-            className={`attachments__thumb attachments__thumb_${failed ? 'missing' : 'loading'}`}
-            aria-label={failed ? 'Image not found' : undefined}
-        />
-    );
+    // `failed` first, matching `AttachmentImage`: the broken state is the more specific answer, and
+    // the two surfaces disagreeing about which wins is how a stale URL stays on screen.
+    if (failed || !url)
+        return (
+            <span
+                className={`attachments__thumb attachments__thumb_${failed ? 'missing' : 'loading'}`}
+                aria-label={failed ? 'Image not found' : undefined}
+            />
+        );
+    return <img className="attachments__thumb" src={url} alt={alt} />;
 }
 
 /**
