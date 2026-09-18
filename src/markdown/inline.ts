@@ -57,7 +57,16 @@ export function escapeHtml(text: string): string {
 }
 
 /** Characters that would otherwise be read back as inline Markdown syntax. */
-const ESCAPABLE = /[\\`*[\]]/g;
+const ESCAPABLE = /[`*[\]]/g;
+
+/**
+ * A backslash that would otherwise be READ as something: one before ASCII punctuation (CommonMark's
+ * escape) or one at the end of a line (a hard break). Every OTHER backslash is already literal, and
+ * escaping it anyway doubled it on disk the first time such a note was saved — `\pi` became `\\pi`,
+ * `\d+` became `\\d+`, `C:\Users` became `C:\\Users`. Harmless-looking, except `\\` is a line break
+ * in LaTeX, so a note edited here rendered differently in every other tool afterwards.
+ */
+const MEANINGFUL_BACKSLASH = /\\(?=[!-/:-@[-`{-~])|\\(?=\n)|\\$/g;
 
 /**
  * Two or more `~` in a row — the strikethrough delimiter, and the only form of `~` that carries
@@ -83,10 +92,14 @@ const WIKI_LINK = /\[\[[^[\]\n]+\]\]/g;
  *   emphasis is re-read as emphasis — a rare, accepted loss in exchange for readable files.
  * - **A lone `~` is not escaped**, for the same reason: only `~~` opens strikethrough, so `~4 min`
  *   is already literal. See {@link STRIKE_RUN}.
+ * - **A backslash is escaped only where it would be read as one** — see {@link MEANINGFUL_BACKSLASH}.
  */
 export function escapeMarkdownText(text: string): string {
     const escape = (run: string) =>
         run
+            // Backslashes first: escaping them after the others would also double the ones those
+            // rules just added.
+            .replace(MEANINGFUL_BACKSLASH, '\\\\')
             .replace(ESCAPABLE, (char) => `\\${char}`)
             .replace(STRIKE_RUN, (tildes) => tildes.replace(/~/g, '\\~'));
     let out = '';

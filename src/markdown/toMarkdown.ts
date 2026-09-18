@@ -45,6 +45,10 @@ const INDENT = '  ';
  * blank lines are interior to a single chunk rather than chunks of their own.
  */
 export function blocksToMarkdown(blocks: Block[]): string {
+    // An empty note is EMPTY, not a blank row: the editor always holds at least one block, so a note
+    // with nothing in it arrives here as a single empty paragraph — which the blank-row rule below
+    // would otherwise write to disk as `&nbsp;`.
+    if (blocks.length === 1 && blocks[0].type === 'text' && blocks[0].html === '') return '';
     // No blank-line collapsing here: `blankBefore` already says exactly how many the source had,
     // and squashing runs of two undid that for every note with a deliberate double gap. Blocks the
     // editor created carry no count and get exactly one, so a run can only come from the file.
@@ -218,7 +222,12 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
         case 'todo':
             return prefixed(content, indent, block.checked ? '- [x] ' : '- [ ] ');
         default:
-            return prefixed(content, indent, '');
+            // An empty paragraph is a blank ROW the reader put there on purpose, and Markdown has no
+            // way to write one — a bare blank line is just block separation. `&nbsp;` is the spelling
+            // this app has always used for it (the previous editor's `preserveEmptyRows`), which is
+            // why notes written by it are full of them; dropping the row instead deleted the reader's
+            // spacing on the first save.
+            return content === '' ? [`${indent}&nbsp;`] : prefixed(content, indent, '');
     }
 }
 

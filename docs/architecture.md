@@ -62,10 +62,10 @@ format, in full:
 - **Bare URLs** are written exactly as you type them. A CommonMark autolink (`<https://example.com>`)
   and `[text](url)` render as links; a bare `https://example.com` stays plain text. See the known
   limitation below — the linkify-as-you-type the previous editor had went with it.
-- **Blank lines** written by an earlier version persist on disk as `&nbsp;` lines. The block editor
-  does **not** understand that spelling: it reads the entity as literal text, so those lines show up
-  as the characters `&nbsp;` rather than as blank rows, and a blank block typed here is dropped on
-  save. See the known limitation below.
+- **Blank lines** persist on disk as `&nbsp;` lines — the spelling this app has always used, since
+  Markdown has no way to write an intentional blank ROW (a bare blank line is just block
+  separation). They read back as empty blocks, and an empty block you type here is written the same
+  way, so deliberate spacing survives a save in both directions.
 
 ## Workspaces & windows
 
@@ -243,11 +243,10 @@ Markdown over anything clever.
   accepted if that rewrite also SETTLES — a second save must produce the same bytes — so a file can
   never drift further on each edit. Structure, words and URLs are still compared verbatim: a
   heading level or a callout kind changing is a rejection, not a normalisation.
-- **Blank lines written by an earlier version show up as the text `&nbsp;`.** That entity on its own
-  line is this app's on-disk spelling for intentional vertical space, and the block parser has no
-  mapping for it, so it renders literally. It round-trips byte-for-byte, so the check above does
-  **not** divert those notes — the file is never rewritten, but every blank row reads as six stray
-  characters. A blank block typed in the editor is likewise dropped on save.
+- **A note that is nothing but a blank row opens as source.** `&nbsp;` on its own line is this
+  app's on-disk spelling for an intentional blank row, and it round-trips as one — but a note whose
+  ENTIRE content is that one row reads back as an empty note, which is a different file, so the
+  check above diverts it rather than rewrite it. Blank rows inside a note are unaffected.
 - **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
   deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
 - **A selection dragged across blocks acts on whole blocks.** Every block is its own

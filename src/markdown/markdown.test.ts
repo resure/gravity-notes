@@ -122,6 +122,22 @@ describe('inline HTML → Markdown', () => {
         );
     });
 
+    it('escapes a backslash only where it would be read as one', () => {
+        // Escaping every backslash doubled it on disk the first time a note was saved: `\pi` became
+        // `\\pi` — which is a LINE BREAK in LaTeX, so maths edited here rendered differently
+        // everywhere else. Regexes and Windows paths got the same treatment.
+        expect(inlineHtmlToMarkdown('$e^{i\\pi}$ and \\d+ and C:\\Users')).toBe(
+            '$e^{i\\pi}$ and \\d+ and C:\\Users',
+        );
+        // A backslash that WOULD be read as one still needs escaping, and so does a trailing one
+        // (which CommonMark reads as a hard line break) — asserted as the round trip, since the
+        // escaped forms are easier to get wrong by hand than to read back.
+        for (const text of ['escaped \\* star', 'trailing \\', 'both \\\\ and \\* here']) {
+            expect(inlineMarkdownToHtml(inlineHtmlToMarkdown(text))).toBe(text);
+        }
+        expect(inlineHtmlToMarkdown('trailing \\')).toBe('trailing \\\\');
+    });
+
     it('reads and writes a colour, and leaves a token it does not know as text', () => {
         expect(inlineMarkdownToHtml('a {red}(warm) word')).toBe(
             'a <span class="gn-color gn-color--red">warm</span> word',
@@ -449,6 +465,17 @@ describe('round trips', () => {
 
     it('survives code containing a fence', () => {
         expectRoundTrip([block('code', '```\nnested\n```')]);
+    });
+
+    it('keeps a deliberate blank row, and an empty note empty', () => {
+        // `&nbsp;` on its own line is this app's spelling for an empty paragraph — the previous
+        // editor wrote them, and reading them as text showed six literal characters mid-note.
+        const note = ['one', '', '&nbsp;', '', 'two'].join('\n');
+        expect(markdownToBlocks(note).map((block) => block.html)).toEqual(['one', '', 'two']);
+        expect(blocksToMarkdown(markdownToBlocks(note))).toBe(note);
+        // …but a note with nothing in it is empty, not a blank row: the editor always holds one
+        // block, so every new note would otherwise be born with an `&nbsp;` in it.
+        expect(blocksToMarkdown(markdownToBlocks(''))).toBe('');
     });
 
     it('survives a block colour, including one on a block wrapped across lines', () => {

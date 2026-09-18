@@ -16,6 +16,9 @@ import {canCarryColor, liftBlockColor} from './color';
 import {inlineMarkdownToHtml} from './inline';
 import {renderTableLines} from './toMarkdown';
 
+/** How an intentionally blank row reaches disk — see `blocksToMarkdown`. */
+const NBSP_ROW = '&nbsp;';
+
 /** Nesting is written two spaces per level; four-space files are normalised by the depth clamp. */
 const SPACES_PER_LEVEL = 2;
 
@@ -273,6 +276,18 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
                 if (!continues) block.listStart = Number.parseInt(item[1], 10);
             }
             open = push(block, line.indent + item[1].length + 1 + (todo ? 4 : 0));
+            continue;
+        }
+
+        // ---- a deliberate blank row -------------------------------------------------------
+        // The counterpart of the writer's rule (see `blockLines`): a line that is exactly `&nbsp;`
+        // is the spelling this app uses for an empty paragraph, and the previous editor filled real
+        // notes with them. Read as text it showed the reader six literal characters.
+        if (line.text === NBSP_ROW) {
+            const block = newBlock('text');
+            block.depth = depth;
+            push(block, line.indent);
+            open = null;
             continue;
         }
 
