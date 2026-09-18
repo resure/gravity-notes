@@ -48,17 +48,36 @@ export function isAttachmentRef(src: string): boolean {
 export const TRASH_DIR = '.trash';
 
 /**
- * Every distinct `Attachments/…` reference used as an image src in a note's Markdown. Drives both the
- * preview's blob-URL resolution and the management view's orphan (unreferenced) detection. Attachment
- * names are URL-safe (no spaces/parens — see {@link uniqueAttachmentName}), so a simple scan suffices.
+ * Every distinct `Attachments/…` reference a note makes — images AND plain links, since a non-image
+ * attachment is written as an ordinary link. This is the "which files is this note using?" question,
+ * so the management view's orphan detection asks it: counting only images once reported a file a
+ * note links as unused, i.e. offered the reader's own attachment for deletion.
+ *
+ * Attachment names are URL-safe (no spaces/parens — see {@link uniqueAttachmentName}), so a simple
+ * scan suffices.
  */
 export function attachmentRefsIn(content: string): string[] {
+    return scanAttachmentRefs(content, /!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))/g);
+}
+
+/**
+ * The subset used as an image `src` — the "which files does this note DISPLAY?" question.
+ *
+ * Kept apart from {@link attachmentRefsIn} because the answer decides what gets read into memory:
+ * a display surface resolves each ref to a `blob:` URL, and a note linking a 50 MB PDF should not
+ * pay for it just to render its text.
+ */
+export function attachmentImageRefsIn(content: string): string[] {
+    return scanAttachmentRefs(content, /!\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))/g);
+}
+
+// A Markdown destination is either an angle-bracketed `<...>` (which may contain spaces) or a bare
+// token up to the next whitespace/`)`. Both are handled so a hand-edited/imported note using the
+// `![](<Attachments/a b.png>)` form is still detected — otherwise such a ref would render broken
+// *and* be counted "unused" (deletable) by the attachments manager.
+function scanAttachmentRefs(content: string, pattern: RegExp): string[] {
     const refs = new Set<string>();
-    // A Markdown image destination is either an angle-bracketed `<...>` (which may contain spaces) or
-    // a bare token up to the next whitespace/`)`. Handle both so a hand-edited/imported note using the
-    // `![](<Attachments/a b.png>)` form is still detected — otherwise such a ref would render broken
-    // *and* be counted "unused" (deletable) by the attachments manager.
-    for (const match of content.matchAll(/!\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))/g)) {
+    for (const match of content.matchAll(pattern)) {
         const dest = (match[1] ?? match[2] ?? '').trim();
         if (isAttachmentRef(dest)) refs.add(dest);
     }

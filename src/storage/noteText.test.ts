@@ -4,6 +4,7 @@ import {
     ATTACHMENTS_DIR,
     FOLDER_MARKER,
     MD_EXT,
+    attachmentImageRefsIn,
     attachmentRefsIn,
     basename,
     canonicalBody,
@@ -255,13 +256,31 @@ describe('isAttachmentRef', () => {
 });
 
 describe('attachmentRefsIn', () => {
-    it('collects distinct attachment image refs, ignoring external images and links', () => {
-        const md =
-            '![a](Attachments/cat.png)\n\n![b](https://x/y.png)\n\n[link](Attachments/not-an-image.png)\n\n![c](Attachments/cat.png) ![d](Attachments/dog.png)';
-        expect(attachmentRefsIn(md).sort()).toEqual(['Attachments/cat.png', 'Attachments/dog.png']);
+    const md = [
+        '![a](Attachments/cat.png)',
+        '![b](https://x/y.png)',
+        '[report](Attachments/q3.pdf)',
+        '![c](Attachments/cat.png) ![d](Attachments/dog.png)',
+    ].join('\n\n');
+
+    it('collects every distinct attachment a note uses, links included', () => {
+        // A linked file is used just as much as a displayed one — counting only images reported it
+        // as an orphan, so the manager offered the reader's own attachment for deletion.
+        expect(attachmentRefsIn(md).sort()).toEqual([
+            'Attachments/cat.png',
+            'Attachments/dog.png',
+            'Attachments/q3.pdf',
+        ]);
     });
 
-    it('returns an empty array when there are no attachment images', () => {
+    it('collects only the DISPLAYED ones separately, which is what gets read into memory', () => {
+        expect(attachmentImageRefsIn(md).sort()).toEqual([
+            'Attachments/cat.png',
+            'Attachments/dog.png',
+        ]);
+    });
+
+    it('returns an empty array when there are no attachments', () => {
         expect(attachmentRefsIn('# Title\n\njust text')).toEqual([]);
     });
 });

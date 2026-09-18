@@ -1483,6 +1483,30 @@ describe('code blocks', () => {
     });
 });
 
+describe('attaching files', () => {
+    it('writes a non-image file as an ordinary Markdown link', async () => {
+        const onChange = vi.fn();
+        const onAttachFile = vi.fn().mockResolvedValue('Attachments/q3-report.pdf');
+        render(<Editor value={'a note'} onChange={onChange} onAttachFile={onAttachFile} />);
+
+        const block = document.querySelector<HTMLElement>('.block')!;
+        const file = new File(['%PDF-1.7'], 'q3 report.pdf', {type: 'application/pdf'});
+        await act(async () => {
+            const event = createEvent.drop(block, {
+                dataTransfer: {files: [file], getData: () => '', setData: vi.fn()},
+            });
+            fireEvent(block, event);
+            await Promise.resolve();
+        });
+
+        // A link, not a block type only this app understands — Obsidian and GitHub render it too.
+        expect(onAttachFile).toHaveBeenCalledWith(file);
+        expect(onChange.mock.calls.at(-1)![0]).toBe(
+            'a note\n\n[q3 report.pdf](Attachments/q3-report.pdf)',
+        );
+    });
+});
+
 describe('callouts', () => {
     it('draws the icon the file’s own kind names, and writes a picked kind back', () => {
         const onChange = vi.fn();

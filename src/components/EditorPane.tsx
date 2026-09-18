@@ -46,6 +46,8 @@ interface EditorPaneProps {
     wikiNotes: NoteMeta[];
     /** Follow a `[[link]]` (⌘/Ctrl-click): resolve the title to a note and open it, creating it if missing. */
     onOpenWikiLink: (target: string) => void;
+    /** ⌘-click on a link to a stored file — the shell reveals it on disk (desktop only). */
+    onOpenAttachment?: (ref: string) => void;
     /** Gravity icon component name for the open note; absent = default File icon. */
     icon?: string;
     /** Called when the user picks or clears an icon from the title area. */
@@ -75,6 +77,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onUploadFile,
         wikiNotes,
         onOpenWikiLink,
+        onOpenAttachment,
         icon,
         onSetIcon,
         showNoteIcons,
@@ -269,6 +272,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     onChange={onChange}
                     onUploadFile={onUploadFile}
                     onOpenWikiLink={onOpenWikiLink}
+                    onOpenAttachment={onOpenAttachment}
                     onLeaveTop={() => titleRef.current?.focusAtEnd()}
                     onEscape={onEscape}
                 />

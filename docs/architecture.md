@@ -44,8 +44,10 @@ format, in full:
 - **`.trash/`** — deleting a note moves it here (a hidden folder, excluded from listings), so
   Trash survives across app restarts and is restorable from the storage menu. Emptying the Trash
   is the only permanent delete.
-- **`Attachments/`** — pasted/dropped images land here as files; notes reference them
-  root-relatively (`![…](Attachments/pie.png)`). The stored Markdown never contains `blob:` URLs.
+- **`Attachments/`** — pasted/dropped files land here; notes reference them root-relatively. An
+  image is written as one (`![…](Attachments/pie.png)`) and displayed inline; anything else is an
+  ordinary link (`[report.pdf](Attachments/report.pdf)`), which `⌘-click` reveals in Finder and which
+  other Markdown tools render as a working link. The stored Markdown never contains `blob:` URLs.
 - **`.gnkeep`** — a marker file that keeps a deliberately-empty folder alive (Git-style).
 - **Other files** (including extensionless files) appear as muted, non-editable rows alongside notes.
   Folder stores expose names and paths through optional `listFiles()` without reading file bodies;

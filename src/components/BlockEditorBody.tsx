@@ -52,6 +52,8 @@ export interface BlockEditorBodyProps {
     onLeaveTop?: () => void;
     /** Escape with nothing left in the editor to dismiss — the pane walks focus back to the list. */
     onEscape?: () => void;
+    /** ⌘-click on a link to a stored file — the shell reveals it on disk. */
+    onOpenAttachment?: (ref: string) => void;
     /**
      * This note's Markdown holds something the block model can't reproduce byte-for-byte (see
      * `isRoundTripStable`). The session opens on the raw source instead, with a one-line notice:
@@ -109,6 +111,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             onOpenWikiLink,
             onLeaveTop,
             onEscape,
+            onOpenAttachment,
             forceSource = false,
             scrollContainerRef,
         },
@@ -411,6 +414,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         onAttachFile={(file) => onUploadFile(file).catch(() => null)}
                         onLeaveTop={onLeaveTop}
                         onEscape={onEscape}
+                        onOpenAttachment={onOpenAttachment}
                         scrollContainerRef={scrollContainerRef}
                         // `display: none` hides the editor's own subtree, but its menus portal to
                         // `<body>` — they need telling.

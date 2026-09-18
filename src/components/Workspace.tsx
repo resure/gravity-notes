@@ -260,6 +260,29 @@ export function Workspace({
     // with no toast and no trace, and the user reads that as the drop not registering. Toasting at
     // the boundary that owns `onError` covers both engines; the rethrow keeps each one free to decide
     // what to do about the missing reference.
+    /**
+     * ⌘-click on a link to a stored file. There is no URL to hand the OS — the file lives in the
+     * workspace — so the desktop reveals it in Finder, which is the same affordance the attachments
+     * manager offers. Backends with no file to reveal (the web, in-browser storage) say so rather
+     * than doing nothing.
+     */
+    const handleOpenAttachment = useCallback(
+        (ref: string) => {
+            if (!store.reveal) {
+                onError('Attached files can only be opened in the desktop app');
+                return;
+            }
+            // Through `store`, not a captured `reveal`, so `this` stays bound (TauriNoteStore.reveal
+            // reads `this.dir`) — the same reason the attachments manager calls it this way.
+            store
+                .reveal(ref)
+                .catch((err) =>
+                    onError(err instanceof Error ? err.message : 'Failed to reveal in Finder'),
+                );
+        },
+        [store, onError],
+    );
+
     const handleUploadFile = useCallback(
         async (file: File): Promise<string> => {
             try {
@@ -1728,6 +1751,7 @@ export function Workspace({
                                         onUploadFile={handleUploadFile}
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
+                                        onOpenAttachment={handleOpenAttachment}
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         spellcheck={settings.spellcheck}

@@ -22,7 +22,7 @@ import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
 import {openExternalUrl} from '../openExternal';
-import {attachmentRefsIn, isAttachmentRef} from '../storage/noteText';
+import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
 
 // Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
@@ -231,7 +231,7 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
         // Render right away (correct for note text and any already-cached/seeded images)…
         setRendered(render());
         // …then, once any not-yet-read attachments resolve, re-render so their <img>s point at blobs.
-        const refs = attachmentRefsIn(markup);
+        const refs = attachmentImageRefsIn(markup);
         if (refs.length === 0 || !cache) return undefined;
         let alive = true;
         // Subscribe to each shown ref: (a) the cache never evicts a subscribed ref, so these on-screen

@@ -28,6 +28,7 @@ import {
 } from '../../markdown';
 import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
 import {openExternalUrl} from '../../openExternal';
+import {isAttachmentRef} from '../../storage/noteText';
 import type {NoteMeta} from '../../storage/types';
 import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
 
@@ -427,6 +428,8 @@ export interface EditorProps {
      * read-only, and their actions still committed edits to the note.
      */
     hidden?: boolean;
+    /** ⌘-click on a link to a stored file — the host reveals it (there is no URL to open). */
+    onOpenAttachment?: (ref: string) => void;
     /**
      * The element that scrolls this editor — the host pane, which owns the scrollbar. Handed down
      * rather than discovered, so the auto-scroll during a drag moves the same element the host's
@@ -449,6 +452,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onLeaveTop,
         onAttachFile,
         onEscape,
+        onOpenAttachment,
         hidden = false,
         scrollContainerRef,
     },
@@ -2247,9 +2251,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      */
     const onRootClick = (e: MouseEvent<HTMLDivElement>) => {
         const anchor = (e.target as HTMLElement | null)?.closest('a');
-        if (!anchor?.getAttribute('href')) return;
+        const href = anchor?.getAttribute('href');
+        if (!href) return;
         e.preventDefault();
-        if (e.metaKey || e.ctrlKey) openExternalUrl(anchor.href);
+        if (!(e.metaKey || e.ctrlKey)) return;
+        // An attachment is a file in the workspace, not a URL: `anchor.href` has already resolved it
+        // against the app's own origin, so only the RAW attribute still names the file. The host
+        // knows what to do with it (reveal it in Finder); `openExternalUrl` would simply drop it.
+        const ref = decodeURI(href);
+        if (isAttachmentRef(ref)) onOpenAttachment?.(ref);
+        else if (anchor) openExternalUrl(anchor.href);
     };
 
     // Mirror the live modifier state onto the root so links can show they're clickable before the
@@ -2354,6 +2365,45 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * after `afterId`. The note only ever carries the returned root-relative reference, so a note can
      * move between folders without its images breaking.
      */
+    const insertBlocksAfter = (afterId: string, inserted: BlockData[]) => {
+        if (!inserted.length) return;
+        setBlocks((current) => {
+            const at = current.findIndex((candidate) => candidate.id === afterId);
+            const next = [...current];
+            // The anchor can be gone by now — `onAttachFile` is awaited by both callers, and the
+            // block may have been merged or deleted while the bytes were being written. `findIndex`
+            // returns -1 then, and `splice(-1 + 1, …)` would silently insert at the TOP of the note.
+            if (at === -1) {
+                next.push(...inserted);
+                return next;
+            }
+            // An empty paragraph is replaced rather than left dangling above what arrived.
+            const target = current[at];
+            if (target && target.type === 'text' && isEmptyHtml(target.html))
+                next.splice(at, 1, ...inserted);
+            else next.splice(at + 1, 0, ...inserted);
+            return next;
+        });
+    };
+
+    const insertAttachmentFiles = async (afterId: string, files: File[]) => {
+        if (!onAttachFile) return;
+        const inserted: BlockData[] = [];
+        for (const file of files) {
+            const ref = await onAttachFile(file);
+            if (!ref) continue;
+            const block = newBlock(
+                'text',
+                `<a href="${escapeHtml(encodeURI(ref))}" rel="noopener noreferrer">${escapeHtml(
+                    file.name,
+                )}</a>`,
+            );
+            block.depth = findBlock(afterId)?.depth ?? 0;
+            inserted.push(block);
+        }
+        insertBlocksAfter(afterId, inserted);
+    };
+
     const insertImageFiles = async (afterId: string, files: File[]) => {
         if (!onAttachFile) return;
         const inserted: BlockData[] = [];
@@ -2365,28 +2415,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             image.depth = findBlock(afterId)?.depth ?? 0;
             inserted.push(image);
         }
-        if (!inserted.length) return;
-        setBlocks((current) => {
-            const at = current.findIndex((candidate) => candidate.id === afterId);
-            const next = [...current];
-            // The anchor can be gone by now — `onAttachFile` is awaited above, and the block may
-            // have been merged or deleted while the bytes were being written. `findIndex` returns
-            // -1 then, and `splice(-1 + 1, …)` would silently insert at the TOP of the note.
-            if (at === -1) {
-                next.push(...inserted);
-                return next;
-            }
-            // An empty paragraph is replaced rather than left dangling above the image.
-            const target = current[at];
-            if (target && target.type === 'text' && isEmptyHtml(target.html))
-                next.splice(at, 1, ...inserted);
-            else next.splice(at + 1, 0, ...inserted);
-            return next;
-        });
+        insertBlocksAfter(afterId, inserted);
     };
 
     const imageFilesFrom = (list: FileList | null | undefined): File[] =>
         [...(list ?? [])].filter((file) => file.type.startsWith('image/'));
+
+    /**
+     * Anything else that was dropped or pasted. An image becomes an image block; everything else
+     * becomes an ordinary Markdown link to the stored file — the portable spelling, which Obsidian
+     * and GitHub both render, rather than a block type only this app would understand.
+     */
+    const otherFilesFrom = (list: FileList | null | undefined): File[] =>
+        [...(list ?? [])].filter((file) => !file.type.startsWith('image/') && file.size > 0);
 
     /**
      * Cheap "does the selection leave the block it started in?" — two `closest()` walks, so it can
@@ -2486,8 +2527,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const block = findBlock(id);
         if (!el || !block) return;
         const images = imageFilesFrom(e.clipboardData.files);
-        if (images.length && onAttachFile) {
-            void insertImageFiles(id, images);
+        const others = otherFilesFrom(e.clipboardData.files);
+        if ((images.length || others.length) && onAttachFile) {
+            if (images.length) void insertImageFiles(id, images);
+            if (others.length) void insertAttachmentFiles(id, others);
             return;
         }
         const serializedBlocks = e.clipboardData.getData('application/x-notion-editor-blocks');
@@ -2843,9 +2886,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const onDrop = (e: DragEvent<HTMLDivElement>, id: string) => {
         e.preventDefault();
         const images = imageFilesFrom(e.dataTransfer.files);
-        if (images.length && onAttachFile) {
+        const others = otherFilesFrom(e.dataTransfer.files);
+        if ((images.length || others.length) && onAttachFile) {
             endDrag();
-            void insertImageFiles(id, images);
+            if (images.length) void insertImageFiles(id, images);
+            if (others.length) void insertAttachmentFiles(id, others);
             return;
         }
         // The state is set on a deferred tick (see above), so a very fast drag can drop before it
