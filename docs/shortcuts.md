@@ -44,6 +44,7 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
 | `⌘Enter`         | Follow the `[[wiki link]]` under the caret (⌘-click does the same)                                                                        |
+| Caret in a link  | Open / Edit / Unlink appear under it — Edit re-opens the note picker over the existing target                                             |
 | `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
 | `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's a typing chord)                                                     |
 | `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in the body it duplicates the block               |

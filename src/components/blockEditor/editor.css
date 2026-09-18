@@ -729,6 +729,32 @@
     outline: none;
 }
 
+/* The `[[wiki link]]` actions, floating under the link the caret is in. A row of quiet text buttons
+   rather than icons: three verbs are shorter to read than three glyphs are to decode. */
+.gn-block-editor .wiki-tip {
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+}
+
+.gn-block-editor .wiki-tip-btn {
+    padding: 3px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--n-text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.gn-block-editor .wiki-tip-btn:hover,
+.gn-block-editor .wiki-tip-btn:focus {
+    background: var(--n-hover);
+    outline: none;
+}
+
 /* ---------- the block-level pickers (code language, callout kind) ---------- */
 
 .gn-block-editor .picker-menu {

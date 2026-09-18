@@ -490,6 +490,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const [slash, setSlash] = useState<SlashState | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
     const [wiki, setWiki] = useState<WikiState | null>(null);
+    /**
+     * The `[[wiki link]]` the caret is sitting in, and where to float its actions. A link is literal
+     * TEXT here (that is what makes it Obsidian-compatible), so there is no anchor to hover and no
+     * tooltip a browser would give us — without this, re-pointing a link means editing brackets.
+     */
+    const [linkTip, setLinkTip] = useState<{
+        blockId: string;
+        start: number;
+        end: number;
+        /** The text between the brackets, `|alias` and all — what a re-validation compares. */
+        inner: string;
+        target: string;
+        x: number;
+        y: number;
+    } | null>(null);
     const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
@@ -1081,7 +1096,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // ----- [[ note picker -----
 
-    const openWikiMenu = (blockId: string, anchor: number) => {
+    const openWikiMenu = (blockId: string, anchor: number, query = '') => {
         const el = refs.current.get(blockId);
         if (!el) return;
         // VIEWPORT coordinates, like every other overlay here — see openSlashMenu.
@@ -1089,7 +1104,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setWiki({
             blockId,
             anchor,
-            query: '',
+            query,
             rect: {x: line.left, top: line.top, bottom: line.bottom},
         });
         setWikiIndex(0);
@@ -2188,18 +2203,26 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * so they survive every edit path untouched and need no DOM transform. That means following one
      * is a text-and-offset lookup rather than a click on an anchor.
      */
-    const wikiLinkAt = (text: string, offset: number): string | null => {
+    const wikiLinkRangeAt = (
+        text: string,
+        offset: number,
+    ): {start: number; end: number; inner: string; target: string} | null => {
         for (const match of text.matchAll(/\[\[([^[\]\n]+)\]\]/g)) {
             const start = match.index ?? 0;
-            if (offset >= start && offset <= start + match[0].length) {
+            const end = start + match[0].length;
+            if (offset >= start && offset <= end) {
                 // `|alias` and `#heading` are display/anchor sugar; the note is named by what
                 // precedes them. Read through wikiLinks.ts so this surface and the resolver can
                 // never disagree about what a target means.
-                return normalizeTarget(match[1]) || null;
+                const target = normalizeTarget(match[1]);
+                return target ? {start, end, inner: match[1], target} : null;
             }
         }
         return null;
     };
+
+    const wikiLinkAt = (text: string, offset: number): string | null =>
+        wikiLinkRangeAt(text, offset)?.target ?? null;
 
     const followWikiLink = (id: string, offset: number): boolean => {
         if (!onWikiLinkNavigate) return false;
@@ -2209,6 +2232,57 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!target) return false;
         onWikiLinkNavigate(target);
         return true;
+    };
+
+    /**
+     * Track the caret into and out of a link. `selectionchange` is the only event that fires for
+     * every way the caret can get there — typing, arrows, a click, a drag — and the rect comes from
+     * the DECORATION span (wikiDecorate.ts), which is the on-screen extent of the link.
+     */
+    useEffect(() => {
+        const update = () => {
+            const selection = window.getSelection();
+            const node = selection?.anchorNode;
+            const element = node instanceof Element ? node : node?.parentElement;
+            const span = element?.closest<HTMLElement>(`.${WIKI_LINK_CLASS}`);
+            const content = span?.closest<HTMLElement>('[data-block-id]');
+            const blockId = content?.dataset.blockId;
+            if (!span || !blockId || !selection?.isCollapsed || !rootRef.current?.contains(span)) {
+                setLinkTip((current) => (current ? null : current));
+                return;
+            }
+            const probe = document.createRange();
+            probe.selectNodeContents(content);
+            probe.setEnd(span, 0);
+            const range = wikiLinkRangeAt(content.textContent ?? '', probe.toString().length);
+            if (!range) {
+                setLinkTip((current) => (current ? null : current));
+                return;
+            }
+            const rect = span.getBoundingClientRect();
+            setLinkTip((current) =>
+                current?.blockId === blockId && current.start === range.start
+                    ? current
+                    : {blockId, ...range, x: rect.left, y: rect.bottom + 6},
+            );
+        };
+        document.addEventListener('selectionchange', update);
+        return () => document.removeEventListener('selectionchange', update);
+    }, []);
+
+    /** Replace the link's whole `[[…]]` run with `replacement`, leaving the caret after it. */
+    const replaceWikiLink = (tip: NonNullable<typeof linkTip>, replacement: string) => {
+        const el = refs.current.get(tip.blockId);
+        if (!el) return;
+        setLinkTip(null);
+        // Re-validate against the LIVE text: the tooltip may have been on screen while the block
+        // changed under it, and splicing a stale range would cut the wrong characters.
+        const live = wikiLinkRangeAt(el.textContent ?? '', tip.start);
+        if (!live || live.start !== tip.start || live.inner !== tip.inner) return;
+        deleteTextRange(el, live.start, live.end);
+        if (el.innerHTML === '<br>') el.innerHTML = '';
+        if (replacement) insertPlainTextAtCaret(replacement);
+        commitHtml(tip.blockId, el);
     };
 
     const onContentMouseDown = (e: MouseEvent<HTMLDivElement>, id: string) => {
@@ -3297,6 +3371,50 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     }}
                     onClose={() => setPicker(null)}
                 />
+            )}
+            {linkTip && (
+                <OverlayPortal>
+                    <div
+                        className="overlay-menu wiki-tip"
+                        style={{left: linkTip.x, top: linkTip.y}}
+                        role="toolbar"
+                        aria-label={`Link to ${linkTip.target}`}
+                        // Every button keeps the caret where it is: these act on the link the caret
+                        // is IN, and a focus grab would take away the very thing they act on.
+                        onMouseDown={(event) => event.preventDefault()}
+                    >
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => {
+                                setLinkTip(null);
+                                onWikiLinkNavigate?.(linkTip.target);
+                            }}
+                        >
+                            Open
+                        </button>
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => {
+                                // Re-open the picker over this link: the brackets go back to being
+                                // a live `[[` trigger, seeded with what the link says now.
+                                const el = refs.current.get(linkTip.blockId);
+                                replaceWikiLink(linkTip, `[[${linkTip.inner}`);
+                                if (el) openWikiMenu(linkTip.blockId, linkTip.start, linkTip.inner);
+                            }}
+                        >
+                            Edit
+                        </button>
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => replaceWikiLink(linkTip, linkTip.inner)}
+                        >
+                            Unlink
+                        </button>
+                    </div>
+                </OverlayPortal>
             )}
             <SelectionToolbar
                 rootRef={rootRef}

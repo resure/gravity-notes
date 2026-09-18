@@ -273,10 +273,6 @@ Markdown over anything clever.
   table whose header cells you empty **entirely** loses that row on reload, for the same reason: GFM
   has no headerless table, so an empty header row is exactly how one is spelled, and it reads back as
   a table with no header rather than as a blank one.
-- **A `[[wiki link]]` has no tooltip.** The previous editor showed Open / Edit / Unlink when the
-  caret sat inside one, with the Edit option re-targeting it through the note picker. That went with
-  the Gravity editor and has no replacement: `⌘↵` and `⌘-click` follow a link, and `[[` creates one,
-  but re-pointing or unlinking means editing the literal text.
 - **Bare URLs are not linkified as you type.** `<https://example.com>` (a CommonMark autolink) and
   `[text](url)` render as real links; a bare `https://example.com` stays plain text until you wrap
   it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a

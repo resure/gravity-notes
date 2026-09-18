@@ -33,6 +33,32 @@ beforeEach(() => {
     vi.mocked(openExternalUrl).mockClear();
 });
 
+/**
+ * jsdom has no `document.execCommand`, which is how the editor inserts text at the caret
+ * (`insertPlainTextAtCaret`). A minimal `insertText` over the live Range is enough to exercise the
+ * commit path. Installed per describe that needs it — leaning on another describe's `beforeEach`
+ * works right up until the suite is filtered or reordered, and then fails as a silent no-op that
+ * looks like the feature being broken.
+ */
+function useInsertTextStub() {
+    beforeEach(() => {
+        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
+            if (command !== 'insertText') return false;
+            const selection = window.getSelection();
+            if (!selection?.rangeCount) return false;
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            const node = document.createTextNode(value);
+            range.insertNode(node);
+            range.setStartAfter(node);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        }) as typeof document.execCommand;
+    });
+}
+
 describe('Editor as a per-note surface', () => {
     it('renders a note’s Markdown as blocks', () => {
         renderEditor(NOTE);
@@ -286,27 +312,7 @@ describe('[[wiki links]] in the body', () => {
         return onChange;
     }
 
-    /**
-     * jsdom has no `document.execCommand`, which is how the editor inserts text at the caret
-     * (`insertPlainTextAtCaret`). A minimal `insertText` over the live Range is enough to exercise
-     * the commit path.
-     */
-    beforeEach(() => {
-        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
-            if (command !== 'insertText') return false;
-            const selection = window.getSelection();
-            if (!selection?.rangeCount) return false;
-            const range = selection.getRangeAt(0);
-            range.deleteContents();
-            const node = document.createTextNode(value);
-            range.insertNode(node);
-            range.setStartAfter(node);
-            range.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            return true;
-        }) as typeof document.execCommand;
-    });
+    useInsertTextStub();
 
     /**
      * Replace a block's text and fire the input the editor listens for, with the caret parked at the
@@ -729,22 +735,7 @@ describe('[[ picker commits against the trigger, not the live caret', () => {
         });
     }
 
-    beforeEach(() => {
-        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
-            if (command !== 'insertText') return false;
-            const selection = window.getSelection();
-            if (!selection || selection.rangeCount === 0) return false;
-            const range = selection.getRangeAt(0);
-            range.deleteContents();
-            const node = document.createTextNode(value);
-            range.insertNode(node);
-            range.setStartAfter(node);
-            range.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            return true;
-        }) as typeof document.execCommand;
-    });
+    useInsertTextStub();
 
     it('dismisses the picker when the caret moves out of the trigger', () => {
         const onChange = vi.fn();
@@ -1480,6 +1471,64 @@ describe('code blocks', () => {
         // An unlisted token is still the note's, and showing it verbatim is how you can tell it
         // survived — the alternative (falling back to "Plain text") looks like the file lost it.
         expect(screen.getByRole('button', {name: 'jsonc'})).toBeInTheDocument();
+    });
+});
+
+describe('the [[wiki link]] actions', () => {
+    useInsertTextStub();
+    const NOTES = [{id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3}];
+
+    /** Put the caret inside the link's decoration span, as a click or an arrow key would. */
+    function caretInLink() {
+        const span = document.querySelector<HTMLElement>('.wiki-link')!;
+        const range = document.createRange();
+        range.setStart(span.firstChild!, 2);
+        range.collapse(true);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        act(() => {
+            document.dispatchEvent(new Event('selectionchange'));
+        });
+    }
+
+    it('offers Open / Edit / Unlink for the link the caret is in', () => {
+        const onWikiLinkNavigate = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={vi.fn()}
+                onWikiLinkNavigate={onWikiLinkNavigate}
+            />,
+        );
+        expect(screen.queryByRole('toolbar', {name: /Link to/})).not.toBeInTheDocument();
+
+        caretInLink();
+        expect(screen.getByRole('toolbar', {name: 'Link to Daily log'})).toBeInTheDocument();
+
+        act(() => {
+            fireEvent.click(screen.getByText('Open'));
+        });
+        expect(onWikiLinkNavigate).toHaveBeenCalledWith('Daily log');
+    });
+
+    it('unlinks to the bare title, leaving the words behind', () => {
+        const onChange = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={onChange}
+            />,
+        );
+        caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Unlink'));
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('see Daily log now');
     });
 });
 
