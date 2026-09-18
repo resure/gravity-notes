@@ -273,12 +273,25 @@
     --gn-block-line: 24px;
 }
 
+/* Both controls live in the LEFT gutter, the way Notion has them: add, then drag, then the text.
+   The pane widens `--editor-gutter` to fit the pair (EditorPane.css), and the note title reads the
+   same variable, so title and body keep one left edge.
+
+   They are two absolutely-positioned slots rather than one flex row because the narrow layout puts
+   them back on opposite margins — a 16px gutter has room for neither, let alone both. */
 .gn-block-editor .handle-slot_left {
-    left: -26px;
+    left: -23px;
 }
 
 .gn-block-editor .handle-slot_right {
     right: -30px;
+}
+
+@media (min-width: 721px) {
+    .gn-block-editor .handle-slot_right {
+        right: auto;
+        left: -47px;
+    }
 }
 
 .gn-block-editor .block:hover .handles,
@@ -626,11 +639,28 @@
     padding: 16px 16px 16px 12px;
 }
 
-.gn-block-editor .callout-emoji {
-    font-size: 20px;
-    line-height: 24px;
+/* The icon is the callout's KIND (callouts.ts) and clicking it changes that kind, so it is a real
+   button — styled as the glyph it was, with the hover fill that says it can be pressed. */
+.gn-block-editor .callout-icon-col {
     margin-right: 8px;
     user-select: none;
+}
+
+.gn-block-editor .callout-icon {
+    display: block;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    font-size: 20px;
+    line-height: 24px;
+    cursor: pointer;
+}
+
+.gn-block-editor .callout-icon:hover,
+.gn-block-editor .callout-icon:focus {
+    background: var(--n-hover);
+    outline: none;
 }
 
 .gn-block-editor .callout-wrap .content {
@@ -699,14 +729,14 @@
     outline: none;
 }
 
-/* ---------- code language picker ---------- */
+/* ---------- the block-level pickers (code language, callout kind) ---------- */
 
-.gn-block-editor .lang-menu {
+.gn-block-editor .picker-menu {
     width: 220px;
     padding: 6px;
 }
 
-.gn-block-editor .lang-filter {
+.gn-block-editor .picker-filter {
     width: 100%;
     margin-bottom: 4px;
     padding: 5px 8px;
@@ -719,12 +749,12 @@
     box-sizing: border-box;
 }
 
-.gn-block-editor .lang-filter:focus {
+.gn-block-editor .picker-filter:focus {
     border-color: var(--n-blue);
     outline: none;
 }
 
-.gn-block-editor .lang-list {
+.gn-block-editor .picker-list {
     max-height: 260px;
     overflow-y: auto;
 }
@@ -1062,9 +1092,12 @@
     font-weight: 600;
 }
 
-.gn-block-editor .menu-back {
-    font-size: 22px;
-    line-height: 1;
+/* The icon column and the hint column both CENTRE their contents: these slots hold icons now, and
+   a glyph sitting on the text baseline (which is what `›` and `✓` did) reads as a stray character
+   half a line too high. */
+.gn-block-editor .menu-item-hint {
+    display: flex;
+    align-items: center;
 }
 
 .gn-block-editor .block-menu > span {

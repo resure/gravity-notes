@@ -31,13 +31,14 @@
     flex: 1 0 auto;
 }
 
-/* The block editor puts a drag handle in the margin to the LEFT of each block (and the add button
-   in the right margin, so the left side only has to fit one 18px button). The default 16px gutter
-   would leave it hanging off the pane edge, so the pane runs a wider one — the note TITLE reads the
-   same variable, so title and body keep one shared left edge and the handle sits inside the gutter
-   rather than pushing the text right. */
+/* The block editor puts both of a block's controls in the margin to its LEFT — add, then the drag
+   handle — so the gutter has to fit the pair. The default 16px would leave them hanging off the pane
+   edge; the note TITLE reads the same variable, so title and body keep one shared left edge and the
+   controls sit inside the gutter rather than pushing the text right. */
 .editor-pane {
-    --editor-gutter: 36px;
+    /* Room for BOTH block controls (a 24px add + an 18px drag handle) plus their clearance from the
+       text — see the handle slots in blockEditor/editor.css. */
+    --editor-gutter: 48px;
 }
 
 /* On a phone the handle track isn't worth the width (the handles are hover furniture), so fall back

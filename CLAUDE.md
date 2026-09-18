@@ -370,10 +370,11 @@ Key modules:
   AND portaled to `<body>` via `OverlayPortal` — the host pane scrolls, clips its overflow, and
   carries a `transform`, which both re-anchors `fixed` to the pane and cuts the overlay off. The
   portal host re-applies the `.gn-block-editor` scope class (with `display: contents`) so the scoped
-  rules still match once the overlay leaves the subtree. Block furniture is SPLIT across both
-  margins — drag handle left, add button right — so the left gutter only has to fit one 18px button
-  (`.editor-pane` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
-  too, so title and body keep one left edge). `[[wiki links]]` are authored here: `wikiDecorate.ts`
+  rules still match once the overlay leaves the subtree. Block furniture sits in the LEFT
+  gutter, Notion's order (add, drag handle, block) — `.editor-pane` widens the shared
+  `--editor-gutter` to 48px to fit the pair, and the note TITLE reads it too, so title and body keep
+  one left edge; below 720px the gutter drops to 16px and the add button falls back to the right
+  margin, since neither fits there. `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
   the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
@@ -470,7 +471,7 @@ Key modules:
   and passes `forceSource` down; it is also the scroll container the body saves/restores per note.
   `.editor-pane` carries `transform: translateZ(0)` — its own compositing layer — because WKWebView
   otherwise occasionally leaves a stale paint of the caret line behind after a swap/resize (a ghost
-  "doubled" line) — and widens `--editor-gutter` to 36px for the block editor's drag handles) with
+  "doubled" line) — and widens `--editor-gutter` to 48px for the block editor's controls) with
   `NoteTitle` and
   `NotePreview` (read-only render via `@diplodoc/transform` — deliberately a WIDER grammar than the
   block editor's own parser, since the notes blocks can't hold are exactly the ones a preview must

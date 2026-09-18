@@ -33,8 +33,8 @@ import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../..
 import Block from './Block';
 import type {BlockHandlers} from './Block';
 import BlockMenu from './BlockMenu';
-import LanguageMenu from './LanguageMenu';
 import {OverlayPortal} from './OverlayPortal';
+import PickerMenu from './PickerMenu';
 import SelectionToolbar from './SelectionToolbar';
 import SlashMenu from './SlashMenu';
 import type {MenuAnchor} from './SlashMenu';
@@ -44,6 +44,7 @@ import WikiSuggestMenu from './WikiSuggestMenu';
 import {createEdgeScroller, scrollableAncestor} from './autoScroll';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
+import {CALLOUT_KINDS} from './callouts';
 import type {CaretPos} from './caret';
 import {
     caretAtEnd,
@@ -82,6 +83,7 @@ import {
     selectionRoots,
     setTableCell,
 } from './documentModel';
+import {LANGUAGE_ITEMS} from './languages';
 import {
     BLOCK_COLORS,
     BLOCK_TYPES,
@@ -141,6 +143,13 @@ const BLOCK_COLOR_SET = new Set<BlockColor>(BLOCK_COLORS);
  * `editor.css`.
  */
 const MOD_PRESSED_CLASS = 'gn-block-editor_mod-pressed';
+
+/** The callout kinds as the shared picker wants them — the icon is the row's own glyph. */
+const CALLOUT_ITEMS = CALLOUT_KINDS.map((item) => ({
+    value: item.kind,
+    label: item.label,
+    icon: item.icon,
+}));
 
 const LIST_TYPES: BlockType[] = ['bulleted', 'numbered', 'todo'];
 const RESETS_ON_EMPTY_ENTER: BlockType[] = [
@@ -465,9 +474,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
     // The subtree ROOTS being dragged — several when the drag started inside a block selection.
-    const [languageMenu, setLanguageMenu] = useState<{id: string; x: number; y: number} | null>(
-        null,
-    );
+    // The block-level picker (a code block's language, a callout's kind) — one at a time, so one
+    // piece of state with the `kind` saying which list it is showing.
+    const [picker, setPicker] = useState<{
+        kind: 'language' | 'callout';
+        id: string;
+        x: number;
+        y: number;
+    } | null>(null);
     const [draggingRoots, setDraggingRoots] = useState<string[] | null>(null);
     // Their descendants travel with them, so they have to LOOK dragged too.
     const draggedIds = useMemo(
@@ -713,13 +727,36 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setSelectedIds(new Set());
     };
 
+    /**
+     * Leave no caret and no highlighted text behind when blocks become the selection.
+     *
+     * A block selection and a text selection are different modes — the keyboard means different
+     * things in each — so the editor must not look like it is in both. A caret still blinking
+     * inside a highlighted block says the next keystroke will type there, when in fact Backspace
+     * would delete the whole block.
+     *
+     * Scoped to this editor: a caret or a selection anywhere else on the page belongs to somebody
+     * else (the note title, the search box) and is none of our business.
+     */
+    const dropCaret = () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && rootRef.current?.contains(active)) active.blur();
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+        const anchor = selection.anchorNode;
+        const node = anchor instanceof Element ? anchor : anchor?.parentElement;
+        if (node && rootRef.current?.contains(node)) selection.removeAllRanges();
+    };
+
     const selectSingleBlock = (id: string) => {
+        dropCaret();
         selectionAnchor.current = id;
         selectionFocus.current = id;
         setSelectedIds(new Set([id]));
     };
 
     const selectBlockRange = (anchorId: string, focusId: string) => {
+        dropCaret();
         selectionAnchor.current = anchorId;
         selectionFocus.current = focusId;
         setSelectedIds(blockRangeIds(blocksRef.current, anchorId, focusId));
@@ -1507,7 +1544,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 );
                 if (text.length === 0 || selectedText.length >= text.length) {
                     claimChord(e);
-                    element.blur();
                     selectSingleBlock(blockId);
                 }
                 return;
@@ -1592,7 +1628,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (e.key === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
-            element.blur();
             selectSingleBlock(blockId);
         }
     };
@@ -2643,6 +2678,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             duplicateBlocks([...selected], true);
         } else if (mod && e.key.toLowerCase() === 'a') {
             claimChord(e);
+            dropCaret();
             selectionAnchor.current = blocksRef.current[0]?.id ?? null;
             selectionFocus.current = blocksRef.current[blocksRef.current.length - 1]?.id ?? null;
             setSelectedIds(new Set(blocksRef.current.map((b) => b.id)));
@@ -2875,6 +2911,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             hits: new Set(base),
         };
         selectionWasDragged.current = false;
+        // Whatever the drag ends up covering, it is a BLOCK gesture from here — so the caret goes
+        // now rather than blinking inside a block while a marquee is drawn over it.
+        dropCaret();
         if (!(e.metaKey || e.ctrlKey)) clearBlockSelection();
     };
 
@@ -3000,7 +3039,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onBlur: (id) => setFocusedId((cur) => (cur === id ? null : cur)),
         onToggleTodo: (id) =>
             setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, checked: !b.checked} : b))),
-        onPickLanguage: (id, anchor) => setLanguageMenu({id, x: anchor.left, y: anchor.bottom + 6}),
+        onPickLanguage: (id, anchor) =>
+            setPicker({kind: 'language', id, x: anchor.left, y: anchor.bottom + 6}),
+        onPickCalloutKind: (id, anchor) =>
+            setPicker({kind: 'callout', id, x: anchor.left, y: anchor.bottom + 6}),
         onCopyCode: (id) => {
             const block = findBlock(id);
             if (!block) return;
@@ -3164,22 +3206,31 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     onClose={() => setBlockMenu(null)}
                 />
             )}
-            {languageMenu && (
-                <LanguageMenu
-                    x={languageMenu.x}
-                    y={languageMenu.y}
-                    current={findBlock(languageMenu.id)?.language}
-                    onPick={(token) => {
+            {picker && (
+                <PickerMenu
+                    x={picker.x}
+                    y={picker.y}
+                    label={picker.kind === 'language' ? 'Languages' : 'Callout kind'}
+                    filterable={picker.kind === 'language'}
+                    items={picker.kind === 'language' ? LANGUAGE_ITEMS : CALLOUT_ITEMS}
+                    current={
+                        picker.kind === 'language'
+                            ? findBlock(picker.id)?.language
+                            : (findBlock(picker.id)?.calloutKind ?? 'note')
+                    }
+                    onPick={(value) => {
                         setBlocks((current) =>
                             current.map((block) =>
-                                block.id === languageMenu.id
-                                    ? {...block, language: token || undefined}
-                                    : block,
+                                block.id !== picker.id
+                                    ? block
+                                    : picker.kind === 'language'
+                                      ? {...block, language: value || undefined}
+                                      : {...block, calloutKind: value},
                             ),
                         );
-                        setLanguageMenu(null);
+                        setPicker(null);
                     }}
-                    onClose={() => setLanguageMenu(null)}
+                    onClose={() => setPicker(null)}
                 />
             )}
             <SelectionToolbar

@@ -51,11 +51,5 @@ export function languageLabel(token: string | undefined): string {
     return LANGUAGES.find((item) => item.token === token)?.label ?? token;
 }
 
-export function filterLanguages(query: string): LanguageOption[] {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return LANGUAGES;
-    return LANGUAGES.filter(
-        (item) =>
-            item.label.toLowerCase().includes(needle) || item.token.toLowerCase().includes(needle),
-    );
-}
+/** The shape the shared picker takes. */
+export const LANGUAGE_ITEMS = LANGUAGES.map((item) => ({value: item.token, label: item.label}));

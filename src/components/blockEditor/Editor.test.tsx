@@ -157,6 +157,26 @@ describe('block selection', () => {
         expect(range.endOffset).toBe(second.childNodes.length);
     });
 
+    it('leaves no caret or highlighted text behind when blocks take over', () => {
+        renderEditor(['first block', 'second block'].join('\n\n'));
+        const paragraph = document.querySelectorAll<HTMLElement>('.content')[0];
+        paragraph.focus();
+        const range = document.createRange();
+        range.selectNodeContents(paragraph);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Escape'});
+        });
+
+        // A caret blinking inside a highlighted block says the next keystroke will type there,
+        // when Backspace would in fact delete the whole block.
+        expect(document.activeElement).not.toBe(paragraph);
+        expect(window.getSelection()?.rangeCount ?? 0).toBe(0);
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(1);
+    });
+
     it('indents and outdents the selected blocks with Tab', () => {
         const onChange = vi.fn();
         renderEditor(['- A', '- B', '- C'].join('\n'), onChange);
@@ -1460,6 +1480,31 @@ describe('code blocks', () => {
         // An unlisted token is still the note's, and showing it verbatim is how you can tell it
         // survived — the alternative (falling back to "Plain text") looks like the file lost it.
         expect(screen.getByRole('button', {name: 'jsonc'})).toBeInTheDocument();
+    });
+});
+
+describe('callouts', () => {
+    it('draws the icon the file’s own kind names, and writes a picked kind back', () => {
+        const onChange = vi.fn();
+        renderEditor('> [!warning] Mind the gap', onChange);
+        // Every callout used to be 💡 on screen no matter what `[!kind]` said.
+        const icon = () => screen.getByRole('button', {name: /callout — change kind/});
+        expect(icon()).toHaveTextContent('⚠️');
+
+        act(() => {
+            fireEvent.click(icon());
+        });
+        act(() => {
+            fireEvent.click(screen.getByRole('menuitemradio', {name: /Danger/}));
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('> [!danger] Mind the gap');
+        expect(icon()).toHaveTextContent('🛑');
+    });
+
+    it('keeps a kind it does not offer, aliases included', () => {
+        // Obsidian allows any word, and its aliases are common — `caution` is a warning there.
+        renderEditor('> [!caution] Careful');
+        expect(screen.getByRole('button', {name: /callout — change kind/})).toHaveTextContent('⚠️');
     });
 });
 

@@ -4,7 +4,7 @@ import type {CSSProperties, KeyboardEvent} from 'react';
 import {OverlayPortal} from './OverlayPortal';
 import {BACKGROUND_COLORS_AT, COLOR_OPTIONS} from './blockColors';
 import {MENU_ITEMS} from './blockConfig';
-import {DuplicateIcon, TrashIcon} from './icons';
+import {ChevronLeftIcon, ChevronRightIcon, DuplicateIcon, TickIcon, TrashIcon} from './icons';
 import type {BlockColor, BlockType} from './types';
 
 interface BlockMenuProps {
@@ -135,7 +135,7 @@ export default function BlockMenu({
         label: string,
         icon: React.ReactNode,
         action: () => void,
-        hint?: string,
+        hint?: React.ReactNode,
         selected = false,
     ) => (
         <button
@@ -172,7 +172,7 @@ export default function BlockMenu({
                             currentItem?.label ?? 'Turn into',
                             currentItem?.icon ?? <span>T</span>,
                             () => setView('turn'),
-                            '›',
+                            <ChevronRightIcon />,
                         )}
                         {itemButton(
                             currentColorItem.label,
@@ -183,16 +183,14 @@ export default function BlockMenu({
                                 A
                             </span>,
                             () => setView('color'),
-                            '›',
+                            <ChevronRightIcon />,
                         )}
                     </>
                 )}
 
                 {view === 'turn' && (
                     <>
-                        {itemButton('Turn into', <span className="menu-back">‹</span>, () =>
-                            setView('main'),
-                        )}
+                        {itemButton('Turn into', <ChevronLeftIcon />, () => setView('main'))}
                         <div className="menu-divider" />
                         {MENU_ITEMS.map((item) => (
                             <span key={item.type}>
@@ -200,7 +198,7 @@ export default function BlockMenu({
                                     item.label,
                                     item.icon,
                                     () => onTurnInto(item.type),
-                                    item.type === currentType ? '✓' : undefined,
+                                    item.type === currentType ? <TickIcon /> : undefined,
                                     item.type === currentType,
                                 )}
                             </span>
@@ -210,9 +208,7 @@ export default function BlockMenu({
 
                 {view === 'color' && (
                     <>
-                        {itemButton('Color', <span className="menu-back">‹</span>, () =>
-                            setView('main'),
-                        )}
+                        {itemButton('Color', <ChevronLeftIcon />, () => setView('main'))}
                         <div className="menu-divider" />
                         <div className="menu-section">Text color</div>
                         <div className="color-grid">

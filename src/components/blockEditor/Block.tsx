@@ -4,6 +4,7 @@ import type {ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode} fr
 import AttachmentImage from './AttachmentImage';
 import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
+import {calloutIcon, calloutLabel} from './callouts';
 import {stripZeroWidth} from './caret';
 import {CheckIcon, DragIcon, PlusIcon} from './icons';
 import {languageLabel} from './languages';
@@ -29,6 +30,8 @@ export interface BlockHandlers {
     onToggleTodo: (id: string) => void;
     /** Open the language picker for a code block, anchored to the button that asked. */
     onPickLanguage: (id: string, anchor: DOMRect) => void;
+    /** Open the callout-kind picker, anchored to the icon that asked. */
+    onPickCalloutKind: (id: string, anchor: DOMRect) => void;
     onCopyCode: (id: string) => void;
     onToggleCollapse: (id: string) => void;
     onTableCellRef: (id: string, el: HTMLDivElement | null) => void;
@@ -229,8 +232,22 @@ function Block({
         case 'callout':
             body = (
                 <div className="callout-wrap">
-                    <div className="callout-emoji" contentEditable={false}>
-                        💡
+                    <div className="callout-icon-col" contentEditable={false}>
+                        <button
+                            type="button"
+                            className="callout-icon"
+                            title={`${calloutLabel(block.calloutKind)} callout`}
+                            aria-label={`${calloutLabel(block.calloutKind)} callout — change kind`}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) =>
+                                handlers.onPickCalloutKind(
+                                    block.id,
+                                    e.currentTarget.getBoundingClientRect(),
+                                )
+                            }
+                        >
+                            {calloutIcon(block.calloutKind)}
+                        </button>
                     </div>
                     {content}
                 </div>
@@ -303,8 +320,8 @@ function Block({
             onDragOver={(e) => handlers.onDragOver(e, block.id)}
             onDrop={(e) => handlers.onDrop(e, block.id)}
         >
-            {/* The drag handle is the only furniture in the LEFT margin, so the gutter it needs
-                stays narrow; the add button lives in the right margin (see editor.css). */}
+            {/* Both controls sit in the left gutter (see the handle slots in editor.css), which is
+                also the order they read in: add, drag, then the block itself. */}
             <div className="handles handle-slot handle-slot_left" contentEditable={false}>
                 <button
                     type="button"

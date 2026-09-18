@@ -45,6 +45,44 @@ export const CheckIcon = ({size = 12}: IconProps) => (
     </svg>
 );
 
+/** The chevron a menu row shows when it leads somewhere (and its mirror, for going back). */
+const Chevron = ({size = 14, back = false}: IconProps & {back?: boolean}) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        <path d={back ? 'M8.75 2.5 4.25 7l4.5 4.5' : 'M5.25 2.5 9.75 7l-4.5 4.5'} />
+    </svg>
+);
+
+export const ChevronRightIcon = (p: IconProps) => <Chevron {...p} />;
+export const ChevronLeftIcon = (p: IconProps) => <Chevron {...p} back />;
+
+/**
+ * The tick beside the row that is already chosen. Unlike {@link CheckIcon} it takes the ink of
+ *  whatever it sits in, because it marks a menu row rather than filling a to-do's blue box.
+ */
+export const TickIcon = ({size = 13}: IconProps) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        <path d="M2.5 7.5 5.5 10.5 11.5 3.5" />
+    </svg>
+);
+
 export const TextIcon = ({size = 18}: IconProps) => (
     <svg {...svgProps(size)}>
         <path d="M4 5h12" />
