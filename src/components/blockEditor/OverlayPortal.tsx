@@ -18,9 +18,15 @@ import {createPortal} from 'react-dom';
  * `display: contents` means it generates no box of its own. `<body>` is also where Gravity puts its
  * theme class, so the dark-theme overrides keep applying.
  */
+/**
+ * The host's class, exported so code can ASK whether a node is inside one of the editor's overlays
+ * rather than listing the classes its overlays happen to use — every one of them comes through here.
+ */
+export const OVERLAY_HOST_CLASS = 'gn-block-editor_portal';
+
 export function OverlayPortal({children}: {children: ReactNode}) {
     return createPortal(
-        <div className="gn-block-editor gn-block-editor_portal">{children}</div>,
+        <div className={`gn-block-editor ${OVERLAY_HOST_CLASS}`}>{children}</div>,
         document.body,
     );
 }

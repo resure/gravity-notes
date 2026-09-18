@@ -109,32 +109,15 @@ export function duplicateBlockGroups(
 }
 
 /**
- * Move a block and its descendants to either side of `targetId`, landing the subtree's ROOT at the
+ * Move one or more subtrees to either side of `targetId`, landing the group's FIRST root at the
  * target's own depth — which is where the drop indicator is drawn, since it spans the target's
  * indented box.
  *
- * Re-levelling the root is what keeps the move from disturbing anything else: a subtree that kept
- * its own root depth could land between a parent and its children and adopt them (`- A` / `  - B` /
+ * Re-levelling that root is what keeps the move from disturbing anything else: a subtree that kept
+ * its own depth could land between a parent and its children and adopt them (`- A` / `  - B` /
  * `  - C` with a top-level `D` dropped before `B` left B and C nested under D), or land deeper than
- * its new neighbourhood can hold. Descendants shift by the same delta, so what the subtree carries
- * keeps its shape.
- */
-export function moveBlockSubtree(
-    blocks: readonly Block[],
-    sourceId: string,
-    targetId: string,
-    edge: 'before' | 'after',
-): Block[] {
-    return moveBlockSubtrees(blocks, [sourceId], targetId, edge);
-}
-
-/**
- * The same move for several subtrees at once — dragging a block SELECTION, where what the reader
- * highlighted travels together.
- *
- * The group lands as one run in document order, however scattered it was before, and the whole run
- * shifts by ONE delta — the first root's, so the group keeps its own internal shape rather than
- * being flattened onto the target's level.
+ * its new neighbourhood can hold. The whole run shifts by that ONE delta, so what the drag carries
+ * keeps its shape — several roots included, however scattered they were before.
  */
 export function moveBlockSubtrees(
     blocks: readonly Block[],
@@ -147,7 +130,8 @@ export function moveBlockSubtrees(
 
     const output = [...blocks];
     const moved: Block[] = [];
-    let firstDepth = 0;
+    // Read off the input, before anything moves: this is the depth the whole group is levelled by.
+    const firstDepth = blocks.find((block) => block.id === roots[0])?.depth ?? 0;
     // Back to front, so removing one group cannot shift the index of the next one to remove.
     for (let at = roots.length - 1; at >= 0; at--) {
         const index = output.findIndex((block) => block.id === roots[at]);
@@ -159,7 +143,6 @@ export function moveBlockSubtrees(
         if (group.some((block) => block.id === targetId)) return blocks as Block[];
         moved.unshift(...group);
         output.splice(index, group.length);
-        firstDepth = depth;
     }
 
     let targetIndex = output.findIndex((block) => block.id === targetId);

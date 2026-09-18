@@ -15,7 +15,7 @@
  */
 
 import {BLOCK_COLORS} from '../components/blockEditor/types';
-import type {BlockColor} from '../components/blockEditor/types';
+import type {BlockColor, BlockType} from '../components/blockEditor/types';
 
 const BACKGROUND = '_background';
 const BACKGROUND_TOKEN = 'bg:';
@@ -36,6 +36,9 @@ export function colorClassFor(color: BlockColor): string {
 
 /** The colour a span's `class` carries, or null for any other span (the wiki-link wrapper). */
 export function colorFromClass(className: string): BlockColor | null {
+    // Every `[[wiki link]]` is a span too, and the serializer asks this of each one on every
+    // keystroke — so answer the common "not a colour" case without splitting anything.
+    if (!className.includes(`${COLOR_CLASS}--`)) return null;
     for (const name of className.split(/\s+/)) {
         if (!name.startsWith(`${COLOR_CLASS}--`)) continue;
         const color = name.slice(COLOR_CLASS.length + 2);
@@ -64,6 +67,18 @@ export function colorFromToken(token: string): BlockColor | null {
         ? `${token.slice(BACKGROUND_TOKEN.length)}${BACKGROUND}`
         : token;
     return PALETTE.has(name) && name !== 'default' ? (name as BlockColor) : null;
+}
+
+/**
+ * Whether a block's colour survives a save. A colour is written as a wrapper around the block's own
+ * inline text, so the types whose content isn't inline text have nowhere to put it: a fence's body
+ * is literal, a table's text lives in its cells, and a divider or image has no text at all.
+ *
+ * Lives here, next to the writer that makes it true, because BOTH ends read it — the editor to
+ * refuse the colour up front, and the parser to skip lifting one back.
+ */
+export function canCarryColor(type: BlockType): boolean {
+    return type !== 'code' && type !== 'table' && type !== 'divider' && type !== 'image';
 }
 
 /** Wrap a block's serialized content in its colour, one wrapper per line. */

@@ -10,7 +10,6 @@ import {
     deleteTableRowData,
     duplicateBlockGroups,
     expandBlockIds,
-    moveBlockSubtree,
     moveBlockSubtrees,
     normalizeDepths,
     pasteTableGrid,
@@ -129,7 +128,7 @@ describe('nested block operations', () => {
     });
 
     it('moves a parent and descendants after the target subtree', () => {
-        expect(ids(moveBlockSubtree(nested, 'a', 'b', 'after'))).toEqual([
+        expect(ids(moveBlockSubtrees(nested, ['a'], 'b', 'after'))).toEqual([
             'b',
             'b1',
             'a',
@@ -140,13 +139,13 @@ describe('nested block operations', () => {
     });
 
     it('does not move a parent into its own subtree', () => {
-        expect(moveBlockSubtree(nested, 'a', 'a1', 'after')).toBe(nested);
+        expect(moveBlockSubtrees(nested, ['a'], 'a1', 'after')).toBe(nested);
     });
 
     it('lands a dropped block at the target’s level rather than adopting its neighbours', () => {
         // `c` dropped between `a` and its children used to keep depth 0 and make a1/a2 its own
         // children. The block the reader aimed at keeps its parent; the dragged one takes its level.
-        const out = moveBlockSubtree(nested, 'c', 'a1', 'before');
+        const out = moveBlockSubtrees(nested, ['c'], 'a1', 'before');
         expect(out.map((item) => [item.id, item.depth])).toEqual([
             ['a', 0],
             ['c', 1],
@@ -158,7 +157,7 @@ describe('nested block operations', () => {
     });
 
     it('re-levels a whole subtree by one delta, keeping its own shape', () => {
-        const out = moveBlockSubtree(nested, 'a', 'b1', 'after');
+        const out = moveBlockSubtrees(nested, ['a'], 'b1', 'after');
         expect(out.map((item) => [item.id, item.depth])).toEqual([
             ['b', 0],
             ['b1', 1],
@@ -208,7 +207,7 @@ describe('nested block operations', () => {
             block('child', 1),
             block('grandchild', 2),
         ];
-        const out = moveBlockSubtree(deep, 'src', 'target', 'after');
+        const out = moveBlockSubtrees(deep, ['src'], 'target', 'after');
         expect(out.slice(-3).map((item) => [item.id, item.depth])).toEqual([
             ['src', 4],
             ['child', 5],

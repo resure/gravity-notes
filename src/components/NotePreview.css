@@ -170,6 +170,13 @@
 /* `{red}(text)` / `{bg:red}(text)` — the colour syntax the editor writes (src/markdown/color.ts),
    which @diplodoc/color-extension renders here as `yfm-colorify--<token>` spans. Same hues as the
    editor's, off :root, so a coloured note reads the same on both surfaces. */
+
+/* A background reads as a highlighter over the words, so it takes the same padding the editor gives
+   its own inline backgrounds (blockEditor/editor.css). */
+.note-preview [class*='yfm-colorify--bg'] {
+    padding: 0 2px;
+    border-radius: 3px;
+}
 .note-preview .yfm-colorify--gray {
     color: var(--gn-color-gray);
 }
@@ -200,46 +207,28 @@
 
 .note-preview .yfm-colorify--bg\:gray {
     background: var(--gn-color-gray-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:brown {
     background: var(--gn-color-brown-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:orange {
     background: var(--gn-color-orange-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:yellow {
     background: var(--gn-color-yellow-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:green {
     background: var(--gn-color-green-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:blue {
     background: var(--gn-color-blue-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:purple {
     background: var(--gn-color-purple-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:pink {
     background: var(--gn-color-pink-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }
 .note-preview .yfm-colorify--bg\:red {
     background: var(--gn-color-red-bg);
-    padding: 0 2px;
-    border-radius: 3px;
 }

@@ -199,6 +199,9 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         const autosize = useCallback(() => {
             const element = markupRef.current;
             if (!element) return;
+            // Both writes are load-bearing: `auto` is what lets the box SHRINK, so the measurement
+            // that follows has to be written back even when it matches — skipping it leaves the
+            // textarea at its default two rows.
             element.style.height = 'auto';
             element.style.height = `${element.scrollHeight}px`;
         }, []);
@@ -408,6 +411,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         onAttachFile={(file) => onUploadFile(file).catch(() => null)}
                         onLeaveTop={onLeaveTop}
                         onEscape={onEscape}
+                        scrollContainerRef={scrollContainerRef}
                         // `display: none` hides the editor's own subtree, but its menus portal to
                         // `<body>` — they need telling.
                         hidden={preview}

@@ -4,7 +4,7 @@ import type {RefObject} from 'react';
 import {colorClassFor, colorFromClass} from '../../markdown/color';
 
 import {OverlayPortal} from './OverlayPortal';
-import {BACKGROUND_COLORS_AT, COLOR_OPTIONS} from './blockColors';
+import {ColorPalette} from './blockColors';
 import {toggleInlineCode} from './caret';
 import {LinkIcon} from './icons';
 import type {BlockColor} from './types';
@@ -287,38 +287,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
             >
                 {colorMode ? (
                     <div className="tb-colors">
-                        <div className="menu-section">Text color</div>
-                        <div className="color-grid">
-                            {COLOR_OPTIONS.slice(0, BACKGROUND_COLORS_AT).map((color) => (
-                                <button
-                                    type="button"
-                                    key={color.value}
-                                    className="color-swatch"
-                                    title={color.label}
-                                    aria-label={color.label}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => applyColor(color.value)}
-                                >
-                                    <span style={{color: color.swatch}}>A</span>
-                                </button>
-                            ))}
-                        </div>
-                        <div className="menu-section">Background color</div>
-                        <div className="color-grid">
-                            {COLOR_OPTIONS.slice(BACKGROUND_COLORS_AT).map((color) => (
-                                <button
-                                    type="button"
-                                    key={color.value}
-                                    className="color-swatch"
-                                    title={color.label}
-                                    aria-label={color.label}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => applyColor(color.value)}
-                                >
-                                    <span style={{background: color.swatch}}>A</span>
-                                </button>
-                            ))}
-                        </div>
+                        <ColorPalette onPick={applyColor} />
                     </div>
                 ) : linkMode ? (
                     <input

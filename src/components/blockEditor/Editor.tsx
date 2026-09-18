@@ -13,6 +13,7 @@ import type {
     KeyboardEvent,
     MouseEvent,
     PointerEvent as ReactPointerEvent,
+    RefObject,
 } from 'react';
 
 import {readClipboardText, writeClipboardText} from '../../clipboard';
@@ -25,7 +26,7 @@ import {
     inlineMarkdownToHtml,
     markdownToBlocks,
 } from '../../markdown';
-import {colorClassFor, colorFromClass} from '../../markdown/color';
+import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
 import {openExternalUrl} from '../../openExternal';
 import type {NoteMeta} from '../../storage/types';
 import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
@@ -33,7 +34,7 @@ import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../..
 import Block from './Block';
 import type {BlockHandlers} from './Block';
 import BlockMenu from './BlockMenu';
-import {OverlayPortal} from './OverlayPortal';
+import {OVERLAY_HOST_CLASS, OverlayPortal} from './OverlayPortal';
 import PickerMenu from './PickerMenu';
 import SelectionToolbar from './SelectionToolbar';
 import SlashMenu from './SlashMenu';
@@ -41,10 +42,11 @@ import type {MenuAnchor} from './SlashMenu';
 import {tableCellId} from './TableBlock';
 import type {WikiSuggestItem} from './WikiSuggestMenu';
 import WikiSuggestMenu from './WikiSuggestMenu';
-import {createEdgeScroller, scrollableAncestor} from './autoScroll';
+import {createEdgeScroller} from './autoScroll';
+import type {EdgeScroller} from './autoScroll';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
-import {CALLOUT_KINDS} from './callouts';
+import {CALLOUT_ITEMS} from './callouts';
 import type {CaretPos} from './caret';
 import {
     caretAtEnd,
@@ -144,13 +146,6 @@ const BLOCK_COLOR_SET = new Set<BlockColor>(BLOCK_COLORS);
  */
 const MOD_PRESSED_CLASS = 'gn-block-editor_mod-pressed';
 
-/** The callout kinds as the shared picker wants them — the icon is the row's own glyph. */
-const CALLOUT_ITEMS = CALLOUT_KINDS.map((item) => ({
-    value: item.kind,
-    label: item.label,
-    icon: item.icon,
-}));
-
 const LIST_TYPES: BlockType[] = ['bulleted', 'numbered', 'todo'];
 const RESETS_ON_EMPTY_ENTER: BlockType[] = [
     'bulleted',
@@ -162,20 +157,34 @@ const RESETS_ON_EMPTY_ENTER: BlockType[] = [
 ];
 
 /**
- * Whether a block's colour survives a save. A colour is written as a wrapper around the block's own
- * text, so the types whose content isn't inline text have nowhere to put it: a fence's body is
- * literal, a table's text lives in cells, and a divider or image has no text at all.
+ * The two block-level pickers, as a table: which list they show, which field on the block they
+ * write, and what the button reads when the field is unset. A third (a table's alignment, an
+ * image's fit) is a row here rather than a branch at each of five places.
  */
+const PICKERS = {
+    language: {
+        label: 'Languages',
+        filterable: true,
+        items: LANGUAGE_ITEMS,
+        field: 'language',
+        fallback: undefined,
+    },
+    callout: {
+        label: 'Callout kind',
+        filterable: false,
+        items: CALLOUT_ITEMS,
+        field: 'calloutKind',
+        fallback: 'note',
+    },
+} as const;
+
+/** What to call the block in the toast that refuses it a colour (see `canCarryColor`). */
 const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
     code: 'code block',
     table: 'table',
     divider: 'divider',
     image: 'image',
 };
-
-function canCarryColor(type: BlockType): boolean {
-    return !(type in COLORLESS_NOUN);
-}
 
 /** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 function sameIds(a: Set<string>, b: Set<string>): boolean {
@@ -418,6 +427,12 @@ export interface EditorProps {
      * read-only, and their actions still committed edits to the note.
      */
     hidden?: boolean;
+    /**
+     * The element that scrolls this editor — the host pane, which owns the scrollbar. Handed down
+     * rather than discovered, so the auto-scroll during a drag moves the same element the host's
+     * own scroll restore writes to.
+     */
+    scrollContainerRef?: RefObject<HTMLElement | null>;
 }
 
 const EMPTY_NOTES: NoteMeta[] = [];
@@ -435,6 +450,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onAttachFile,
         onEscape,
         hidden = false,
+        scrollContainerRef,
     },
     ref,
 ) {
@@ -473,7 +489,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
-    // The subtree ROOTS being dragged — several when the drag started inside a block selection.
     // The block-level picker (a code block's language, a callout's kind) — one at a time, so one
     // piece of state with the `kind` saying which list it is showing.
     const [picker, setPicker] = useState<{
@@ -482,6 +497,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         x: number;
         y: number;
     } | null>(null);
+    // The subtree ROOTS being dragged — several when the drag started inside a block selection.
     const [draggingRoots, setDraggingRoots] = useState<string[] | null>(null);
     // Their descendants travel with them, so they have to LOOK dragged too.
     const draggedIds = useMemo(
@@ -1150,7 +1166,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             // The menus scroll internally (`max-height` + `overflow-y: auto`), and that scroll says
             // nothing about where the caret is — re-measuring off it only re-renders the list the
             // user is scrolling.
-            if (event?.target instanceof Element && event.target.closest('.overlay-menu')) return;
+            if (event?.target instanceof Element && event.target.closest(`.${OVERLAY_HOST_CLASS}`))
+                return;
             const state = slashRef.current ?? wikiRef.current;
             if (!state) return;
             const el = refs.current.get(state.blockId);
@@ -2593,21 +2610,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * then deleted a block from the note (and autosaved the deletion), ⌘A selected every block
      * instead of the query text, and ⌘C copied blocks instead of the selected text.
      *
-     * The editor's own overlays count as inside it even though they are portaled out to `<body>`
-     * (they carry the scope class) — the block menu advertises Del and ⌘D, and those act on the
-     * selection while it is open. A text field within one of them still wins, though: whatever is
-     * being typed into owns its own keys.
+     * The editor's own overlays are excluded too. They are on screen BECAUSE the reader opened them
+     * and they drive the keyboard themselves — and since they portal out to `<body>` under a host
+     * that re-applies the editor's scope class, the "inside the editor" test below says yes to
+     * them. This listener captures on `document`, ahead of React, so without the exclusion it ate
+     * the arrows the block menu walks its rows with (the menu's own handler never ran at all) and
+     * the Escape that should merely close a submenu, which instead stepped out to the note list.
+     * A menu that advertises a shortcut therefore honours it itself (see BlockMenu).
      */
     const ownsDocumentEvent = (target: EventTarget | null): boolean => {
         if (!(target instanceof HTMLElement)) return true; // document-level: nothing else focused
         if (target === document.body || target === document.documentElement) return true;
-        // A floating overlay is on screen and driving the keyboard itself. It has to be excluded by
-        // hand: the overlays portal to <body> under a host that re-applies the editor's own scope
-        // class, so the test below says they are part of the editor — and this listener CAPTURES on
-        // document, ahead of React. It was eating the arrows the block menu walks its rows with
-        // (the menu's own handler never ran at all) and the Escape that should merely close a
-        // submenu, which instead stepped the selection out to the note list.
-        if (target.closest('.overlay-menu, .sel-toolbar')) return false;
+        // Asked of the portal HOST, not of the classes each overlay happens to use: every overlay
+        // goes through OverlayPortal, so a new one is covered the day it is written.
+        if (target.closest(`.${OVERLAY_HOST_CLASS}`)) return false;
         if (!target.closest('.gn-block-editor')) return false;
         return !(
             target.isContentEditable ||
@@ -2773,14 +2789,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * window (see autoScroll.ts). Kept in a ref: a scroller is a live resource, and re-creating one
      * per render would strand its frame loop.
      */
-    const edgeScroller = useRef(createEdgeScroller(() => scrollableAncestor(rootRef.current)));
+    // Lazily: `useRef(expr)` evaluates `expr` on EVERY render — and this editor re-renders on every
+    // keystroke — allocating a scroller per character only to throw it away.
+    const edgeScrollerRef = useRef<EdgeScroller | null>(null);
+    if (!edgeScrollerRef.current) {
+        edgeScrollerRef.current = createEdgeScroller(() => scrollContainerRef?.current ?? null);
+    }
+    const edgeScroller = edgeScrollerRef.current;
 
     // `dragover` on the document, not on each block: the pointer spends a good part of a drag over
     // the gap below the last block (or over another block's furniture), and those frames are
     // exactly the ones that need to keep scrolling.
     useEffect(() => {
         if (!draggingRoots) return undefined;
-        const scroller = edgeScroller.current;
+        const scroller = edgeScroller;
         const onDragOverDocument = (e: globalThis.DragEvent) => scroller.to(e.clientY);
         document.addEventListener('dragover', onDragOverDocument);
         return () => {
@@ -2813,7 +2835,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const endDrag = () => {
-        edgeScroller.current.stop();
+        edgeScroller.stop();
         setDraggingRoots(null);
         setDropTarget(null);
     };
@@ -2953,7 +2975,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // Same scroller as a block drag: dragging a marquee past the edge of the pane has to bring
         // the rest of the note into view. This used to scroll the WINDOW, which scrolls nothing
         // here — so a selection could never reach beyond one screenful.
-        edgeScroller.current.to(e.clientY);
+        edgeScroller.to(e.clientY);
     };
 
     const finishSelectionPointer = (e: ReactPointerEvent<HTMLElement>) => {
@@ -2962,7 +2984,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
         selectionDrag.current = null;
-        edgeScroller.current.stop();
+        edgeScroller.stop();
         setSelectionBox(null);
     };
 
@@ -3210,22 +3232,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 <PickerMenu
                     x={picker.x}
                     y={picker.y}
-                    label={picker.kind === 'language' ? 'Languages' : 'Callout kind'}
-                    filterable={picker.kind === 'language'}
-                    items={picker.kind === 'language' ? LANGUAGE_ITEMS : CALLOUT_ITEMS}
+                    label={PICKERS[picker.kind].label}
+                    filterable={PICKERS[picker.kind].filterable}
+                    items={PICKERS[picker.kind].items}
                     current={
-                        picker.kind === 'language'
-                            ? findBlock(picker.id)?.language
-                            : (findBlock(picker.id)?.calloutKind ?? 'note')
+                        findBlock(picker.id)?.[PICKERS[picker.kind].field] ??
+                        PICKERS[picker.kind].fallback
                     }
                     onPick={(value) => {
+                        const {field} = PICKERS[picker.kind];
                         setBlocks((current) =>
                             current.map((block) =>
-                                block.id !== picker.id
-                                    ? block
-                                    : picker.kind === 'language'
-                                      ? {...block, language: value || undefined}
-                                      : {...block, calloutKind: value},
+                                block.id === picker.id
+                                    ? {...block, [field]: value || undefined}
+                                    : block,
                             ),
                         );
                         setPicker(null);

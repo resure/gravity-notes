@@ -49,14 +49,22 @@ const ALIASES: Record<string, string> = {
     cite: 'quote',
 };
 
-export function calloutIcon(kind: string | undefined): string {
+function resolve(kind: string | undefined): CalloutKind | undefined {
     const name = (kind ?? 'note').toLowerCase();
-    const resolved = ALIASES[name] ?? name;
-    return CALLOUT_KINDS.find((item) => item.kind === resolved)?.icon ?? '💡';
+    return CALLOUT_KINDS.find((item) => item.kind === (ALIASES[name] ?? name));
+}
+
+export function calloutIcon(kind: string | undefined): string {
+    return resolve(kind)?.icon ?? '💡';
 }
 
 export function calloutLabel(kind: string | undefined): string {
-    const name = (kind ?? 'note').toLowerCase();
-    const resolved = ALIASES[name] ?? name;
-    return CALLOUT_KINDS.find((item) => item.kind === resolved)?.label ?? kind ?? 'Note';
+    return resolve(kind)?.label ?? kind ?? 'Note';
 }
+
+/** The shape the shared picker takes, beside its source — as `languages.ts` does. */
+export const CALLOUT_ITEMS = CALLOUT_KINDS.map((item) => ({
+    value: item.kind,
+    label: item.label,
+    icon: item.icon,
+}));

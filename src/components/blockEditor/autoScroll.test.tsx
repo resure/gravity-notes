@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import {createEdgeScroller, scrollableAncestor} from './autoScroll';
+import {createEdgeScroller} from './autoScroll';
 
 /** A stand-in for the pane: jsdom lays nothing out, so the rect and the scroll are supplied. */
 function fakePane(top = 0, bottom = 600, scrollMax = 2000) {
@@ -64,24 +64,5 @@ describe('the drag edge scroller', () => {
         await frame();
         await frame();
         expect(pane.at()).toBe(500);
-    });
-});
-
-describe('scrollableAncestor', () => {
-    it('finds the scrolling ancestor, skipping ones that merely could', () => {
-        const outer = document.createElement('div');
-        const middle = document.createElement('div');
-        const inner = document.createElement('div');
-        outer.appendChild(middle);
-        middle.appendChild(inner);
-        document.body.appendChild(outer);
-        outer.style.overflowY = 'auto';
-        middle.style.overflowY = 'auto';
-        // jsdom reports 0 for both, so make only `outer` look like it has something to scroll.
-        Object.defineProperty(outer, 'scrollHeight', {value: 2000});
-        Object.defineProperty(outer, 'clientHeight', {value: 600});
-
-        expect(scrollableAncestor(inner)).toBe(outer);
-        outer.remove();
     });
 });

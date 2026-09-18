@@ -1,8 +1,9 @@
-import {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import type {CSSProperties, KeyboardEvent, ReactNode} from 'react';
+import {useRef, useState} from 'react';
+import type {KeyboardEvent, ReactNode} from 'react';
 
 import {OverlayPortal} from './OverlayPortal';
 import {TickIcon} from './icons';
+import {useAnchoredOverlay} from './useAnchoredOverlay';
 
 export interface PickerItem {
     /** What gets stored — a fence's info string, a callout's kind. */
@@ -41,11 +42,16 @@ export default function PickerMenu({
     onPick,
     onClose,
 }: PickerMenuProps) {
-    const ref = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const [query, setQuery] = useState('');
     const [active, setActive] = useState(0);
-    const [style, setStyle] = useState<CSSProperties>({left: x, top: y, visibility: 'hidden'});
+    const {ref, style} = useAnchoredOverlay({
+        x,
+        y,
+        onClose,
+        // Whatever carries the keyboard takes focus: the filter box, or the menu itself.
+        onPlaced: (element) => (inputRef.current ?? element).focus(),
+    });
 
     const needle = query.trim().toLowerCase();
     const items = needle
@@ -55,42 +61,6 @@ export default function PickerMenu({
                   item.value.toLowerCase().includes(needle),
           )
         : allItems;
-
-    useLayoutEffect(() => {
-        const element = ref.current;
-        if (!element) return;
-        // Same clamping as the block menu: flip above the button when it would run off the bottom,
-        // slide in from the right edge.
-        let top = y;
-        if (top + element.offsetHeight > window.innerHeight - 12) {
-            top = Math.max(12, top - element.offsetHeight - 24);
-        }
-        const left = Math.max(12, Math.min(x, window.innerWidth - element.offsetWidth - 12));
-        setStyle({left, top, visibility: 'visible'});
-        // Whatever carries the keyboard takes focus: the filter box, or the menu itself.
-        (inputRef.current ?? element).focus();
-    }, [x, y]);
-
-    useEffect(() => {
-        const onMouseDown = (event: globalThis.MouseEvent) => {
-            if (!ref.current?.contains(event.target as Node)) onClose();
-        };
-        // Anchored to a button measured once, with nothing to follow — scrolling IS a dismissal,
-        // exactly as for the block menu. Its own list is exempt.
-        const onScroll = (event: Event) => {
-            const target = event.target;
-            if (target instanceof Node && ref.current?.contains(target)) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('scroll', onScroll, true);
-        window.addEventListener('resize', onClose);
-        return () => {
-            document.removeEventListener('mousedown', onMouseDown);
-            window.removeEventListener('scroll', onScroll, true);
-            window.removeEventListener('resize', onClose);
-        };
-    }, [onClose]);
 
     const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
         if (event.key === 'Escape') {
@@ -117,8 +87,11 @@ export default function PickerMenu({
                 style={style}
                 role="menu"
                 aria-label={label}
-                tabIndex={filterable ? undefined : -1}
-                onKeyDown={filterable ? undefined : onKeyDown}
+                // The keys are handled here whether they start at the filter box or at the menu
+                // itself — they bubble either way, so there is one handler rather than two wired by
+                // a ternary that could disagree.
+                tabIndex={-1}
+                onKeyDown={onKeyDown}
             >
                 {filterable && (
                     <input
@@ -131,34 +104,36 @@ export default function PickerMenu({
                             setQuery(event.target.value);
                             setActive(0);
                         }}
-                        onKeyDown={onKeyDown}
                     />
                 )}
                 <div className="picker-list">
-                    {items.map((item, index) => (
-                        <button
-                            type="button"
-                            key={item.value || 'default'}
-                            className={`menu-item${index === active ? ' active' : ''}`}
-                            role="menuitemradio"
-                            aria-checked={item.value === (current ?? '')}
-                            // Focus stays where the keys are; hovering only moves the highlight, so
-                            // the mouse and the keyboard can't disagree about what Enter takes.
-                            onMouseEnter={() => setActive(index)}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => onPick(item.value)}
-                        >
-                            {item.icon !== undefined && (
-                                <span className="menu-item-icon">{item.icon}</span>
-                            )}
-                            <span className="menu-item-label">{item.label}</span>
-                            {item.value === (current ?? '') && (
-                                <span className="menu-item-hint">
-                                    <TickIcon />
-                                </span>
-                            )}
-                        </button>
-                    ))}
+                    {items.map((item, index) => {
+                        const isCurrent = item.value === (current ?? '');
+                        return (
+                            <button
+                                type="button"
+                                key={item.value || 'default'}
+                                className={`menu-item${index === active ? ' active' : ''}`}
+                                role="menuitemradio"
+                                aria-checked={isCurrent}
+                                // Focus stays where the keys are; hovering only moves the highlight, so
+                                // the mouse and the keyboard can't disagree about what Enter takes.
+                                onMouseEnter={() => setActive(index)}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => onPick(item.value)}
+                            >
+                                {item.icon !== undefined && (
+                                    <span className="menu-item-icon">{item.icon}</span>
+                                )}
+                                <span className="menu-item-label">{item.label}</span>
+                                {isCurrent && (
+                                    <span className="menu-item-hint">
+                                        <TickIcon />
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
                     {items.length === 0 && <div className="menu-section">No match</div>}
                 </div>
             </div>

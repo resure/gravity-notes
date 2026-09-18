@@ -12,7 +12,7 @@
 import type {Block, BlockType, ColumnAlign, TableData} from '../components/blockEditor/types';
 import {newBlock, uid, widestRow} from '../components/blockEditor/types';
 
-import {liftBlockColor} from './color';
+import {canCarryColor, liftBlockColor} from './color';
 import {inlineMarkdownToHtml} from './inline';
 import {renderTableLines} from './toMarkdown';
 
@@ -290,7 +290,7 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
     // once the last continuation has been appended, and a colour covering it can only be recognised
     // then.
     for (const block of blocks) {
-        if (block.type === 'code') continue;
+        if (!canCarryColor(block.type)) continue;
         const lifted = liftBlockColor(block.html);
         if (lifted) {
             block.html = lifted.html;
