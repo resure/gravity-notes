@@ -47,7 +47,7 @@ export interface FolderRailHandle {
     focusSelected(): void;
     /** Begin inline-renaming a folder (the global F2 shortcut, when a folder row is focused). */
     startRename(path: string): void;
-    /** Move the folder selection by `delta` rows (the global ⌘J/⌘K, when the rail is focused). */
+    /** Move the folder selection by `delta` rows (the global ⌘⇧J/⌘⇧K, when the rail is focused). */
     selectRelative(delta: number): void;
 }
 
@@ -359,7 +359,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         const index = navItems.findIndex((i) => i.key === key);
         if (index === -1) return;
         const {row} = navItems[index];
-        // Bare keys (no ⌘/⌃/⌥) so ⌘J/⌘K and ⌘↵ still reach the global handler.
+        // Bare keys (no ⌘/⌃/⌥) so ⌘⇧J/⌘⇧K and ⌘↵ still reach the global handler.
         const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
         // Vertical move: arrows or vim j/k → select the neighbor row.
         let delta = 0;

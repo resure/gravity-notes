@@ -92,17 +92,19 @@ export interface ShortcutDescriptor {
 export const SHORTCUTS: ShortcutDescriptor[] = [
     {keys: 'up', description: 'Preview previous note (or k)', group: 'Navigation'},
     {keys: 'down', description: 'Preview next note (or j)', group: 'Navigation'},
+    // ⇧ over the bare chords because ⌘J and ⌘K belong to the body: ⌘K makes a link out of the
+    // selection, and stepping notes from under the caret is the rarer of the two.
     {
-        keys: 'mod+j',
+        keys: 'mod+shift+j',
         description: 'Preview next note (works while editing)',
         group: 'Navigation',
-        global: {trigger: 'mod', key: 'j', action: 'selectNextNote'},
+        global: {trigger: 'mod', key: 'j', action: 'selectNextNote', shift: true},
     },
     {
-        keys: 'mod+k',
-        description: 'Preview previous note — over a selection in the body, insert a link',
+        keys: 'mod+shift+k',
+        description: 'Preview previous note (works while editing)',
         group: 'Navigation',
-        global: {trigger: 'mod', key: 'k', action: 'selectPrevNote'},
+        global: {trigger: 'mod', key: 'k', action: 'selectPrevNote', shift: true},
     },
     {
         keys: 'mod+alt+[',

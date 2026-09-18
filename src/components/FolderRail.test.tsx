@@ -363,7 +363,7 @@ describe('FolderRail — focus handle', () => {
         expect(screen.getByRole('treeitem', {name: /All Notes/})).toHaveFocus();
     });
 
-    it('selectRelative() moves the folder selection (⌘J/⌘K)', () => {
+    it('selectRelative() moves the folder selection (⌘⇧J/⌘⇧K)', () => {
         const {props, ref} = setup({selectedFolder: 'Work'}); // order: All Notes, Work, Personal
         act(() => ref.current?.selectRelative(1));
         expect(props.onSelectFolder).toHaveBeenCalledWith('Personal');

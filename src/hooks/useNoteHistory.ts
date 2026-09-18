@@ -25,7 +25,7 @@ const MAX_ENTRIES = 100;
 
 /**
  * Browser-style back/forward across visited notes. Every note that becomes active — from any source
- * (clicking, ⌘J/⌘K, search, a wiki link, a restored note) — is appended to a single trail, with the
+ * (clicking, ⌘⇧J/⌘⇧K, search, a wiki link, a restored note) — is appended to a single trail, with the
  * current entry deduped so stepping back/forward never re-records itself (the activeId change a step
  * produces lands back on the same entry). Visiting a new note from the middle of the trail drops the
  * forward tail, exactly like a browser.

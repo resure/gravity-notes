@@ -38,10 +38,10 @@ describe('useShortcuts', () => {
         document.body.innerHTML = '';
     });
 
-    it('selects the next note on ctrl+j', () => {
+    it('selects the next note on ctrl+shift+j', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: 'j', ctrlKey: true});
+        press({key: 'j', ctrlKey: true, shiftKey: true});
         expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
         expect(actions.createNote).not.toHaveBeenCalled();
     });
@@ -60,11 +60,20 @@ describe('useShortcuts', () => {
         expect(actions.deleteSelected).not.toHaveBeenCalled();
     });
 
-    it('selects the previous note on ctrl+k', () => {
+    it('selects the previous note on ctrl+shift+k', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: 'k', ctrlKey: true});
+        press({key: 'k', ctrlKey: true, shiftKey: true});
         expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the bare mod chords to the body — ⌘K makes a link there', () => {
+        const actions = makeActions();
+        renderHook(() => useShortcuts(actions));
+        press({key: 'k', metaKey: true});
+        press({key: 'j', metaKey: true});
+        expect(actions.selectPrevNote).not.toHaveBeenCalled();
+        expect(actions.selectNextNote).not.toHaveBeenCalled();
     });
 
     it('goes back / forward in history on mod+alt+[ and mod+alt+] (by physical key)', () => {
@@ -91,7 +100,7 @@ describe('useShortcuts', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         // The alt flag has to discriminate both ways, or ⌥ would leak into every other mod chord.
-        press({key: 'j', metaKey: true, altKey: true});
+        press({key: 'j', metaKey: true, shiftKey: true, altKey: true});
         expect(actions.selectNextNote).not.toHaveBeenCalled();
     });
 
@@ -223,29 +232,29 @@ describe('useShortcuts', () => {
     it('ignores auto-repeat so a held key fires once', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
-        press({key: 'j', ctrlKey: true});
-        press({key: 'j', ctrlKey: true, repeat: true});
-        press({key: 'j', ctrlKey: true, repeat: true});
+        press({key: 'j', ctrlKey: true, shiftKey: true});
+        press({key: 'j', ctrlKey: true, shiftKey: true, repeat: true});
+        press({key: 'j', ctrlKey: true, shiftKey: true, repeat: true});
         expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
     });
 
-    it('still navigates on ctrl+j while typing in an input', () => {
+    it('still navigates on ctrl+shift+j while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
-        press({key: 'j', ctrlKey: true});
+        press({key: 'j', ctrlKey: true, shiftKey: true});
         expect(actions.selectNextNote).toHaveBeenCalledTimes(1);
     });
 
-    it('still navigates on ctrl+k while typing in an input', () => {
+    it('still navigates on ctrl+shift+k while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.focus();
-        press({key: 'k', ctrlKey: true});
+        press({key: 'k', ctrlKey: true, shiftKey: true});
         expect(actions.selectPrevNote).toHaveBeenCalledTimes(1);
     });
 

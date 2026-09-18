@@ -187,6 +187,42 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             [onChange],
         );
 
+        /**
+         * Grow the source textarea to its content, so the PANE scrolls it — exactly as it scrolls
+         * the blocks.
+         *
+         * A textarea doesn't size itself, and a fixed box inside a scrolling pane gives a long note
+         * two scrollbars and one usable screenful: flipping to source on a 180-line note showed its
+         * first 20 lines with the rest reachable only by scrolling inside the box, while the pane
+         * below it sat empty. The two surfaces read as different notes.
+         */
+        const autosize = useCallback(() => {
+            const element = markupRef.current;
+            if (!element) return;
+            element.style.height = 'auto';
+            element.style.height = `${element.scrollHeight}px`;
+        }, []);
+
+        // On the way in, and whenever the box's WIDTH changes — a resized window, a dragged divider
+        // or a different text width all re-wrap the text, which is what decides the height.
+        useLayoutEffect(() => {
+            if (!source) return undefined;
+            autosize();
+            const element = markupRef.current;
+            if (!element?.parentElement || typeof ResizeObserver === 'undefined') return undefined;
+            let lastWidth = element.clientWidth;
+            // The PARENT is observed, never the textarea: observing the element whose height this
+            // callback sets is a feedback loop.
+            const observer = new ResizeObserver(() => {
+                const width = element.clientWidth;
+                if (width === lastWidth) return;
+                lastWidth = width;
+                autosize();
+            });
+            observer.observe(element.parentElement);
+            return () => observer.disconnect();
+        }, [source, sessionId, autosize]);
+
         const toggleSourceMode = () => {
             if (forceSource) return;
             if (markup && !isRoundTripStable(bufferRef.current)) {
@@ -334,7 +370,10 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         // Unset so it inherits Settings › Check spelling from the pane wrapper,
                         // the way the blocks surface does — the setting covers both modes.
                         defaultValue={bufferRef.current}
-                        onChange={(event) => handleChange(event.target.value)}
+                        onChange={(event) => {
+                            handleChange(event.target.value);
+                            autosize();
+                        }}
                     />
                 </div>
             );

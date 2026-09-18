@@ -265,8 +265,9 @@ Markdown over anything clever.
   divider or image** has no inline text to wrap and so refuses a colour out loud; and content holding
   an **unbalanced `)`** closes the wrapper early — in the colour extension too, which is why the
   reader matches its rule — which shifts where the colour ends without changing a word of the text.
-- **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
-  (read-only preview highlights them). A table's **header-column** flag has no Markdown spelling and
+- **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write —
+  read-only preview highlights them, using the language set from the block's own picker (it rides on
+  the fence's info string, so it is what any other Markdown tool reads too). A table's **header-column** flag has no Markdown spelling and
   is dropped on save; it still applies for the session, and says so in a toast when you use it. A
   table whose header cells you empty **entirely** loses that row on reload, for the same reason: GFM
   has no headerless table, so an empty header row is exactly how one is spelled, and it reads back as

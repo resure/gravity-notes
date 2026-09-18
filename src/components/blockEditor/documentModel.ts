@@ -125,18 +125,42 @@ export function moveBlockSubtree(
     targetId: string,
     edge: 'before' | 'after',
 ): Block[] {
-    if (sourceId === targetId) return blocks as Block[];
-    const output = [...blocks];
-    const sourceIndex = output.findIndex((block) => block.id === sourceId);
-    if (sourceIndex < 0) return blocks as Block[];
+    return moveBlockSubtrees(blocks, [sourceId], targetId, edge);
+}
 
-    const sourceDepth = output[sourceIndex].depth ?? 0;
-    let sourceEnd = sourceIndex + 1;
-    while (sourceEnd < output.length && (output[sourceEnd].depth ?? 0) > sourceDepth)
-        sourceEnd += 1;
-    const moved = output.slice(sourceIndex, sourceEnd);
-    if (moved.some((block) => block.id === targetId)) return blocks as Block[];
-    output.splice(sourceIndex, moved.length);
+/**
+ * The same move for several subtrees at once — dragging a block SELECTION, where what the reader
+ * highlighted travels together.
+ *
+ * The group lands as one run in document order, however scattered it was before, and the whole run
+ * shifts by ONE delta — the first root's, so the group keeps its own internal shape rather than
+ * being flattened onto the target's level.
+ */
+export function moveBlockSubtrees(
+    blocks: readonly Block[],
+    sourceIds: readonly string[],
+    targetId: string,
+    edge: 'before' | 'after',
+): Block[] {
+    const roots = selectionRoots(blocks, new Set(sourceIds));
+    if (roots.length === 0 || roots.includes(targetId)) return blocks as Block[];
+
+    const output = [...blocks];
+    const moved: Block[] = [];
+    let firstDepth = 0;
+    // Back to front, so removing one group cannot shift the index of the next one to remove.
+    for (let at = roots.length - 1; at >= 0; at--) {
+        const index = output.findIndex((block) => block.id === roots[at]);
+        if (index < 0) return blocks as Block[];
+        const depth = output[index].depth ?? 0;
+        let end = index + 1;
+        while (end < output.length && (output[end].depth ?? 0) > depth) end += 1;
+        const group = output.slice(index, end);
+        if (group.some((block) => block.id === targetId)) return blocks as Block[];
+        moved.unshift(...group);
+        output.splice(index, group.length);
+        firstDepth = depth;
+    }
 
     let targetIndex = output.findIndex((block) => block.id === targetId);
     if (targetIndex < 0) return blocks as Block[];
@@ -148,7 +172,7 @@ export function moveBlockSubtree(
     }
 
     const deepest = moved.reduce((max, block) => Math.max(max, block.depth ?? 0), 0);
-    const delta = Math.min(targetDepth - sourceDepth, MAX_BLOCK_DEPTH - deepest);
+    const delta = Math.min(targetDepth - firstDepth, MAX_BLOCK_DEPTH - deepest);
     output.splice(
         targetIndex,
         0,

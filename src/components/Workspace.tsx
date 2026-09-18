@@ -458,7 +458,7 @@ export function Workspace({
                   ),
         [searching, notes.files, selectedFolder],
     );
-    // The note ids the cursor moves over (⌘J/⌘K, delete-neighbor).
+    // The note ids the cursor moves over (⌘⇧J/⌘⇧K, delete-neighbor).
     const visibleIds = useMemo(() => listNotes.map((note) => note.id), [listNotes]);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -684,7 +684,7 @@ export function Workspace({
     // True while the peek being opened is the automatic search peek below — it must NOT move
     // focus into the list (the user is mid-typing in the search box).
     const autoPeekRef = useRef(false);
-    // When the peek opens, move focus into the list so arrow / ⌘J⌘K nav works immediately —
+    // When the peek opens, move focus into the list so arrow / ⌘⇧J⌘⇧K nav works immediately —
     // except for an auto-peek (see above), which leaves focus in the search box.
     useEffect(() => {
         if (!peeked) return;
@@ -1230,7 +1230,7 @@ export function Workspace({
         [isNarrow, searching, orderedNotes, nav],
     );
 
-    // ⌘J / ⌘K: browse to the next / previous note in the current list, from anywhere. Mirrors
+    // ⌘⇧J / ⌘⇧K: browse to the next / previous note in the current list, from anywhere. Mirrors
     // ↓/↑ in the list (preview + focus the row); clamps at the ends; picks the first/last when
     // nothing is selected yet.
     const browseRelative = useCallback(
@@ -1250,7 +1250,7 @@ export function Workspace({
         [visibleIds, nav, enterList],
     );
 
-    // ⌘J/⌘K: move the folder cursor when the rail is focused, otherwise the notes cursor.
+    // ⌘⇧J/⌘⇧K: move the folder cursor when the rail is focused, otherwise the notes cursor.
     const moveCursor = useCallback(
         (delta: number) => {
             const el = document.activeElement;

@@ -1,0 +1,39 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Gravity Notes Preview",
+  "identifier": "com.gravitynotes.desktop.preview",
+  "version": "0.11.0-preview.1",
+  "app": {
+    "windows": [
+      {
+        "title": "Gravity Notes Preview",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "width": 1100,
+        "height": 740,
+        "minWidth": 300,
+        "minHeight": 380,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": false
+      }
+    ]
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons-dev/32x32.png",
+      "icons-dev/128x128.png",
+      "icons-dev/128x128@2x.png",
+      "icons-dev/icon.icns",
+      "icons-dev/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/resure/gravity-notes/releases/download/preview-never-updates/latest.json"
+      ]
+    }
+  }
+}

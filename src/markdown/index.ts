@@ -5,6 +5,7 @@ export {
     WIKI_LINK_CLASS,
     decodeEntities,
     inlineHtmlToMarkdown,
+    inlineHtmlToCodeText,
     inlineHtmlToText,
     inlineMarkdownToHtml,
 } from './inline';

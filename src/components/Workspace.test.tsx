@@ -330,7 +330,7 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(screen.getByLabelText('Note title')).toHaveFocus());
     });
 
-    it('navigates to the next/previous note with ⌘J / ⌘K', async () => {
+    it('navigates to the next/previous note with ⌘⇧J / ⌘⇧K', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
@@ -341,14 +341,14 @@ describe('Workspace — nvALT navigation', () => {
                 'true',
             ),
         );
-        await user.keyboard('{Meta>}j{/Meta}');
+        await user.keyboard('{Meta>}{Shift>}j{/Shift}{/Meta}');
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Alpha/})).toHaveAttribute(
                 'aria-selected',
                 'true',
             ),
         );
-        await user.keyboard('{Meta>}k{/Meta}');
+        await user.keyboard('{Meta>}{Shift>}k{/Shift}{/Meta}');
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
                 'aria-selected',
@@ -357,14 +357,14 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('⌘J navigates even while the title field is focused', async () => {
+    it('⌘⇧J navigates even while the title field is focused', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
         await user.click(screen.getByRole('option', {name: /Beta/}));
         await waitFor(() => expect(screen.queryByText(/Select a note/)).not.toBeInTheDocument());
         screen.getByLabelText('Note title').focus();
-        await user.keyboard('{Meta>}j{/Meta}');
+        await user.keyboard('{Meta>}{Shift>}j{/Shift}{/Meta}');
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Alpha/})).toHaveAttribute(
                 'aria-selected',
@@ -403,7 +403,7 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(screen.getByPlaceholderText(/Search/)).toHaveFocus());
     });
 
-    it('⌘K clamps at the first row — does not wrap to the last', async () => {
+    it('⌘⇧K clamps at the first row — does not wrap to the last', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         // updated-desc order is [Beta, Alpha]; click Beta (the first row) to select it.
@@ -415,8 +415,8 @@ describe('Workspace — nvALT navigation', () => {
                 'true',
             ),
         );
-        // ⌘K at the top should clamp — Beta should still be selected.
-        await user.keyboard('{Meta>}k{/Meta}');
+        // ⌘⇧K at the top should clamp — Beta should still be selected.
+        await user.keyboard('{Meta>}{Shift>}k{/Shift}{/Meta}');
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
                 'aria-selected',
@@ -570,13 +570,13 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() => expect(screen.getByRole('option', {name: /Beta/})).toHaveFocus());
     });
 
-    it('⌘J browsing keeps the peek open', async () => {
+    it('⌘⇧J browsing keeps the peek open', async () => {
         const user = userEvent.setup();
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         await collapseThenPeek(user);
-        // ⌘J previews (browses) — it must NOT close the peek; only commit/Esc/click-outside do.
-        fireEvent.keyDown(document, {key: 'j', metaKey: true});
+        // ⌘⇧J previews (browses) — it must NOT close the peek; only commit/Esc/click-outside do.
+        fireEvent.keyDown(document, {key: 'j', metaKey: true, shiftKey: true});
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
                 'aria-selected',
@@ -592,7 +592,7 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Beta/});
         await collapseThenPeek(user);
         // Browse to a row so a note is selected, then a second ⌘' commits it (like Enter) + closes.
-        fireEvent.keyDown(document, {key: 'j', metaKey: true});
+        fireEvent.keyDown(document, {key: 'j', metaKey: true, shiftKey: true});
         await waitFor(() =>
             expect(screen.getByRole('option', {name: /Beta/})).toHaveAttribute(
                 'aria-selected',

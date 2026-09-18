@@ -11,6 +11,7 @@ import {
     duplicateBlockGroups,
     expandBlockIds,
     moveBlockSubtree,
+    moveBlockSubtrees,
     normalizeDepths,
     pasteTableGrid,
     selectionRoots,
@@ -165,6 +166,36 @@ describe('nested block operations', () => {
             ['a1', 2],
             ['a2', 2],
             ['c', 0],
+        ]);
+    });
+
+    it('moves a whole selection as one run, in document order', () => {
+        // What a drag from inside a block selection does: `a` (with its children) and `c` travel
+        // together and land as one group, however far apart they started.
+        const out = moveBlockSubtrees(nested, ['c', 'a'], 'b', 'before');
+        expect(out.map((item) => [item.id, item.depth])).toEqual([
+            ['a', 0],
+            ['a1', 1],
+            ['a2', 1],
+            ['c', 0],
+            ['b', 0],
+            ['b1', 1],
+        ]);
+    });
+
+    it('refuses a selection dropped into its own subtree', () => {
+        expect(moveBlockSubtrees(nested, ['a', 'c'], 'a1', 'after')).toBe(nested);
+    });
+
+    it('carries a selection to the target’s level without flattening it', () => {
+        const out = moveBlockSubtrees(nested, ['a', 'c'], 'b1', 'after');
+        expect(out.map((item) => [item.id, item.depth])).toEqual([
+            ['b', 0],
+            ['b1', 1],
+            ['a', 1],
+            ['a1', 2],
+            ['a2', 2],
+            ['c', 1],
         ]);
     });
 

@@ -6,6 +6,7 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {stripZeroWidth} from './caret';
 import {CheckIcon, DragIcon, PlusIcon} from './icons';
+import {languageLabel} from './languages';
 import type {Block as BlockData, ImageData} from './types';
 
 export interface BlockHandlers {
@@ -26,6 +27,9 @@ export interface BlockHandlers {
     onFocus: (id: string) => void;
     onBlur: (id: string) => void;
     onToggleTodo: (id: string) => void;
+    /** Open the language picker for a code block, anchored to the button that asked. */
+    onPickLanguage: (id: string, anchor: DOMRect) => void;
+    onCopyCode: (id: string) => void;
     onToggleCollapse: (id: string) => void;
     onTableCellRef: (id: string, el: HTMLDivElement | null) => void;
     onTableCellInput: (blockId: string, row: number, column: number, html: string) => void;
@@ -235,8 +239,28 @@ function Block({
         case 'code':
             body = (
                 <div className="code-wrap">
-                    <div className="code-lang" contentEditable={false}>
-                        Plain text
+                    <div className="code-toolbar" contentEditable={false}>
+                        <button
+                            type="button"
+                            className="code-lang"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) =>
+                                handlers.onPickLanguage(
+                                    block.id,
+                                    e.currentTarget.getBoundingClientRect(),
+                                )
+                            }
+                        >
+                            {languageLabel(block.language)}
+                        </button>
+                        <button
+                            type="button"
+                            className="code-copy"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handlers.onCopyCode(block.id)}
+                        >
+                            Copy
+                        </button>
                     </div>
                     {content}
                 </div>

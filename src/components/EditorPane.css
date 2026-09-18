@@ -54,7 +54,11 @@
 .block-editor-markup {
     display: block;
     width: 100%;
+    /* Height is set from the content by BlockEditorBody, so the PANE scrolls this the way it
+       scrolls the blocks. `overflow: hidden` keeps the box from also offering its own scrollbar
+       during the moment between a keystroke and the re-measure. */
     min-height: 60vh;
+    overflow: hidden;
     padding: 4px var(--editor-gutter, 16px) 30vh;
     border: 0;
     background: none;

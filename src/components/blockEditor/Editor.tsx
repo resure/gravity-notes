@@ -19,6 +19,7 @@ import {readClipboardText, writeClipboardText} from '../../clipboard';
 import {
     WIKI_LINK_CLASS,
     blocksToMarkdown,
+    inlineHtmlToCodeText,
     inlineHtmlToMarkdown,
     inlineHtmlToText,
     inlineMarkdownToHtml,
@@ -32,6 +33,7 @@ import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../..
 import Block from './Block';
 import type {BlockHandlers} from './Block';
 import BlockMenu from './BlockMenu';
+import LanguageMenu from './LanguageMenu';
 import {OverlayPortal} from './OverlayPortal';
 import SelectionToolbar from './SelectionToolbar';
 import SlashMenu from './SlashMenu';
@@ -39,6 +41,7 @@ import type {MenuAnchor} from './SlashMenu';
 import {tableCellId} from './TableBlock';
 import type {WikiSuggestItem} from './WikiSuggestMenu';
 import WikiSuggestMenu from './WikiSuggestMenu';
+import {createEdgeScroller, scrollableAncestor} from './autoScroll';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
 import type {CaretPos} from './caret';
@@ -73,7 +76,7 @@ import {
     deleteTableRowData,
     duplicateBlockGroups,
     expandBlockIds,
-    moveBlockSubtree,
+    moveBlockSubtrees,
     normalizeDepths,
     pasteTableGrid,
     selectionRoots,
@@ -461,7 +464,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
-    const [draggingId, setDraggingId] = useState<string | null>(null);
+    // The subtree ROOTS being dragged — several when the drag started inside a block selection.
+    const [languageMenu, setLanguageMenu] = useState<{id: string; x: number; y: number} | null>(
+        null,
+    );
+    const [draggingRoots, setDraggingRoots] = useState<string[] | null>(null);
+    // Their descendants travel with them, so they have to LOOK dragged too.
+    const draggedIds = useMemo(
+        () =>
+            draggingRoots ? expandBlockIds(blocksRef.current, draggingRoots) : new Set<string>(),
+        [draggingRoots],
+    );
     const [dropTarget, setDropTarget] = useState<{id: string; edge: 'before' | 'after'} | null>(
         null,
     );
@@ -887,9 +900,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      *
      * The app's global shortcuts (`useShortcuts`) listen on `document` and let `mod` chords fire
      * even while a typing surface is focused — so every chord this editor also binds used to run
-     * BOTH handlers: ⌘D duplicated the block AND wrote a duplicate note file into the vault, ⌘K
-     * opened the link input AND switched notes out from under it, remounting the session over the
-     * half-typed link. `preventDefault` alone does nothing about that (the global handler's
+     * BOTH handlers: ⌘D duplicated the block AND wrote a duplicate note file into the vault, and
+     * ⌘K — a note step at the time — opened the link input AND switched notes out from under it,
+     * remounting the session over the half-typed link (which is why stepping notes is ⌘⇧J/⌘⇧K
+     * now). `preventDefault` alone does nothing about that (the global handler's
      * `defaultPrevented` check is on the bubble path, which a capture-phase claim never reaches,
      * and it is phase-blind besides); stopping propagation is what makes the claim exclusive.
      *
@@ -1283,12 +1297,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         else if (type !== 'divider') focusReq.current = {id, pos: 'end'};
     };
 
-    const moveBlock = (srcId: string, dstId: string, edge: 'before' | 'after') => {
-        // `moveBlockSubtree` lands the root at the target's depth, so the result is already legal;
-        // normalizing stays as the backstop that keeps the screen and the file agreeing.
-        const next = normalizeDepths(moveBlockSubtree(blocksRef.current, srcId, dstId, edge));
+    const moveBlocks = (srcIds: string[], dstId: string, edge: 'before' | 'after') => {
+        // `moveBlockSubtrees` lands the first root at the target's depth, so the result is already
+        // legal; normalizing stays as the backstop that keeps the screen and the file agreeing.
+        const next = normalizeDepths(moveBlockSubtrees(blocksRef.current, srcIds, dstId, edge));
         if (next !== blocksRef.current) setBlocks(next);
     };
+
+    const moveBlock = (srcId: string, dstId: string, edge: 'before' | 'after') =>
+        moveBlocks([srcId], dstId, edge);
 
     const withDepthChanged = (blocks: BlockData[], id: string, direction: -1 | 1): BlockData[] => {
         let next = changeBlockDepth(blocks, id, direction);
@@ -1857,8 +1874,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
             if (!e.shiftKey && k === 'k' && block.type !== 'code') {
                 const selection = window.getSelection();
-                // With nothing selected there is no link to make, so the chord is left to the app
-                // (⌘K = previous note) rather than swallowed.
+                // With nothing selected there is no link to make, so the chord is left alone
+                // rather than swallowed — nothing else binds it.
                 if (selection && !selection.isCollapsed) {
                     claimChord(e);
                     setLinkRequest((request) => request + 1);
@@ -2549,6 +2566,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const ownsDocumentEvent = (target: EventTarget | null): boolean => {
         if (!(target instanceof HTMLElement)) return true; // document-level: nothing else focused
         if (target === document.body || target === document.documentElement) return true;
+        // A floating overlay is on screen and driving the keyboard itself. It has to be excluded by
+        // hand: the overlays portal to <body> under a host that re-applies the editor's own scope
+        // class, so the test below says they are part of the editor — and this listener CAPTURES on
+        // document, ahead of React. It was eating the arrows the block menu walks its rows with
+        // (the menu's own handler never ran at all) and the Escape that should merely close a
+        // submenu, which instead stepped the selection out to the note list.
+        if (target.closest('.overlay-menu, .sel-toolbar')) return false;
         if (!target.closest('.gn-block-editor')) return false;
         return !(
             target.isContentEditable ||
@@ -2708,17 +2732,43 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // ----- drag & drop -----
 
+    /**
+     * Auto-scroll while dragging near the pane's edges — the pane scrolls this editor, not the
+     * window (see autoScroll.ts). Kept in a ref: a scroller is a live resource, and re-creating one
+     * per render would strand its frame loop.
+     */
+    const edgeScroller = useRef(createEdgeScroller(() => scrollableAncestor(rootRef.current)));
+
+    // `dragover` on the document, not on each block: the pointer spends a good part of a drag over
+    // the gap below the last block (or over another block's furniture), and those frames are
+    // exactly the ones that need to keep scrolling.
+    useEffect(() => {
+        if (!draggingRoots) return undefined;
+        const scroller = edgeScroller.current;
+        const onDragOverDocument = (e: globalThis.DragEvent) => scroller.to(e.clientY);
+        document.addEventListener('dragover', onDragOverDocument);
+        return () => {
+            document.removeEventListener('dragover', onDragOverDocument);
+            scroller.stop();
+        };
+    }, [draggingRoots]);
+
     const onDragStart = (e: DragEvent<HTMLButtonElement>, id: string) => {
-        e.dataTransfer.setData('text/plain', id);
+        // A handle inside the current block SELECTION drags the whole selection — what the reader
+        // highlighted is what moves. Dragging one of several selected blocks and watching the rest
+        // stay put is the kind of thing that makes a surface feel like it isn't listening.
+        const selected = selectedIdsRef.current;
+        const roots = selected.has(id) ? selectionRoots(blocksRef.current, selected) : [id];
+        e.dataTransfer.setData('text/plain', roots.join('\n'));
         e.dataTransfer.effectAllowed = 'move';
         const blockEl = (e.currentTarget as HTMLElement).closest('.block');
         if (blockEl) e.dataTransfer.setDragImage(blockEl, 20, 10);
         // Defer: mutating the DOM inside dragstart cancels the drag in Chrome.
-        setTimeout(() => setDraggingId(id), 0);
+        setTimeout(() => setDraggingRoots(roots), 0);
     };
 
     const onDragOver = (e: DragEvent<HTMLDivElement>, id: string) => {
-        if (!draggingId) return;
+        if (!draggingRoots) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -2726,27 +2776,31 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setDropTarget((t) => (t && t.id === id && t.edge === edge ? t : {id, edge}));
     };
 
+    const endDrag = () => {
+        edgeScroller.current.stop();
+        setDraggingRoots(null);
+        setDropTarget(null);
+    };
+
     const onDrop = (e: DragEvent<HTMLDivElement>, id: string) => {
         e.preventDefault();
         const images = imageFilesFrom(e.dataTransfer.files);
         if (images.length && onAttachFile) {
-            setDraggingId(null);
-            setDropTarget(null);
+            endDrag();
             void insertImageFiles(id, images);
             return;
         }
-        const src = draggingId ?? e.dataTransfer.getData('text/plain');
+        // The state is set on a deferred tick (see above), so a very fast drag can drop before it
+        // lands — the ids ride on the dataTransfer for exactly that case.
+        const src =
+            draggingRoots ?? e.dataTransfer.getData('text/plain').split('\n').filter(Boolean);
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         const edge = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-        setDraggingId(null);
-        setDropTarget(null);
-        if (src) moveBlock(src, id, edge);
+        endDrag();
+        if (src.length) moveBlocks(src, id, edge);
     };
 
-    const onDragEnd = () => {
-        setDraggingId(null);
-        setDropTarget(null);
-    };
+    const onDragEnd = endDrag;
 
     // ----- hover controls -----
 
@@ -2857,10 +2911,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             selectionFocus.current = ordered[ordered.length - 1]?.id ?? null;
         }
 
-        const edge = 48;
-        if (e.clientY < edge) window.scrollBy({top: -12, behavior: 'auto'});
-        else if (e.clientY > window.innerHeight - edge)
-            window.scrollBy({top: 12, behavior: 'auto'});
+        // Same scroller as a block drag: dragging a marquee past the edge of the pane has to bring
+        // the rest of the note into view. This used to scroll the WINDOW, which scrolls nothing
+        // here — so a selection could never reach beyond one screenful.
+        edgeScroller.current.to(e.clientY);
     };
 
     const finishSelectionPointer = (e: ReactPointerEvent<HTMLElement>) => {
@@ -2869,6 +2923,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
         selectionDrag.current = null;
+        edgeScroller.current.stop();
         setSelectionBox(null);
     };
 
@@ -2945,6 +3000,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onBlur: (id) => setFocusedId((cur) => (cur === id ? null : cur)),
         onToggleTodo: (id) =>
             setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, checked: !b.checked} : b))),
+        onPickLanguage: (id, anchor) => setLanguageMenu({id, x: anchor.left, y: anchor.bottom + 6}),
+        onCopyCode: (id) => {
+            const block = findBlock(id);
+            if (!block) return;
+            void writeClipboardText(inlineHtmlToCodeText(block.html)).then(
+                () => showToast('Copied'),
+                () => showToast('Could not write to the clipboard'),
+            );
+        },
         onToggleCollapse: (id) =>
             setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, collapsed: !b.collapsed} : b))),
         onTableCellRef: (id, element) => {
@@ -3014,7 +3078,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                 block={b}
                                 listNumber={numbers.get(b.id) ?? 1}
                                 selected={selectedIds.has(b.id)}
-                                dragging={draggingId === b.id}
+                                dragging={draggedIds.has(b.id)}
                                 dropEdge={dropTarget?.id === b.id ? dropTarget.edge : null}
                                 placeholder={placeholderFor(
                                     b,
@@ -3098,6 +3162,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                             );
                     }}
                     onClose={() => setBlockMenu(null)}
+                />
+            )}
+            {languageMenu && (
+                <LanguageMenu
+                    x={languageMenu.x}
+                    y={languageMenu.y}
+                    current={findBlock(languageMenu.id)?.language}
+                    onPick={(token) => {
+                        setBlocks((current) =>
+                            current.map((block) =>
+                                block.id === languageMenu.id
+                                    ? {...block, language: token || undefined}
+                                    : block,
+                            ),
+                        );
+                        setLanguageMenu(null);
+                    }}
+                    onClose={() => setLanguageMenu(null)}
                 />
             )}
             <SelectionToolbar

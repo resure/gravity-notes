@@ -88,14 +88,31 @@ export default function BlockMenu({
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (event.key === 'Escape' || (event.key === 'ArrowLeft' && view !== 'main')) {
-            // Marks it handled for EditorPane's Esc ladder, which skips a handled Escape. NOTE:
-            // opening this menu also selects its block, and the editor's block-selection listener
-            // runs on `document` in the CAPTURE phase — so it still sees this Escape first and
-            // steps out to the note list. Dismissing a submenu therefore leaves the editor today;
-            // fixing that belongs in that listener (it should yield while an overlay is open).
+            // Marks it handled for EditorPane's Esc ladder, which skips a handled Escape. The
+            // editor's block-selection listener — which captures on `document`, ahead of React —
+            // yields to anything inside an overlay (see `ownsDocumentEvent`), so this keystroke is
+            // the menu's alone: closing a submenu no longer steps the selection out to the note
+            // list on the way.
             event.preventDefault();
             if (view === 'main') onClose();
             else setView('main');
+            return;
+        }
+        // The rows print `Del` and `⌘D`, and while this menu is open it is the one that has to make
+        // them work: the editor's block-selection listener yields to overlays now (it was eating
+        // the arrows below). Only on the main page, where those rows are the ones on screen.
+        if (view === 'main' && (event.key === 'Delete' || event.key === 'Del')) {
+            event.preventDefault();
+            onDelete();
+            return;
+        }
+        if (
+            view === 'main' &&
+            (event.metaKey || event.ctrlKey) &&
+            event.key.toLowerCase() === 'd'
+        ) {
+            event.preventDefault();
+            onDuplicate();
             return;
         }
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;

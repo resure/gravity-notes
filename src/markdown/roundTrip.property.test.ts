@@ -123,38 +123,53 @@ function makeBlocks(next: () => number, count: number): Block[] {
     return blocks;
 }
 
-describe('round-trip properties', () => {
-    it('blocks → Markdown → blocks → Markdown is a fixed point', () => {
-        for (let seed = 1; seed <= 20000; seed++) {
-            const next = rng(seed);
-            const blocks = makeBlocks(next, 1 + Math.floor(next() * 8));
-            // A file ENTERS the editor by being parsed, so that is where the invariant starts: from
-            // a parsed document, serializing must be a fixed point. Between hand-built blocks and
-            // their first parse the model may normalise once — it is deliberately smaller than
-            // Markdown in places (a depth the indentation cannot express relative to its
-            // predecessor, a toggle body's nesting) — and that is safe precisely because it
-            // SETTLES. What would not be safe is drift: a note rewritten differently on every
-            // save, which is how emphasis once compounded into literal asterisks.
-            const once = blocksToMarkdown(markdownToBlocks(blocksToMarkdown(blocks)));
-            const twice = blocksToMarkdown(markdownToBlocks(once));
-            expect(twice, `seed ${seed}\n--- once ---\n${once}\n--- twice ---\n${twice}`).toBe(
-                once,
-            );
-        }
-    });
+/**
+ * 20k seeds is ~1.5s per property on an idle machine and several times that on a loaded one (a
+ * parallel suite, a dev build competing for cores), so these carry their own budget: the default 5s
+ * made them fail as a TIMEOUT on a busy laptop, which reads exactly like the seam breaking.
+ */
+const PROPERTY_TIMEOUT_MS = 30_000;
 
-    it('never calls a note stable unless editing it leaves the file alone', () => {
-        for (let seed = 1; seed <= 20000; seed++) {
-            const next = rng(seed);
-            const markdown = blocksToMarkdown(makeBlocks(next, 1 + Math.floor(next() * 8)));
-            if (!isRoundTripStable(markdown)) continue;
-            // The guard's whole promise: a note it admits to the block surface is one the surface
-            // can write back without changing anything the user did not edit.
-            const written = blocksToMarkdown(markdownToBlocks(markdown));
-            expect(
-                blocksToMarkdown(markdownToBlocks(written)),
-                `seed ${seed}\n--- markdown ---\n${markdown}`,
-            ).toBe(written);
-        }
-    });
+describe('round-trip properties', () => {
+    it(
+        'blocks → Markdown → blocks → Markdown is a fixed point',
+        () => {
+            for (let seed = 1; seed <= 20000; seed++) {
+                const next = rng(seed);
+                const blocks = makeBlocks(next, 1 + Math.floor(next() * 8));
+                // A file ENTERS the editor by being parsed, so that is where the invariant starts: from
+                // a parsed document, serializing must be a fixed point. Between hand-built blocks and
+                // their first parse the model may normalise once — it is deliberately smaller than
+                // Markdown in places (a depth the indentation cannot express relative to its
+                // predecessor, a toggle body's nesting) — and that is safe precisely because it
+                // SETTLES. What would not be safe is drift: a note rewritten differently on every
+                // save, which is how emphasis once compounded into literal asterisks.
+                const once = blocksToMarkdown(markdownToBlocks(blocksToMarkdown(blocks)));
+                const twice = blocksToMarkdown(markdownToBlocks(once));
+                expect(twice, `seed ${seed}\n--- once ---\n${once}\n--- twice ---\n${twice}`).toBe(
+                    once,
+                );
+            }
+        },
+        PROPERTY_TIMEOUT_MS,
+    );
+
+    it(
+        'never calls a note stable unless editing it leaves the file alone',
+        () => {
+            for (let seed = 1; seed <= 20000; seed++) {
+                const next = rng(seed);
+                const markdown = blocksToMarkdown(makeBlocks(next, 1 + Math.floor(next() * 8)));
+                if (!isRoundTripStable(markdown)) continue;
+                // The guard's whole promise: a note it admits to the block surface is one the surface
+                // can write back without changing anything the user did not edit.
+                const written = blocksToMarkdown(markdownToBlocks(markdown));
+                expect(
+                    blocksToMarkdown(markdownToBlocks(written)),
+                    `seed ${seed}\n--- markdown ---\n${markdown}`,
+                ).toBe(written);
+            }
+        },
+        PROPERTY_TIMEOUT_MS,
+    );
 });

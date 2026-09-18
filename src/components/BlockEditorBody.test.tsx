@@ -62,6 +62,51 @@ describe('BlockEditorBody — the raw-Markdown escape hatch', () => {
     });
 });
 
+describe('BlockEditorBody — the raw view’s height', () => {
+    /**
+     * A textarea does not size itself, so the raw view used to be a fixed 60vh box inside a
+     * scrolling pane: a long note showed its first screenful, the rest was reachable only by
+     * scrolling INSIDE the box, and the pane below it was empty — the blocks and the source of the
+     * same note read as different documents.
+     *
+     * jsdom has no layout, so `scrollHeight` is stubbed to stand in for one: what is asserted is
+     * that the height is taken from the content on the way in AND after an edit.
+     */
+    it('grows to its content, so the pane is what scrolls', () => {
+        const scrollHeight = vi
+            .spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get')
+            .mockImplementation(function (this: HTMLTextAreaElement) {
+                return this.value.split('\n').length * 20;
+            });
+        try {
+            const ref = createRef<BlockEditorBodyHandle>();
+            render(
+                <BlockEditorBody
+                    ref={ref}
+                    note={note('Long.md', 'one\ntwo\nthree')}
+                    sessionId={1}
+                    preview={false}
+                    onChange={vi.fn()}
+                    onUploadFile={async () => ''}
+                    onOpenWikiLink={() => {}}
+                    wikiNotes={[]}
+                />,
+            );
+            act(() => ref.current!.toggleMode());
+
+            const textarea = document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!;
+            expect(textarea.style.height).toBe('60px');
+
+            act(() => {
+                fireEvent.change(textarea, {target: {value: 'one\ntwo\nthree\nfour\nfive'}});
+            });
+            expect(textarea.style.height).toBe('100px');
+        } finally {
+            scrollHeight.mockRestore();
+        }
+    });
+});
+
 describe('BlockEditorBody — leaving the raw view', () => {
     const props = {
         preview: false,

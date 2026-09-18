@@ -198,8 +198,8 @@ describe('keyboard chords the editor owns', () => {
         const seen = watchDocumentKeys();
         const paragraph = document.querySelectorAll<HTMLElement>('.content')[1];
 
-        // ⌘D is "duplicate selected note" globally and "duplicate block" here; ⌘K is "previous
-        // note" globally and "insert link" here. Both used to run BOTH handlers.
+        // ⌘D is "duplicate selected note" globally and "duplicate block" here — it used to run
+        // BOTH handlers. (⌘K was the same story until stepping notes moved to ⌘⇧K.)
         act(() => {
             fireEvent.keyDown(paragraph, {key: 'd', metaKey: true});
         });
@@ -1308,6 +1308,54 @@ describe('overlays follow the view when it scrolls', () => {
         expect(menu()!.style.top).toBe(before);
     });
 
+    it('opens the block menu on its first row, and walks it with the arrows', async () => {
+        renderEditor(NOTE);
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        // The first row is focused a frame after the menu measures itself.
+        await act(async () => {
+            await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+        });
+        const rows = () => [...document.querySelectorAll<HTMLElement>('.block-menu .menu-item')];
+        expect(document.activeElement).toBe(rows()[0]);
+
+        act(() => {
+            fireEvent.keyDown(rows()[0], {key: 'ArrowDown'});
+        });
+        expect(document.activeElement).toBe(rows()[1]);
+
+        // …and it wraps, so ArrowUp from the top reaches the last row rather than stalling.
+        act(() => {
+            fireEvent.keyDown(rows()[1], {key: 'ArrowUp'});
+            fireEvent.keyDown(rows()[0], {key: 'ArrowUp'});
+        });
+        expect(document.activeElement).toBe(rows()[rows().length - 1]);
+    });
+
+    it('closes a submenu on Escape without stepping out of the editor', () => {
+        const onEscape = vi.fn();
+        // A plain paragraph, so the "Turn into" row is labelled with the type it currently is.
+        render(<Editor value={'one\n\ntwo'} onChange={vi.fn()} onEscape={onEscape} />);
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        act(() => {
+            fireEvent.click(screen.getByText('Text'));
+        });
+        expect(screen.getByText('Turn into')).toBeInTheDocument();
+
+        act(() => {
+            fireEvent.keyDown(document.querySelector('.block-menu .menu-item')!, {key: 'Escape'});
+        });
+        // Back to the menu's first page, and the editor's own Esc ladder never saw the key — it
+        // used to, because the selection listener captures on document, so one Escape closed the
+        // submenu AND walked focus out to the note list.
+        expect(screen.queryByText('Turn into')).not.toBeInTheDocument();
+        expect(screen.getByRole('menu', {name: 'Block actions'})).toBeInTheDocument();
+        expect(onEscape).not.toHaveBeenCalled();
+    });
+
     it('dismisses the block menu, which has nothing to follow', () => {
         renderEditor(NOTE);
         const handle = document.querySelectorAll<HTMLElement>('.drag-btn')[1];
@@ -1384,14 +1432,48 @@ describe('colours', () => {
     });
 });
 
+describe('code blocks', () => {
+    it('shows the language from the file and writes a picked one back to the fence', async () => {
+        const onChange = vi.fn();
+        renderEditor(['```ts', 'const a = 1;', '```'].join('\n'), onChange);
+        const languageButton = () => screen.getByRole('button', {name: /TypeScript|Plain text|Go/});
+        expect(languageButton()).toHaveTextContent('TypeScript');
+
+        act(() => {
+            fireEvent.click(languageButton());
+        });
+        const filter = screen.getByLabelText('Search languages');
+        act(() => {
+            fireEvent.change(filter, {target: {value: 'go'}});
+        });
+        act(() => {
+            fireEvent.keyDown(filter, {key: 'Enter'});
+        });
+
+        // The fence's info string is the only place a language lives, so picking one is an edit.
+        expect(onChange.mock.calls.at(-1)![0]).toBe(['```go', 'const a = 1;', '```'].join('\n'));
+        expect(languageButton()).toHaveTextContent('Go');
+    });
+
+    it('keeps a language it does not offer rather than resetting the block', () => {
+        renderEditor(['```jsonc', '{}', '```'].join('\n'));
+        // An unlisted token is still the note's, and showing it verbatim is how you can tell it
+        // survived — the alternative (falling back to "Plain text") looks like the file lost it.
+        expect(screen.getByRole('button', {name: 'jsonc'})).toBeInTheDocument();
+    });
+});
+
 describe('dragging a block', () => {
     const blocks = () => [...document.querySelectorAll<HTMLElement>('.block')];
 
     function dropOn(sourceIndex: number, targetIndex: number, edge: 'before' | 'after') {
+        // A real DataTransfer: the editor writes the ids it is carrying on dragstart and reads them
+        // back on drop, which is the path a fast drag takes (the state behind it is deferred a tick).
+        const store = new Map<string, string>();
         const dataTransfer = {
             files: [],
-            getData: () => blocks()[sourceIndex].id,
-            setData: vi.fn(),
+            getData: (type: string) => store.get(type) ?? '',
+            setData: (type: string, value: string) => store.set(type, value),
             setDragImage: vi.fn(),
         };
         const target = blocks()[targetIndex];
@@ -1407,6 +1489,26 @@ describe('dragging a block', () => {
             fireEvent(target, event);
         });
     }
+
+    it('carries the whole block selection, not just the handle’s block', () => {
+        const onChange = vi.fn();
+        renderEditor(['- A', '- B', '- C', '- D'].join('\n'), onChange);
+        // Select B and C (Esc selects the caret's block, ⇧↓ extends).
+        act(() => {
+            fireEvent.keyDown(document.querySelectorAll<HTMLElement>('.content')[1], {
+                key: 'Escape',
+            });
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(2);
+
+        // Drag from B's handle onto D. Dragging one of several selected blocks and watching the
+        // others stay put is what this is here to stop.
+        dropOn(1, 3, 'after');
+        expect(onChange.mock.calls.at(-1)![0]).toBe(['- A', '- D', '- B', '- C'].join('\n'));
+    });
 
     it('lands at the level the drop indicator marks, leaving the target’s children alone', () => {
         // Dropping between a parent and its children used to keep the dragged block's own depth and

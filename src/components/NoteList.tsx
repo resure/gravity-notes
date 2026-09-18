@@ -720,7 +720,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 onFocusRail: focusRail,
             } = live.current;
             if (editing === id) return;
-            // Bare j/k mirror the arrow keys (vim-style). Guarded against modifiers so ⌘J
+            // Bare j/k mirror the arrow keys (vim-style). Guarded against modifiers so ⌘⇧J
             // (new note) still falls through to the global shortcut handler.
             const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
             if (event.key === 'ArrowDown' || (bare && event.key === 'j')) {
