@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import type {Block, BlockType} from '../components/blockEditor/types';
+import type {Block, BlockColor, BlockType} from '../components/blockEditor/types';
 
 import {markdownToBlocks} from './fromMarkdown';
 import {isRoundTripStable} from './roundTrip';
@@ -58,7 +58,17 @@ const INLINE = [
     '&lt;details&gt;<br>&lt;summary&gt;s&lt;/summary&gt;<br>&lt;/details&gt;',
     'code<br>~~~<br>more',
     '&gt; [!my-note] custom callout',
+    // Colours: an inline one, one wrapping a whole line (which the reader lifts to a block colour),
+    // a nested pair, and the shapes that must NOT be read as colour at all.
+    'a <span class="gn-color gn-color--red">red</span> word',
+    '<span class="gn-color gn-color--blue_background">whole line</span>',
+    '<span class="gn-color gn-color--red">outer <span class="gn-color gn-color--green">inner</span></span>',
+    'literal {foo}(bar)',
+    '{red}(already text)',
+    'unbalanced <span class="gn-color gn-color--red">smile :)</span>',
 ];
+
+const COLORS: BlockColor[] = ['red', 'yellow_background', 'gray'];
 
 const TYPES: BlockType[] = [
     'text',
@@ -96,6 +106,9 @@ function makeBlocks(next: () => number, count: number): Block[] {
         if (type === 'toggle') block.collapsed = next() > 0.5;
         if (type === 'code') block.html = 'const a = 1;<br>const b = 2;';
         if (type === 'callout' && next() > 0.5) block.calloutKind = 'warning';
+        // A block colour on a quarter of the blocks, including the types that cannot keep one —
+        // dropping it there is exactly the asymmetry this test exists to catch.
+        if (next() > 0.75) block.color = COLORS[Math.floor(next() * COLORS.length)];
         if (type === 'table') {
             block.table = {
                 cells: [

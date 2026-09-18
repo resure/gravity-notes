@@ -1,9 +1,13 @@
 import {useEffect, useRef, useState} from 'react';
 import type {RefObject} from 'react';
 
+import {colorClassFor, colorFromClass} from '../../markdown/color';
+
 import {OverlayPortal} from './OverlayPortal';
+import {BACKGROUND_COLORS_AT, COLOR_OPTIONS} from './blockColors';
 import {toggleInlineCode} from './caret';
 import {LinkIcon} from './icons';
+import type {BlockColor} from './types';
 
 interface ToolbarProps {
     rootRef: RefObject<HTMLDivElement | null>;
@@ -52,12 +56,14 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
     const [state, setState] = useState<ToolbarState | null>(null);
     const [active, setActive] = useState<Record<string, boolean>>({});
     const [linkMode, setLinkMode] = useState(false);
+    const [colorMode, setColorMode] = useState(false);
     const [linkValue, setLinkValue] = useState('');
     const barRef = useRef<HTMLDivElement>(null);
     const savedRange = useRef<Range | null>(null);
     const mouseIsDown = useRef(false);
-    const linkModeRef = useRef(false);
-    linkModeRef.current = linkMode;
+    /** A panel (the link box, the palette) has the bar — re-measuring under one would close it. */
+    const panelOpenRef = useRef(false);
+    panelOpenRef.current = linkMode || colorMode;
     const hiddenRef = useRef(false);
     hiddenRef.current = Boolean(hidden);
     /** The counter's value at mount, so a remount cannot replay the last ⌘K as a fresh one. */
@@ -65,7 +71,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
 
     useEffect(() => {
         const update = () => {
-            if (linkModeRef.current || hiddenRef.current) return;
+            if (panelOpenRef.current || hiddenRef.current) return;
             const sel = window.getSelection();
             if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
                 setState(null);
@@ -123,6 +129,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
     useEffect(() => {
         if (!hidden) return;
         setLinkMode(false);
+        setColorMode(false);
         setState(null);
         savedRange.current = null;
     }, [hidden]);
@@ -191,6 +198,53 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
         setState(null);
     };
 
+    /**
+     * Colour the selected text — the inline half of the palette (the block menu colours a whole
+     * block). The range is rebuilt rather than handed to `execCommand`: the browser's own
+     * `foreColor` writes inline styles that the editor's sanitizer strips, and a background has no
+     * command at all.
+     *
+     * Colours nest, and the innermost wins in both CSS and the file's `{red}({blue}(…))`. Default is
+     * therefore the one case that has to REMOVE something, and it removes any colour the selection
+     * touches, including one that started outside it — a colour you cannot see the end of is worse
+     * than one that gives up more than you asked.
+     */
+    const applyColor = (color: BlockColor) => {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+        const block = selectionContentEl();
+        const range = sel.getRangeAt(0);
+        if (color === 'default') {
+            const ancestor = (
+                range.commonAncestorContainer instanceof Element
+                    ? range.commonAncestorContainer
+                    : range.commonAncestorContainer.parentElement
+            )?.closest('span');
+            if (ancestor && colorFromClass(ancestor.className) && block?.contains(ancestor)) {
+                ancestor.replaceWith(...ancestor.childNodes);
+            }
+        }
+        const fragment = range.extractContents();
+        for (const span of [...fragment.querySelectorAll('span')]) {
+            if (colorFromClass(span.className)) span.replaceWith(...span.childNodes);
+        }
+        let inserted: Node = fragment;
+        if (color !== 'default') {
+            const span = document.createElement('span');
+            span.className = colorClassFor(color);
+            span.appendChild(fragment);
+            inserted = span;
+        }
+        range.insertNode(inserted);
+        sel.removeAllRanges();
+        const restored = document.createRange();
+        restored.selectNodeContents(inserted);
+        sel.addRange(restored);
+        syncSelectionBlock();
+        setColorMode(false);
+        setState(null);
+    };
+
     const cancelLink = () => {
         const sel = window.getSelection();
         if (sel && savedRange.current) {
@@ -231,7 +285,42 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
                 role="toolbar"
                 aria-label="Text formatting"
             >
-                {linkMode ? (
+                {colorMode ? (
+                    <div className="tb-colors">
+                        <div className="menu-section">Text color</div>
+                        <div className="color-grid">
+                            {COLOR_OPTIONS.slice(0, BACKGROUND_COLORS_AT).map((color) => (
+                                <button
+                                    type="button"
+                                    key={color.value}
+                                    className="color-swatch"
+                                    title={color.label}
+                                    aria-label={color.label}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => applyColor(color.value)}
+                                >
+                                    <span style={{color: color.swatch}}>A</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="menu-section">Background color</div>
+                        <div className="color-grid">
+                            {COLOR_OPTIONS.slice(BACKGROUND_COLORS_AT).map((color) => (
+                                <button
+                                    type="button"
+                                    key={color.value}
+                                    className="color-swatch"
+                                    title={color.label}
+                                    aria-label={color.label}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => applyColor(color.value)}
+                                >
+                                    <span style={{background: color.swatch}}>A</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : linkMode ? (
                     <input
                         className="tb-link-input"
                         autoFocus
@@ -263,6 +352,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
                         )}
                         {btn('code', '</>', execCode, 'Code (⌘E)', 'tb-code')}
                         <div className="tb-divider" />
+                        {btn('color', 'A', () => setColorMode(true), 'Color', 'tb-color')}
                         {btn('link', <LinkIcon />, openLinkEditor, 'Link')}
                     </>
                 )}

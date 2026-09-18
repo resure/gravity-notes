@@ -12,6 +12,7 @@
 import type {Block, BlockType, ColumnAlign, TableData} from '../components/blockEditor/types';
 import {newBlock, uid, widestRow} from '../components/blockEditor/types';
 
+import {liftBlockColor} from './color';
 import {inlineMarkdownToHtml} from './inline';
 import {renderTableLines} from './toMarkdown';
 
@@ -283,6 +284,18 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         const block = newBlock('text', inlineMarkdownToHtml(line.text));
         block.depth = depth;
         open = push(block, line.indent);
+    }
+
+    // After the walk, not during it: a paragraph the file wrapped across several lines is only whole
+    // once the last continuation has been appended, and a colour covering it can only be recognised
+    // then.
+    for (const block of blocks) {
+        if (block.type === 'code') continue;
+        const lifted = liftBlockColor(block.html);
+        if (lifted) {
+            block.html = lifted.html;
+            block.color = lifted.color;
+        }
     }
 
     return blocks;

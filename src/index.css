@@ -31,6 +31,33 @@ body,
     --gn-accent-rgb: 238, 152, 46;
 }
 
+/* The note colour palette — Notion's, and the one source for every surface that paints it: a block's
+   own `data-color`, an inline `{red}(…)` span in the editor (blockEditor/editor.css), and the
+   `yfm-colorify` spans read-only preview renders (NotePreview.css). A note's own content picks these,
+   so unlike the rest of the editor's hard-coded light palette they MUST flip with the theme — light
+   ink on a light wash is unreadable, and the note is the one thing here the user cannot restyle. */
+:root {
+    --gn-color-gray: #787774;
+    --gn-color-brown: #976d57;
+    --gn-color-orange: #cc782f;
+    --gn-color-yellow: #c29343;
+    --gn-color-green: #548164;
+    --gn-color-blue: #487ca5;
+    --gn-color-purple: #8a67ab;
+    --gn-color-pink: #b35488;
+    --gn-color-red: #c4554d;
+
+    --gn-color-gray-bg: #f1f1ef;
+    --gn-color-brown-bg: #f4eeee;
+    --gn-color-orange-bg: #fbecdd;
+    --gn-color-yellow-bg: #fbf3db;
+    --gn-color-green-bg: #edf3ec;
+    --gn-color-blue-bg: #e7f3f8;
+    --gn-color-purple-bg: #f4f0f7;
+    --gn-color-pink-bg: #f9eef3;
+    --gn-color-red-bg: #fdebec;
+}
+
 /* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
    must flip with the theme, so it's set per theme root (matching Gravity's own selectors,
    and loaded after uikit so it wins). text-brand-contrast keeps button labels readable on
@@ -78,6 +105,26 @@ body,
     --g-color-base-background: #211e1a;
     --g-color-base-generic: #2a2723;
     --g-color-base-generic-hover: #332f29;
+    /* Notion's own dark values for the note palette above. */
+    --gn-color-gray: #9b9b9b;
+    --gn-color-brown: #ba856f;
+    --gn-color-orange: #c77d48;
+    --gn-color-yellow: #ca9849;
+    --gn-color-green: #529e72;
+    --gn-color-blue: #5e87c9;
+    --gn-color-purple: #9d68d3;
+    --gn-color-pink: #d15796;
+    --gn-color-red: #df5452;
+
+    --gn-color-gray-bg: #2f2f2f;
+    --gn-color-brown-bg: #4a3228;
+    --gn-color-orange-bg: #5c3b23;
+    --gn-color-yellow-bg: #56452f;
+    --gn-color-green-bg: #243d30;
+    --gn-color-blue-bg: #143a4e;
+    --gn-color-purple-bg: #3c2d49;
+    --gn-color-pink-bg: #4e2c3c;
+    --gn-color-red-bg: #522e2a;
 }
 
 /* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in

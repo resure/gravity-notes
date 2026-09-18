@@ -16,6 +16,10 @@
  * - unknown tags are dropped by the editor's own sanitizer long before they reach here.
  */
 
+import type {BlockColor} from '../components/blockEditor/types';
+
+import {colorClassFor, colorFromClass, colorFromToken, colorToken} from './color';
+
 const ENTITIES: Record<string, string> = {
     amp: '&',
     lt: '<',
@@ -181,6 +185,8 @@ export function inlineHtmlToMarkdown(html: string): string {
         start: number;
         text: string;
     }[] = [];
+    // One entry per open `<span>`: its colour token, or null for a span that writes nothing.
+    const openSpans: (string | null)[] = [];
 
     const pushText = (text: string) => {
         const decoded = decodeEntities(text);
@@ -244,6 +250,19 @@ export function inlineHtmlToMarkdown(html: string): string {
         if (tag.name === 'u') {
             // No Markdown equivalent — keep the literal tag (Markdown passes inline HTML through).
             out += tag.closing ? '</u>' : '<u>';
+            continue;
+        }
+        if (tag.name === 'span') {
+            // EVERY span pushes, so a close can always tell which one it is closing: the
+            // `[[wiki link]]` wrapper contributes no characters (its text is already the literal
+            // brackets), a coloured one contributes the wrapper the reader above matches.
+            if (tag.closing) {
+                if (openSpans.pop()) out += ')';
+                continue;
+            }
+            const token = colorToken(colorFromClass(tag.attrs.class ?? '') ?? undefined);
+            openSpans.push(token);
+            if (token) out += `{${token}}(`;
             continue;
         }
         if (tag.name === 'a') {
@@ -404,6 +423,18 @@ function parseInline(text: string): string {
             }
         }
 
+        // `{red}(text)` / `{bg:red}(text)` — a colour, the one piece of markup this app writes that
+        // no other Markdown tool reads (see color.ts).
+        if (char === '{') {
+            const colored = matchColor(text, i);
+            if (colored) {
+                flush();
+                out += `<span class="${colorClassFor(colored.color)}">${parseInline(colored.inner)}</span>`;
+                i = colored.end;
+                continue;
+            }
+        }
+
         if (char === '`') {
             const fence = /^`+/.exec(text.slice(i))![0];
             const close = text.indexOf(fence, i + fence.length);
@@ -470,6 +501,39 @@ function parseInline(text: string): string {
     }
     flush();
     return out;
+}
+
+interface ColorMatch {
+    color: BlockColor;
+    inner: string;
+    end: number;
+}
+
+const COLOR_OPEN = /^\{([a-z:]+)\}\(/;
+
+/**
+ * Match `{red}(text)` starting at `start` (which must be the `{`).
+ *
+ * Parentheses are counted, not escaped — which is what the colour extension's own reader does, so
+ * the two agree on where a wrapper ends. Content holding an unbalanced `)` therefore closes the
+ * wrapper early in BOTH, which shifts the colour's extent by a character or two and writes back the
+ * same bytes: a visible oddity, never a lost or rewritten word.
+ */
+function matchColor(text: string, start: number): ColorMatch | null {
+    const open = COLOR_OPEN.exec(text.slice(start));
+    if (!open) return null;
+    const color = colorFromToken(open[1]);
+    if (!color) return null;
+    let depth = 1;
+    let i = start + open[0].length;
+    while (i < text.length) {
+        if (text[i] === '(') depth++;
+        else if (text[i] === ')' && --depth === 0) {
+            return {color, inner: text.slice(start + open[0].length, i), end: i + 1};
+        }
+        i++;
+    }
+    return null;
 }
 
 interface LinkMatch {

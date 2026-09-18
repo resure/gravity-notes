@@ -13,6 +13,7 @@ import {
     moveBlockSubtree,
     normalizeDepths,
     pasteTableGrid,
+    selectionRoots,
     setTableCell,
 } from './documentModel';
 import type {Block, TableData} from './types';
@@ -98,6 +99,12 @@ describe('nested block operations', () => {
         expect([...expandBlockIds(nested, ['a'])]).toEqual(['a', 'a1', 'a2']);
     });
 
+    it('keeps only the roots of a selection', () => {
+        // A child that came along inside a selected parent must not be acted on twice: an indent
+        // already carries it.
+        expect(selectionRoots(nested, new Set(['a', 'a1', 'b1']))).toEqual(['a', 'b1']);
+    });
+
     it('builds inclusive ranges in either direction', () => {
         expect([...blockRangeIds(nested, 'a1', 'b')]).toEqual(['a1', 'a2', 'b']);
         expect([...blockRangeIds(nested, 'b', 'a1')]).toEqual(['a1', 'a2', 'b']);
@@ -133,6 +140,49 @@ describe('nested block operations', () => {
 
     it('does not move a parent into its own subtree', () => {
         expect(moveBlockSubtree(nested, 'a', 'a1', 'after')).toBe(nested);
+    });
+
+    it('lands a dropped block at the target’s level rather than adopting its neighbours', () => {
+        // `c` dropped between `a` and its children used to keep depth 0 and make a1/a2 its own
+        // children. The block the reader aimed at keeps its parent; the dragged one takes its level.
+        const out = moveBlockSubtree(nested, 'c', 'a1', 'before');
+        expect(out.map((item) => [item.id, item.depth])).toEqual([
+            ['a', 0],
+            ['c', 1],
+            ['a1', 1],
+            ['a2', 1],
+            ['b', 0],
+            ['b1', 1],
+        ]);
+    });
+
+    it('re-levels a whole subtree by one delta, keeping its own shape', () => {
+        const out = moveBlockSubtree(nested, 'a', 'b1', 'after');
+        expect(out.map((item) => [item.id, item.depth])).toEqual([
+            ['b', 0],
+            ['b1', 1],
+            ['a', 1],
+            ['a1', 2],
+            ['a2', 2],
+            ['c', 0],
+        ]);
+    });
+
+    it('stops re-levelling where the deepest carried block would pass the limit', () => {
+        const ladder = [0, 1, 2, 3, 4].map((depth) => block(`p${depth}`, depth));
+        const deep = [
+            ...ladder,
+            block('target', 5),
+            block('src', 0),
+            block('child', 1),
+            block('grandchild', 2),
+        ];
+        const out = moveBlockSubtree(deep, 'src', 'target', 'after');
+        expect(out.slice(-3).map((item) => [item.id, item.depth])).toEqual([
+            ['src', 4],
+            ['child', 5],
+            ['grandchild', 6],
+        ]);
     });
 
     it('indents and outdents a block with all descendants', () => {

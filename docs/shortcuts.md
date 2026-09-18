@@ -75,13 +75,15 @@ selected with `Esc` + `⇧↓`.
 
 With a block selected (after `Esc`):
 
-| Keys          | Action                                                   |
-| ------------- | -------------------------------------------------------- |
-| `↑` / `↓`     | Move the selection to the previous / next block          |
-| `⇧↑` / `⇧↓`   | Extend the selection                                     |
-| `⌘⌥↑` / `⌘⌥↓` | Move the block up / down (it takes its children with it) |
-| `⌘D`          | Duplicate the selected block(s)                          |
-| `⌫`           | Delete the selected block(s)                             |
+| Keys           | Action                                                   |
+| -------------- | -------------------------------------------------------- |
+| `↑` / `↓`      | Move the selection to the previous / next block          |
+| `⇧↑` / `⇧↓`    | Extend the selection                                     |
+| `⌘⌥↑` / `⌘⌥↓`  | Move the block up / down (it takes its children with it) |
+| `Tab` / `⇧Tab` | Indent / outdent the selected block(s)                   |
+| `↵`            | Edit the block again, caret at its end                   |
+| `⌘D`           | Duplicate the selected block(s)                          |
+| `⌫`            | Delete the selected block(s)                             |
 
 ## General
 

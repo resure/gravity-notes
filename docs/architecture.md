@@ -255,13 +255,22 @@ Markdown over anything clever.
   block and half of the next through the browser would edit DOM that React owns, behind its back, so
   the text came back on the next render. Copy, cut and delete therefore take each block the
   selection touches in full, the way the same range would behave if selected with `Esc` + `⇧↓`.
+- **A colour is the one thing this app writes that other Markdown tools can't read.** Colour has no
+  portable spelling anywhere — Obsidian's own users reach for inline HTML — so notes carry the YFM
+  colour extension's syntax instead: `{red}(text)` for ink, `{bg:yellow}(text)` for a background.
+  Read-only preview renders it (it loads that extension), and so did this app's previous editor, so
+  old coloured notes light up again. Obsidian and GitHub show the braces as text. Three edges follow
+  from the spelling: a **block** colour is the same wrapper covering the block's whole content, so
+  colouring every word of a block and colouring the block are the same bytes; a **code block, table,
+  divider or image** has no inline text to wrap and so refuses a colour out loud; and content holding
+  an **unbalanced `)`** closes the wrapper early — in the colour extension too, which is why the
+  reader matches its rule — which shifts where the colour ends without changing a word of the text.
 - **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write
-  (read-only preview highlights them). Two block features have no Markdown spelling and are dropped
-  on save: block **colors** and a table's **header-column** flag. Both still apply for the session,
-  and both now say so in a toast when you use them — they used to look exactly like the controls
-  beside them that do persist. A table whose header cells you empty **entirely** loses that row on
-  reload, for the same reason: GFM has no headerless table, so an empty header row is exactly how
-  one is spelled, and it reads back as a table with no header rather than as a blank one.
+  (read-only preview highlights them). A table's **header-column** flag has no Markdown spelling and
+  is dropped on save; it still applies for the session, and says so in a toast when you use it. A
+  table whose header cells you empty **entirely** loses that row on reload, for the same reason: GFM
+  has no headerless table, so an empty header row is exactly how one is spelled, and it reads back as
+  a table with no header rather than as a blank one.
 - **A `[[wiki link]]` has no tooltip.** The previous editor showed Open / Edit / Unlink when the
   caret sat inside one, with the Edit option re-targeting it through the note picker. That went with
   the Gravity editor and has no replacement: `⌘↵` and `⌘-click` follow a link, and `[[` creates one,

@@ -27,6 +27,9 @@ Markdown files, and they are yours.
   images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them, and a note
   the block model can't represent exactly opens on that source instead, so your file is never
   rewritten to fit the editor
+- **Colour** a block or a run of words — text or highlight — and it's saved with the note, as the
+  `{red}(text)` / `{bg:yellow}(text)` syntax the preview understands (other Markdown tools show the
+  braces; nothing portable exists)
 - **Read-only preview** (`⌘⇧P`), rendering full CommonMark
 - **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add
   `Shift` to copy or paste plain text with the Markdown stripped

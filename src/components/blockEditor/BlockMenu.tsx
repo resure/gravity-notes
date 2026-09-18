@@ -2,6 +2,7 @@ import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {CSSProperties, KeyboardEvent} from 'react';
 
 import {OverlayPortal} from './OverlayPortal';
+import {BACKGROUND_COLORS_AT, COLOR_OPTIONS} from './blockColors';
 import {MENU_ITEMS} from './blockConfig';
 import {DuplicateIcon, TrashIcon} from './icons';
 import type {BlockColor, BlockType} from './types';
@@ -20,28 +21,6 @@ interface BlockMenuProps {
 }
 
 type MenuView = 'main' | 'turn' | 'color';
-
-const COLOR_OPTIONS: Array<{value: BlockColor; label: string; swatch: string}> = [
-    {value: 'default', label: 'Default', swatch: '#ffffff'},
-    {value: 'gray', label: 'Gray text', swatch: '#787774'},
-    {value: 'brown', label: 'Brown text', swatch: '#976d57'},
-    {value: 'orange', label: 'Orange text', swatch: '#cc782f'},
-    {value: 'yellow', label: 'Yellow text', swatch: '#c29343'},
-    {value: 'green', label: 'Green text', swatch: '#548164'},
-    {value: 'blue', label: 'Blue text', swatch: '#487ca5'},
-    {value: 'purple', label: 'Purple text', swatch: '#8a67ab'},
-    {value: 'pink', label: 'Pink text', swatch: '#b35488'},
-    {value: 'red', label: 'Red text', swatch: '#c4554d'},
-    {value: 'gray_background', label: 'Gray background', swatch: '#e7e5e4'},
-    {value: 'brown_background', label: 'Brown background', swatch: '#eee0da'},
-    {value: 'orange_background', label: 'Orange background', swatch: '#fadec9'},
-    {value: 'yellow_background', label: 'Yellow background', swatch: '#fdecc8'},
-    {value: 'green_background', label: 'Green background', swatch: '#dbeddb'},
-    {value: 'blue_background', label: 'Blue background', swatch: '#d3e5ef'},
-    {value: 'purple_background', label: 'Purple background', swatch: '#e8deee'},
-    {value: 'pink_background', label: 'Pink background', swatch: '#f5e0e9'},
-    {value: 'red_background', label: 'Red background', swatch: '#ffe2dd'},
-];
 
 export default function BlockMenu({
     x,
@@ -220,7 +199,7 @@ export default function BlockMenu({
                         <div className="menu-divider" />
                         <div className="menu-section">Text color</div>
                         <div className="color-grid">
-                            {COLOR_OPTIONS.slice(0, 10).map((color) => (
+                            {COLOR_OPTIONS.slice(0, BACKGROUND_COLORS_AT).map((color) => (
                                 <button
                                     type="button"
                                     key={color.value}
@@ -236,7 +215,7 @@ export default function BlockMenu({
                         </div>
                         <div className="menu-section">Background color</div>
                         <div className="color-grid">
-                            {COLOR_OPTIONS.slice(10).map((color) => (
+                            {COLOR_OPTIONS.slice(BACKGROUND_COLORS_AT).map((color) => (
                                 <button
                                     type="button"
                                     key={color.value}

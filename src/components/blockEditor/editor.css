@@ -355,62 +355,93 @@
     background: var(--n-blue-overlay) !important;
 }
 
-/* ---------- block colors ---------- */
+/* ---------- block and inline colors ---------- */
 
-.gn-block-editor .block[data-color='gray'] > .block-body {
-    color: #787774;
+/* Three things paint this palette: a block's own colour, a coloured table's cells, and an inline
+   `{red}(…)` span (src/markdown/color.ts). The hues live on :root (index.css) so read-only preview
+   can read the same ones and so the dark theme swaps all of them in one place. */
+
+.gn-block-editor .block[data-color='gray'] > .block-body,
+.gn-block-editor .gn-color--gray {
+    color: var(--gn-color-gray);
 }
-.gn-block-editor .block[data-color='brown'] > .block-body {
-    color: #976d57;
+.gn-block-editor .block[data-color='brown'] > .block-body,
+.gn-block-editor .gn-color--brown {
+    color: var(--gn-color-brown);
 }
-.gn-block-editor .block[data-color='orange'] > .block-body {
-    color: #cc782f;
+.gn-block-editor .block[data-color='orange'] > .block-body,
+.gn-block-editor .gn-color--orange {
+    color: var(--gn-color-orange);
 }
-.gn-block-editor .block[data-color='yellow'] > .block-body {
-    color: #c29343;
+.gn-block-editor .block[data-color='yellow'] > .block-body,
+.gn-block-editor .gn-color--yellow {
+    color: var(--gn-color-yellow);
 }
-.gn-block-editor .block[data-color='green'] > .block-body {
-    color: #548164;
+.gn-block-editor .block[data-color='green'] > .block-body,
+.gn-block-editor .gn-color--green {
+    color: var(--gn-color-green);
 }
-.gn-block-editor .block[data-color='blue'] > .block-body {
-    color: #487ca5;
+.gn-block-editor .block[data-color='blue'] > .block-body,
+.gn-block-editor .gn-color--blue {
+    color: var(--gn-color-blue);
 }
-.gn-block-editor .block[data-color='purple'] > .block-body {
-    color: #8a67ab;
+.gn-block-editor .block[data-color='purple'] > .block-body,
+.gn-block-editor .gn-color--purple {
+    color: var(--gn-color-purple);
 }
-.gn-block-editor .block[data-color='pink'] > .block-body {
-    color: #b35488;
+.gn-block-editor .block[data-color='pink'] > .block-body,
+.gn-block-editor .gn-color--pink {
+    color: var(--gn-color-pink);
 }
-.gn-block-editor .block[data-color='red'] > .block-body {
-    color: #c4554d;
+.gn-block-editor .block[data-color='red'] > .block-body,
+.gn-block-editor .gn-color--red {
+    color: var(--gn-color-red);
 }
 
-.gn-block-editor .block[data-color='gray_background'] > .block-body {
-    background: #f1f1ef;
+.gn-block-editor .block[data-color='gray_background'] > .block-body,
+.gn-block-editor .block[data-color='gray_background'] .simple-table td,
+.gn-block-editor .gn-color--gray_background {
+    background: var(--gn-color-gray-bg);
 }
-.gn-block-editor .block[data-color='brown_background'] > .block-body {
-    background: #f4eeee;
+.gn-block-editor .block[data-color='brown_background'] > .block-body,
+.gn-block-editor .block[data-color='brown_background'] .simple-table td,
+.gn-block-editor .gn-color--brown_background {
+    background: var(--gn-color-brown-bg);
 }
-.gn-block-editor .block[data-color='orange_background'] > .block-body {
-    background: #fbecdd;
+.gn-block-editor .block[data-color='orange_background'] > .block-body,
+.gn-block-editor .block[data-color='orange_background'] .simple-table td,
+.gn-block-editor .gn-color--orange_background {
+    background: var(--gn-color-orange-bg);
 }
-.gn-block-editor .block[data-color='yellow_background'] > .block-body {
-    background: #fbf3db;
+.gn-block-editor .block[data-color='yellow_background'] > .block-body,
+.gn-block-editor .block[data-color='yellow_background'] .simple-table td,
+.gn-block-editor .gn-color--yellow_background {
+    background: var(--gn-color-yellow-bg);
 }
-.gn-block-editor .block[data-color='green_background'] > .block-body {
-    background: #edf3ec;
+.gn-block-editor .block[data-color='green_background'] > .block-body,
+.gn-block-editor .block[data-color='green_background'] .simple-table td,
+.gn-block-editor .gn-color--green_background {
+    background: var(--gn-color-green-bg);
 }
-.gn-block-editor .block[data-color='blue_background'] > .block-body {
-    background: #e7f3f8;
+.gn-block-editor .block[data-color='blue_background'] > .block-body,
+.gn-block-editor .block[data-color='blue_background'] .simple-table td,
+.gn-block-editor .gn-color--blue_background {
+    background: var(--gn-color-blue-bg);
 }
-.gn-block-editor .block[data-color='purple_background'] > .block-body {
-    background: #f4f0f7;
+.gn-block-editor .block[data-color='purple_background'] > .block-body,
+.gn-block-editor .block[data-color='purple_background'] .simple-table td,
+.gn-block-editor .gn-color--purple_background {
+    background: var(--gn-color-purple-bg);
 }
-.gn-block-editor .block[data-color='pink_background'] > .block-body {
-    background: #f9eef3;
+.gn-block-editor .block[data-color='pink_background'] > .block-body,
+.gn-block-editor .block[data-color='pink_background'] .simple-table td,
+.gn-block-editor .gn-color--pink_background {
+    background: var(--gn-color-pink-bg);
 }
-.gn-block-editor .block[data-color='red_background'] > .block-body {
-    background: #fdebec;
+.gn-block-editor .block[data-color='red_background'] > .block-body,
+.gn-block-editor .block[data-color='red_background'] .simple-table td,
+.gn-block-editor .gn-color--red_background {
+    background: var(--gn-color-red-bg);
 }
 
 .gn-block-editor .block[data-color$='_background'] > .block-body {
@@ -421,32 +452,11 @@
     background: transparent;
 }
 
-.gn-block-editor .block[data-color='gray_background'] .simple-table td {
-    background: #f1f1ef;
-}
-.gn-block-editor .block[data-color='brown_background'] .simple-table td {
-    background: #f4eeee;
-}
-.gn-block-editor .block[data-color='orange_background'] .simple-table td {
-    background: #fbecdd;
-}
-.gn-block-editor .block[data-color='yellow_background'] .simple-table td {
-    background: #fbf3db;
-}
-.gn-block-editor .block[data-color='green_background'] .simple-table td {
-    background: #edf3ec;
-}
-.gn-block-editor .block[data-color='blue_background'] .simple-table td {
-    background: #e7f3f8;
-}
-.gn-block-editor .block[data-color='purple_background'] .simple-table td {
-    background: #f4f0f7;
-}
-.gn-block-editor .block[data-color='pink_background'] .simple-table td {
-    background: #f9eef3;
-}
-.gn-block-editor .block[data-color='red_background'] .simple-table td {
-    background: #fdebec;
+/* An inline background is a highlighter over the words rather than a panel behind them, so it needs
+   the breathing room a block's body already has. Only colour spans carry `_background` in a class. */
+.gn-block-editor span[class*='_background'] {
+    padding: 0 2px;
+    border-radius: 3px;
 }
 
 .gn-block-editor .block.dragging {

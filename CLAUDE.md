@@ -319,7 +319,14 @@ Key modules:
   DOM-free, node-testable. `toMarkdown` favours what other tools understand (headings, lists, task
   lists, GFM tables, fenced code) and gives the three types with no Markdown spelling a portable
   encoding — toggle → `<details>` (the collapsed state rides on the `open` attribute), callout →
-  an Obsidian `> [!note]`, image → `![](Attachments/…)`. `fromMarkdown` is a small LINE-ORIENTED
+  an Obsidian `> [!note]`, image → `![](Attachments/…)`. **Colour** (`color.ts`) is the one thing
+  written here that no other tool reads: the YFM colour extension's `{red}(text)` / `{bg:yellow}(text)`,
+  which read-only preview renders and the app's PREVIOUS editor already wrote. A BLOCK colour is that
+  wrapper covering the block's whole content, written one wrapper per LINE (the parser reads inline
+  markup a line at a time, so a wrapper spanning a newline would come back as literal braces) and
+  lifted back to `Block.color` by a post-pass in `fromMarkdown` — only when every line is wrapped in
+  the same colour, so a span covering half a block stays inline. Parens are COUNTED, not escaped,
+  mirroring the extension's own reader. `fromMarkdown` is a small LINE-ORIENTED
   parser, not CommonMark: it must recognise exactly what the writer emits (the round trip is the
   design intent — a load/save cycle must not rewrite a file) and degrade everything else to
   paragraphs. Degrading is only SAFE because the fixed point is **verified, not assumed**:
@@ -377,7 +384,9 @@ Key modules:
   Two invariants the structural code keeps, both because the whole document is re-serialized on every
   keystroke: **nesting is a flat `depth` field**, so no block may sit more than one level deeper than
   the one before it (Markdown cannot write an orphaned level, and the file would come back flatter
-  than the screen) — every op that moves a subtree verbatim therefore ends in `normalizeDepths`; and
+  than the screen) — every op that moves a subtree verbatim therefore ends in `normalizeDepths`, and a
+  DROP re-levels the subtree's root to the target block's depth (where the indicator is drawn), so a
+  block dropped between a parent and its children joins them instead of adopting them; and
   **what the reader can see is what an edit may touch** (`visibleBlockIds`), so focus requests,
   selection extension and merges all skip blocks hidden inside a collapsed toggle, which render no
   element at all. A TEXT selection across blocks acts on exactly the blocks it covers (`'exact'` in

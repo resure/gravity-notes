@@ -348,7 +348,8 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'tab',
-        description: 'Indent a list item (⇧Tab outdents); in a table, move to the next cell',
+        description:
+            'Indent a list item or the selected block (⇧Tab outdents); in a table, move to the next cell',
         group: 'Editing',
     },
     {

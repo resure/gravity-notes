@@ -166,3 +166,80 @@
 .note-preview .note-preview__body.yfm .checkbox {
     margin-bottom: 6px;
 }
+
+/* `{red}(text)` / `{bg:red}(text)` — the colour syntax the editor writes (src/markdown/color.ts),
+   which @diplodoc/color-extension renders here as `yfm-colorify--<token>` spans. Same hues as the
+   editor's, off :root, so a coloured note reads the same on both surfaces. */
+.note-preview .yfm-colorify--gray {
+    color: var(--gn-color-gray);
+}
+.note-preview .yfm-colorify--brown {
+    color: var(--gn-color-brown);
+}
+.note-preview .yfm-colorify--orange {
+    color: var(--gn-color-orange);
+}
+.note-preview .yfm-colorify--yellow {
+    color: var(--gn-color-yellow);
+}
+.note-preview .yfm-colorify--green {
+    color: var(--gn-color-green);
+}
+.note-preview .yfm-colorify--blue {
+    color: var(--gn-color-blue);
+}
+.note-preview .yfm-colorify--purple {
+    color: var(--gn-color-purple);
+}
+.note-preview .yfm-colorify--pink {
+    color: var(--gn-color-pink);
+}
+.note-preview .yfm-colorify--red {
+    color: var(--gn-color-red);
+}
+
+.note-preview .yfm-colorify--bg\:gray {
+    background: var(--gn-color-gray-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:brown {
+    background: var(--gn-color-brown-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:orange {
+    background: var(--gn-color-orange-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:yellow {
+    background: var(--gn-color-yellow-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:green {
+    background: var(--gn-color-green-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:blue {
+    background: var(--gn-color-blue-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:purple {
+    background: var(--gn-color-purple-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:pink {
+    background: var(--gn-color-pink-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.note-preview .yfm-colorify--bg\:red {
+    background: var(--gn-color-red-bg);
+    padding: 0 2px;
+    border-radius: 3px;
+}

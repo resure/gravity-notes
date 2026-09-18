@@ -31,14 +31,31 @@ export function expandBlockIds(blocks: readonly Block[], ids: Iterable<string>):
 }
 
 /**
+ * The selected blocks that no other selected block contains, in document order — the roots an
+ * operation that already carries descendants (indent, outdent) should be applied to.
+ */
+export function selectionRoots(blocks: readonly Block[], ids: ReadonlySet<string>): string[] {
+    const roots: string[] = [];
+    let insideRoot = Infinity;
+    for (const block of blocks) {
+        const depth = block.depth ?? 0;
+        if (depth <= insideRoot) insideRoot = Infinity;
+        if (!ids.has(block.id) || depth > insideRoot) continue;
+        roots.push(block.id);
+        insideRoot = depth;
+    }
+    return roots;
+}
+
+/**
  * Restore the depth invariant: the first block sits at 0, and no block is more than one level
  * deeper than the one before it.
  *
- * Structural operations move subtrees around VERBATIM — that is what keeps a drag from re-indenting
- * what it carries — so any of them can leave a block without the parent its depth implies. Markdown
- * has no way to write that: `blocksToMarkdown` indents from the depth alone, so the file comes back
- * one level flatter than the screen and the two disagree until the note is reopened. Running this
- * afterwards means the screen shows what the file will say.
+ * Structural operations move subtrees around VERBATIM — that is what keeps a delete or a paste from
+ * re-indenting what it carries — so any of them can leave a block without the parent its depth
+ * implies. Markdown has no way to write that: `blocksToMarkdown` indents from the depth alone, so
+ * the file comes back one level flatter than the screen and the two disagree until the note is
+ * reopened. Running this afterwards means the screen shows what the file will say.
  */
 export function normalizeDepths(blocks: readonly Block[]): Block[] {
     // The ancestor chain of the block being emitted, as (depth as written → depth being written).
@@ -91,6 +108,17 @@ export function duplicateBlockGroups(
     return {blocks: output, copies};
 }
 
+/**
+ * Move a block and its descendants to either side of `targetId`, landing the subtree's ROOT at the
+ * target's own depth — which is where the drop indicator is drawn, since it spans the target's
+ * indented box.
+ *
+ * Re-levelling the root is what keeps the move from disturbing anything else: a subtree that kept
+ * its own root depth could land between a parent and its children and adopt them (`- A` / `  - B` /
+ * `  - C` with a top-level `D` dropped before `B` left B and C nested under D), or land deeper than
+ * its new neighbourhood can hold. Descendants shift by the same delta, so what the subtree carries
+ * keeps its shape.
+ */
 export function moveBlockSubtree(
     blocks: readonly Block[],
     sourceId: string,
@@ -112,13 +140,22 @@ export function moveBlockSubtree(
 
     let targetIndex = output.findIndex((block) => block.id === targetId);
     if (targetIndex < 0) return blocks as Block[];
+    const targetDepth = output[targetIndex].depth ?? 0;
     if (edge === 'after') {
-        const targetDepth = output[targetIndex].depth ?? 0;
         targetIndex += 1;
         while (targetIndex < output.length && (output[targetIndex].depth ?? 0) > targetDepth)
             targetIndex += 1;
     }
-    output.splice(targetIndex, 0, ...moved);
+
+    const deepest = moved.reduce((max, block) => Math.max(max, block.depth ?? 0), 0);
+    const delta = Math.min(targetDepth - sourceDepth, MAX_BLOCK_DEPTH - deepest);
+    output.splice(
+        targetIndex,
+        0,
+        ...(delta === 0
+            ? moved
+            : moved.map((block) => ({...block, depth: (block.depth ?? 0) + delta}))),
+    );
     return output;
 }
 

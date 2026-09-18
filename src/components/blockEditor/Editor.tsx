@@ -24,6 +24,7 @@ import {
     inlineMarkdownToHtml,
     markdownToBlocks,
 } from '../../markdown';
+import {colorClassFor, colorFromClass} from '../../markdown/color';
 import {openExternalUrl} from '../../openExternal';
 import type {NoteMeta} from '../../storage/types';
 import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
@@ -75,6 +76,7 @@ import {
     moveBlockSubtree,
     normalizeDepths,
     pasteTableGrid,
+    selectionRoots,
     setTableCell,
 } from './documentModel';
 import {
@@ -147,6 +149,22 @@ const RESETS_ON_EMPTY_ENTER: BlockType[] = [
     'callout',
 ];
 
+/**
+ * Whether a block's colour survives a save. A colour is written as a wrapper around the block's own
+ * text, so the types whose content isn't inline text have nowhere to put it: a fence's body is
+ * literal, a table's text lives in cells, and a divider or image has no text at all.
+ */
+const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
+    code: 'code block',
+    table: 'table',
+    divider: 'divider',
+    image: 'image',
+};
+
+function canCarryColor(type: BlockType): boolean {
+    return !(type in COLORLESS_NOUN);
+}
+
 /** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 function sameIds(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
@@ -156,13 +174,20 @@ function sameIds(a: Set<string>, b: Set<string>): boolean {
 
 /**
  * The only `class` values a `<span>` may keep: the editor's own style-only `[[wiki link]]` wrapper
- * (see wikiDecorate.ts). Every other span is unwrapped, so nothing outside this file can smuggle
- * styling — or, worse, structure — into a block's html.
+ * (see wikiDecorate.ts) and a colour (see markdown/color.ts). Every other span is unwrapped, so
+ * nothing outside this file can smuggle styling — or, worse, structure — into a block's html.
  */
 const WIKI_SPAN_CLASSES = new Set([
     WIKI_LINK_CLASS,
     `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`,
 ]);
+
+/** The class a span may keep, rebuilt from what it means — never the attribute as it arrived. */
+function keptSpanClass(className: string): string | null {
+    if (WIKI_SPAN_CLASSES.has(className)) return className;
+    const color = colorFromClass(className);
+    return color ? colorClassFor(color) : null;
+}
 
 function sanitizeInlineHtml(html: string): string {
     const template = document.createElement('template');
@@ -203,7 +228,8 @@ function sanitizeInlineHtml(html: string): string {
                 element.setAttribute('rel', 'noopener noreferrer');
             }
         } else if (element.tagName === 'SPAN') {
-            if (WIKI_SPAN_CLASSES.has(className)) element.setAttribute('class', className);
+            const kept = keptSpanClass(className);
+            if (kept) element.setAttribute('class', kept);
             else element.replaceWith(...element.childNodes);
         }
     }
@@ -831,15 +857,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return null;
     };
 
-    const focusNavigableBlock = (block: BlockData, edge: 'start' | 'end') => {
-        if (block.type !== 'table') {
-            focusNow(block.id, edge);
-            return;
-        }
+    /** Where the caret goes to sit at one end of a block — a table's end is its last cell. */
+    const caretTargetIn = (
+        block: BlockData,
+        edge: 'start' | 'end',
+    ): {id: string; pos: CaretPos} => {
+        if (block.type !== 'table') return {id: block.id, pos: edge};
         const table = block.table ?? newTableData();
         const row = edge === 'start' ? 0 : table.cells.length - 1;
         const column = edge === 'start' ? 0 : Math.max(0, (table.cells[row]?.length ?? 1) - 1);
-        focusNow(tableCellId(block.id, row, column), edge);
+        return {id: tableCellId(block.id, row, column), pos: edge};
+    };
+
+    const focusNavigableBlock = (block: BlockData, edge: 'start' | 'end') => {
+        const {id, pos} = caretTargetIn(block, edge);
+        focusNow(id, pos);
     };
 
     const focusNavigableVertical = (block: BlockData, x: number, edge: 'top' | 'bottom') => {
@@ -1138,33 +1170,44 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     // ----- block operations -----
 
     /**
-     * Remove blocks, and put the caret somewhere sensible afterwards.
+     * Which blocks a gesture actually acts on.
      *
-     * `scope` is what the caller's gesture meant. A BLOCK selection is a selection of subtrees, so
-     * removing one takes its children — `'subtree'`. A TEXT selection means exactly what is
-     * highlighted, and expanding it swallowed children the user watched stay unhighlighted (select
-     * a paragraph and the first line of a list, press Backspace, and the whole list went) —
-     * `'exact'`. Even `'exact'` takes descendants the reader CANNOT see, because a collapsed
-     * toggle's summary is all that was ever on screen to select.
+     * `scope` is what the gesture MEANT. A BLOCK selection is a selection of subtrees, so it takes
+     * each block's children — `'subtree'`. A TEXT selection means exactly what is highlighted, and
+     * expanding it swallowed children the user watched stay unhighlighted (select a paragraph and
+     * the first line of a list, press Backspace, and the whole list went) — `'exact'`. Even
+     * `'exact'` takes descendants the reader CANNOT see, because a collapsed toggle's summary is
+     * all that was ever on screen to select.
+     *
+     * ONE function because a CUT does both halves: when the clipboard's set and the removed set
+     * disagreed, ⌘X into a collapsed toggle destroyed its hidden children and put them on no
+     * clipboard, so the paste could not bring them back.
      */
-    const removeBlocks = (ids: string[], scope: 'subtree' | 'exact' = 'subtree') => {
+    const blocksInScope = (ids: Iterable<string>, scope: 'subtree' | 'exact'): Set<string> => {
         const bs = blocksRef.current;
-        const visible = visibleBlockIds(bs);
         const idSet = new Set(ids);
         if (scope === 'subtree') {
             for (const id of expandBlockIds(bs, ids)) idSet.add(id);
-        } else {
-            for (let i = 0; i < bs.length; i++) {
-                if (!idSet.has(bs[i].id)) continue;
-                const depth = bs[i].depth ?? 0;
-                // Hidden children sit contiguously under their collapsed parent, so the first
-                // visible one ends the run.
-                for (let c = i + 1; c < bs.length && (bs[c].depth ?? 0) > depth; c++) {
-                    if (visible.has(bs[c].id)) break;
-                    idSet.add(bs[c].id);
-                }
+            return idSet;
+        }
+        const visible = visibleBlockIds(bs);
+        for (let i = 0; i < bs.length; i++) {
+            if (!idSet.has(bs[i].id)) continue;
+            const depth = bs[i].depth ?? 0;
+            // Hidden children sit contiguously under their collapsed parent, so the first visible
+            // one ends the run.
+            for (let c = i + 1; c < bs.length && (bs[c].depth ?? 0) > depth; c++) {
+                if (visible.has(bs[c].id)) break;
+                idSet.add(bs[c].id);
             }
         }
+        return idSet;
+    };
+
+    /** Remove blocks, and put the caret somewhere sensible afterwards. */
+    const removeBlocks = (ids: string[], scope: 'subtree' | 'exact' = 'subtree') => {
+        const bs = blocksRef.current;
+        const idSet = blocksInScope(ids, scope);
         const firstIdx = bs.findIndex((b) => idSet.has(b.id));
         let remaining = normalizeDepths(bs.filter((b) => !idSet.has(b.id)));
         let focusId: string | null = null;
@@ -1241,17 +1284,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const moveBlock = (srcId: string, dstId: string, edge: 'before' | 'after') => {
-        // A subtree keeps its own depths through the move — that is what stops a drag from
-        // re-indenting what it carries — so a drop somewhere shallower can land a block deeper
-        // than its new neighbourhood can hold. Markdown cannot write that, so the file came back a
-        // level flatter than the screen and the two disagreed until the note was reopened.
+        // `moveBlockSubtree` lands the root at the target's depth, so the result is already legal;
+        // normalizing stays as the backstop that keeps the screen and the file agreeing.
         const next = normalizeDepths(moveBlockSubtree(blocksRef.current, srcId, dstId, edge));
         if (next !== blocksRef.current) setBlocks(next);
     };
 
-    const changeDepth = (id: string, direction: -1 | 1) => {
-        let next = changeBlockDepth(blocksRef.current, id, direction);
-        if (next === blocksRef.current) return;
+    const withDepthChanged = (blocks: BlockData[], id: string, direction: -1 | 1): BlockData[] => {
+        let next = changeBlockDepth(blocks, id, direction);
+        if (next === blocks) return blocks;
         // Indenting under a COLLAPSED toggle would hide the block being indented: it renders no
         // element, so the caret request lands nowhere and one Tab took both the paragraph and the
         // keyboard away, with no way back but the mouse. Open the toggle instead, which is what
@@ -1270,8 +1311,46 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 opened.has(block.id) ? {...block, collapsed: false} : block,
             );
         }
+        return next;
+    };
+
+    const changeDepth = (id: string, direction: -1 | 1) => {
+        const next = withDepthChanged(blocksRef.current, id, direction);
+        if (next === blocksRef.current) return;
         setBlocks(next);
         focusReq.current = {id, pos: getCaretOffset(refs.current.get(id)!)};
+    };
+
+    /**
+     * Enter on a block selection goes back to editing it, caret at the end — the counterpart of the
+     * Esc that selected it, and what Enter means on every other row in the app. The caret lands in
+     * the selection's moving end, so ⇧↓ then Enter carries on where the extension stopped; a block
+     * with nothing to edit (a divider, an image) hands off to the nearest one that has.
+     */
+    const editSelectedBlock = () => {
+        const {focus} = selectionEnds(1);
+        const block = blocksRef.current[focus];
+        if (!block) return;
+        const target =
+            isEditableType(block.type) || block.type === 'table'
+                ? block
+                : (findEditableSibling(block.id, -1) ?? findEditableSibling(block.id, 1));
+        if (!target) return;
+        focusReq.current = caretTargetIn(target, 'end');
+        clearBlockSelection();
+    };
+
+    /**
+     * Tab / ⇧Tab over a BLOCK selection. Only the selection's roots move: each one carries its
+     * descendants, so indenting a child that merely came along with its parent would move it twice.
+     * The selection itself is left alone — the blocks are still the ones the reader highlighted.
+     */
+    const changeSelectedDepth = (direction: -1 | 1) => {
+        let next = blocksRef.current;
+        for (const id of selectionRoots(next, selectedIdsRef.current)) {
+            next = withDepthChanged(next, id, direction);
+        }
+        if (next !== blocksRef.current) setBlocks(next);
     };
 
     // ----- table operations -----
@@ -2523,6 +2602,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (mod && e.shiftKey) return;
             claimChord(e);
             removeBlocks([...selected]);
+        } else if (e.key === 'Enter' && !mod && !e.altKey && !e.shiftKey) {
+            claimChord(e);
+            editSelectedBlock();
+        } else if (e.key === 'Tab' && !mod && !e.altKey) {
+            // Without this the browser took Tab and walked focus onto the block furniture, so the
+            // one key that means "indent" everywhere else in the editor lost the selection instead.
+            claimChord(e);
+            changeSelectedDepth(e.shiftKey ? -1 : 1);
         } else if (e.key === 'Escape') {
             clearBlockSelection();
             // Nothing left in the editor to dismiss: the shell walks focus back to the note list.
@@ -2556,18 +2643,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         cut: boolean,
         scope: 'subtree' | 'exact' = 'subtree',
     ) => {
-        const selectedIds =
-            scope === 'subtree' ? expandBlockIds(blocksRef.current, ids) : new Set(ids);
+        const selectedIds = blocksInScope(ids, scope);
         const selected = blocksRef.current.filter((block) => selectedIds.has(block.id));
         if (!selected.length) return;
         data?.setData('application/x-notion-editor-blocks', JSON.stringify(selected));
         data?.setData('text/plain', blocksToClipboardMarkdown(selected));
         const noun = selected.length === 1 ? 'block' : 'blocks';
         showToast(`${cut ? 'Cut' : 'Copied'} ${selected.length} ${noun}`);
+        // `'exact'`, whatever the scope was: the set is already expanded, and expanding it a
+        // second time is what let the removal outrun the clipboard.
         if (cut)
             removeBlocks(
                 selected.map((block) => block.id),
-                scope,
+                'exact',
             );
     };
 
@@ -2992,18 +3080,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                             : new Set([blockMenu.id]);
                         setBlocks((current) =>
                             current.map((block) =>
-                                ids.has(block.id)
+                                ids.has(block.id) && canCarryColor(block.type)
                                     ? {...block, color: color === 'default' ? undefined : color}
                                     : block,
                             ),
                         );
                         setBlockMenu(null);
-                        // Markdown has no spelling for a block colour, so `toMarkdown` drops it and
-                        // the change effect — which compares serialized output — never fires
-                        // `onChange`. The block visibly turns red and nothing is saved. Say so at
-                        // the moment of the click rather than let the user find out on reopen.
-                        if (color !== 'default')
-                            showToast('Block colours aren’t saved to Markdown');
+                        // A colour rides on the block's own text (`{red}(…)`), so the two types with
+                        // no text to wrap can't keep one. They used to take the colour on screen and
+                        // lose it on reopen; refusing it out loud is the honest version.
+                        const refused = blocksRef.current.filter(
+                            (block) => ids.has(block.id) && !canCarryColor(block.type),
+                        );
+                        if (color !== 'default' && refused.length)
+                            showToast(
+                                `A ${COLORLESS_NOUN[refused[0].type] ?? 'block'} can’t carry a colour`,
+                            );
                     }}
                     onClose={() => setBlockMenu(null)}
                 />

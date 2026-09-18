@@ -133,6 +133,56 @@ describe('block selection', () => {
         });
         expect(document.querySelectorAll('.block')).toHaveLength(5);
     });
+
+    it('goes back to editing the block on Enter, caret at its end', () => {
+        renderEditor(['first', 'second'].join('\n\n'));
+        const paragraph = document.querySelectorAll<HTMLElement>('.content')[0];
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Escape'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(2);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Enter'});
+        });
+        // The moving end of the selection, so ⇧↓ then Enter carries on where the extension stopped.
+        const second = document.querySelectorAll<HTMLElement>('.content')[1];
+        expect(document.activeElement).toBe(second);
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(0);
+        const range = window.getSelection()!.getRangeAt(0);
+        expect(range.collapsed).toBe(true);
+        expect(range.endOffset).toBe(second.childNodes.length);
+    });
+
+    it('indents and outdents the selected blocks with Tab', () => {
+        const onChange = vi.fn();
+        renderEditor(['- A', '- B', '- C'].join('\n'), onChange);
+        act(() => {
+            fireEvent.keyDown(document.querySelectorAll<HTMLElement>('.content')[1], {
+                key: 'Escape',
+            });
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(2);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Tab'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe(['- A', '  - B', '  - C'].join('\n'));
+        // The blocks the reader highlighted are still the selected ones, so a second Tab goes on
+        // indenting them rather than acting on whatever the keyboard happened to land in.
+        expect(document.querySelectorAll('.block.selected')).toHaveLength(2);
+
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Tab', shiftKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe(['- A', '- B', '- C'].join('\n'));
+    });
 });
 
 describe('keyboard chords the editor owns', () => {
@@ -1012,6 +1062,38 @@ describe('clipboard: Markdown out, plain text in', () => {
         ]);
     });
 
+    /**
+     * A cut's two halves have to agree. The clipboard wrote exactly the blocks the selection
+     * covered while the removal ALSO took each one's hidden descendants, so ⌘X ending on a
+     * collapsed toggle destroyed its children and put them on no clipboard — the paste could not
+     * bring them back.
+     */
+    it('cuts and copies the same blocks, hidden children included', () => {
+        renderEditor(
+            [
+                'Intro paragraph',
+                '',
+                '<details>',
+                '<summary>Summary</summary>',
+                '',
+                'hidden child',
+                '',
+                '</details>',
+                '',
+                'tail text',
+            ].join('\n'),
+        );
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[1]);
+
+        const {event, data} = clipboardEvent('cut');
+        act(() => {
+            fireEvent(contents[0], event);
+        });
+
+        expect(data['text/plain']).toContain('hidden child');
+        expect(data['application/x-notion-editor-blocks']).toContain('hidden child');
+    });
     /** Backspace over the same selection has the same problem, and the same answer. */
     it('deletes whole blocks when Backspace lands on a selection crossing them', () => {
         renderEditor('first paragraph\n\nsecond paragraph\n\nthird paragraph');
@@ -1256,6 +1338,97 @@ describe('overlays follow the view when it scrolls', () => {
             fireEvent.scroll(menu);
         });
         expect(screen.queryByRole('menu', {name: 'Block actions'})).toBeInTheDocument();
+    });
+});
+
+describe('colours', () => {
+    it('renders a colour from the file and writes an applied one back', () => {
+        const onChange = vi.fn();
+        renderEditor('a {red}(warm) word', onChange);
+        // The sanitizer keeps the colour span — every other span is unwrapped, so this is the one
+        // thing standing between a colour and being stripped on the way in.
+        expect(document.querySelector('.gn-color--red')?.textContent).toBe('warm');
+
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        act(() => {
+            // The row is labelled with the block's CURRENT colour, which is Default here.
+            fireEvent.click(screen.getByText('Default'));
+        });
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: 'Yellow background'}));
+        });
+        // The whole block is coloured, so the wrapper covers the whole line — which is exactly what
+        // the reader lifts back to a block colour.
+        expect(onChange.mock.calls.at(-1)![0]).toBe('{bg:yellow}(a {red}(warm) word)');
+    });
+
+    it('refuses a colour on a block with no text to carry it', () => {
+        const onChange = vi.fn();
+        renderEditor('```\nconst a = 1;\n```', onChange);
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        act(() => {
+            // The row is labelled with the block's CURRENT colour, which is Default here.
+            fireEvent.click(screen.getByText('Default'));
+        });
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: 'Red text'}));
+        });
+        // It used to colour the block on screen and lose it on reopen, which is the one outcome a
+        // note-taking app cannot have.
+        expect(screen.getByText('A code block can’t carry a colour')).toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+});
+
+describe('dragging a block', () => {
+    const blocks = () => [...document.querySelectorAll<HTMLElement>('.block')];
+
+    function dropOn(sourceIndex: number, targetIndex: number, edge: 'before' | 'after') {
+        const dataTransfer = {
+            files: [],
+            getData: () => blocks()[sourceIndex].id,
+            setData: vi.fn(),
+            setDragImage: vi.fn(),
+        };
+        const target = blocks()[targetIndex];
+        act(() => {
+            fireEvent.dragStart(blocks()[sourceIndex].querySelector('.drag-btn')!, {dataTransfer});
+        });
+        act(() => {
+            // The handler picks the edge by comparing the pointer against the target's midpoint,
+            // which jsdom reports as 0 — and a `clientY` passed in the event init never reaches the
+            // event, so it has to be defined on it.
+            const event = createEvent.drop(target, {dataTransfer});
+            Object.defineProperty(event, 'clientY', {value: edge === 'before' ? -1 : 1});
+            fireEvent(target, event);
+        });
+    }
+
+    it('lands at the level the drop indicator marks, leaving the target’s children alone', () => {
+        // Dropping between a parent and its children used to keep the dragged block's own depth and
+        // adopt them: `B` landed at depth 0 and `A1`/`A2` became its children rather than A's.
+        const onChange = vi.fn();
+        renderEditor(['- A', '  - A1', '  - A2', '- B'].join('\n'), onChange);
+
+        dropOn(3, 1, 'before');
+
+        const shape = blocks().map((block) => [
+            block.querySelector('.content')?.textContent,
+            block.dataset.depth,
+        ]);
+        expect(shape).toEqual([
+            ['A', '0'],
+            ['B', '1'],
+            ['A1', '1'],
+            ['A2', '1'],
+        ]);
+        expect(onChange.mock.calls.at(-1)![0]).toBe(
+            ['- A', '  - B', '  - A1', '  - A2'].join('\n'),
+        );
     });
 });
 

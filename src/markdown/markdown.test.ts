@@ -122,6 +122,29 @@ describe('inline HTML → Markdown', () => {
         );
     });
 
+    it('reads and writes a colour, and leaves a token it does not know as text', () => {
+        expect(inlineMarkdownToHtml('a {red}(warm) word')).toBe(
+            'a <span class="gn-color gn-color--red">warm</span> word',
+        );
+        expect(
+            inlineHtmlToMarkdown('a <span class="gn-color gn-color--red">warm</span> word'),
+        ).toBe('a {red}(warm) word');
+        // A background is the same wrapper under a `bg:` token (see color.ts).
+        expect(inlineMarkdownToHtml('{bg:yellow}(lit)')).toBe(
+            '<span class="gn-color gn-color--yellow_background">lit</span>',
+        );
+        expect(
+            inlineHtmlToMarkdown('<span class="gn-color gn-color--yellow_background">lit</span>'),
+        ).toBe('{bg:yellow}(lit)');
+        // Colours nest, and markup inside one is still markup.
+        expect(inlineMarkdownToHtml('{red}(a **bold** bit)')).toBe(
+            '<span class="gn-color gn-color--red">a <strong>bold</strong> bit</span>',
+        );
+        // The colour extension colours `{anything}(text)`; reading every token would claim braces
+        // out of somebody's prose and then rewrite them as markup this app had decided to own.
+        expect(inlineMarkdownToHtml('a {foo}(bar) token')).toBe('a {foo}(bar) token');
+    });
+
     it('renders <url> autolinks as links, and writes them back in the same spelling', () => {
         expect(inlineMarkdownToHtml('see <https://example.com/a> now')).toBe(
             'see <a href="https://example.com/a" data-autolink="" rel="noopener noreferrer">https://example.com/a</a> now',
@@ -426,6 +449,28 @@ describe('round trips', () => {
 
     it('survives code containing a fence', () => {
         expectRoundTrip([block('code', '```\nnested\n```')]);
+    });
+
+    it('survives a block colour, including one on a block wrapped across lines', () => {
+        expectRoundTrip([
+            block('text', 'coloured', {color: 'red'}),
+            block('heading2', 'headed', {color: 'blue_background'}),
+            block('bulleted', 'one<br>two', {color: 'green'}),
+            block('callout', 'called out', {color: 'yellow_background'}),
+        ]);
+    });
+
+    it('drops a colour from the blocks that have no text to carry it', () => {
+        // The writer has nowhere to put the wrapper, so the colour cannot come back — what matters
+        // is that the SECOND save writes what the first one did (the editor refuses these colours
+        // up front, so this is the belt to that braces).
+        const blocks = [
+            block('code', 'const a = 1;', {color: 'red'}),
+            block('divider', '', {color: 'red'}),
+        ];
+        const once = blocksToMarkdown(blocks);
+        expect(blocksToMarkdown(markdownToBlocks(once))).toBe(once);
+        expect(markdownToBlocks(once).map((item) => item.color)).toEqual([undefined, undefined]);
     });
 });
 

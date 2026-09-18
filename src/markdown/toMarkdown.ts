@@ -18,6 +18,7 @@
 import {widestRow} from '../components/blockEditor/types';
 import type {Block, BlockType, ColumnAlign, TableData} from '../components/blockEditor/types';
 
+import {wrapBlockColor} from './color';
 import {
     encodeLinkDestination,
     escapeMarkdownText,
@@ -125,7 +126,10 @@ function toggleLines(
     end: number,
     indent: string,
 ): string[] {
-    const summary = inlineHtmlToMarkdown(block.html).replace(/\n/g, ' ');
+    const summary = wrapBlockColor(
+        inlineHtmlToMarkdown(block.html).replace(/\n/g, ' '),
+        block.color,
+    );
     // `collapsed` is the editor's state; `open` is the HTML one — they are opposites.
     const openAttr = block.collapsed ? '' : ' open';
     const lines = [`${indent}<details${openAttr}>`, `${indent}<summary>${summary}</summary>`, ''];
@@ -138,7 +142,9 @@ function toggleLines(
 }
 
 function blockLines(block: Block, indent: string, ordinal: number): string[] {
-    const content = inlineHtmlToMarkdown(block.html);
+    // Only the types that reach `content` can carry a block colour: a fence's body is literal text
+    // and a table's cells are written one by one, so neither has a place to put the wrapper.
+    const content = wrapBlockColor(inlineHtmlToMarkdown(block.html), block.color);
 
     switch (block.type) {
         case 'divider':
