@@ -131,10 +131,12 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
 - **D3 — definition-list editing.** The current list model has no term/definition pairing. Flattening
   pairs into bullets would change semantics. Keep source plus rendered preview.
 - **D4 — anchors/id attributes.** Trailing heading anchors (`## Title {#id}`, one or more) are held
-  verbatim as heading metadata, outside the editable title, and shown muted on hover. They survive
-  title edits, level changes, duplicate and paste; a heading turned into another type stops writing
-  its anchor but keeps it on the block, so turning it back restores it. Still deferred: `{#…}` anywhere else (mid-heading, in prose, `{ #id }` / `[{#id}]`
-  spellings) stays guarded source, and local anchor navigation and anchor editing have no UI.
+  verbatim as heading metadata, outside the editable title, and shown as a muted `#id` chip after
+  it. Clicking the chip edits the ids (clearing them removes the anchor); the block menu offers Add
+  / Edit anchor on any heading. They survive title edits, level changes, duplicate and paste; a
+  heading turned into another type stops writing its anchor but keeps it on the block, so turning
+  it back restores it. Still deferred: `{#…}` anywhere else (mid-heading, in prose, `{ #id }` /
+  `[{#id}]` spellings) stays guarded source, and local anchor navigation has no UI.
 - **D5 — extended inline forms and controls.** Escaped whitespace in sub/sup, multiline mark runs
   and additional toolbar buttons need delimiter/selection semantics beyond the tested single-word
   scripts. Keep their literal/source spelling rather than inventing an alternative encoding.

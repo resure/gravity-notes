@@ -214,6 +214,7 @@ describe('canonicalBody / stripTrailingNewlines', () => {
 describe('previewFromContent', () => {
     it('flattens markdown markers and newlines into a single flowing snippet', () => {
         expect(previewFromContent('# Title\n\n- one\n- two')).toBe('Title one two');
+        expect(previewFromContent('## Usage {#Computer_usage}\n\nBody')).toBe('Usage Body');
     });
 
     it('renders preserved empty-row markers as spaces', () => {

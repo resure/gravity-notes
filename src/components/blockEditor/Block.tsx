@@ -1,11 +1,12 @@
 import {memo, useCallback, useLayoutEffect, useRef} from 'react';
 import type {ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode} from 'react';
 
+import {anchorIds} from './AnchorEditor';
 import AttachmentImage from './AttachmentImage';
 import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {calloutIcon, calloutLabel} from './callouts';
-import {stripZeroWidth} from './caret';
+import {setCaret, stripZeroWidth} from './caret';
 import {CheckIcon, DragIcon, PlusIcon} from './icons';
 import {languageLabel} from './languages';
 import type {Block as BlockData, ImageData} from './types';
@@ -32,6 +33,8 @@ export interface BlockHandlers {
     onPickLanguage: (id: string, anchor: DOMRect) => void;
     /** Open the callout-kind picker, anchored to the icon that asked. */
     onPickCalloutKind: (id: string, anchor: DOMRect) => void;
+    /** Open the `{#id}` editor for a heading, anchored to the control that asked. */
+    onEditAnchor: (id: string, anchor: DOMRect) => void;
     onCopyCode: (id: string) => void;
     onToggleCollapse: (id: string) => void;
     onTableCellRef: (id: string, el: HTMLDivElement | null) => void;
@@ -300,16 +303,46 @@ function Block({
             );
             break;
         default: {
-            const anchors = block.type.startsWith('heading') ? anchorIds(block.headingAnchor) : '';
-            body = anchors ? (
-                <div className="block-row">
+            if (!block.type.startsWith('heading')) {
+                body = content;
+                break;
+            }
+            // Every heading gets the row, anchored or not: adding an anchor must not remount the
+            // editable element, which only refills from state when its html changes.
+            const anchors = anchorIds(block.headingAnchor);
+            body = (
+                <div
+                    className="block-row heading-row"
+                    // An anchored heading's text only spans its words, so a click in the empty rest
+                    // of the line would land nowhere; put the caret at the end, as a full line would.
+                    onMouseDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        const text = e.currentTarget.querySelector<HTMLElement>('.content');
+                        if (!text) return;
+                        e.preventDefault();
+                        text.focus();
+                        setCaret(text, 'end');
+                    }}
+                >
                     {content}
-                    <span className="heading-anchor" contentEditable={false} title="Heading anchor">
-                        {anchors}
-                    </span>
+                    {anchors.length > 0 && (
+                        <button
+                            type="button"
+                            className="heading-anchor"
+                            contentEditable={false}
+                            title="Edit heading anchor"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) =>
+                                handlers.onEditAnchor(
+                                    block.id,
+                                    e.currentTarget.getBoundingClientRect(),
+                                )
+                            }
+                        >
+                            {anchors.map((id) => `#${id}`).join(' ')}
+                        </button>
+                    )}
                 </div>
-            ) : (
-                content
             );
         }
     }
@@ -361,12 +394,6 @@ function Block({
             </div>
             <div className="block-body">{body}</div>
         </div>
-    );
-}
-
-function anchorIds(suffix: string | undefined): string {
-    return Array.from(suffix?.matchAll(/\{#([^\s{}]+)\}/g) ?? [], (match) => `#${match[1]}`).join(
-        ' ',
     );
 }
 

@@ -168,6 +168,7 @@ export function previewFromContent(text: string): string {
             .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
             .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
             .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
+            .replace(/^(\s{0,3}#{1,6}\s.*?)(?:[ \t]+\{#[^\s{}]+\})+[ \t]*$/gm, '$1') // heading {#id} anchors
             // Strip the stacked line-start block markers — ATX heading / blockquote / bullet / ordered —
             // in one pass. The trailing `+` peels NESTED prefixes (e.g. a blockquoted list `> - item` →
             // `item`); a single match would leave the inner marker behind.

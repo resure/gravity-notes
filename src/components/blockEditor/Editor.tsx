@@ -33,6 +33,7 @@ import {isAttachmentRef} from '../../storage/noteText';
 import type {NoteMeta} from '../../storage/types';
 import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
 
+import AnchorEditor from './AnchorEditor';
 import Block from './Block';
 import type {BlockHandlers} from './Block';
 import BlockMenu from './BlockMenu';
@@ -188,7 +189,6 @@ const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
     image: 'image',
 };
 
-/** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 // `yfm` survives "Turn into", so a paragraph that used to be a `{% note %}` still carries one.
 function isYfmContainer(block: BlockData): boolean {
     const kind = block.yfm?.kind;
@@ -197,6 +197,7 @@ function isYfmContainer(block: BlockData): boolean {
     );
 }
 
+/** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 function sameIds(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
     for (const id of a) if (!b.has(id)) return false;
@@ -524,6 +525,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
+    const [anchorEdit, setAnchorEdit] = useState<{id: string; x: number; y: number} | null>(null);
     // The block-level picker (a code block's language, a callout's kind) — one at a time, so one
     // piece of state with the `kind` saying which list it is showing.
     const [picker, setPicker] = useState<{
@@ -3262,6 +3264,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             setPicker({kind: 'language', id, x: anchor.left, y: anchor.bottom + 6}),
         onPickCalloutKind: (id, anchor) =>
             setPicker({kind: 'callout', id, x: anchor.left, y: anchor.bottom + 6}),
+        onEditAnchor: (id, anchor) => setAnchorEdit({id, x: anchor.left, y: anchor.bottom + 6}),
         onCopyCode: (id) => {
             const block = findBlock(id);
             if (!block) return;
@@ -3422,7 +3425,45 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                 `A ${COLORLESS_NOUN[refused[0].type] ?? 'block'} can’t carry a colour`,
                             );
                     }}
+                    anchor={
+                        menuBlock.type.startsWith('heading')
+                            ? {
+                                  label: menuBlock.headingAnchor ? 'Edit anchor' : 'Add anchor',
+                                  onEdit: () => {
+                                      const id = blockMenu.id;
+                                      setBlockMenu(null);
+                                      const rect = document
+                                          .getElementById(id)
+                                          ?.querySelector('.heading-anchor, .content')
+                                          ?.getBoundingClientRect();
+                                      if (rect) {
+                                          setAnchorEdit({id, x: rect.left, y: rect.bottom + 6});
+                                      }
+                                  },
+                              }
+                            : undefined
+                    }
                     onClose={() => setBlockMenu(null)}
+                />
+            )}
+            {anchorEdit && (
+                <AnchorEditor
+                    x={anchorEdit.x}
+                    y={anchorEdit.y}
+                    anchor={findBlock(anchorEdit.id)?.headingAnchor}
+                    onSave={(headingAnchor, fromKeyboard) => {
+                        setBlocks((current) =>
+                            current.map((block) =>
+                                block.id === anchorEdit.id ? {...block, headingAnchor} : block,
+                            ),
+                        );
+                        setAnchorEdit(null);
+                        if (fromKeyboard) focusReq.current = {id: anchorEdit.id, pos: 'end'};
+                    }}
+                    onClose={() => {
+                        setAnchorEdit(null);
+                        focusReq.current = {id: anchorEdit.id, pos: 'end'};
+                    }}
                 />
             )}
             {picker && (

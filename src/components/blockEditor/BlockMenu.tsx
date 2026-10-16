@@ -18,6 +18,8 @@ interface BlockMenuProps {
     onDuplicate: () => void;
     onTurnInto: (type: BlockType) => void;
     onColor: (color: BlockColor) => void;
+    /** A heading's `{#id}` anchor; absent for blocks that cannot carry one. */
+    anchor?: {label: string; onEdit: () => void};
     onClose: () => void;
 }
 
@@ -32,6 +34,7 @@ export default function BlockMenu({
     onDuplicate,
     onTurnInto,
     onColor,
+    anchor,
     onClose,
 }: BlockMenuProps) {
     const [view, setView] = useState<MenuView>('main');
@@ -150,6 +153,7 @@ export default function BlockMenu({
                             () => setView('color'),
                             <ChevronRightIcon />,
                         )}
+                        {anchor && itemButton(anchor.label, <span>#</span>, anchor.onEdit)}
                     </>
                 )}
 

@@ -560,22 +560,65 @@
     align-items: flex-start;
 }
 
-.gn-block-editor .heading-anchor {
-    align-self: center;
-    margin-left: 8px;
-    font-size: 12px;
-    font-weight: normal;
-    color: var(--n-text-lighter);
-    white-space: nowrap;
-    user-select: none;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
+.gn-block-editor .heading-row {
+    align-items: baseline;
 }
 
-.gn-block-editor .block:hover .heading-anchor,
-.gn-block-editor .block:focus-within .heading-anchor {
-    opacity: 1;
+/* The heading's text sizes to its words so the anchor sits right after them, as `{#id}` does on
+   the line it is written on. */
+.gn-block-editor .heading-row:has(.heading-anchor) .content {
+    flex: 0 1 auto;
+}
+
+.gn-block-editor .heading-anchor {
+    flex: none;
+    margin-left: 8px;
+    padding: 1px 5px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--n-text-lighter);
+    font: inherit;
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.gn-block-editor .heading-anchor:hover,
+.gn-block-editor .heading-anchor:focus-visible {
+    background: var(--n-hover);
+    color: var(--n-text-light);
+    outline: none;
+}
+
+.gn-block-editor .anchor-editor {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 8px;
+}
+
+.gn-block-editor .anchor-editor-hash {
+    color: var(--n-text-lighter);
+    font-size: 14px;
+}
+
+.gn-block-editor .anchor-editor input {
+    width: 220px;
+    padding: 4px 4px 4px 2px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--n-text);
+    font: inherit;
+    font-size: 14px;
+}
+
+.gn-block-editor .anchor-editor input::placeholder {
+    color: var(--n-placeholder);
 }
 
 .gn-block-editor .list-marker {

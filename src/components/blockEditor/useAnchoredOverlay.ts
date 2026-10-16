@@ -54,7 +54,7 @@ export function useAnchoredOverlay({
     }, [x, y, flipGap, remeasureKey]);
 
     useEffect(() => {
-        const onMouseDown = (event: globalThis.MouseEvent) => {
+        const onMouseDown = (event: Event) => {
             if (!ref.current?.contains(event.target as Node)) onClose();
         };
         const onScroll = (event: Event) => {
@@ -62,11 +62,15 @@ export function useAnchoredOverlay({
             if (target instanceof Node && ref.current?.contains(target)) return;
             onClose();
         };
+        // `pointerdown` too: the editor's marquee cancels it on the page's empty area, which
+        // suppresses the `mousedown` that would follow, so a click there never closed the overlay.
+        document.addEventListener('pointerdown', onMouseDown);
         document.addEventListener('mousedown', onMouseDown);
         // Captured: `scroll` does not bubble, and it is the PANE that scrolls, not the document.
         window.addEventListener('scroll', onScroll, true);
         window.addEventListener('resize', onClose);
         return () => {
+            document.removeEventListener('pointerdown', onMouseDown);
             document.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('scroll', onScroll, true);
             window.removeEventListener('resize', onClose);

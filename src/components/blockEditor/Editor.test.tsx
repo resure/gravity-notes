@@ -1749,6 +1749,51 @@ describe('heading anchors', () => {
         );
     });
 
+    function editAnchor(value: string, key = 'Enter') {
+        const input = screen.getByRole('textbox', {name: 'Anchor id'});
+        act(() => {
+            fireEvent.change(input, {target: {value}});
+        });
+        act(() => {
+            fireEvent.keyDown(input, {key});
+        });
+    }
+
+    it('edits the anchor from its chip', () => {
+        const onChange = renderEditor(SOURCE);
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: '#Computer_usage'}));
+        });
+        expect(screen.getByRole('textbox', {name: 'Anchor id'})).toHaveValue('Computer_usage');
+        editAnchor('usage');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('## Computer usage {#usage}\n\nBody');
+    });
+
+    it('removes the anchor when its id is cleared, and keeps it on Escape', () => {
+        const onChange = renderEditor(SOURCE);
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: '#Computer_usage'}));
+        });
+        editAnchor('other', 'Escape');
+        expect(screen.queryByRole('textbox', {name: 'Anchor id'})).toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: '#Computer_usage'}));
+        });
+        editAnchor('');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('## Computer usage\n\nBody');
+    });
+
+    it('adds an anchor from the block menu', () => {
+        const onChange = renderEditor('## Plain\n\nBody');
+        openBlockMenu(0);
+        act(() => {
+            fireEvent.click(screen.getByText('Add anchor'));
+        });
+        editAnchor('#plain');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('## Plain {#plain}\n\nBody');
+    });
+
     it('stops writing the anchor once the heading is turned into text', () => {
         const onChange = renderEditor(SOURCE);
         openBlockMenu(0);
