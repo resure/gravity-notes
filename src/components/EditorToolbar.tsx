@@ -46,7 +46,6 @@ const BLOCK_GROUPS: BlockType[][] = [
 const itemFor = (type: BlockType) => MENU_ITEMS.find((item) => item.type === type);
 
 interface ToolbarState {
-    /** The type of the block the caret is in, or null when the caret is not in the editor. */
     type: BlockType | null;
     marks: Set<InlineMark>;
 }
@@ -72,22 +71,26 @@ function readState(root: HTMLElement | null): ToolbarState {
 
 interface EditorToolbarProps {
     editorRef: RefObject<EditorHandle>;
-    /** The editor's own element, so the toolbar only reflects a caret inside it. */
     rootRef: RefObject<HTMLElement>;
-    /** The pane that scrolls, for the hairline the bar takes once content slides under it. */
     scrollContainerRef?: RefObject<HTMLElement>;
 }
 
-/**
- * The formatting toolbar (Settings › Show editor toolbar): sticky above the note body, each button
- * running the same action as its keyboard chord or slash command. Buttons never take focus, so the
- * caret and selection they act on stay where they are.
- */
 export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorToolbarProps) {
     const [state, setState] = useState<ToolbarState>({type: null, marks: new Set()});
     const [scrolled, setScrolled] = useState(false);
 
-    const refresh = useCallback(() => setState(readState(rootRef.current)), [rootRef]);
+    const refresh = useCallback(
+        () =>
+            setState((current) => {
+                const next = readState(rootRef.current);
+                const same =
+                    next.type === current.type &&
+                    next.marks.size === current.marks.size &&
+                    [...next.marks].every((mark) => current.marks.has(mark));
+                return same ? current : next;
+            }),
+        [rootRef],
+    );
 
     useEffect(() => {
         refresh();

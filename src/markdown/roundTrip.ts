@@ -36,8 +36,7 @@ export function isRoundTripStable(markdown: string): boolean {
     if (hasFrontmatter(markdown) || hasUnsupportedLines(markdown)) return false;
     try {
         const parsed = markdownToBlocks(markdown);
-        if (parsed.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH)) return false;
-        if (parsed.some(hasUnsupportedStructure)) return false;
+        if (cannotHold(parsed)) return false;
         const written = blocksToMarkdown(parsed);
         // Byte-identical: nothing to argue about.
         if (written === markdown.trim()) return true;
@@ -62,6 +61,27 @@ export function isRoundTripStable(markdown: string): boolean {
     }
 }
 
+/**
+ * Whether `markdown` holds structure the block model has no block for, so turning it into blocks
+ * would lose it. Weaker than {@link isRoundTripStable}: a paste has no file spelling to preserve, so
+ * `1)` becoming `1.` or CRLF becoming LF is fine there, but a footnote or a tab group is not.
+ */
+export function hasUnsupportedMarkdown(markdown: string): boolean {
+    if (hasFrontmatter(markdown) || hasUnsupportedLines(markdown)) return true;
+    try {
+        return cannotHold(markdownToBlocks(markdown));
+    } catch {
+        return true;
+    }
+}
+
+function cannotHold(parsed: Block[]): boolean {
+    return (
+        parsed.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH) ||
+        parsed.some(hasUnsupportedStructure)
+    );
+}
+
 function hasUnsupportedStructure(block: Block): boolean {
     if (block.type === 'code') return false;
     const html = block.html.replace(/<code>[\s\S]*?<\/code>/g, '');
@@ -70,13 +90,16 @@ function hasUnsupportedStructure(block: Block): boolean {
 
 // Read from the SOURCE, not the parsed HTML: the parse has already dropped the backslash that makes
 // `\[\^1\]: text` literal prose, so the HTML cannot tell it from a real footnote definition.
-const UNSUPPORTED_LINE =
-    /^(?:[ \t]*(?:>|[-*+]\s|\d+[.)]\s))*[ \t]*(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}[ \t]*$)/;
+const LINE_PREFIX = String.raw`^(?:[ \t]*(?:>|[-*+]\s|\d+[.)]\s))*[ \t]*`;
+const UNSUPPORTED_LINE = new RegExp(
+    String.raw`${LINE_PREFIX}(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}[ \t]*$)`,
+);
+const FENCE = new RegExp(String.raw`${LINE_PREFIX}(\`{3,}|~{3,})`);
 
 function hasUnsupportedLines(markdown: string): boolean {
     let fence: string | null = null;
     for (const line of markdown.split('\n')) {
-        const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+        const marker = FENCE.exec(line)?.[1];
         if (fence) {
             if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
         } else if (marker) {

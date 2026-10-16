@@ -4,7 +4,7 @@ import type {Block, BlockType} from '../components/blockEditor/types';
 
 import {markdownToBlocks} from './fromMarkdown';
 import {decodeEntities, inlineHtmlToMarkdown, inlineMarkdownToHtml} from './inline';
-import {isRoundTripStable} from './roundTrip';
+import {hasUnsupportedMarkdown, isRoundTripStable} from './roundTrip';
 import {blocksToMarkdown} from './toMarkdown';
 
 function block(type: BlockType, html: string, over: Partial<Block> = {}): Block {
@@ -79,6 +79,11 @@ describe('YFM containers', () => {
         '[^1]: Footnote body\n\nText[^1].',
     ])('uses source for unsupported structure: %s', (source) => {
         expect(isRoundTripStable(source)).toBe(false);
+    });
+
+    it('reads a code fence inside a quote as code, not as structure', () => {
+        expect(hasUnsupportedMarkdown('> ```md\n> [^1]: inside code\n> ```')).toBe(false);
+        expect(hasUnsupportedMarkdown('> [^1]: a real definition')).toBe(true);
     });
 
     it.each([

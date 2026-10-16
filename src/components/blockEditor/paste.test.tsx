@@ -42,6 +42,16 @@ describe('Markdown paste boundaries', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
     it.each([
+        ['line one\r\nline two', 'line one\nline two'],
+        ['1) Buy milk\n2) Eggs', '1. Buy milk\n2. Eggs'],
+    ])('pastes plain text whose spelling only normalises: %j', (text, written) => {
+        const onChange = vi.fn();
+        render(<Editor value="" onChange={onChange} />);
+        paste(document.querySelector<HTMLElement>('.content')!, text);
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe(written);
+    });
+
+    it.each([
         '# Heading\n\nBody',
         '## Anchored {#anchored}\n\nBody',
         '- first\n- second',

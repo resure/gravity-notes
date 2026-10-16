@@ -20,11 +20,11 @@ import {readClipboardText, writeClipboardText} from '../../clipboard';
 import {
     WIKI_LINK_CLASS,
     blocksToMarkdown,
+    hasUnsupportedMarkdown,
     inlineHtmlToCodeText,
     inlineHtmlToMarkdown,
     inlineHtmlToText,
     inlineMarkdownToHtml,
-    isRoundTripStable,
     markdownToBlocks,
 } from '../../markdown';
 import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
@@ -398,15 +398,12 @@ export interface EditorCaret {
     offset: number;
 }
 
-/** The inline marks the formatting toolbar applies, each the same as its keyboard chord. */
 export type InlineMark = 'bold' | 'italic' | 'underline' | 'strike' | 'code';
 
 export interface EditorHandle {
     /** Put the caret back in the body (the shell's focus ladder). */
     focus(): void;
-    /** Toggle a mark on the selection, as ⌘B / ⌘I / ⌘U / ⌘⇧S / ⌘E do. */
     format(mark: InlineMark): void;
-    /** Open the link box for the selection, as ⌘K does. */
     link(): void;
     /**
      * Make the block the caret is in (or the selected blocks) this type, as the slash menu does; a
@@ -948,7 +945,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, html: clean} : b)), 'silent');
     };
 
-    /** The block (or table cell) the caret is in, for the formatting toolbar. */
     const activeEditable = (): {
         blockId: string;
         el: HTMLElement;
@@ -1434,7 +1430,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         else if (type !== 'divider') focusReq.current = {id, pos: 'end'};
     };
 
-    /** The toolbar's mark buttons: the same as ⌘B / ⌘I / ⌘U / ⌘⇧S / ⌘E. */
     const applyMark = (mark: InlineMark) => {
         const target = activeEditable();
         if (!target || findBlock(target.blockId)?.type === 'code') return;
@@ -1452,13 +1447,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
     };
 
-    /** The toolbar's block buttons: see `EditorHandle.setBlockType`. */
     const applyBlockType = (type: BlockType) => {
         const lastFocused = lastFocusedRef.current;
+        const lastEl = lastFocused ? refs.current.get(lastFocused) : undefined;
+        // The last block only stands in while nothing else holds the keyboard (the style menu just
+        // closed); once the caret is in the title or the search box, it is not the target.
+        const active = document.activeElement;
+        const elsewhere =
+            active instanceof HTMLElement &&
+            (active.isContentEditable ||
+                active.tagName === 'INPUT' ||
+                active.tagName === 'TEXTAREA');
         const target =
             activeEditable() ??
-            (selectedIdsRef.current.size === 0 && lastFocused && refs.current.get(lastFocused)
-                ? {blockId: lastFocused, el: refs.current.get(lastFocused)!}
+            (selectedIdsRef.current.size === 0 && lastFocused && lastEl && !elsewhere
+                ? {blockId: lastFocused, el: lastEl}
                 : null);
         if (!target) {
             for (const id of selectedIdsRef.current) {
@@ -2739,7 +2742,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const replaceWithMarkdown = (ids: string[], text: string) => {
-        if (!isRoundTripStable(text)) {
+        if (hasUnsupportedMarkdown(text)) {
             showToast('This Markdown needs source mode. Switch to source to paste it safely.');
             return;
         }
@@ -2838,7 +2841,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 // Fall through to interoperable plain-text paste.
             }
         }
-        const text = e.clipboardData.getData('text/plain');
+        const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
         if (!text) return;
 
         if (crossesBlocks()) {
@@ -2867,7 +2870,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
-        if (!isRoundTripStable(text)) {
+        if (hasUnsupportedMarkdown(text)) {
             showToast('This Markdown needs source mode. Switch to source to paste it safely.');
             return;
         }
@@ -3572,11 +3575,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     y={anchorEdit.y}
                     anchor={findBlock(anchorEdit.id)?.headingAnchor}
                     onSave={(headingAnchor, fromKeyboard) => {
-                        setBlocks((current) =>
-                            current.map((block) =>
-                                block.id === anchorEdit.id ? {...block, headingAnchor} : block,
-                            ),
-                        );
+                        if (findBlock(anchorEdit.id)?.headingAnchor !== headingAnchor) {
+                            setBlocks((current) =>
+                                current.map((block) =>
+                                    block.id === anchorEdit.id ? {...block, headingAnchor} : block,
+                                ),
+                            );
+                        }
                         setAnchorEdit(null);
                         if (fromKeyboard) focusReq.current = {id: anchorEdit.id, pos: 'end'};
                     }}

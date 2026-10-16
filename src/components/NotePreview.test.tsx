@@ -189,6 +189,11 @@ describe('withBlockColors', () => {
         );
     });
 
+    it("keeps a parent item's colour off its nested list", () => {
+        const html = `<ul><li>${bg}Parent</span><ul><li>Child</li></ul></li></ul>`;
+        expect(withBlockColors(html)).toBe(html);
+    });
+
     it('leaves a colour over part of a block inline', () => {
         const html = `<p>Some ${bg}words</span> here</p>`;
         expect(withBlockColors(html)).toBe(html);

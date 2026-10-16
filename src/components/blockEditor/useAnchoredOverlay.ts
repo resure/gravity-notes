@@ -53,29 +53,45 @@ export function useAnchoredOverlay({
         placedRef.current?.(element);
     }, [x, y, flipGap, remeasureKey]);
 
+    // Held in a ref so a caller passing a fresh closure each render does not re-bind the listeners.
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
+
     useEffect(() => {
+        const close = () => closeRef.current();
+        const outside = (event: Event) => !ref.current?.contains(event.target as Node);
+        // `pointerdown` too: the editor's marquee cancels it on the page's empty area, which
+        // suppresses the `mousedown` that would follow, so a click there never closed the overlay.
+        // When both arrive they are one press, and must close once.
+        let pressHandled = false;
+        const onPointerDown = (event: Event) => {
+            pressHandled = outside(event);
+            if (pressHandled) close();
+        };
         const onMouseDown = (event: Event) => {
-            if (!ref.current?.contains(event.target as Node)) onClose();
+            if (pressHandled) {
+                pressHandled = false;
+                return;
+            }
+            if (outside(event)) close();
         };
         const onScroll = (event: Event) => {
             const target = event.target;
             if (target instanceof Node && ref.current?.contains(target)) return;
-            onClose();
+            close();
         };
-        // `pointerdown` too: the editor's marquee cancels it on the page's empty area, which
-        // suppresses the `mousedown` that would follow, so a click there never closed the overlay.
-        document.addEventListener('pointerdown', onMouseDown);
+        document.addEventListener('pointerdown', onPointerDown);
         document.addEventListener('mousedown', onMouseDown);
         // Captured: `scroll` does not bubble, and it is the PANE that scrolls, not the document.
         window.addEventListener('scroll', onScroll, true);
-        window.addEventListener('resize', onClose);
+        window.addEventListener('resize', close);
         return () => {
-            document.removeEventListener('pointerdown', onMouseDown);
+            document.removeEventListener('pointerdown', onPointerDown);
             document.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('scroll', onScroll, true);
-            window.removeEventListener('resize', onClose);
+            window.removeEventListener('resize', close);
         };
-    }, [onClose]);
+    }, []);
 
     return {ref, style};
 }

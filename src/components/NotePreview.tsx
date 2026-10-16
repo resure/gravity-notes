@@ -231,7 +231,9 @@ export function withBlockColors(html: string): string {
         for (const node of block.childNodes) {
             if (node.nodeType === Node.TEXT_NODE && !node.nodeValue?.trim()) continue;
             if (!(node instanceof Element)) return;
-            if (node.tagName === 'BR' || node.tagName === 'UL' || node.tagName === 'OL') continue;
+            // A nested list is the item's children, which the editor does not colour with it.
+            if (node.tagName === 'UL' || node.tagName === 'OL') return;
+            if (node.tagName === 'BR') continue;
             if (node.tagName !== 'SPAN' || !COLORIFY.test(node.className)) return;
             spans.push(node);
         }
