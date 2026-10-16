@@ -214,6 +214,37 @@ export function withWikiLinks(html: string): string {
     return doc.body.innerHTML;
 }
 
+const COLORIFY = /^(?:yfm-colorify )?yfm-colorify--\S+$/;
+
+/**
+ * Lift a colour wrapper that covers a whole paragraph, list item or heading onto that element.
+ *
+ * The editor writes a BLOCK colour as one `{bg:red}(…)` wrapper per line, and paints it across the
+ * whole row; rendered as written, the preview showed it as a highlighter over the words instead.
+ */
+export function withBlockColors(html: string): string {
+    if (!html.includes('yfm-colorify--')) return html;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    let changed = false;
+    doc.body.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6').forEach((block) => {
+        const spans: Element[] = [];
+        for (const node of block.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE && !node.nodeValue?.trim()) continue;
+            if (!(node instanceof Element)) return;
+            if (node.tagName === 'BR' || node.tagName === 'UL' || node.tagName === 'OL') continue;
+            if (node.tagName !== 'SPAN' || !COLORIFY.test(node.className)) return;
+            spans.push(node);
+        }
+        if (spans.length === 0 || spans.some((span) => span.className !== spans[0].className)) {
+            return;
+        }
+        block.classList.add(...spans[0].classList, 'gn-block-color');
+        for (const span of spans) span.replaceWith(...span.childNodes);
+        changed = true;
+    });
+    return changed ? doc.body.innerHTML : html;
+}
+
 /**
  * Read-only rendered view of a note's Markdown, for preview mode. Renders YFM HTML via the
  * editor's own transformer so it matches the WYSIWYG output, into a `.yfm` container that
@@ -239,7 +270,9 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             try {
                 // @diplodoc/transform escapes raw HTML and sanitizes its output by default, matching
                 // the editor's no-raw-HTML policy; we only swap attachment img srcs afterward.
-                let html = withWikiLinks(transform(markup, TRANSFORM_OPTIONS).result.html);
+                let html = withBlockColors(
+                    withWikiLinks(transform(markup, TRANSFORM_OPTIONS).result.html),
+                );
                 if (cache) html = withResolvedImages(html, cache);
                 return {html, error: false};
             } catch {

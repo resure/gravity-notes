@@ -75,40 +75,108 @@
 
 /* ---------- blocks ---------- */
 
+/* Vertical rhythm is the read-only preview's (NotePreview.css over YFM's own margins), restated as
+   block margins so toggling between the two does not reflow the note. Blocks carry no vertical
+   padding of their own: with padding, adjacent margins no longer collapse the way the preview's do,
+   and no single set of values reproduces its spacing. `--gn-mt` is the margin above a block, which
+   the end-of-run rule below can raise. */
 .gn-block-editor .block {
     position: relative;
-    margin-top: 1px;
+    /* Contains `.block-body`'s negative margins, so its wash cannot move the block. */
+    display: flow-root;
+    --gn-pad-y: 0px;
+    --gn-mt: 0px;
+    margin-top: var(--gn-mt);
+    margin-bottom: 6px;
+}
+
+.gn-block-editor .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo']) {
+    margin-bottom: var(--gn-editor-list-gap, 0px);
+}
+
+/* YFM spaces task-list rows by the `.checkbox` margin rather than the list gap. */
+.gn-block-editor .block[data-type='todo'] {
+    margin-bottom: 6px;
+}
+
+/* A nested list starts flush under its parent item, as an `<ul>` inside an `<li>` does. */
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='0']
+    + .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='1'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='1']
+    + .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='2'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='2']
+    + .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='3'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='3']
+    + .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='4'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='4']
+    + .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='5'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])[data-depth='5']
+    + .block:is(
+        [data-type='bulleted'],
+        [data-type='numbered'],
+        [data-type='todo']
+    )[data-depth='6'] {
+    margin-top: calc(-1 * var(--gn-editor-list-gap, 0px));
+}
+
+.gn-block-editor .block[data-type^='heading'] {
+    margin-bottom: 4px;
+}
+.gn-block-editor .block[data-type='heading1'] {
+    --gn-mt: 24px;
+}
+.gn-block-editor .block[data-type='heading2'] {
+    --gn-mt: 19px;
+}
+.gn-block-editor .block[data-type='heading3'] {
+    --gn-mt: 15px;
+}
+.gn-block-editor .block[data-type='heading4'] {
+    --gn-mt: 12px;
+}
+.gn-block-editor .block[data-type='heading5'],
+.gn-block-editor .block[data-type='heading6'] {
+    --gn-mt: 9px;
+}
+
+.gn-block-editor .block:is([data-type='code'], [data-type='callout'], [data-type='table']) {
+    --gn-mt: 12px;
+    margin-bottom: 15px;
+}
+
+.gn-block-editor .block[data-type='quote'] {
+    --gn-mt: 12px;
+}
+.gn-block-editor .block[data-type='quote'] + .block[data-type='quote'] {
+    --gn-mt: 0px;
+}
+
+/* A list or a quote ends with YFM's 15px block margin, as its `<ul>` / `<blockquote>` does. */
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])
+    + .block:not([data-type='bulleted'], [data-type='numbered'], [data-type='todo']),
+.gn-block-editor .block[data-type='quote'] + .block:not([data-type='quote']) {
+    margin-top: max(15px, var(--gn-mt));
 }
 
 .gn-block-editor .blocks > .block:first-child {
     margin-top: 0;
 }
 
-.gn-block-editor .block[data-type='heading1'] {
-    margin-top: 32px;
-}
-.gn-block-editor .block[data-type='heading2'] {
-    margin-top: 22px;
-}
-.gn-block-editor .block[data-type='heading3'] {
-    margin-top: 14px;
-}
-.gn-block-editor .block[data-type='heading4'] {
-    margin-top: 12px;
-}
-.gn-block-editor .block[data-type='heading5'],
-.gn-block-editor .block[data-type='heading6'] {
-    margin-top: 10px;
-}
-.gn-block-editor .block[data-type='quote'],
-.gn-block-editor .block[data-type='callout'],
-.gn-block-editor .block[data-type='code'] {
-    margin-top: 4px;
-    margin-bottom: 4px;
+/* The selection and a colour wash reach a little past the text, without taking any layout space. */
+.gn-block-editor .block-body {
+    padding-block: 2px;
+    margin-block: -2px;
 }
 
 .gn-block-editor .content {
-    padding: 3px 2px;
+    padding: var(--gn-pad-y) 2px;
     outline: none;
     /* Size is inherited from `.page` (see above); only the leading is set here, per editor font. */
     line-height: var(--gn-editor-line-height, 1.5);
@@ -128,12 +196,6 @@
     line-height: var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.5));
 }
 
-.gn-block-editor .block[data-type='bulleted'],
-.gn-block-editor .block[data-type='numbered'],
-.gn-block-editor .block[data-type='todo'] {
-    margin-bottom: var(--gn-editor-list-gap, 0px);
-}
-
 .gn-block-editor .content[data-placeholder]:empty::before {
     content: attr(data-placeholder);
     color: var(--n-placeholder);
@@ -142,36 +204,37 @@
     height: 0;
 }
 
-.gn-block-editor .block[data-type='heading1'] .content {
-    font-size: 1.875em;
-    font-weight: 600;
-    line-height: 1.3;
+/* YFM's heading scale, so a heading is the same size here as in the read-only preview. */
+.gn-block-editor .block[data-type^='heading'] .content {
+    font-weight: 500;
 }
-.gn-block-editor .block[data-type='heading2'] .content {
-    font-size: 1.5em;
-    font-weight: 600;
-    line-height: 1.3;
+.gn-block-editor .block[data-type='heading1'] {
+    --gn-heading-size: 32px;
+    --gn-block-line: 40px;
 }
-.gn-block-editor .block[data-type='heading3'] .content {
-    font-size: 1.25em;
-    font-weight: 600;
-    line-height: 1.3;
+.gn-block-editor .block[data-type='heading2'] {
+    --gn-heading-size: 24px;
+    --gn-block-line: 28px;
 }
-.gn-block-editor .block[data-type='heading4'] .content {
-    font-size: 1.1em;
-    font-weight: 600;
-    line-height: 1.3;
+.gn-block-editor .block[data-type='heading3'] {
+    --gn-heading-size: 20px;
+    --gn-block-line: 24px;
 }
-/* H5 and H6 stop shrinking — smaller than body text reads as a caption, not a heading. They lean on
-   weight (and, for H6, colour) instead, which is what Markdown renderers do at this depth. */
-.gn-block-editor .block[data-type='heading5'] .content,
-.gn-block-editor .block[data-type='heading6'] .content {
-    font-size: 1em;
-    font-weight: 600;
-    line-height: var(--gn-editor-line-height, 1.5);
+.gn-block-editor .block[data-type='heading4'] {
+    --gn-heading-size: 17px;
+    --gn-block-line: 24px;
 }
-.gn-block-editor .block[data-type='heading6'] .content {
-    color: var(--n-text-light);
+.gn-block-editor .block[data-type='heading5'] {
+    --gn-heading-size: 15px;
+    --gn-block-line: 20px;
+}
+.gn-block-editor .block[data-type='heading6'] {
+    --gn-heading-size: 13px;
+    --gn-block-line: 18px;
+}
+.gn-block-editor .block[data-type^='heading'] .content {
+    font-size: var(--gn-heading-size);
+    line-height: var(--gn-block-line);
 }
 
 /* inline formatting */
@@ -183,11 +246,11 @@
 
 .gn-block-editor .content code {
     font-family: var(--n-mono);
-    font-size: 85%;
-    color: var(--n-code-red);
-    background: var(--n-code-bg);
+    font-size: 0.875em;
+    color: var(--g-color-text-misc);
+    background: var(--g-color-base-misc-light);
     border-radius: 4px;
-    padding: 0.2em 0.4em;
+    padding: 0.1em 0.4em 0.15em;
 }
 
 .gn-block-editor .content a {
@@ -228,7 +291,7 @@
 .gn-block-editor .handles {
     position: absolute;
     /* `.content`'s padding-top — where the first line box actually starts. */
-    top: 3px;
+    top: var(--gn-pad-y);
     height: var(--gn-block-line);
     display: flex;
     align-items: center;
@@ -246,22 +309,6 @@
         var(--gn-editor-list-line-height, var(--gn-editor-line-height, 1.5)) * 1em
     );
 }
-
-/* Headings size themselves in `em` off the page and set their own 1.3 leading, but they do it on
-   `.content` — which the handles sit outside of, so the product has to be restated here. */
-.gn-block-editor .block[data-type='heading1'] {
-    --gn-block-line: calc(1.3 * 1.875em);
-}
-.gn-block-editor .block[data-type='heading2'] {
-    --gn-block-line: calc(1.3 * 1.5em);
-}
-.gn-block-editor .block[data-type='heading3'] {
-    --gn-block-line: calc(1.3 * 1.25em);
-}
-.gn-block-editor .block[data-type='heading4'] {
-    --gn-block-line: calc(1.3 * 1.1em);
-}
-/* H5/H6 run at body size and body leading, so they take the default line box. */
 
 /* These four are offset by their CONTAINER (padding, borders, a divider's rule) rather than by a
    line box, and their `top` below is calibrated against the old 24px box. Pin them to it so this
@@ -517,7 +564,7 @@
     width: 24px;
     min-width: 24px;
     user-select: none;
-    padding-top: 3px;
+    padding-top: var(--gn-pad-y);
     /* Share the list leading (and, through inheritance, the size) of the text it sits beside, so the
        marker stays on the first line's baseline whichever editor font is active. The fallback
        resolves to the same 24px this rule used to hard-code. */
@@ -540,7 +587,7 @@
 .gn-block-editor .todo-col {
     width: 24px;
     min-width: 24px;
-    padding-top: 7px;
+    padding-top: calc(var(--gn-pad-y) + 4px);
     user-select: none;
 }
 
@@ -579,7 +626,7 @@
 .gn-block-editor .toggle-col {
     width: 24px;
     min-width: 24px;
-    height: calc(6px + var(--gn-block-line));
+    height: calc(2 * var(--gn-pad-y) + var(--gn-block-line));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -671,15 +718,18 @@
 
 .gn-block-editor .code-wrap {
     position: relative;
-    background: var(--n-gray-bg);
+    /* On the text column's edge, like the preview's `<pre>`. */
+    margin-left: 2px;
+    background: var(--g-color-base-misc-light);
     border-radius: 4px;
 }
 
+/* The preview's YFM code block metrics, so a fence reads the same on both surfaces. */
 .gn-block-editor .code-wrap .content {
     font-family: var(--n-mono);
-    font-size: 85%;
-    line-height: 1.5;
-    padding: 34px 16px 32px 32px;
+    font-size: 0.875em;
+    line-height: 1.2;
+    padding: 16px;
     tab-size: 2;
 }
 
@@ -687,16 +737,19 @@
     all: unset;
 }
 
-/* The language and Copy sit over the fence's top padding (`.code-wrap .content` reserves 34px for
-   them), fading in on hover or when either has focus — so the keyboard can reach them at all. */
+/* The language and Copy float in the fence's top-right corner, fading in on hover or when either
+   has focus — so the keyboard can reach them at all. */
 .gn-block-editor .code-toolbar {
     position: absolute;
     top: 6px;
-    left: 12px;
-    right: 10px;
+    right: 6px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 2px;
+    padding: 1px;
+    border-radius: 4px;
+    background: var(--n-surface);
+    box-shadow: var(--n-overlay-shadow);
     opacity: 0;
     transition: opacity 100ms ease-in;
     user-select: none;
@@ -801,14 +854,12 @@
 
 /* ---------- simple tables ---------- */
 
-.gn-block-editor .block[data-type='table'] {
-    margin-top: 14px;
-    margin-bottom: 18px;
-}
-
 .gn-block-editor .table-block-shell {
     position: relative;
-    padding: 0 20px 20px 0;
+    margin-left: 2px;
+    /* Room below for the add-row button; the add-column one sits in the page's right margin, so the
+       table gets the whole text column, as the preview's does. */
+    padding: 0 0 20px 0;
     cursor: default;
 }
 
@@ -818,47 +869,45 @@
     scrollbar-width: thin;
 }
 
+/* The preview's YFM table: columns sized by their content, an outer rounded border, and inner rules. */
 .gn-block-editor .simple-table {
-    width: max-content;
-    min-width: 100%;
     border-spacing: 0;
     border-collapse: separate;
-    table-layout: fixed;
+    border: 1px solid var(--g-color-line-generic);
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .gn-block-editor .simple-table td {
-    width: 180px;
-    min-width: 120px;
-    max-width: 280px;
-    height: 34px;
+    min-width: 80px;
     padding: 0;
-    border-right: 1px solid rgba(var(--n-ink), 0.16);
-    border-bottom: 1px solid rgba(var(--n-ink), 0.16);
+    border-right: 1px solid var(--g-color-line-generic);
+    border-bottom: 1px solid var(--g-color-line-generic);
     background: var(--n-surface);
     vertical-align: top;
 }
 
-.gn-block-editor .simple-table tr:first-child td {
-    border-top: 1px solid rgba(var(--n-ink), 0.16);
+.gn-block-editor .simple-table tr:last-child td {
+    border-bottom: 0;
 }
 
-.gn-block-editor .simple-table td:first-child {
-    border-left: 1px solid rgba(var(--n-ink), 0.16);
+.gn-block-editor .simple-table td:last-child {
+    border-right: 0;
 }
 
 .gn-block-editor .simple-table .table-header-cell {
-    background: var(--n-gray-bg);
-    font-weight: 600;
+    background: var(--g-color-base-generic);
+    font-weight: 500;
+    vertical-align: middle;
 }
 
 .gn-block-editor .table-cell-content {
-    min-height: 34px;
-    padding: 7px 9px;
+    padding: 10px 20px;
     outline: none;
-    font-size: 14px;
-    line-height: 1.4;
+    line-height: var(--gn-editor-line-height, 1.35);
     white-space: pre-wrap;
-    word-break: break-word;
+    /* Whole words, as the preview wraps them: a narrow pane scrolls the table instead. */
+    overflow-wrap: break-word;
     cursor: text;
 }
 
@@ -868,11 +917,11 @@
 
 .gn-block-editor .table-cell-content code {
     font-family: var(--n-mono);
-    font-size: 85%;
-    color: var(--n-code-red);
-    background: var(--n-code-bg);
+    font-size: 0.875em;
+    color: var(--g-color-text-misc);
+    background: var(--g-color-base-misc-light);
     border-radius: 4px;
-    padding: 0.15em 0.35em;
+    padding: 0.1em 0.4em 0.15em;
 }
 
 .gn-block-editor .table-cell-content a {
@@ -912,14 +961,14 @@
 
 .gn-block-editor .table-add-column {
     top: 0;
-    right: 0;
+    right: -20px;
     width: 16px;
     height: calc(100% - 20px);
 }
 
 .gn-block-editor .table-add-row {
     left: 0;
-    right: 20px;
+    right: 0;
     bottom: 0;
     height: 16px;
 }
@@ -927,7 +976,7 @@
 .gn-block-editor .table-toolbar {
     position: absolute;
     z-index: 5;
-    right: 20px;
+    right: 0;
     top: -38px;
     display: flex;
     align-items: center;
@@ -982,8 +1031,17 @@
 }
 
 @media (max-width: 720px) {
-    .gn-block-editor .simple-table td {
-        width: 150px;
+    /* The narrow page has no right margin to hold the add-column button. */
+    .gn-block-editor .table-block-shell {
+        padding-right: 20px;
+    }
+
+    .gn-block-editor .table-add-column {
+        right: 0;
+    }
+
+    .gn-block-editor .table-add-row {
+        right: 20px;
     }
 
     .gn-block-editor .table-toolbar {
@@ -1485,7 +1543,7 @@
     --n-overlay-shadow: 0 0 0 1px var(--g-color-line-generic), 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
-.g-root_theme_dark .gn-block-editor .simple-table td {
+.g-root_theme_dark .gn-block-editor .simple-table td:not(.table-header-cell) {
     background: var(--g-color-base-background);
 }
 

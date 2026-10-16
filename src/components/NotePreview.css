@@ -11,11 +11,18 @@
 }
 
 /* Match the editor's text column exactly so toggling edit/preview doesn't shift/re-wrap the text.
-   The block editor insets its document by the --editor-gutter plus its own 4px padding; the preview
-   HTML has neither, so fold that 4px in here — otherwise preview text wraps ~4px wider per side and
-   the two columns don't line up. */
+   The block editor insets its text by the --editor-gutter plus a block's 2px padding; the preview
+   HTML has neither, so fold that 2px in here — otherwise the two columns don't line up. */
 .note-preview__body {
-    padding: 12px calc(var(--editor-gutter, 16px) + 8px) 16px calc(var(--editor-gutter, 16px) + 4px);
+    padding: 4px calc(var(--editor-gutter, 16px) + 2px) 16px;
+}
+
+/* The editor's list indent: a 24px marker column, and 26px per nesting level. */
+.note-preview__body.yfm :where(ul, ol) {
+    padding-left: 24px;
+}
+.note-preview__body.yfm li > :where(ul, ol) {
+    padding-left: 26px;
 }
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
@@ -81,6 +88,17 @@
    without this a code block / table / quote would hug the preceding line. Mirrors the editor. */
 .note-preview__body.yfm :where(pre, table, blockquote) {
     margin-top: 12px;
+}
+
+/* Wrapped like the editor's code blocks and table cells, so a long line or a multi-line cell reads
+   the same on both surfaces instead of scrolling sideways here. */
+.note-preview__body.yfm pre > code {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.note-preview__body.yfm :where(td, th) {
+    line-height: var(--gn-editor-line-height, 1.35);
 }
 
 .note-preview__body.yfm :where(h1, h2, h3, h4, h5, h6) {
@@ -177,6 +195,24 @@
     padding: 0 2px;
     border-radius: 3px;
 }
+/* A whole block's colour (see withBlockColors) fills the row, as the editor paints it: the wash
+   reaches 2px past the text, and the margins give that back so nothing reflows. */
+.note-preview__body.yfm .gn-block-color[class*='yfm-colorify--bg'] {
+    padding: 2px;
+    margin-inline: -2px;
+}
+.note-preview__body.yfm p.gn-block-color[class*='yfm-colorify--bg'] {
+    margin-top: -2px;
+    margin-bottom: 4px;
+}
+.note-preview__body.yfm li.gn-block-color[class*='yfm-colorify--bg'] {
+    margin-top: -2px;
+    margin-bottom: calc(var(--gn-editor-list-gap, 1px) - 2px);
+}
+.note-preview__body.yfm :is(h1, h2, h3, h4, h5, h6).gn-block-color[class*='yfm-colorify--bg'] {
+    padding-block: 0;
+}
+
 .note-preview .yfm-colorify--gray {
     color: var(--gn-color-gray);
 }

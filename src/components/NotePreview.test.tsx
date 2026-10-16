@@ -5,7 +5,7 @@ import {describe, expect, it, vi} from 'vitest';
 import {openExternalUrl} from '../openExternal';
 import {renderWithProviders} from '../test/render';
 
-import {NotePreview, withWikiLinks} from './NotePreview';
+import {NotePreview, withBlockColors, withWikiLinks} from './NotePreview';
 
 // Default export is a vi.fn() so individual tests can delegate to the real
 // transform or force a throw; the module is otherwise driven by the real impl.
@@ -174,6 +174,24 @@ describe('NotePreview', () => {
         // `target.href` would instead resolve it against the document base into an openable
         // http(s) URL and pop a junk tab.
         expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith('foo/bar.md');
+    });
+});
+
+describe('withBlockColors', () => {
+    const bg = '<span class="yfm-colorify yfm-colorify--bg:red">';
+
+    it('moves a colour covering a whole block onto the block', () => {
+        expect(withBlockColors(`<ul><li>${bg}Item</span></li></ul>`)).toBe(
+            '<ul><li class="yfm-colorify yfm-colorify--bg:red gn-block-color">Item</li></ul>',
+        );
+        expect(withBlockColors(`<p>${bg}one</span><br>\n${bg}two</span></p>`)).toBe(
+            '<p class="yfm-colorify yfm-colorify--bg:red gn-block-color">one<br>\ntwo</p>',
+        );
+    });
+
+    it('leaves a colour over part of a block inline', () => {
+        const html = `<p>Some ${bg}words</span> here</p>`;
+        expect(withBlockColors(html)).toBe(html);
     });
 });
 
