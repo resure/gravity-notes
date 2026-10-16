@@ -1915,6 +1915,59 @@ describe('structural edits keep the file and the screen in step', () => {
         expect(onChange.mock.calls.at(-1)?.[0]).toBe('helloworld');
     });
 
+    it('Enter on an empty block mid-list keeps the items after it in place', () => {
+        const onChange = renderEditor('- a\n  - b\n  - x\n  - d');
+        const el = caretIn(2, 'end');
+        act(() => {
+            el.textContent = '';
+            fireEvent.input(el);
+        });
+        press(el, 'Enter');
+        const written = onChange.mock.calls.at(-1)?.[0] as string;
+        expect(written).toMatch(/\n {2}- d$/);
+        expect(written).not.toMatch(/\n {4}- d/);
+    });
+
+    it('an item stepping out of a toggle is not written tight against its closing tag', () => {
+        const onChange = renderEditor(
+            '<details open>\n<summary>T</summary>\n\n- [ ] a\n- [ ] b\n\n</details>\n\nafter',
+        );
+        const el = caretIn(2, 'end');
+        act(() => {
+            el.textContent = '';
+            fireEvent.input(el);
+        });
+        press(el, 'Enter');
+        expect(onChange.mock.calls.at(-1)?.[0]).toContain('</details>\n\n- [ ]');
+    });
+
+    it('Delete pulling a two-line paragraph into a heading keeps the heading one line', () => {
+        const onChange = renderEditor('# Title\n\nline1\nline2');
+        press(caretIn(0, 'end'), 'Delete');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('# Titleline1 line2');
+    });
+
+    it('Enter at the start of a numbered list keeps its start number', () => {
+        const onChange = renderEditor('5. a\n6. b');
+        press(caretIn(0, 'start'), 'Enter');
+        expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^5\.\s*\n6\. a\n7\. b$/);
+    });
+
+    it('AltGr (Ctrl+Alt on Windows and Linux) types its character instead of a chord', () => {
+        const onChange = renderEditor('one');
+        const el = caretIn(0, 'end');
+        act(() => {
+            fireEvent.keyDown(el, {
+                key: '{',
+                code: 'Digit7',
+                ctrlKey: true,
+                altKey: true,
+                modifierAltGraph: true,
+            });
+        });
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('Enter on an empty nested item steps out a level', () => {
         const onChange = renderEditor('- a\n  - b');
         const el = caretIn(1, 'end');

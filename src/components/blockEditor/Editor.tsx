@@ -236,9 +236,17 @@ function blockTypeChord(e: {
     altKey: boolean;
     shiftKey: boolean;
     code: string;
+    getModifierState?(key: string): boolean;
 }): BlockType | null {
     if (!(e.metaKey || e.ctrlKey) || !e.altKey || e.shiftKey) return null;
+    // Ctrl+Alt is how Windows and Linux report AltGr, which types `{`, `[` and `}` on many layouts.
+    if (!e.metaKey && e.getModifierState?.('AltGraph')) return null;
     return BLOCK_TYPE_CHORDS[e.code] ?? null;
+}
+
+/** A heading is one line in Markdown; a break inside one would split it. */
+function oneLineIfHeading(type: BlockType, html: string): string {
+    return type.startsWith('heading') ? html.replace(/<br\s*\/?>/gi, ' ') : html;
 }
 
 /**
@@ -1513,10 +1521,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                       ? ''
                                       : b.type === 'table'
                                         ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
-                                        : type.startsWith('heading')
-                                          ? // A heading is one line in Markdown; a break would split it.
-                                            b.html.replace(/<br\s*\/?>/gi, ' ')
-                                          : b.html,
+                                        : oneLineIfHeading(type, b.html),
                               table:
                                   type === 'table'
                                       ? b.type === 'table'
@@ -1651,6 +1656,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const withDepthChanged = (blocks: BlockData[], id: string, direction: -1 | 1): BlockData[] => {
         let next = changeBlockDepth(blocks, id, direction);
         if (next === blocks) return blocks;
+        // Its gap was measured against a different predecessor — written tight against a closing
+        // `</details>`, a list item is swallowed into the HTML block.
+        next = next.map((block) =>
+            block.id === id && block.blankBefore !== undefined
+                ? {...block, blankBefore: undefined}
+                : block,
+        );
         // Indenting under a COLLAPSED toggle would hide the block being indented: it renders no
         // element, so the caret request lands nowhere and one Tab took both the paragraph and the
         // keyboard away, with no way back but the mouse. Open the toggle instead, which is what
@@ -2000,7 +2012,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (empty && !hadSelection && !isYfmContainer(block)) {
             // An empty nested block steps out a level first, as in Notion — out of the list it
             // ends, or out of the toggle it closes.
-            if (depth > 0) {
+            const following = blocksRef.current[indexOf(block.id) + 1];
+            if (depth > 0 && (!following || (following.depth ?? 0) < depth)) {
                 changeDepth(block.id, -1);
                 return;
             }
@@ -2031,10 +2044,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // gets an empty item, so the list stays one list.
         if (!empty && caretAtStart(el)) {
             const type = LIST_TYPES.includes(block.type) ? block.type : 'text';
-            const above = {...newBlock(type), depth};
+            const above = {...newBlock(type), depth, listStart: block.listStart};
             const idx = indexOf(block.id);
             setBlocks((bs) => {
-                const arr = bs.map((b) => (b.id === block.id ? {...b, html: live} : b));
+                const arr = bs.map((b) =>
+                    b.id === block.id ? {...b, html: live, listStart: undefined} : b,
+                );
                 arr.splice(idx, 0, above);
                 return arr;
             });
@@ -2128,7 +2143,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
         const prevEl = refs.current.get(prev.id);
         const joinAt = (prevEl?.textContent ?? htmlToText(prev.html)).length;
-        const merged = (isEmptyHtml(prev.html) ? '' : prev.html) + stripZeroWidth(el.innerHTML);
+        const merged = oneLineIfHeading(
+            prev.type,
+            (isEmptyHtml(prev.html) ? '' : prev.html) + stripZeroWidth(el.innerHTML),
+        );
         // The merged block's children move up under `prev`, which can leave them more than one
         // level deeper than it.
         setBlocks((bs) =>
@@ -2158,7 +2176,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
         if (!isEditableType(next.type) || next.type === 'code' || block.type === 'code') return;
         const joinAt = (el.textContent ?? '').length;
-        const merged = (isEmptyHtml(block.html) ? '' : stripZeroWidth(el.innerHTML)) + next.html;
+        const merged = oneLineIfHeading(
+            block.type,
+            (isEmptyHtml(block.html) ? '' : stripZeroWidth(el.innerHTML)) + next.html,
+        );
         setBlocks((bs) =>
             normalizeDepths(
                 bs

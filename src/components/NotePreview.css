@@ -25,7 +25,7 @@
     padding-left: 26px;
 }
 /* A task row's checkbox stands in the marker column, as the editor's does, instead of after it. */
-.note-preview__body.yfm li:has(> .checkbox) {
+.note-preview__body.yfm li > .checkbox {
     margin-left: -24px;
 }
 

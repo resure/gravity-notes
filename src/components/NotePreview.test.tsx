@@ -191,6 +191,15 @@ describe('editor blocks the YFM renderer cannot read', () => {
         expect(open).toEqual([true]);
     });
 
+    it('gives an empty toggle a body, so it renders and the open states stay aligned', () => {
+        const source =
+            '<details open>\n<summary>Empty</summary>\n\n</details>\n\n<details>\n<summary>Closed</summary>\n\nBody\n\n</details>';
+        const {markup, open} = withToggleCuts(source);
+        expect(open).toEqual([true, false]);
+        expect(markup.match(/\{% cut/g)).toHaveLength(2);
+        expect(markup).toContain('{% cut "Empty" %}\n\n&nbsp;\n\n{% endcut %}');
+    });
+
     it('leaves a note the block model cannot hold as written', () => {
         const source = '---\ntitle: x\n---\n\n<details>\n<summary>T</summary>\n\nB\n\n</details>';
         expect(withToggleCuts(source).markup).toBe(source);

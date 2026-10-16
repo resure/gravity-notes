@@ -34,6 +34,7 @@ import {openExternalUrl} from '../openExternal';
 import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
 
 import {calloutIcon} from './blockEditor/callouts';
+import {newBlock} from './blockEditor/types';
 
 // Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
@@ -227,17 +228,27 @@ export function withToggleCuts(markup: string): {markup: string; open: boolean[]
     if (!/<details/i.test(markup) || !isRoundTripStable(markup)) return {markup, open: []};
     const blocks = markdownToBlocks(markup);
     const open: boolean[] = [];
-    const converted = blocks.map((block) => {
-        if (block.type !== 'toggle') return block;
-        if (block.yfm?.kind === 'cut') {
-            open.push(false);
-            return block;
+    const converted: typeof blocks = [];
+    blocks.forEach((block, index) => {
+        if (block.type !== 'toggle') {
+            converted.push(block);
+            return;
         }
-        open.push(!block.collapsed);
-        return {
-            ...block,
-            yfm: {kind: 'cut' as const, quotedTitle: true, blankBeforeBody: 1, blankAfterBody: 1},
-        };
+        open.push(block.yfm?.kind === 'cut' ? false : !block.collapsed);
+        converted.push(
+            block.yfm?.kind === 'cut'
+                ? block
+                : {
+                      ...block,
+                      yfm: {kind: 'cut', quotedTitle: true, blankBeforeBody: 1, blankAfterBody: 1},
+                  },
+        );
+        // A cut with no body does not render at all, which would drop the toggle and shift every
+        // later cut's open state onto the wrong one.
+        const depth = block.depth ?? 0;
+        if ((blocks[index + 1]?.depth ?? 0) <= depth) {
+            converted.push({...newBlock('text'), depth: depth + 1});
+        }
     });
     return {markup: blocksToMarkdown(converted), open};
 }
