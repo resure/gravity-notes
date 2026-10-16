@@ -190,6 +190,13 @@ the URL policy, so a relative note link cannot turn into a browser URL for the a
 The compatibility audit and its validation log live in
 [block-editor-parity.md](proposals/block-editor-parity.md).
 
+Typing shortcuts retain an ordered list's starting number and support bold, italic, code,
+strikethrough, mark and underline. Escaped delimiters stay literal. Pasting a multiline Markdown
+document into an empty paragraph parses its first block as well as the rest. Replacing a text
+selection across blocks replaces the touched blocks as a unit, matching copy/cut/delete. A pasted
+image or table cannot consume the text that followed the caret. Multiline syntax that the block
+model cannot preserve is refused with a source-mode hint; it can be pasted into source instead.
+
 Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, full CommonMark. That is
 deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get
 right, so the preview must understand more Markdown than the editor does, not the same amount.
@@ -263,6 +270,9 @@ Markdown over anything clever.
   instead, fully editable, with nothing re-serialized. **Measured: 0 of 65 notes in the demo vault
   and 0 of 13 in a smaller real one now fall back** (they were 45% and 85%); the check stays either
   way, for the constructs nobody has hit yet.
+- **Structured nesting is limited to six levels.** Deeper files open in source because the editor's
+  structural operations clamp depth; a parser-only fixed point would otherwise approve content
+  that the mounted editor then flattens. The source remains fully editable.
 - **Editing a note may normalise how its Markdown is spelled.** The check is no longer byte-exact:
   a note also passes when the only differences are spellings that mean the same thing — a redundant
   backslash escape (`\+` → `+`), `_emphasis_` → `*emphasis*`, cell padding, a run of blank lines.

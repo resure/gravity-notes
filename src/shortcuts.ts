@@ -294,6 +294,12 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
     },
     {
+        keys: '==',
+        description:
+            'Type ==words== to highlight, ++words++ to underline, ~~words~~ to strike through',
+        group: 'Editing',
+    },
+    {
         keys: 'mod+b',
         description: 'Bold the selection',
         group: 'Editing',

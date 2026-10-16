@@ -70,8 +70,13 @@ The block editor owns these itself; they do nothing outside the body.
 | `Tab`       | Indent a list item (`⇧Tab` outdents); in a table, move to the next cell |
 | `Esc`       | Select the block; again to leave the editor                             |
 
+As you type, `# ` through `###### ` make headings; `- `, `* ` and `+ ` make bullets;
+`7. ` starts numbering at 7; `[] ` and `[x] ` make tasks; `> ` makes a quote.
+Paired `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `==mark==` and `++underline++`
+apply inline formatting. A backslash before the opening delimiter keeps it literal.
+
 A selection dragged across block boundaries is treated as a selection of whole blocks: copying,
-cutting or deleting it takes each block it touches in full, exactly as if those blocks had been
+cutting, replacing or deleting it takes each block it touches in full, exactly as if those blocks had been
 selected with `Esc` + `⇧↓`.
 
 With a block selected (after `Esc`):

@@ -289,10 +289,6 @@ export function toggleInlineCode(): void {
     }
 }
 
-/**
- * Live inline markdown: converts `code`, **bold**, *italic* right before the caret.
- * Returns true if a conversion happened.
- */
 export function tryInlineMarkdown(el: HTMLElement): boolean {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
@@ -308,12 +304,18 @@ export function tryInlineMarkdown(el: HTMLElement): boolean {
         {re: /`([^`\n]+)`$/, tag: 'code'},
         {re: /\*\*([^*\n]+)\*\*$/, tag: 'strong'},
         {re: /(?<!\*)\*([^*\s][^*\n]*?)\*$/, tag: 'em'},
+        {re: /(?<!~)~~([^~\n]+)~~$/, tag: 's'},
+        {re: /==([^=\s][^=\n]*?)==$/, tag: 'mark'},
+        {re: /\+\+([^+\s][^+\n]*?)\+\+$/, tag: 'ins'},
     ];
 
     for (const {re, tag} of rules) {
         const m = upto.match(re);
         if (!m) continue;
         const start = upto.length - m[0].length;
+        let escapes = 0;
+        for (let at = start - 1; at >= 0 && upto[at] === '\\'; at--) escapes++;
+        if (escapes % 2 === 1 || (tag !== 'code' && /^\s|\s$/.test(m[1]))) continue;
         const wrapper = document.createElement(tag);
         wrapper.textContent = m[1];
         const r = document.createRange();

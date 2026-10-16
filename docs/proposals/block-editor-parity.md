@@ -93,6 +93,12 @@ Use the interaction model where it fits plain Markdown; keep the app's documente
   and switching to the second preview tab passed, with no JavaScript errors.
 - Tauri: locked offline `cargo check` passed with Rust 1.96.
 
+- Additional test-first repairs: preserve link titles through DOM sanitising; retain typed ordered
+  list starts; refuse files deeper than the editor can represent; preserve the suffix after image
+  paste; parse complete Markdown pastes; replace cross-block selections without native DOM edits.
+- Added typed strikethrough, mark and underline. Escaped delimiters and edge whitespace remain
+  literal so the resulting formatting can survive reload.
+
 ## Deferred work and human decisions
 
 Pending the implementation and runtime audit. Each remaining item will receive an explicit

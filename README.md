@@ -27,6 +27,8 @@ Markdown files, and they are yours.
   images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them, and a note
   the block model can't represent exactly opens on that source instead, so your file is never
   rewritten to fit the editor
+- **Markdown as you type**: headings, lists, tasks, bold, italic, code, strikethrough,
+  `==highlight==` and `++underline++`; Markdown paste keeps complete blocks and surrounding text
 - **Colour** a block or a run of words — text or highlight — and it's saved with the note, as the
   `{red}(text)` / `{bg:yellow}(text)` syntax the preview understands (other Markdown tools show the
   braces; nothing portable exists)

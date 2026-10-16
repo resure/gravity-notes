@@ -40,6 +40,14 @@ function expectRoundTrip(blocks: Block[]) {
 }
 
 describe('YFM containers', () => {
+    it('refuses a nested document whose depth the editor would clamp', () => {
+        const blocks = Array.from({length: 9}, (_, depth) =>
+            block('toggle', `Title ${depth}`, {depth, collapsed: false}),
+        );
+        const source = blocksToMarkdown(blocks);
+        expect(markdownToBlocks(source).at(-1)?.depth).toBe(8);
+        expect(isRoundTripStable(source)).toBe(false);
+    });
     it('does not mistake inline code examples for unsupported directives', () => {
         expect(isRoundTripStable('Write `{% note info %}` and `{#anchor}` as code.')).toBe(true);
     });

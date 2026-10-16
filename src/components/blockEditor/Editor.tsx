@@ -24,6 +24,7 @@ import {
     inlineHtmlToMarkdown,
     inlineHtmlToText,
     inlineMarkdownToHtml,
+    isRoundTripStable,
     markdownToBlocks,
 } from '../../markdown';
 import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
@@ -241,6 +242,7 @@ function sanitizeInlineHtml(html: string): string {
             continue;
         }
         const href = element.tagName === 'A' ? (element.getAttribute('href') ?? '') : '';
+        const title = element.tagName === 'A' ? element.getAttribute('title') : null;
         // `<https://…>` autolinks are flagged so they can be written back in the same spelling
         // (see inline.ts); losing the flag would silently rewrite them to `[url](url)` on disk.
         const autolink = element.tagName === 'A' && element.hasAttribute('data-autolink');
@@ -251,6 +253,7 @@ function sanitizeInlineHtml(html: string): string {
             // EXECUTE, not for absolute-ness — see isSafeLinkHref.
             if (href !== '' && isSafeLinkHref(href)) {
                 element.setAttribute('href', href);
+                if (title !== null) element.setAttribute('title', title);
                 if (autolink) element.setAttribute('data-autolink', '');
                 element.setAttribute('rel', 'noopener noreferrer');
             }
@@ -2021,6 +2024,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                           type: rule.type,
                                           html,
                                           checked: rule.checked,
+                                          listStart:
+                                              rule.type === 'numbered'
+                                                  ? Number.parseInt(prefix, 10)
+                                                  : undefined,
                                           collapsed: undefined,
                                       }
                                     : b,
@@ -2604,6 +2611,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         commitHtml(id, el);
     };
 
+    const replaceWithMarkdown = (ids: string[], text: string) => {
+        if (!isRoundTripStable(text)) {
+            showToast('This Markdown needs source mode. Switch to source to paste it safely.');
+            return;
+        }
+        const index = indexOf(ids[0]);
+        if (index < 0) return;
+        const depth = blocksRef.current[index].depth ?? 0;
+        const pasted = normalizeParsedBlocks(markdownToBlocks(text));
+        if (pasted.some((item) => (item.depth ?? 0) + depth > MAX_BLOCK_DEPTH)) {
+            showToast('This paste is too deeply nested. Use source mode to keep its structure.');
+            return;
+        }
+        for (const item of pasted) item.depth = (item.depth ?? 0) + depth;
+        pasted[0].id = ids[0];
+        const removed = new Set(ids);
+        setBlocks((current) => {
+            const next = current.filter((item) => !removed.has(item.id));
+            next.splice(index, 0, ...pasted);
+            return normalizeDepths(next);
+        });
+        window.getSelection()?.removeAllRanges();
+        const visible = visibleBlockIds(pasted);
+        const last = [...pasted]
+            .reverse()
+            .find(
+                (item) =>
+                    visible.has(item.id) && (isEditableType(item.type) || item.type === 'table'),
+            );
+        if (last) focusReq.current = caretTargetIn(last, 'end');
+        else selectSingleBlock(pasted[pasted.length - 1].id);
+    };
+
     const onPaste = (e: ClipboardEvent<HTMLDivElement>, id: string) => {
         e.preventDefault();
         const el = refs.current.get(id);
@@ -2674,6 +2714,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const text = e.clipboardData.getData('text/plain');
         if (!text) return;
 
+        if (crossesBlocks()) {
+            const ids = selectionBlockIds();
+            if (ids.length > 1) {
+                replaceWithMarkdown(ids, text);
+                return;
+            }
+        }
+
         const selection = window.getSelection();
         if (
             selection &&
@@ -2689,6 +2737,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (block.type === 'code' || !text.includes('\n')) {
             insertPlainTextAtCaret(text);
             commitHtml(id, el);
+            return;
+        }
+
+        if (!isRoundTripStable(text)) {
+            showToast('This Markdown needs source mode. Switch to source to paste it safely.');
+            return;
+        }
+        if (block.type === 'text' && isEmptyHtml(el.innerHTML)) {
+            replaceWithMarkdown([id], text);
             return;
         }
 
@@ -2708,6 +2765,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const lastLen = htmlToText(lastBlock.html).length;
             lastBlock.html += afterHtml;
             caretTarget = {id: lastBlock.id, pos: lastLen};
+        } else if (afterHtml) {
+            const suffix = {...newBlock('text', afterHtml), depth: block.depth ?? 0};
+            rest.push(suffix);
+            caretTarget = {id: suffix.id, pos: 'start'};
         }
         const idx = indexOf(id);
         setBlocks((bs) => {

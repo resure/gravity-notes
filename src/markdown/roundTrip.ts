@@ -19,6 +19,7 @@
  * failure mode for a surface whose output overwrites the user's files.
  */
 
+import {MAX_BLOCK_DEPTH} from '../components/blockEditor/documentModel';
 import type {Block} from '../components/blockEditor/types';
 
 import {markdownToBlocks} from './fromMarkdown';
@@ -35,6 +36,7 @@ export function isRoundTripStable(markdown: string): boolean {
     if (hasFrontmatter(markdown)) return false;
     try {
         const parsed = markdownToBlocks(markdown);
+        if (parsed.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH)) return false;
         if (
             parsed.some(
                 (block) =>
