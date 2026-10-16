@@ -77,3 +77,36 @@ describe('Markdown paste boundaries', () => {
         );
     });
 });
+
+describe('single-line paste', () => {
+    it('reads one line as inline Markdown, so a copied bold word stays bold', () => {
+        const original = document.execCommand;
+        document.execCommand = ((command: string, _ui?: boolean, value = '') => {
+            if (command !== 'insertHTML' && command !== 'insertText') return false;
+            const range = window.getSelection()!.getRangeAt(0);
+            const holder = document.createElement('div');
+            if (command === 'insertHTML') holder.innerHTML = value;
+            else holder.textContent = value;
+            const fragment = document.createDocumentFragment();
+            fragment.append(...holder.childNodes);
+            range.insertNode(fragment);
+            return true;
+        }) as typeof document.execCommand;
+        try {
+            const onChange = vi.fn();
+            render(<Editor value="Other" onChange={onChange} />);
+            const content = document.querySelector<HTMLElement>('.content')!;
+            content.focus();
+            setCaret(content, 'end');
+            fireEvent.paste(content, {
+                clipboardData: {
+                    files: [],
+                    getData: (type: string) => (type === 'text/plain' ? ' **port**' : ''),
+                },
+            });
+            expect(onChange.mock.calls.at(-1)?.[0]).toBe('Other **port**');
+        } finally {
+            document.execCommand = original;
+        }
+    });
+});

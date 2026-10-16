@@ -1987,6 +1987,118 @@ describe('slash menu items', () => {
     });
 });
 
+describe('selection, clipboard and table edges', () => {
+    function blockPaste(target: HTMLElement, blocks: object[]) {
+        act(() => {
+            target.focus();
+            setCaret(target, 'end');
+            fireEvent.paste(target, {
+                clipboardData: {
+                    files: [],
+                    getData: (type: string) =>
+                        type === 'application/x-notion-editor-blocks' ? JSON.stringify(blocks) : '',
+                },
+            });
+        });
+    }
+
+    it('pasted blocks land relative to the host, not at the depth they were copied from', () => {
+        const onChange = renderEditor('- A\n\ntail');
+        const tail = document.querySelectorAll<HTMLElement>('.content')[1];
+        act(() => {
+            tail.textContent = '';
+            fireEvent.input(tail);
+        });
+        blockPaste(tail, [
+            {type: 'bulleted', html: 'a1', depth: 1},
+            {type: 'bulleted', html: 'a2', depth: 1},
+        ]);
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- A\n- a1\n- a2');
+    });
+
+    it('a paste at the end of a block with children leaves them under it', () => {
+        const onChange = renderEditor('- a\n  - b\n- c');
+        const a = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            a.focus();
+            setCaret(a, 'end');
+            fireEvent.paste(a, {
+                clipboardData: {
+                    files: [],
+                    getData: (type: string) => (type === 'text/plain' ? 'x\n- y\n  - z' : ''),
+                },
+            });
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- ax\n  - b\n- y\n  - z\n- c');
+    });
+
+    it('undo after a block-selection edit keeps the keyboard, so undo can repeat', () => {
+        const onChange = renderEditor('- A\n- B\n- C');
+        const b = document.querySelectorAll<HTMLElement>('.content')[1];
+        act(() => {
+            b.focus();
+            fireEvent.keyDown(b, {key: 'Escape'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Tab'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Tab'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'z', metaKey: true});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'z', metaKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- A\n- B\n- C');
+    });
+
+    it('turning a selection into a heading is one undo step', () => {
+        const onChange = renderEditor('A\n\nB\n\nC');
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            first.focus();
+            fireEvent.keyDown(first, {key: 'Escape'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {
+                key: '¡',
+                code: 'Digit1',
+                metaKey: true,
+                altKey: true,
+            });
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('# A\n\n# B\n\n# C');
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'z', metaKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('A\n\nB\n\nC');
+    });
+
+    it('Enter in a table cell moves to the cell below', () => {
+        renderEditor('| a | b |\n| --- | --- |\n| c | d |');
+        const cell = document.querySelector<HTMLElement>('.table-cell-content')!;
+        act(() => {
+            cell.focus();
+            setCaret(cell, 'end');
+        });
+        act(() => {
+            fireEvent.keyDown(cell, {key: 'Enter'});
+        });
+        expect(document.activeElement?.textContent).toBe('c');
+    });
+});
+
 describe('turn into', () => {
     it.each(['Quote', 'Heading 2', 'Bulleted list', 'Toggle list'])(
         'shows the text once after turning a paragraph into %s',

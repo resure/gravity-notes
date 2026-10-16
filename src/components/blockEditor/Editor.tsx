@@ -244,6 +244,24 @@ function blockTypeChord(e: {
     return BLOCK_TYPE_CHORDS[e.code] ?? null;
 }
 
+/**
+ * One line of pasted text, read as inline Markdown — which is what ⌘C in a block writes, so a
+ * copied bold word comes back bold rather than as literal asterisks. Plain text inserts natively.
+ */
+function insertInlineMarkdown(text: string): void {
+    const html = sanitizeInlineHtml(inlineMarkdownToHtml(text));
+    if (html === escapeHtml(text)) insertPlainTextAtCaret(text);
+    else document.execCommand('insertHTML', false, html);
+}
+
+/** The index just past `index`'s subtree: where a sibling inserted after it belongs. */
+function afterSubtree(blocks: readonly BlockData[], index: number): number {
+    const depth = blocks[index]?.depth ?? 0;
+    let at = index + 1;
+    while (at < blocks.length && (blocks[at].depth ?? 0) > depth) at++;
+    return at;
+}
+
 /** A heading is one line in Markdown; a break inside one would split it. */
 function oneLineIfHeading(type: BlockType, html: string): string {
     return type.startsWith('heading') ? html.replace(/<br\s*\/?>/gi, ' ') : html;
@@ -771,10 +789,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!entry) return;
         destination.push(captureHistory(blocksRef.current));
         typingGroup.current = null;
+        const before = new Map(blocksRef.current.map((block) => [block.id, block]));
         setBlockState(entry.blocks);
         setSlash(null);
         setBlockMenu(null);
-        setSelectedIds(new Set());
+        // A block-mode edit (a selection's Tab, a drag) has no caret to give back; select what it
+        // changed instead, or nothing holds the keyboard and the next ⌘Z goes nowhere.
+        const visible = visibleBlockIds(entry.blocks);
+        const changed = entry.blocks.filter(
+            (block) => visible.has(block.id) && before.get(block.id) !== block,
+        );
+        setSelectedIds(
+            entry.focusId || changed.length === 0
+                ? new Set()
+                : new Set(changed.map((block) => block.id)),
+        );
         if (
             entry.focusId &&
             entry.blocks.some(
@@ -1508,31 +1537,29 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
     };
 
+    const retyped = (b: BlockData, type: BlockType): BlockData => ({
+        ...b,
+        type,
+        html:
+            type === 'divider' || type === 'table'
+                ? ''
+                : b.type === 'table'
+                  ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
+                  : oneLineIfHeading(type, b.html),
+        table:
+            type === 'table'
+                ? b.type === 'table'
+                    ? normalizeTableData(b.table)
+                    : newTableData(b.html)
+                : undefined,
+        checked: undefined,
+        collapsed: undefined,
+    });
+
     const turnInto = (id: string, type: BlockType) => {
         setBlocks((bs) =>
             settleGaps(
-                bs.map((b) =>
-                    b.id === id
-                        ? {
-                              ...b,
-                              type,
-                              html:
-                                  type === 'divider' || type === 'table'
-                                      ? ''
-                                      : b.type === 'table'
-                                        ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
-                                        : oneLineIfHeading(type, b.html),
-                              table:
-                                  type === 'table'
-                                      ? b.type === 'table'
-                                          ? normalizeTableData(b.table)
-                                          : newTableData(b.html)
-                                      : undefined,
-                              checked: undefined,
-                              collapsed: undefined,
-                          }
-                        : b,
-                ),
+                bs.map((b) => (b.id === id ? retyped(b, type) : b)),
                 id,
             ),
         );
@@ -1599,11 +1626,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 ? {blockId: lastFocused, el: lastEl}
                 : null);
         if (!target) {
-            for (const id of selectedIdsRef.current) {
-                const block = findBlock(id);
-                if (block && isEditableType(block.type) && type !== 'divider' && type !== 'table')
-                    turnInto(id, block.type === type ? 'text' : type);
-            }
+            if (type === 'divider' || type === 'table') return;
+            // One step for the whole selection, and only the blocks the reader can see.
+            const visible = visibleBlockIds(blocksRef.current);
+            const ids = new Set(
+                [...selectedIdsRef.current].filter((id) => {
+                    const block = findBlock(id);
+                    return block && visible.has(id) && isEditableType(block.type);
+                }),
+            );
+            if (ids.size === 0) return;
+            const allAlready = [...ids].every((id) => findBlock(id)?.type === type);
+            const to = allAlready ? 'text' : type;
+            setBlocks((bs) => {
+                let next = bs.map((b) => (ids.has(b.id) ? retyped(b, to) : b));
+                for (const id of ids) next = settleGaps(next, id);
+                return next;
+            });
             return;
         }
         if (target.cell) return;
@@ -1633,10 +1672,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const inserted = {...newBlock(type), depth: block.depth ?? 0};
         if (type === 'table') inserted.table = newTableData('');
         setBlocks((current) => {
-            const start = current.findIndex((candidate) => candidate.id === block.id);
-            const depth = block.depth ?? 0;
-            let at = start + 1;
-            while (at < current.length && (current[at].depth ?? 0) > depth) at++;
+            const at = afterSubtree(
+                current,
+                current.findIndex((candidate) => candidate.id === block.id),
+            );
             return [...current.slice(0, at), inserted, ...current.slice(at)];
         });
         // A divider leaves the caret where it was; a table takes it, to be filled in.
@@ -1867,6 +1906,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
 
+        if (e.key === 'Enter' && !mod) {
+            // A cell is one line in a pipe table, so Enter moves down, as in a spreadsheet,
+            // rather than letting the browser insert a break the file would flatten.
+            e.preventDefault();
+            if (e.shiftKey) return;
+            if (row < table.cells.length - 1)
+                focusNow(tableCellId(blockId, row + 1, column), 'end');
+            else addTableRow(blockId);
+            return;
+        }
+
         if (e.key === 'Tab') {
             e.preventDefault();
             const columns = table.cells[0]?.length ?? 1;
@@ -1966,7 +2016,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
         if (!text.includes('\n') && !text.includes('\t')) {
-            insertPlainTextAtCaret(text);
+            insertInlineMarkdown(text);
             updateTableCell(blockId, row, column, element.innerHTML);
             return;
         }
@@ -2107,12 +2157,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
         const prev = blocksRef.current[idx - 1];
         if (prev.type === 'divider') {
-            setBlocks((bs) => bs.filter((b) => b.id !== prev.id));
+            setBlocks((bs) => normalizeDepths(bs.filter((b) => b.id !== prev.id)));
             return;
         }
         if (prev.type === 'code') {
             if (isEmptyHtml(el.innerHTML)) {
-                setBlocks((bs) => bs.filter((b) => b.id !== block.id));
+                setBlocks((bs) => normalizeDepths(bs.filter((b) => b.id !== block.id)));
             }
             focusReq.current = {id: prev.id, pos: 'end'};
             return;
@@ -2171,7 +2221,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             .find((candidate) => visible.has(candidate.id));
         if (!next) return;
         if (next.type === 'divider') {
-            setBlocks((bs) => bs.filter((b) => b.id !== next.id));
+            setBlocks((bs) => normalizeDepths(bs.filter((b) => b.id !== next.id)));
             return;
         }
         if (!isEditableType(next.type) || next.type === 'code' || block.type === 'code') return;
@@ -3031,21 +3081,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             try {
                 const parsed = JSON.parse(serializedBlocks) as BlockData[];
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    const pasted = parsed
-                        .filter(
-                            (item) =>
-                                item &&
-                                BLOCK_TYPE_SET.has(item.type) &&
-                                typeof item.html === 'string',
-                        )
-                        .map((item) => ({
-                            ...item,
-                            id: uid(),
-                            html: sanitizeInlineHtml(item.html),
-                            depth: Math.max(0, Math.min(6, item.depth ?? 0)),
-                            table:
-                                item.type === 'table' ? normalizeTableData(item.table) : undefined,
-                        }));
+                    const valid = parsed.filter(
+                        (item) =>
+                            item && BLOCK_TYPE_SET.has(item.type) && typeof item.html === 'string',
+                    );
+                    // The copied blocks carry the depths they had where they were copied from;
+                    // they land relative to the host instead.
+                    const shallowest = Math.min(...valid.map((item) => item.depth ?? 0));
+                    const pasted = valid.map((item) => ({
+                        ...item,
+                        id: uid(),
+                        html: sanitizeInlineHtml(item.html),
+                        depth: Math.max(
+                            0,
+                            Math.min(6, (block.depth ?? 0) + (item.depth ?? 0) - shallowest),
+                        ),
+                        table: item.type === 'table' ? normalizeTableData(item.table) : undefined,
+                    }));
                     if (pasted.length) {
                         const idx = indexOf(id);
                         let lastInserted = pasted[pasted.length - 1];
@@ -3056,13 +3108,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                 const arr = bs.map((candidate) =>
                                     candidate.id === id ? first : candidate,
                                 );
-                                arr.splice(idx + 1, 0, ...pasted);
+                                arr.splice(afterSubtree(arr, idx), 0, ...pasted);
                                 return normalizeDepths(arr);
                             });
                         } else {
+                            // After the host's own children, which stay the host's.
                             setBlocks((bs) => {
                                 const arr = [...bs];
-                                arr.splice(idx + 1, 0, ...pasted);
+                                arr.splice(afterSubtree(arr, idx), 0, ...pasted);
                                 return normalizeDepths(arr);
                             });
                         }
@@ -3104,8 +3157,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
-        if (block.type === 'code' || !text.includes('\n')) {
+        if (block.type === 'code') {
             insertPlainTextAtCaret(text);
+            commitHtml(id, el);
+            return;
+        }
+        if (!text.includes('\n')) {
+            insertInlineMarkdown(text);
             commitHtml(id, el);
             return;
         }
@@ -3145,7 +3203,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const arr = bs.map((b) =>
                 b.id === id ? {...b, html: beforeHtml + escapeHtml(first)} : b,
             );
-            arr.splice(idx + 1, 0, ...rest);
+            // With the caret at the end the host's children stay the host's; with text after the
+            // caret they follow that text, which now ends the pasted run.
+            arr.splice(afterHtml ? idx + 1 : afterSubtree(arr, idx), 0, ...rest);
             // The pasted depths are ADDED to the host block's, so pasting a nested list deep in one
             // can push past the limit — and blocks carrying their own depths into a new place can
             // land deeper than their new neighbourhood holds either way.
