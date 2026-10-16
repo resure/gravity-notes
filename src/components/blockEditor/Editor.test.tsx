@@ -1829,6 +1829,92 @@ describe('keyboard block commands', () => {
     });
 });
 
+describe('structural edits keep the file and the screen in step', () => {
+    function caretIn(index: number, position: 'start' | 'end' | number) {
+        const el = document.querySelectorAll<HTMLElement>('.content')[index];
+        act(() => {
+            el.focus();
+            setCaret(el, position);
+        });
+        return el;
+    }
+
+    function press(el: HTMLElement, key: string, init: Record<string, unknown> = {}) {
+        act(() => {
+            fireEvent.keyDown(el, {key, ...init});
+        });
+    }
+
+    it('Enter over a selection writes the remaining text, not the old one', () => {
+        const onChange = renderEditor('hello world');
+        const el = caretIn(0, 'start');
+        act(() => {
+            const range = document.createRange();
+            range.setStart(el.firstChild!, 0);
+            range.setEnd(el.firstChild!, 5);
+            window.getSelection()!.removeAllRanges();
+            window.getSelection()!.addRange(range);
+        });
+        press(el, 'Enter');
+        const written = onChange.mock.calls.at(-1)?.[0] as string;
+        expect(written).not.toContain('hello');
+        expect(written).toContain('world');
+    });
+
+    it('a merge keeps the children one level under their new parent', () => {
+        const onChange = renderEditor('- a\n  - b\n    - c');
+        const el = caretIn(1, 'start');
+        press(el, 'Backspace');
+        press(document.querySelectorAll<HTMLElement>('.content')[1], 'Backspace');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- ab\n  - c');
+    });
+
+    it('Enter at the start of a list item keeps one list', () => {
+        const onChange = renderEditor('1. one\n2. two\n3. three');
+        press(caretIn(1, 'start'), 'Enter');
+        expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^1\. one\n2\.\s*\n3\. two\n4\. three$/);
+    });
+
+    it('a list item turned into a paragraph is separated from the list', () => {
+        const onChange = renderEditor('- a\n- b\n- c');
+        press(caretIn(1, 'start'), 'Backspace');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- a\n\nb\n- c');
+    });
+
+    it('⇧Enter in a heading starts a new block rather than a second heading line', () => {
+        const onChange = renderEditor('# Title');
+        press(caretIn(0, 'end'), 'Enter', {shiftKey: true});
+        expect(document.querySelectorAll('.block')).toHaveLength(2);
+        expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^# Title\n\n/);
+    });
+
+    it('turning two lines into a heading joins them', () => {
+        const onChange = renderEditor('one\ntwo');
+        const el = caretIn(0, 'end');
+        act(() => {
+            fireEvent.keyDown(el, {key: '¡', code: 'Digit1', metaKey: true, altKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('# one two');
+    });
+
+    it('forward Delete at the end of a block pulls the next one up', () => {
+        const onChange = renderEditor('hello\n\nworld');
+        press(caretIn(0, 'end'), 'Delete');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('helloworld');
+    });
+
+    it('Enter on an empty nested item steps out a level', () => {
+        const onChange = renderEditor('- a\n  - b');
+        const el = caretIn(1, 'end');
+        act(() => {
+            el.textContent = '';
+            fireEvent.input(el);
+        });
+        press(el, 'Enter');
+        expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^- a\n-\s*$/);
+    });
+});
+
 describe('turn into', () => {
     it.each(['Quote', 'Heading 2', 'Bulleted list', 'Toggle list'])(
         'shows the text once after turning a paragraph into %s',

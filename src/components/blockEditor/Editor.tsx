@@ -227,6 +227,28 @@ function blockTypeChord(e: {
     return BLOCK_TYPE_CHORDS[e.code] ?? null;
 }
 
+/**
+ * After a block changes type, a zero blank-line gap it or its successor inherited can make the file
+ * mean something else: a paragraph written straight under a list item is that item's lazy
+ * continuation, two paragraphs with no gap are one, and a numbered item not starting at 1 cannot
+ * interrupt a paragraph. Those gaps go back to the serializer's default.
+ */
+function settleGaps(blocks: BlockData[], id: string): BlockData[] {
+    const at = blocks.findIndex((block) => block.id === id);
+    if (at < 0) return blocks;
+    const risky = (prev: BlockData, cur: BlockData) =>
+        cur.blankBefore === 0 &&
+        ((cur.type === 'text' && (LIST_TYPES.includes(prev.type) || prev.type === 'text')) ||
+            (prev.type === 'text' && cur.type === 'numbered'));
+    let next = blocks;
+    for (const index of [at, at + 1]) {
+        if (index < 1 || index >= next.length || !risky(next[index - 1], next[index])) continue;
+        if (next === blocks) next = [...blocks];
+        next[index] = {...next[index], blankBefore: undefined};
+    }
+    return next;
+}
+
 // `yfm` survives "Turn into", so a paragraph that used to be a `{% note %}` still carries one.
 function isYfmContainer(block: BlockData): boolean {
     const kind = block.yfm?.kind;
@@ -1443,27 +1465,33 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const turnInto = (id: string, type: BlockType) => {
         setBlocks((bs) =>
-            bs.map((b) =>
-                b.id === id
-                    ? {
-                          ...b,
-                          type,
-                          html:
-                              type === 'divider' || type === 'table'
-                                  ? ''
-                                  : b.type === 'table'
-                                    ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
-                                    : b.html,
-                          table:
-                              type === 'table'
-                                  ? b.type === 'table'
-                                      ? normalizeTableData(b.table)
-                                      : newTableData(b.html)
-                                  : undefined,
-                          checked: undefined,
-                          collapsed: undefined,
-                      }
-                    : b,
+            settleGaps(
+                bs.map((b) =>
+                    b.id === id
+                        ? {
+                              ...b,
+                              type,
+                              html:
+                                  type === 'divider' || type === 'table'
+                                      ? ''
+                                      : b.type === 'table'
+                                        ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
+                                        : type.startsWith('heading')
+                                          ? // A heading is one line in Markdown; a break would split it.
+                                            b.html.replace(/<br\s*\/?>/gi, ' ')
+                                          : b.html,
+                              table:
+                                  type === 'table'
+                                      ? b.type === 'table'
+                                          ? normalizeTableData(b.table)
+                                          : newTableData(b.html)
+                                      : undefined,
+                              checked: undefined,
+                              collapsed: undefined,
+                          }
+                        : b,
+                ),
+                id,
             ),
         );
         if (type === 'table') focusReq.current = {id: tableCellId(id, 0, 0), pos: 'end'};
@@ -1899,33 +1927,52 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const handleEnter = (block: BlockData, el: HTMLDivElement) => {
         const sel = window.getSelection();
-        if (sel && !sel.isCollapsed) sel.deleteFromDocument();
+        const hadSelection = Boolean(sel && !sel.isCollapsed);
+        if (hadSelection) sel!.deleteFromDocument();
+        // The deletion above changed the DOM only; every branch below writes it into state, or the
+        // screen and the file disagree until the next keystroke in this block.
+        const live = stripZeroWidth(el.innerHTML);
         const empty = isEmptyHtml(el.innerHTML);
+        const depth = block.depth ?? 0;
 
-        // Enter on an empty list/quote/callout resets it to plain text.
-        if (empty && !isYfmContainer(block) && RESETS_ON_EMPTY_ENTER.includes(block.type)) {
-            setBlocks((bs) =>
-                bs.map((b) =>
-                    b.id === block.id
-                        ? {
-                              ...b,
-                              type: 'text' as BlockType,
-                              checked: undefined,
-                              collapsed: undefined,
-                          }
-                        : b,
-                ),
-            );
-            focusReq.current = {id: block.id, pos: 'start'};
-            return;
+        if (empty && !hadSelection && !isYfmContainer(block)) {
+            // An empty nested block steps out a level first, as in Notion — out of the list it
+            // ends, or out of the toggle it closes.
+            if (depth > 0) {
+                changeDepth(block.id, -1);
+                return;
+            }
+            // An empty list/quote/callout resets to plain text.
+            if (RESETS_ON_EMPTY_ENTER.includes(block.type)) {
+                setBlocks((bs) =>
+                    settleGaps(
+                        bs.map((b) =>
+                            b.id === block.id
+                                ? {
+                                      ...b,
+                                      type: 'text' as BlockType,
+                                      html: '',
+                                      checked: undefined,
+                                      collapsed: undefined,
+                                  }
+                                : b,
+                        ),
+                        block.id,
+                    ),
+                );
+                focusReq.current = {id: block.id, pos: 'start'};
+                return;
+            }
         }
 
-        // Enter at the start of a non-empty block inserts an empty line above it.
+        // Enter at the start of a non-empty block inserts an empty line above it — a list item
+        // gets an empty item, so the list stays one list.
         if (!empty && caretAtStart(el)) {
-            const above = {...newBlock('text'), depth: block.depth ?? 0};
+            const type = LIST_TYPES.includes(block.type) ? block.type : 'text';
+            const above = {...newBlock(type), depth};
             const idx = indexOf(block.id);
             setBlocks((bs) => {
-                const arr = [...bs];
+                const arr = bs.map((b) => (b.id === block.id ? {...b, html: live} : b));
                 arr.splice(idx, 0, above);
                 return arr;
             });
@@ -1935,7 +1982,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
         const [before, after] = splitHtmlAtCaret(el);
         const continueType = LIST_TYPES.includes(block.type) ? block.type : 'text';
-        const depth = block.depth ?? 0;
         // A sibling inserted here would detach the existing body from its container.
         const intoToggle =
             (block.type === 'toggle' || isYfmContainer(block)) && depth < MAX_BLOCK_DEPTH;
@@ -1957,15 +2003,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // A styled block first turns back into plain text, like Notion.
         if (block.type !== 'text') {
             setBlocks((bs) =>
-                bs.map((b) =>
-                    b.id === block.id
-                        ? {
-                              ...b,
-                              type: 'text' as BlockType,
-                              checked: undefined,
-                              collapsed: undefined,
-                          }
-                        : b,
+                settleGaps(
+                    bs.map((b) =>
+                        b.id === block.id
+                            ? {
+                                  ...b,
+                                  type: 'text' as BlockType,
+                                  checked: undefined,
+                                  collapsed: undefined,
+                              }
+                            : b,
+                    ),
+                    block.id,
                 ),
             );
             focusReq.current = {id: block.id, pos: 'start'};
@@ -2018,12 +2067,44 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const prevEl = refs.current.get(prev.id);
         const joinAt = (prevEl?.textContent ?? htmlToText(prev.html)).length;
         const merged = (isEmptyHtml(prev.html) ? '' : prev.html) + stripZeroWidth(el.innerHTML);
+        // The merged block's children move up under `prev`, which can leave them more than one
+        // level deeper than it.
         setBlocks((bs) =>
-            bs
-                .filter((b) => b.id !== block.id)
-                .map((b) => (b.id === prev.id ? {...b, html: merged} : b)),
+            normalizeDepths(
+                bs
+                    .filter((b) => b.id !== block.id)
+                    .map((b) => (b.id === prev.id ? {...b, html: merged} : b)),
+            ),
         );
         focusReq.current = {id: prev.id, pos: joinAt};
+    };
+
+    /**
+     * Forward Delete at a block's end pulls the next block's text up into it, as the browser would
+     * across a paragraph boundary — each block is its own editing host, so it never does.
+     */
+    const handleDeleteAtEnd = (block: BlockData, el: HTMLDivElement) => {
+        const visible = visibleBlockIds(blocksRef.current);
+        const idx = indexOf(block.id);
+        const next = blocksRef.current
+            .slice(idx + 1)
+            .find((candidate) => visible.has(candidate.id));
+        if (!next) return;
+        if (next.type === 'divider') {
+            setBlocks((bs) => bs.filter((b) => b.id !== next.id));
+            return;
+        }
+        if (!isEditableType(next.type) || next.type === 'code' || block.type === 'code') return;
+        const joinAt = (el.textContent ?? '').length;
+        const merged = (isEmptyHtml(block.html) ? '' : stripZeroWidth(el.innerHTML)) + next.html;
+        setBlocks((bs) =>
+            normalizeDepths(
+                bs
+                    .filter((b) => b.id !== next.id)
+                    .map((b) => (b.id === block.id ? {...b, html: merged} : b)),
+            ),
+        );
+        focusReq.current = {id: block.id, pos: joinAt};
     };
 
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, id: string) => {
@@ -2243,7 +2324,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
 
         if (e.key === 'Enter') {
-            if (e.shiftKey && block.type !== 'code') return; // native soft break
+            // A native soft break — except in a heading, which Markdown cannot break across lines.
+            if (e.shiftKey && block.type !== 'code' && !block.type.startsWith('heading')) return;
             e.preventDefault();
             if (block.type === 'code') {
                 // The new line starts at the current line's indent, as in any code editor.
@@ -2270,6 +2352,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (before !== '') return;
             e.preventDefault();
             handleBackspaceAtStart(block, el);
+            return;
+        }
+
+        if (e.key === 'Delete' && !mod && !e.altKey && !e.shiftKey) {
+            const sel = window.getSelection();
+            if (!sel?.isCollapsed || !caretAtEnd(el)) return;
+            e.preventDefault();
+            handleDeleteAtEnd(block, el);
             return;
         }
 
