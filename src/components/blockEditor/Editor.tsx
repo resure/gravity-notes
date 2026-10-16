@@ -40,11 +40,11 @@ import BlockMenu from './BlockMenu';
 import {OVERLAY_HOST_CLASS, OverlayPortal} from './OverlayPortal';
 import PickerMenu from './PickerMenu';
 import SelectionToolbar from './SelectionToolbar';
-import SlashMenu from './SlashMenu';
+import SlashMenu, {SLASH_MENU_ID} from './SlashMenu';
 import type {MenuAnchor} from './SlashMenu';
 import {tableCellId} from './TableBlock';
 import type {WikiSuggestItem} from './WikiSuggestMenu';
-import WikiSuggestMenu from './WikiSuggestMenu';
+import WikiSuggestMenu, {WIKI_MENU_ID, wikiOptionId} from './WikiSuggestMenu';
 import {createEdgeScroller} from './autoScroll';
 import type {EdgeScroller} from './autoScroll';
 import type {MenuItemDef} from './blockConfig';
@@ -188,6 +188,19 @@ const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
     divider: 'divider',
     image: 'image',
 };
+
+/** The browser's file picker, as a promise; an empty list when cancelled. */
+function pickFiles(accept: string): Promise<FileList | null> {
+    return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = accept;
+        input.multiple = true;
+        input.addEventListener('change', () => resolve(input.files));
+        input.addEventListener('cancel', () => resolve(null));
+        input.click();
+    });
+}
 
 /** With the caret inside a link, select the whole link so the link box edits it. */
 function selectLinkAtCaret(root: HTMLElement): boolean {
@@ -668,7 +681,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onMouseDown: (e: globalThis.MouseEvent) => void;
     }>({onKeyDown: () => {}, onClipboard: () => {}, onMouseDown: () => {}});
 
-    const filteredItems = useMemo(() => filterMenuItems(slash?.query ?? ''), [slash?.query]);
+    const filteredItems = useMemo(
+        () => filterMenuItems(slash?.query ?? '', Boolean(onAttachFile)),
+        [slash?.query, onAttachFile],
+    );
 
     /**
      * The `[[` picker's rows. Per the spec the LAST row is always `Create "<query>"` unless the
@@ -1162,6 +1178,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (el.innerHTML === '<br>') el.innerHTML = '';
         const rest = stripZeroWidth(el.innerHTML);
         const idx = indexOf(s.blockId);
+
+        if (item.type === 'image') {
+            commitHtml(s.blockId, el);
+            void pickFiles('image/*').then(async (files) => {
+                const images = imageFilesFrom(files);
+                if (!images.length) return;
+                await insertImageFiles(s.blockId, images);
+                // The `/image` line itself becomes the image, rather than a blank row above it.
+                if (isEmptyHtml(rest)) {
+                    setBlocks((bs) => (bs.length > 1 ? bs.filter((b) => b.id !== s.blockId) : bs));
+                }
+            });
+            return;
+        }
 
         if (item.type === 'divider') {
             if (isEmptyHtml(rest)) {
@@ -3511,6 +3541,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     }
 
     const visibleIds = visibleBlockIds(blocks);
+    const menuFor = (id: string) => {
+        if (slash?.blockId === id && filteredItems.length > 0) {
+            const item = filteredItems[Math.min(slashIndex, filteredItems.length - 1)];
+            return {listbox: SLASH_MENU_ID, option: `slash-option-${item.type}`};
+        }
+        if (wiki?.blockId === id && wikiItems.length > 0) {
+            const index = Math.min(wikiIndex, wikiItems.length - 1);
+            return {listbox: WIKI_MENU_ID, option: wikiOptionId(index)};
+        }
+        return undefined;
+    };
 
     const nextHandlers: BlockHandlers = {
         onContentRef: (id, el) => {
@@ -3635,6 +3676,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                     focusedId === b.id,
                                     blocks.length === 1,
                                 )}
+                                menu={menuFor(b.id)}
                                 handlers={handlers}
                             />
                         ))}

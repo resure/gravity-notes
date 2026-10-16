@@ -11,6 +11,7 @@ import {
     H4Icon,
     H5Icon,
     H6Icon,
+    ImageIcon,
     NumberedIcon,
     QuoteIcon,
     TableIcon,
@@ -158,9 +159,22 @@ export const MENU_ITEMS: MenuItemDef[] = [
     },
 ];
 
-export function filterMenuItems(query: string): MenuItemDef[] {
+/**
+ * Slash-menu only: an image is inserted from a file rather than turned into, so it has no place in
+ * Turn into or the toolbar, which list MENU_ITEMS.
+ */
+export const IMAGE_ITEM: MenuItemDef = {
+    type: 'image',
+    label: 'Image',
+    description: 'Upload an image from your computer.',
+    keywords: ['image', 'picture', 'photo', 'img', 'upload'],
+    icon: <ImageIcon />,
+};
+
+export function filterMenuItems(query: string, withImage = false): MenuItemDef[] {
+    const items = withImage ? [...MENU_ITEMS, IMAGE_ITEM] : MENU_ITEMS;
     const q = query.trim().toLowerCase();
-    if (!q) return MENU_ITEMS;
+    if (!q) return items;
     const score = (value: string) => {
         const v = value.toLowerCase();
         if (v === q) return 0;
@@ -170,11 +184,12 @@ export function filterMenuItems(query: string): MenuItemDef[] {
         for (const char of v) if (char === q[i]) i += 1;
         return i === q.length ? 3 : Infinity;
     };
-    return MENU_ITEMS.map((item, index) => ({
-        item,
-        index,
-        score: Math.min(score(item.label), ...item.keywords.map(score)),
-    }))
+    return items
+        .map((item, index) => ({
+            item,
+            index,
+            score: Math.min(score(item.label), ...item.keywords.map(score)),
+        }))
         .filter((result) => Number.isFinite(result.score))
         .sort((a, b) => a.score - b.score || a.index - b.index)
         .map((result) => result.item);

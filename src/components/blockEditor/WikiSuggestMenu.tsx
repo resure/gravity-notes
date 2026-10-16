@@ -7,6 +7,9 @@ import type {NoteMeta} from '../../storage/types';
 import {OverlayPortal} from './OverlayPortal';
 import type {MenuAnchor} from './SlashMenu';
 
+export const WIKI_MENU_ID = 'gn-wiki-menu';
+export const wikiOptionId = (index: number) => `wiki-option-${index}`;
+
 /**
  * One row of the `[[` picker. A note, or the trailing "Create …" row the spec puts at the bottom
  * whenever the query doesn't already name an existing note.
@@ -81,6 +84,7 @@ export default function WikiSuggestMenu({
         <OverlayPortal>
             <div
                 ref={ref}
+                id={WIKI_MENU_ID}
                 className="overlay-menu wiki-suggest-menu"
                 style={style}
                 role="listbox"
@@ -89,6 +93,7 @@ export default function WikiSuggestMenu({
                 {items.map((item, i) => (
                     <div
                         key={item.kind === 'note' ? item.note.id : CREATE_KEY}
+                        id={wikiOptionId(i)}
                         className={`menu-item${i === activeIndex ? ' active' : ''}`}
                         role="option"
                         aria-selected={i === activeIndex}

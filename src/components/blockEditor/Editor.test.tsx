@@ -8,6 +8,7 @@ import {openExternalUrl} from '../../openExternal';
 
 import Editor from './Editor';
 import type {EditorHandle} from './Editor';
+import {filterMenuItems} from './blockConfig';
 import {setCaret} from './caret';
 
 vi.mock('../../openExternal', () => ({openExternalUrl: vi.fn()}));
@@ -368,6 +369,17 @@ describe('[[wiki links]] in the body', () => {
             paragraph.dispatchEvent(new Event('input', {bubbles: true}));
         });
         expect(document.querySelector('.content .wiki-link')?.textContent).toBe('[[Daily log]]');
+    });
+
+    it('points the textbox at the picker row it would commit, for assistive tech', () => {
+        renderWithNotes('');
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        paragraph.focus();
+        type(paragraph, '[[');
+        const picker = screen.getByRole('listbox', {name: 'Link to a note'});
+        const active = paragraph.getAttribute('aria-activedescendant');
+        expect(paragraph.getAttribute('aria-controls')).toBe(picker.id);
+        expect(active && document.getElementById(active)).toHaveAttribute('aria-selected', 'true');
     });
 
     it('opens the picker on `[[` and commits the picked note as a literal link', () => {
@@ -1912,6 +1924,13 @@ describe('structural edits keep the file and the screen in step', () => {
         });
         press(el, 'Enter');
         expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^- a\n-\s*$/);
+    });
+});
+
+describe('slash menu items', () => {
+    it('offers /image only where files can be stored', () => {
+        expect(filterMenuItems('ima', true)[0]?.type).toBe('image');
+        expect(filterMenuItems('', false).some((item) => item.type === 'image')).toBe(false);
     });
 });
 

@@ -159,6 +159,14 @@ export const TableIcon = ({size = 18}: IconProps) => (
     </svg>
 );
 
+export const ImageIcon = ({size = 18}: IconProps) => (
+    <svg {...svgProps(size)}>
+        <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
+        <circle cx="7" cy="8" r="1.5" />
+        <path d="m3 15 4.5-4.5 3 3 2-2 4.5 4.5" />
+    </svg>
+);
+
 export const QuoteIcon = ({size = 18}: IconProps) => (
     <svg {...svgProps(size)}>
         <path d="M4 3.5v13" strokeWidth="2" />

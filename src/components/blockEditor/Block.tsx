@@ -74,6 +74,8 @@ interface BlockProps {
     dragging: boolean;
     dropEdge: 'before' | 'after' | null;
     placeholder?: string;
+    /** The slash or `[[` menu this block is typing into, and its highlighted row, for assistive tech. */
+    menu?: {listbox: string; option: string};
     handlers: BlockHandlers;
 }
 
@@ -84,6 +86,7 @@ function Block({
     dragging,
     dropEdge,
     placeholder,
+    menu,
     handlers,
 }: BlockProps) {
     const contentRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +132,9 @@ function Block({
             role="textbox"
             aria-label={`${blockLabel(block.type)} block`}
             aria-multiline="true"
+            aria-controls={menu?.listbox}
+            aria-activedescendant={menu?.option}
+            tabIndex={0}
             // Left UNSET on prose so it inherits the pane's Settings › Check spelling value
             // (EditorPane sets it on the body wrapper); a code block always opts out for itself.
             spellCheck={block.type === 'code' ? false : undefined}

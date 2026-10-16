@@ -50,7 +50,7 @@ Markdown files, and they are yours.
 - **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**
 - **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;
   reveal them in Finder on desktop
-- **Images**: paste or drop into a note — stored as files in `Attachments/`, click to zoom. Any
+- **Images**: paste, drop or `/image` into a note — stored as files in `Attachments/`, click to zoom. Any
   other file you drop is stored the same way and linked from the note (`⌘-click` reveals it)
 - **Plays nice with other tools**: external edits show up live in the desktop app (a folder
   watcher), with conflict handling when a note changes underneath you

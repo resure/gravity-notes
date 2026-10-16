@@ -4,6 +4,8 @@ import type {CSSProperties} from 'react';
 import {OverlayPortal} from './OverlayPortal';
 import type {MenuItemDef} from './blockConfig';
 
+export const SLASH_MENU_ID = 'gn-slash-menu';
+
 export interface MenuAnchor {
     /** VIEWPORT coordinates of the caret's line (the menu is `position: fixed`). */
     x: number;
@@ -68,6 +70,7 @@ export default function SlashMenu({
         <OverlayPortal>
             <div
                 ref={ref}
+                id={SLASH_MENU_ID}
                 className="overlay-menu slash-menu"
                 style={style}
                 role="listbox"
