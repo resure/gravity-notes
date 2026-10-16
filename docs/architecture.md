@@ -194,6 +194,13 @@ Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, f
 deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get
 right, so the preview must understand more Markdown than the editor does, not the same amount.
 
+Preview works from source mode too, including notes forced to source by the round-trip guard,
+and renders the current unsaved buffer. Its YFM plugins cover notes, cuts, tabs, file links,
+multiline tables, definition lists and video. Inline marks share the block parser's matching rules.
+File/tabs packages were already transitive dependencies of Diplodoc; they are declared directly
+for their runtime/styles, with no new package versions introduced. Tabs include their interactive
+runtime and remain usable after preview content changes.
+
 ### How blocks map to Markdown
 
 `src/markdown/` converts between the two. Ordinary Markdown carries most of it — headings, lists,

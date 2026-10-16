@@ -39,8 +39,8 @@ P0 = data integrity/crash; P1 = daily writing or existing YFM files; P2 = specia
 | YFM notes, title, nested content                | Parser, editor and generated tests              | Preserve `{% note kind "Title" %}`    | P1 implemented                       |
 | HTML details and nested toggles                 | Existing tests                                  | Preserve `<details>` / `<summary>`    | P1 existing                          |
 | YFM cuts                                        | Parser, editor and generated tests              | Preserve `{% cut "Title" %}`          | P1 implemented                       |
-| YFM tabs                                        | Unsupported; preview plugin removed             | Preserve `{% list tabs %}`            | P2 open                              |
-| YFM files                                       | Unsupported; preview plugin removed             | Preserve `{% file … %}`               | P2 open                              |
+| YFM tabs                                        | Unsupported; preview not configured             | Preserve `{% list tabs %}`            | P2 open                              |
+| YFM files                                       | Unsupported; preview not configured             | Preserve `{% file … %}`               | P2 open                              |
 | YFM multiline tables                            | Unsupported                                     | Preserve `#                           | …                                    | #`  | P2 open |
 | Definition lists                                | Unsupported                                     | `Term` followed by `: definition`     | P2 open                              |
 | Heading anchors                                 | Explicit source fallback                        | Preserve `{#id}`                      | P2 open                              |
@@ -85,6 +85,13 @@ Use the interaction model where it fits plain Markdown; keep the app's documente
 
 - YFM note/cut containers preserve their dialect, nested body and blank-line spelling; generated
   round-trip coverage includes both container kinds. Unsupported directives fail closed to source.
+
+- Preview regression tests reproduced nine missing YFM constructs, then passed after enabling
+  notes, tabs, files, multiline tables, definition lists and inline marks. Source-mode preview
+  now renders the unsaved buffer, with the textarea preserved when returning to edit.
+- Chromium: typed heading/bold, slash table, table Tab/undo, YFM container editing, delayed drag
+  and switching to the second preview tab passed, with no JavaScript errors.
+- Tauri: locked offline `cargo check` passed with Rust 1.96.
 
 ## Deferred work and human decisions
 

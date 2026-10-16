@@ -540,7 +540,7 @@ const YFM_MARKS: Record<string, string> = {
     '^': 'sup',
 };
 
-function matchYfmMark(text: string, start: number) {
+export function matchYfmMark(text: string, start: number) {
     const char = text[start];
     if (!'=+#~^'.includes(char ?? '') || !char || isEscaped(text, start)) return null;
     const marker = '~^'.includes(char) ? char : char + char;

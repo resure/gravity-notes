@@ -13,6 +13,29 @@ function note(id: string, content: string): Note {
 }
 
 describe('BlockEditorBody — the raw-Markdown escape hatch', () => {
+    it.each([true, false])('previews the live source buffer (forced source: %s)', (forceSource) => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const props = {
+            note: note('A.md', 'Original'),
+            sessionId: 1,
+            forceSource,
+            onChange: vi.fn(),
+            onUploadFile: async () => '',
+            onOpenWikiLink: () => {},
+            wikiNotes: [],
+        };
+        const {rerender} = render(<BlockEditorBody ref={ref} {...props} preview={false} />);
+        if (!forceSource) act(() => ref.current!.toggleMode());
+        const textarea = document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!;
+        fireEvent.change(textarea, {target: {value: '# Unsaved title'}});
+        rerender(<BlockEditorBody ref={ref} {...props} preview />);
+        expect(document.querySelector('.note-preview h1')?.textContent).toContain('Unsaved title');
+        expect(textarea).not.toBeVisible();
+        rerender(<BlockEditorBody ref={ref} {...props} preview={false} />);
+        expect(document.querySelector('.block-editor-markup')).toBe(textarea);
+        expect(textarea.value).toBe('# Unsaved title');
+        expect(textarea).toBeVisible();
+    });
     /**
      * The pane is not keyed, so this component (and its ⌘⇧; mode flag) survives a note switch. The
      * textarea is uncontrolled, and once the user has typed in it the browser sets its dirty-value

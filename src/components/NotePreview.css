@@ -232,3 +232,11 @@
 .note-preview .yfm-colorify--bg\:red {
     background: var(--gn-color-red-bg);
 }
+.note-preview .yfm-tab.active {
+    border-bottom-color: var(--g-color-line-brand);
+}
+
+.note-preview .yfm-tab:hover,
+.note-preview .yfm-tab:active {
+    color: var(--g-color-text-link-hover);
+}

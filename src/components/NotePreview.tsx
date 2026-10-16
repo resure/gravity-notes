@@ -7,6 +7,7 @@ import * as cutExtension from '@diplodoc/cut-extension';
 // importing at module load is safe. Cut renders as native <details>, so it toggles even WITHOUT this
 // runtime; the runtime only adds the focus-into-a-collapsed-cut reveal.
 import '@diplodoc/cut-extension/runtime';
+import '@diplodoc/tabs-extension/runtime';
 import transform from '@diplodoc/transform';
 // diplodoc's checkbox plugin ships inside @diplodoc/transform but isn't in its default plugin set —
 // without it, GFM task lists (`- [ ] item`) leak through as literal `[ ] item` text in preview. It
@@ -14,19 +15,28 @@ import transform from '@diplodoc/transform';
 // subpath import resolves). `module.exports = fn`, so it's dug out with resolveCjsExport like the
 // others below.
 import * as checkboxExtension from '@diplodoc/transform/lib/plugins/checkbox';
+import * as deflistExtension from '@diplodoc/transform/lib/plugins/deflist';
+import * as fileExtension from '@diplodoc/transform/lib/plugins/file';
 // Same deal for imsize (`![alt](src =600x)`), the size suffix a drag-resized image carries — see
 // markdown/toMarkdown.ts. Without it markdown-it can't parse the destination at all and the whole
 // image degrades to literal text in preview.
 import * as imsizeExtension from '@diplodoc/transform/lib/plugins/imsize';
+import * as notesExtension from '@diplodoc/transform/lib/plugins/notes';
+import * as tableExtension from '@diplodoc/transform/lib/plugins/table';
+import * as tabsExtension from '@diplodoc/transform/lib/plugins/tabs';
+import * as videoExtension from '@diplodoc/transform/lib/plugins/video';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
+import {previewInline} from '../markdown/previewInline';
 import {openExternalUrl} from '../openExternal';
 import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
 
 // Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
 import '@diplodoc/cut-extension/runtime/styles.css';
+import '@diplodoc/file-extension/runtime/styles.css';
+import '@diplodoc/tabs-extension/runtime/styles.css';
 
 // The preview renders full CommonMark via @diplodoc/transform (markdown-it) — deliberately a wider
 // grammar than the block editor's own parser, since a note the block model can't hold still has to
@@ -77,6 +87,15 @@ function noFuzzyLinkify(md: {linkify: {set(opts: Record<string, boolean>): unkno
 // transform. We ship the runtime ourselves (the side-effect import above), so no bundling. The array
 // is cast to `any[]` — markdown-it plugins don't match diplodoc's ExtendedPluginWithCollect type.
 const TRANSFORM_PLUGINS = [
+    ...[
+        deflistExtension,
+        fileExtension,
+        notesExtension,
+        tableExtension,
+        tabsExtension,
+        videoExtension,
+    ].map((extension) => resolveCjsExport(extension, 'default')),
+    previewInline,
     colorPlugin,
     cutTransform({bundle: false}),
     checkboxPlugin,

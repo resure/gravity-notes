@@ -36,7 +36,8 @@ Markdown files, and they are yours.
   nested content and spacing
 - **Code blocks** with a language picker and a copy button — the language is the fence's own info
   string, so preview highlights it and other tools see it
-- **Read-only preview** (`⌘⇧P`), rendering full CommonMark
+- **Read-only preview** (`⌘⇧P`), available from blocks or source, rendering CommonMark and YFM
+  notes, cuts, interactive tabs, files and multiline tables
 - **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add
   `Shift` to copy or paste plain text with the Markdown stripped
 - **Optional spellcheck** — toggle “Check spelling” in Settings (off by default)

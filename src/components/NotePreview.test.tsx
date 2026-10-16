@@ -28,6 +28,39 @@ function requireBody(container: HTMLElement): HTMLElement {
 }
 
 describe('NotePreview', () => {
+    it('keeps nested Markdown and code safe inside YFM marks', async () => {
+        transformMock.mockImplementation(await realTransform());
+        const {container} = renderWithProviders(
+            <NotePreview markup={'==**bold** and <script>alert(1)</script>==\n\n`==code==`'} />,
+        );
+        const body = requireBody(container);
+        expect(body.querySelector('mark strong')?.textContent).toBe('bold');
+        expect(body.querySelector('script')).toBeNull();
+        expect(body.querySelector('code')?.textContent).toBe('==code==');
+    });
+    it.each([
+        ['{% note info "Title" %}\n\nBody\n\n{% endnote %}', '.yfm-note'],
+        [
+            '{% list tabs %}\n\n- First\n\n  One\n\n- Second\n\n  Two\n\n{% endlist %}',
+            '[role="tab"]',
+        ],
+        [
+            '{% file src="https://example.com/report.pdf" name="Report" %}',
+            'a[href="https://example.com/report.pdf"]',
+        ],
+        ['#|\n|| a | b ||\n|| c | d ||\n|#', 'table'],
+        ['Term\n: Definition', 'dl'],
+        ['==marked==', 'mark'],
+        ['++underlined++', 'ins'],
+        ['H~2~O', 'sub'],
+        ['x^2^', 'sup'],
+        ['##monospace##', 'samp'],
+    ])('renders the existing YFM construct %s', async (markup, selector) => {
+        transformMock.mockImplementation(await realTransform());
+        const {container} = renderWithProviders(<NotePreview markup={markup} />);
+        expect(requireBody(container).querySelector(selector)).not.toBeNull();
+    });
+
     it('renders markup as HTML inside the preview body', async () => {
         transformMock.mockImplementation(await realTransform());
 

@@ -354,34 +354,41 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         // model can't hold), so being dependency-free outweighs syntax highlighting.
         if (source) {
             return (
-                <div ref={rootRef} className="block-editor-source">
-                    {forceSource || stuckOnSource ? (
-                        <p className="block-editor-source__notice">
-                            {stuckOnSource
-                                ? 'Your edits here are Markdown the block editor can’t represent — staying on source, so nothing else in the file is rewritten.'
-                                : 'This note contains Markdown the block editor can’t represent — editing as source, so nothing else in the file is rewritten.'}
-                        </p>
-                    ) : null}
-                    <textarea
-                        // Keyed on the session: this is an UNCONTROLLED input, and once the user has
-                        // typed in it the browser sets its dirty-value flag, after which React's
-                        // `defaultValue` update is ignored (per the HTML spec). Without the key, a
-                        // note switch made in markup mode would leave the PREVIOUS note's source in
-                        // the box under the new note's title — and the next keystroke would save
-                        // that text into the newly opened note, destroying it.
-                        key={sessionId}
-                        ref={markupRef}
-                        className="block-editor-markup"
-                        aria-label="Markdown source"
-                        // Unset so it inherits Settings › Check spelling from the pane wrapper,
-                        // the way the blocks surface does — the setting covers both modes.
-                        defaultValue={bufferRef.current}
-                        onChange={(event) => {
-                            handleChange(event.target.value);
-                            autosize();
-                        }}
-                    />
-                </div>
+                <>
+                    {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
+                    <div
+                        ref={rootRef}
+                        className="block-editor-source"
+                        style={preview ? {display: 'none'} : undefined}
+                    >
+                        {forceSource || stuckOnSource ? (
+                            <p className="block-editor-source__notice">
+                                {stuckOnSource
+                                    ? 'Your edits here are Markdown the block editor can’t represent — staying on source, so nothing else in the file is rewritten.'
+                                    : 'This note contains Markdown the block editor can’t represent — editing as source, so nothing else in the file is rewritten.'}
+                            </p>
+                        ) : null}
+                        <textarea
+                            // Keyed on the session: this is an UNCONTROLLED input, and once the user has
+                            // typed in it the browser sets its dirty-value flag, after which React's
+                            // `defaultValue` update is ignored (per the HTML spec). Without the key, a
+                            // note switch made in markup mode would leave the PREVIOUS note's source in
+                            // the box under the new note's title — and the next keystroke would save
+                            // that text into the newly opened note, destroying it.
+                            key={sessionId}
+                            ref={markupRef}
+                            className="block-editor-markup"
+                            aria-label="Markdown source"
+                            // Unset so it inherits Settings › Check spelling from the pane wrapper,
+                            // the way the blocks surface does — the setting covers both modes.
+                            defaultValue={bufferRef.current}
+                            onChange={(event) => {
+                                handleChange(event.target.value);
+                                autosize();
+                            }}
+                        />
+                    </div>
+                </>
             );
         }
 
