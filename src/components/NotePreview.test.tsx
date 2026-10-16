@@ -5,7 +5,13 @@ import {describe, expect, it, vi} from 'vitest';
 import {openExternalUrl} from '../openExternal';
 import {renderWithProviders} from '../test/render';
 
-import {NotePreview, withBlockColors, withWikiLinks} from './NotePreview';
+import {
+    NotePreview,
+    withBlockColors,
+    withCallouts,
+    withToggleCuts,
+    withWikiLinks,
+} from './NotePreview';
 
 // Default export is a vi.fn() so individual tests can delegate to the real
 // transform or force a throw; the module is otherwise driven by the real impl.
@@ -174,6 +180,35 @@ describe('NotePreview', () => {
         // `target.href` would instead resolve it against the document base into an openable
         // http(s) URL and pop a junk tab.
         expect(vi.mocked(openExternalUrl)).toHaveBeenCalledWith('foo/bar.md');
+    });
+});
+
+describe('editor blocks the YFM renderer cannot read', () => {
+    it('re-spells a <details> toggle as a cut and reports whether it is open', () => {
+        const source = '<details open>\n<summary>Title</summary>\n\nBody\n\n</details>';
+        const {markup, open} = withToggleCuts(source);
+        expect(markup).toBe('{% cut "Title" %}\n\nBody\n\n{% endcut %}');
+        expect(open).toEqual([true]);
+    });
+
+    it('leaves a note the block model cannot hold as written', () => {
+        const source = '---\ntitle: x\n---\n\n<details>\n<summary>T</summary>\n\nB\n\n</details>';
+        expect(withToggleCuts(source).markup).toBe(source);
+    });
+
+    it('draws an Obsidian callout as an icon beside its text', () => {
+        const html = withCallouts(
+            '<blockquote>\n<p>[!warning] Careful<br>\nhere</p>\n</blockquote>',
+        );
+        expect(html).toContain('class="note-preview-callout" data-callout="warning"');
+        expect(html).toContain('⚠️');
+        expect(html).not.toContain('[!warning]');
+        expect(html).toContain('Careful<br>');
+    });
+
+    it('drops the marker line when it carries no text', () => {
+        const html = withCallouts('<blockquote>\n<p>[!note]<br>\nBody</p>\n</blockquote>');
+        expect(html).toContain('<p>Body</p>');
     });
 });
 

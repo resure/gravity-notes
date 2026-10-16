@@ -28,9 +28,12 @@ import * as videoExtension from '@diplodoc/transform/lib/plugins/video';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
+import {blocksToMarkdown, isRoundTripStable, markdownToBlocks} from '../markdown';
 import {previewInline} from '../markdown/previewInline';
 import {openExternalUrl} from '../openExternal';
 import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
+
+import {calloutIcon} from './blockEditor/callouts';
 
 // Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
@@ -214,6 +217,82 @@ export function withWikiLinks(html: string): string {
     return doc.body.innerHTML;
 }
 
+/**
+ * The editor writes a toggle as HTML `<details>`, which this renderer (raw HTML off) shows as literal
+ * tags. For a note the block model holds exactly, re-spell its toggles as YFM cuts — the same
+ * collapsible `<details>` once rendered — and report each cut's open state in document order, since
+ * a cut has no spelling for it. Preview only: the file keeps its own spelling.
+ */
+export function withToggleCuts(markup: string): {markup: string; open: boolean[]} {
+    if (!/<details/i.test(markup) || !isRoundTripStable(markup)) return {markup, open: []};
+    const blocks = markdownToBlocks(markup);
+    const open: boolean[] = [];
+    const converted = blocks.map((block) => {
+        if (block.type !== 'toggle') return block;
+        if (block.yfm?.kind === 'cut') {
+            open.push(false);
+            return block;
+        }
+        open.push(!block.collapsed);
+        return {
+            ...block,
+            yfm: {kind: 'cut' as const, quotedTitle: true, blankBeforeBody: 1, blankAfterBody: 1},
+        };
+    });
+    return {markup: blocksToMarkdown(converted), open};
+}
+
+function withCutsOpen(html: string, open: boolean[]): string {
+    if (!open.includes(true)) return html;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('details.yfm-cut').forEach((cut, index) => {
+        if (open[index]) cut.setAttribute('open', '');
+    });
+    return doc.body.innerHTML;
+}
+
+const CALLOUT_MARKER = /^\[!([\w-]+)\][+-]?[ \t]*/;
+
+/**
+ * Render an Obsidian `> [!kind]` callout as the editor draws it — the kind's icon beside the text in
+ * a tinted box — instead of a quote that starts with the literal marker.
+ */
+export function withCallouts(html: string): string {
+    if (!html.includes('[!')) return html;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    let changed = false;
+    doc.body.querySelectorAll('blockquote').forEach((quote) => {
+        const first = quote.firstElementChild;
+        const text = first?.tagName === 'P' ? first.firstChild : null;
+        const match =
+            text?.nodeType === Node.TEXT_NODE ? CALLOUT_MARKER.exec(text.nodeValue ?? '') : null;
+        if (!first || !text || !match) return;
+        text.nodeValue = (text.nodeValue ?? '').slice(match[0].length);
+        if (!text.nodeValue && text.nextSibling?.nodeName === 'BR') {
+            text.nextSibling.remove();
+            text.remove();
+            const rest = first.firstChild;
+            if (rest?.nodeType === Node.TEXT_NODE)
+                rest.nodeValue = (rest.nodeValue ?? '').trimStart();
+        }
+        if (!first.textContent?.trim() && !first.querySelector('img')) first.remove();
+        const callout = doc.createElement('div');
+        callout.className = 'note-preview-callout';
+        callout.dataset.callout = match[1].toLowerCase();
+        const icon = doc.createElement('span');
+        icon.className = 'note-preview-callout__icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = calloutIcon(match[1]);
+        const body = doc.createElement('div');
+        body.className = 'note-preview-callout__body';
+        body.append(...quote.childNodes);
+        callout.append(icon, body);
+        quote.replaceWith(callout);
+        changed = true;
+    });
+    return changed ? doc.body.innerHTML : html;
+}
+
 const COLORIFY = /^(?:yfm-colorify )?yfm-colorify--\S+$/;
 
 /**
@@ -272,9 +351,13 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             try {
                 // @diplodoc/transform escapes raw HTML and sanitizes its output by default, matching
                 // the editor's no-raw-HTML policy; we only swap attachment img srcs afterward.
-                let html = withBlockColors(
-                    withWikiLinks(transform(markup, TRANSFORM_OPTIONS).result.html),
+                const toggles = withToggleCuts(markup);
+                let html = withCallouts(
+                    withBlockColors(
+                        withWikiLinks(transform(toggles.markup, TRANSFORM_OPTIONS).result.html),
+                    ),
                 );
+                html = withCutsOpen(html, toggles.open);
                 if (cache) html = withResolvedImages(html, cache);
                 return {html, error: false};
             } catch {

@@ -157,6 +157,53 @@
     --gn-mt: 0px;
 }
 
+/* A numbered list followed by a bulleted one (or the reverse) is two lists in Markdown, with the
+   same end-of-list margin between them. */
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='0']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='0'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='0']
+    + .block[data-type='numbered'][data-depth='0'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='1']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='1'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='1']
+    + .block[data-type='numbered'][data-depth='1'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='2']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='2'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='2']
+    + .block[data-type='numbered'][data-depth='2'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='3']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='3'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='3']
+    + .block[data-type='numbered'][data-depth='3'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='4']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='4'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='4']
+    + .block[data-type='numbered'][data-depth='4'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='5']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='5'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='5']
+    + .block[data-type='numbered'][data-depth='5'],
+.gn-block-editor
+    .block[data-type='numbered'][data-depth='6']
+    + .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='6'],
+.gn-block-editor
+    .block:is([data-type='bulleted'], [data-type='todo'])[data-depth='6']
+    + .block[data-type='numbered'][data-depth='6'] {
+    margin-top: 15px;
+}
+
 /* A list or a quote ends with YFM's 15px block margin, as its `<ul>` / `<blockquote>` does. */
 .gn-block-editor
     .block:is([data-type='bulleted'], [data-type='numbered'], [data-type='todo'])

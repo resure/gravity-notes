@@ -24,6 +24,10 @@
 .note-preview__body.yfm li > :where(ul, ol) {
     padding-left: 26px;
 }
+/* A task row's checkbox stands in the marker column, as the editor's does, instead of after it. */
+.note-preview__body.yfm li:has(> .checkbox) {
+    margin-left: -24px;
+}
 
 /* Shown when @diplodoc/transform throws on malformed markup, in place of a blank pane. */
 .note-preview__error {
@@ -275,4 +279,31 @@
 .note-preview .yfm-tab:hover,
 .note-preview .yfm-tab:active {
     color: var(--g-color-text-link-hover);
+}
+
+/* An Obsidian callout (see withCallouts), drawn like the editor's: the kind's icon beside the text
+   in a tinted box, with a code block's block spacing. */
+.note-preview__body.yfm .note-preview-callout {
+    display: flex;
+    align-items: flex-start;
+    margin: 12px 0 15px;
+    padding: 16px 16px 16px 12px;
+    border-radius: 6px;
+    background: var(--g-color-base-generic);
+}
+
+.note-preview__body.yfm .note-preview-callout__icon {
+    margin-right: 10px;
+    padding: 0 2px;
+    font-size: 20px;
+    line-height: 24px;
+}
+
+.note-preview__body.yfm .note-preview-callout__body {
+    flex: 1;
+    min-width: 0;
+}
+
+.note-preview__body.yfm .note-preview-callout__body > :last-child {
+    margin-bottom: 0;
 }
