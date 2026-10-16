@@ -81,6 +81,12 @@ export interface Block {
      */
     calloutKind?: string;
     calloutFold?: '-' | '+';
+    yfm?: {
+        kind: 'note' | 'cut';
+        quotedTitle: boolean;
+        blankBeforeBody: number;
+        blankAfterBody: number;
+    };
     /**
      * The number an ordered list STARTED at, recorded on its first item. CommonMark takes the list's
      * numbering from that first marker, so a list written `5. 6. 7.` — a continuation after some

@@ -106,11 +106,17 @@ function serializeRange(blocks: Block[], from: number, to: number, baseDepth: nu
             (LIST_TYPES.has(previous?.type ?? 'text') && LIST_TYPES.has(block.type) ? 0 : 1);
         if (previous) for (let blank = 0; blank < gap; blank++) lines.push('');
 
-        if (block.type === 'toggle') {
+        const isYfm =
+            block.yfm?.kind ===
+            (block.type === 'toggle' ? 'cut' : block.type === 'callout' ? 'note' : '');
+        if (block.type === 'toggle' || isYfm) {
             const end = subtreeEnd(blocks, i + 1, block.depth ?? 0);
             // `for…of`, not `push(...lines)`: a table block serializes to one line per row, and
             // spreading those as ARGUMENTS blows the engine's limit on a big table (RangeError).
-            for (const line of toggleLines(blocks, block, i, end, indent)) lines.push(line);
+            for (const line of isYfm
+                ? yfmLines(blocks, block, i, end, indent)
+                : toggleLines(blocks, block, i, end, indent))
+                lines.push(line);
             previous = block;
             i = end - 1;
             continue;
@@ -120,6 +126,26 @@ function serializeRange(blocks: Block[], from: number, to: number, baseDepth: nu
         previous = block;
     }
     return lines;
+}
+
+function yfmLines(
+    blocks: Block[],
+    block: Block,
+    index: number,
+    end: number,
+    indent: string,
+): string[] {
+    const format = block.yfm!;
+    const title = wrapBlockColor(inlineHtmlToMarkdown(block.html).replace(/\n/g, ' '), block.color);
+    const header = format.kind === 'note' ? `note ${block.calloutKind ?? 'info'}` : 'cut';
+    const quoted = format.quotedTitle || title ? ` "${title}"` : '';
+    const chunks = [`${indent}{% ${header}${quoted} %}`];
+    for (let n = 0; n < format.blankBeforeBody; n++) chunks.push('');
+    for (const chunk of serializeRange(blocks, index + 1, end, (block.depth ?? 0) + 1))
+        chunks.push(indentChunk(chunk, indent));
+    for (let n = 0; n < format.blankAfterBody; n++) chunks.push('');
+    chunks.push(`${indent}{% end${format.kind} %}`);
+    return chunks;
 }
 
 /** A toggle plus its whole subtree, as a `<details>` element. */

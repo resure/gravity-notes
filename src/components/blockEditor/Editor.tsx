@@ -1730,7 +1730,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const empty = isEmptyHtml(el.innerHTML);
 
         // Enter on an empty list/quote/callout resets it to plain text.
-        if (empty && RESETS_ON_EMPTY_ENTER.includes(block.type)) {
+        if (empty && !block.yfm && RESETS_ON_EMPTY_ENTER.includes(block.type)) {
             setBlocks((bs) =>
                 bs.map((b) =>
                     b.id === block.id
@@ -1763,11 +1763,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const [before, after] = splitHtmlAtCaret(el);
         const continueType = LIST_TYPES.includes(block.type) ? block.type : 'text';
         const depth = block.depth ?? 0;
-        // Enter in a toggle's summary writes its FIRST CHILD, not a sibling wedged between the
-        // toggle and the children it already has: that cut them loose, and the file got a
-        // `<details>` with an empty body and its content spilled out below. It also means Enter is
-        // how you put something in a toggle, rather than Enter-then-Tab.
-        const intoToggle = block.type === 'toggle' && depth < MAX_BLOCK_DEPTH;
+        // A sibling inserted here would detach the existing body from its container.
+        const intoToggle =
+            (block.type === 'toggle' || block.yfm?.kind === 'note') && depth < MAX_BLOCK_DEPTH;
         const nb = {...newBlock(continueType, after), depth: intoToggle ? depth + 1 : depth};
         const idx = indexOf(block.id);
         setBlocks((bs) => {
@@ -3364,7 +3362,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     y={picker.y}
                     label={PICKERS[picker.kind].label}
                     filterable={PICKERS[picker.kind].filterable}
-                    items={PICKERS[picker.kind].items}
+                    items={
+                        picker.kind === 'callout' && findBlock(picker.id)?.yfm?.kind === 'note'
+                            ? [
+                                  ...CALLOUT_ITEMS.filter((item) =>
+                                      ['info', 'tip', 'warning'].includes(item.value),
+                                  ),
+                                  {value: 'alert', label: 'Alert', icon: '⚠️'},
+                              ]
+                            : PICKERS[picker.kind].items
+                    }
                     current={
                         findBlock(picker.id)?.[PICKERS[picker.kind].field] ??
                         PICKERS[picker.kind].fallback

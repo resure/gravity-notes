@@ -32,6 +32,8 @@ Markdown files, and they are yours.
   braces; nothing portable exists)
 - **YFM inline formatting**: highlights, underline, subscript, superscript and monospace keep
   their original Markdown spelling when opened and edited
+- **YFM notes and cuts** open as callouts and toggles while keeping their original syntax,
+  nested content and spacing
 - **Code blocks** with a language picker and a copy button — the language is the fence's own info
   string, so preview highlights it and other tools see it
 - **Read-only preview** (`⌘⇧P`), rendering full CommonMark

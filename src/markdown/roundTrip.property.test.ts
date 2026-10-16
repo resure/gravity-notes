@@ -109,6 +109,15 @@ function makeBlocks(next: () => number, count: number): Block[] {
         if (type === 'divider' || type === 'table') block.html = '';
         if (type === 'todo') block.checked = next() > 0.5;
         if (type === 'toggle') block.collapsed = next() > 0.5;
+        if ((type === 'toggle' || type === 'callout') && next() > 0.5) {
+            block.yfm = {
+                kind: type === 'toggle' ? 'cut' : 'note',
+                quotedTitle: true,
+                blankBeforeBody: next() > 0.5 ? 1 : 0,
+                blankAfterBody: next() > 0.5 ? 1 : 0,
+            };
+            if (type === 'callout') block.calloutKind = 'info';
+        }
         if (type === 'code') block.html = 'const a = 1;<br>const b = 2;';
         if (type === 'callout' && next() > 0.5) block.calloutKind = 'warning';
         // A block colour on a quarter of the blocks, including the types that cannot keep one —

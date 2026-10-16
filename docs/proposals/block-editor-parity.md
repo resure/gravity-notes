@@ -36,14 +36,14 @@ P0 = data integrity/crash; P1 = daily writing or existing YFM files; P2 = specia
 | Images, attachment URLs and dimensions          | Existing tests                                  | `![alt](src =100x)`                   | P1 existing                          |
 | GFM tables, alignment, padding                  | Existing tests                                  | Preserve pipe-table layout            | P1 existing                          |
 | Obsidian callouts                               | Existing tests                                  | Preserve `> [!kind]` and fold marker  | P1 existing                          |
-| YFM notes, title, nested content                | Unsupported                                     | Preserve `{% note kind "Title" %}`    | P1 open                              |
+| YFM notes, title, nested content                | Parser, editor and generated tests              | Preserve `{% note kind "Title" %}`    | P1 implemented                       |
 | HTML details and nested toggles                 | Existing tests                                  | Preserve `<details>` / `<summary>`    | P1 existing                          |
-| YFM cuts                                        | Unsupported                                     | Preserve `{% cut "Title" %}`          | P1 open                              |
+| YFM cuts                                        | Parser, editor and generated tests              | Preserve `{% cut "Title" %}`          | P1 implemented                       |
 | YFM tabs                                        | Unsupported; preview plugin removed             | Preserve `{% list tabs %}`            | P2 open                              |
 | YFM files                                       | Unsupported; preview plugin removed             | Preserve `{% file … %}`               | P2 open                              |
 | YFM multiline tables                            | Unsupported                                     | Preserve `#                           | …                                    | #`  | P2 open |
 | Definition lists                                | Unsupported                                     | `Term` followed by `: definition`     | P2 open                              |
-| Heading anchors                                 | Literal suffix                                  | Preserve `{#id}`                      | P2 open                              |
+| Heading anchors                                 | Explicit source fallback                        | Preserve `{#id}`                      | P2 open                              |
 | Video / YFM configuration blocks                | Unsupported                                     | Preserve original YFM                 | P2 open                              |
 | Math and footnotes                              | Not in preset chain inspected                   | Preserve source                       | P2 open                              |
 | HTML blocks                                     | Disabled in old app; details special-cased here | Preserve source                       | P2 open                              |
@@ -82,6 +82,9 @@ Use the interaction model where it fits plain Markdown; keep the app's documente
 - Demo vault baseline: **0/65** notes fall back to source; audit reads only, stored in `/private/tmp/gravity-vault-before.json`.
 - IME input/confirmation and table navigation: five new regression tests first failed, then passed
   after deferring DOM transforms during composition and retaining raw link destinations.
+
+- YFM note/cut containers preserve their dialect, nested body and blank-line spelling; generated
+  round-trip coverage includes both container kinds. Unsupported directives fail closed to source.
 
 ## Deferred work and human decisions
 

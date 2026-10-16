@@ -211,6 +211,14 @@ and `##monospace##`. Existing `<u>` underline remains `<u>`; YFM underline uses 
 inside the editor DOM and writes back `++`. Literal runs that resemble these marks are escaped
 when saved as plain text. Subscript and superscript currently support single words without spaces.
 
+YFM notes (`{% note info "Title" %}` … `{% endnote %}`) and cuts (`{% cut "Title" %}` …
+`{% endcut %}`) retain their dialect, title, kind, body spacing and nested blocks. Their title
+is a callout/toggle row and their body is its indented subtree. Expanding a YFM cut is session-only:
+YFM has no persisted open attribute. The note-kind picker offers only the four YFM kinds for these
+notes. Newly inserted callouts still use Obsidian syntax and toggles use HTML details, preserving
+the spelling used by previous block-editor versions. Existing files are not converted between
+dialects. Unhandled YFM directives and heading anchors explicitly select source mode.
+
 The round trip is meant to be a fixed point: opening a note and saving it unchanged must not rewrite
 the file. Two rules protect that in the small — a `[[wiki link]]` is never escaped (it stays the
 literal bytes Obsidian writes, which is also what the backlink scan reads), and a soft line break

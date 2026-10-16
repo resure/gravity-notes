@@ -106,6 +106,41 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         }
         const depth = depthOf(line.indent);
 
+        const yfm = /^\{% (note (info|tip|warning|alert)|cut)(?: "([^\n]*)")? %\}$/.exec(line.text);
+        const yfmKind = yfm?.[1] === 'cut' ? 'cut' : 'note';
+        const yfmEnd = yfm ? findYfmEnd(lines, i, yfmKind) : -1;
+        if (yfm && yfmEnd !== -1) {
+            const block = newBlock(
+                yfmKind === 'cut' ? 'toggle' : 'callout',
+                inlineMarkdownToHtml(yfm[3] ?? ''),
+            );
+            block.depth = depth;
+            if (yfmKind === 'cut') block.collapsed = true;
+            else block.calloutKind = yfm[2];
+            let from = i + 1;
+            let to = yfmEnd;
+            while (from < to && lines[from].blank) from++;
+            while (to > from && lines[to - 1].blank) to--;
+            block.yfm = {
+                kind: yfmKind,
+                quotedTitle: yfm[3] !== undefined,
+                blankBeforeBody: from - i - 1,
+                blankAfterBody: yfmEnd - to,
+            };
+            push(block, line.indent);
+            open = null;
+            const children = parseLines(
+                lines
+                    .slice(from, to)
+                    .map((child) => ({...child, indent: Math.max(0, child.indent - line.indent)})),
+                depth + 1,
+            );
+            for (const child of children) blocks.push(child);
+            maxDepth = children.reduce((max, child) => Math.max(max, child.depth ?? 0), depth);
+            i = yfmEnd;
+            continue;
+        }
+
         // ---- fenced code -------------------------------------------------------------------
         const fence = /^(`{3,}|~{3,})(.*)$/.exec(line.text);
         if (fence) {
@@ -337,6 +372,30 @@ function findDetailsEnd(lines: Line[], start: number): number {
             depth--;
             if (depth === 0) return i;
         }
+    }
+    return -1;
+}
+
+function findYfmEnd(lines: Line[], start: number, kind: 'note' | 'cut'): number {
+    const stack = [kind];
+    let fence: string | null = null;
+    for (let i = start + 1; i < lines.length; i++) {
+        const text = lines[i].text;
+        if (fence) {
+            if (new RegExp(`^${fence[0]}{${fence.length},}\\s*$`).test(text)) fence = null;
+            continue;
+        }
+        const openingFence = /^(`{3,}|~{3,})/.exec(text);
+        if (openingFence) {
+            fence = openingFence[1];
+            continue;
+        }
+        const opening = /^\{% (note|cut)(?:\s| %\})/.exec(text);
+        if (opening) stack.push(opening[1] as 'note' | 'cut');
+        const closing = /^\{% end(note|cut) %\}$/.exec(text);
+        if (!closing) continue;
+        if (stack.pop() !== closing[1]) return -1;
+        if (stack.length === 0) return i;
     }
     return -1;
 }

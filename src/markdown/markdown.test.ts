@@ -39,6 +39,34 @@ function expectRoundTrip(blocks: Block[]) {
     expect(blocksToMarkdown(markdownToBlocks(markdown))).toBe(markdown);
 }
 
+describe('YFM containers', () => {
+    it('does not mistake inline code examples for unsupported directives', () => {
+        expect(isRoundTripStable('Write `{% note info %}` and `{#anchor}` as code.')).toBe(true);
+    });
+    it.each([
+        '{% note info "Title" %}\n\nBody with [[Note]].\n\n{% endnote %}',
+        '{% note warning %}\nBody\n{% endnote %}',
+        '{% cut "Details" %}\n\n- first\n- second\n\n{% endcut %}',
+        '{% cut "" %}\n{% endcut %}',
+        '{% cut "Outer" %}\n\n{% note tip "Inner" %}\n\nBody\n\n{% endnote %}\n\n{% endcut %}',
+        '{% note alert "Code" %}\n\n```text\n{% endnote %}\n```\n\n{% endnote %}',
+    ])('keeps the complete original spelling of %s', (source) => {
+        const parsed = markdownToBlocks(source);
+        expect(parsed[0].type).toBe(source.startsWith('{% cut') ? 'toggle' : 'callout');
+        expect(blocksToMarkdown(parsed)).toBe(source);
+        expect(isRoundTripStable(source)).toBe(true);
+    });
+
+    it.each([
+        '{% note info "Unclosed" %}\nBody',
+        '{% cut "Unclosed" %}\nBody',
+        '{% list tabs %}\n- Tab\n\n  Body\n{% endlist %}',
+        '# Heading {#anchor}',
+    ])('uses source for unsupported structure: %s', (source) => {
+        expect(isRoundTripStable(source)).toBe(false);
+    });
+});
+
 describe('inline HTML → Markdown', () => {
     it.each([
         ['==highlight==', '<mark>highlight</mark>'],

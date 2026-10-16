@@ -35,6 +35,16 @@ export function isRoundTripStable(markdown: string): boolean {
     if (hasFrontmatter(markdown)) return false;
     try {
         const parsed = markdownToBlocks(markdown);
+        if (
+            parsed.some(
+                (block) =>
+                    block.type !== 'code' &&
+                    /\{%[\s\S]*?%\}|\{#[^}]+\}/.test(
+                        block.html.replace(/<code>[\s\S]*?<\/code>/g, ''),
+                    ),
+            )
+        )
+            return false;
         const written = blocksToMarkdown(parsed);
         // Byte-identical: nothing to argue about.
         if (written === markdown.trim()) return true;
