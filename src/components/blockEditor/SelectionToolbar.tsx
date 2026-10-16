@@ -1,5 +1,5 @@
-import {useEffect, useRef, useState} from 'react';
-import type {RefObject} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import type {CSSProperties, RefObject} from 'react';
 
 import {colorClassFor, colorFromClass} from '../../markdown/color';
 
@@ -25,7 +25,10 @@ interface ToolbarProps {
 interface ToolbarState {
     x: number;
     y: number;
+    bottom: number;
 }
+
+const VIEWPORT_MARGIN = 8;
 
 function selectionContentEl(): HTMLElement | null {
     const sel = window.getSelection();
@@ -58,6 +61,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
     const [linkMode, setLinkMode] = useState(false);
     const [colorMode, setColorMode] = useState(false);
     const [linkValue, setLinkValue] = useState('');
+    const [placement, setPlacement] = useState<CSSProperties | null>(null);
     const barRef = useRef<HTMLDivElement>(null);
     const savedRange = useRef<Range | null>(null);
     const mouseIsDown = useRef(false);
@@ -85,10 +89,11 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
             if (mouseIsDown.current) return;
             const range = sel.getRangeAt(0);
             const rects = range.getClientRects();
-            const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+            const bounds = range.getBoundingClientRect();
+            const rect = rects.length > 0 ? rects[0] : bounds;
             if (!rootRef.current) return;
             // VIEWPORT coordinates (the bar is position: fixed) — see the note on the component.
-            setState({x: Math.max(8, rect.left), y: rect.top});
+            setState({x: Math.max(8, rect.left), y: rect.top, bottom: bounds.bottom});
             setActive(computeActive());
         };
         const onMouseDown = (e: globalThis.MouseEvent) => {
@@ -144,10 +149,28 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
         const el = node instanceof Element ? node : node.parentElement;
         const a = el?.closest('a');
         const rect = sel.getRangeAt(0).getBoundingClientRect();
-        setState({x: Math.max(8, rect.left), y: rect.top});
+        setState({x: Math.max(8, rect.left), y: rect.top, bottom: rect.bottom});
         setLinkValue(a?.getAttribute('href') ?? '');
         setLinkMode(true);
     }, [linkRequest]);
+
+    useLayoutEffect(() => {
+        const bar = barRef.current;
+        if (!bar || !state) {
+            setPlacement(null);
+            return;
+        }
+        const left = Math.max(
+            VIEWPORT_MARGIN,
+            Math.min(state.x, window.innerWidth - bar.offsetWidth - VIEWPORT_MARGIN),
+        );
+        const fitsAbove = state.y - bar.offsetHeight - VIEWPORT_MARGIN >= VIEWPORT_MARGIN;
+        setPlacement(
+            fitsAbove
+                ? {left, top: state.y}
+                : {left, top: state.bottom + VIEWPORT_MARGIN, transform: 'none'},
+        );
+    }, [state, colorMode, linkMode, hidden]);
 
     if (hidden || !state) return null;
 
@@ -281,7 +304,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
             <div
                 ref={barRef}
                 className="sel-toolbar"
-                style={{left: state.x, top: state.y}}
+                style={placement ?? {left: state.x, top: state.y, visibility: 'hidden'}}
                 role="toolbar"
                 aria-label="Text formatting"
             >
