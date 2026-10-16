@@ -1716,3 +1716,48 @@ describe('undo history survives StrictMode', () => {
         expect(document.querySelectorAll('.block')).toHaveLength(2);
     });
 });
+
+describe('heading anchors', () => {
+    const SOURCE = '## Computer usage {#Computer_usage}\n\nBody';
+
+    function openBlockMenu(index: number) {
+        act(() => {
+            fireEvent.click(document.querySelectorAll<HTMLElement>('.drag-btn')[index]);
+        });
+    }
+
+    it('keeps the anchor out of the editable title and through a title edit', () => {
+        const onChange = renderEditor(SOURCE);
+        const heading = document.querySelector<HTMLElement>('.content');
+        if (!heading) throw new Error('no heading block');
+        expect(heading.textContent).toBe('Computer usage');
+        act(() => {
+            heading.innerHTML = 'Computer use';
+            heading.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('## Computer use {#Computer_usage}\n\nBody');
+    });
+
+    it('copies the anchor with a duplicated heading', () => {
+        const onChange = renderEditor(SOURCE);
+        openBlockMenu(0);
+        act(() => {
+            fireEvent.click(screen.getByText('Duplicate'));
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe(
+            '## Computer usage {#Computer_usage}\n\n## Computer usage {#Computer_usage}\n\nBody',
+        );
+    });
+
+    it('stops writing the anchor once the heading is turned into text', () => {
+        const onChange = renderEditor(SOURCE);
+        openBlockMenu(0);
+        act(() => {
+            fireEvent.click(screen.getByText('Heading 2'));
+        });
+        act(() => {
+            fireEvent.click(screen.getByText('Text'));
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('Computer usage\n\nBody');
+    });
+});

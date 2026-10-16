@@ -69,7 +69,9 @@ describe('YFM containers', () => {
         '{% note info "Unclosed" %}\nBody',
         '{% cut "Unclosed" %}\nBody',
         '{% list tabs %}\n- Tab\n\n  Body\n{% endlist %}',
-        '# Heading {#anchor}',
+        '# Heading {#anchor} with text after',
+        'Paragraph {#anchor}',
+        '- Item {#anchor}',
         '#|\n|| a | b ||\n|| c | d ||\n|#',
         'Term\n: Definition',
         'Setext title\n===',
@@ -85,6 +87,78 @@ describe('YFM containers', () => {
         '```md\n[^1]: inside code\n```',
     ])('keeps literal look-alikes of unsupported structure in blocks: %s', (source) => {
         expect(isRoundTripStable(source)).toBe(true);
+    });
+});
+
+describe('heading anchors', () => {
+    it.each([
+        '## Computer usage {#Computer_usage}',
+        '# Title {#a} {#b}',
+        '### Spaced  {#x-y}',
+        '## {#only-anchor}',
+        '## **Bold** title {#bold}\n\nBody',
+        '- nested\n\n  #### Deep {#deep}',
+    ])('keeps %s verbatim and opens it in blocks', (source) => {
+        const parsed = markdownToBlocks(source);
+        expect(parsed.some((b) => b.headingAnchor)).toBe(true);
+        expect(blocksToMarkdown(parsed)).toBe(source);
+        expect(isRoundTripStable(source)).toBe(true);
+    });
+
+    it('holds the anchor apart from the editable title', () => {
+        const [heading] = markdownToBlocks('## Computer usage {#Computer_usage}');
+        expect(heading).toMatchObject({
+            type: 'heading2',
+            html: 'Computer usage',
+            headingAnchor: ' {#Computer_usage}',
+        });
+    });
+
+    it('keeps the anchor through a title edit and a level change', () => {
+        const [heading] = markdownToBlocks('## Old {#id}');
+        expect(blocksToMarkdown([{...heading, html: 'New <em>title</em>'}])).toBe(
+            '## New *title* {#id}',
+        );
+        expect(blocksToMarkdown([{...heading, type: 'heading4'}])).toBe('#### Old {#id}');
+        expect(blocksToMarkdown([{...heading, html: ''}])).toBe('## {#id}');
+    });
+
+    it('keeps the anchor on the first line of a heading with a soft break', () => {
+        const source = '## First {#id}\n   second';
+        const [heading] = markdownToBlocks(source);
+        expect(heading.html).toBe('First<br>second');
+        expect(blocksToMarkdown([heading])).toBe(source);
+    });
+
+    it('writes the anchor after a block colour', () => {
+        const source = '## {red}(Red) {#red}';
+        const [heading] = markdownToBlocks(source);
+        expect(heading).toMatchObject({html: 'Red', color: 'red', headingAnchor: ' {#red}'});
+        expect(blocksToMarkdown([heading])).toBe(source);
+    });
+
+    it.each(['text', 'bulleted', 'quote', 'callout', 'toggle'] as BlockType[])(
+        'does not write an anchor once the heading turns into %s',
+        (type) => {
+            const [heading] = markdownToBlocks('## Title {#id}');
+            const written = blocksToMarkdown([{...heading, type}]);
+            expect(written).not.toContain('{#id}');
+            expect(markdownToBlocks(written)[0].headingAnchor).toBeUndefined();
+        },
+    );
+
+    it('refuses an anchor field that is not one', () => {
+        for (const headingAnchor of ['{#no-space}', ' {#a}\n# injected', ' {#a} tail', ' {# }']) {
+            expect(blocksToMarkdown([block('heading2', 'Title', {headingAnchor})])).toBe(
+                '## Title',
+            );
+        }
+    });
+
+    it('settles a typed anchor look-alike as the anchor it is in YFM', () => {
+        const written = blocksToMarkdown([block('heading2', 'Typed {#x}')]);
+        expect(written).toBe('## Typed {#x}');
+        expect(blocksToMarkdown(markdownToBlocks(written))).toBe(written);
     });
 });
 

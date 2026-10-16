@@ -94,6 +94,8 @@ export interface Block {
      * from 1 rewrote the user's file.
      */
     listStart?: number;
+    /** A heading's `{#id}` suffix exactly as written, leading whitespace included. */
+    headingAnchor?: string;
     /**
      * How many blank lines stood between this block and the one above it in the source. Markdown
      * treats one and two the same, so the serializer used to impose its own rule — which rewrote a

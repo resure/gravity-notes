@@ -14,7 +14,7 @@ import {newBlock, uid, widestRow} from '../components/blockEditor/types';
 
 import {canCarryColor, liftBlockColor} from './color';
 import {inlineMarkdownToHtml} from './inline';
-import {renderTableLines} from './toMarkdown';
+import {HEADING_ANCHOR, renderTableLines} from './toMarkdown';
 
 /** How an intentionally blank row reaches disk — see `blocksToMarkdown`. */
 const NBSP_ROW = '&nbsp;';
@@ -286,10 +286,11 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         const heading = /^(#{1,6})(?:\s+(.*))?$/.exec(line.text);
         if (heading) {
             const level = heading[1].length as 1 | 2 | 3 | 4 | 5 | 6;
-            const block = newBlock(
-                `heading${level}` as BlockType,
-                inlineMarkdownToHtml(heading[2] ?? ''),
-            );
+            const rest = line.text.slice(level);
+            const anchor = HEADING_ANCHOR.exec(rest)?.[0];
+            const title = anchor ? rest.slice(0, -anchor.length).trimStart() : (heading[2] ?? '');
+            const block = newBlock(`heading${level}` as BlockType, inlineMarkdownToHtml(title));
+            if (anchor) block.headingAnchor = anchor;
             block.depth = depth;
             open = push(block, line.indent + heading[1].length + 1);
             continue;

@@ -71,7 +71,7 @@ seeds each; their grammar now includes YFM marks and containers.
 | YFM files                                       | Preserve `{% file … %}`              | Preview implemented; source authoring, block UI deferred D1                       | P2       |
 | YFM multiline tables                            | Preserve `#\| … \|#`                 | Preview implemented; guarded source authoring, grid UI deferred D2                | P2       |
 | Definition lists                                | Term followed by `: definition`      | Preview implemented; guarded source authoring, block UI deferred D3               | P2       |
-| Heading anchors and id attributes               | Preserve `{#id}` / id attributes     | Guarded source; block metadata/navigation deferred D4                             | P2       |
+| Heading anchors and id attributes               | Preserve `{#id}` / id attributes     | Trailing heading `{#id}` implemented; other `{#…}` guarded source, navigation D4  | P2       |
 | Video                                           | Preserve original YFM                | Preview plugin enabled; block authoring and expanded qualification deferred D1    | P2       |
 | Math / footnotes                                | Preserve original source             | Not in the old preset; rendering/structured authoring deferred D6                 | P2       |
 | General HTML                                    | Preserve literal source              | Old app disabled HTML; executable rendering remains deferred D7                   | P2       |
@@ -130,8 +130,11 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
   Use guarded source plus preview until a richer table model and conversion tests exist.
 - **D3 — definition-list editing.** The current list model has no term/definition pairing. Flattening
   pairs into bullets would change semantics. Keep source plus rendered preview.
-- **D4 — anchors/id attributes.** Needs block identity metadata, rename/duplicate behaviour and local
-  anchor navigation. Keeping the suffix as editable prose risks changing the id; source is explicit.
+- **D4 — anchors/id attributes.** Trailing heading anchors (`## Title {#id}`, one or more) are held
+  verbatim as heading metadata, outside the editable title, and shown muted on hover. They survive
+  title edits, level changes, duplicate and paste; a heading turned into another type stops writing
+  its anchor but keeps it on the block, so turning it back restores it. Still deferred: `{#…}` anywhere else (mid-heading, in prose, `{ #id }` / `[{#id}]`
+  spellings) stays guarded source, and local anchor navigation and anchor editing have no UI.
 - **D5 — extended inline forms and controls.** Escaped whitespace in sub/sup, multiline mark runs
   and additional toolbar buttons need delimiter/selection semantics beyond the tested single-word
   scripts. Keep their literal/source spelling rather than inventing an alternative encoding.

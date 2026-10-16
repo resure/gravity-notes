@@ -43,6 +43,7 @@ describe('Markdown paste boundaries', () => {
     });
     it.each([
         '# Heading\n\nBody',
+        '## Anchored {#anchored}\n\nBody',
         '- first\n- second',
         '| a | b |\n| --- | --- |\n| c | d |',
         '{% note info "Title" %}\n\nBody\n\n{% endnote %}',

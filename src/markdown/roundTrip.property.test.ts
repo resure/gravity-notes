@@ -71,7 +71,14 @@ const INLINE = [
     'literal {foo}(bar)',
     '{red}(already text)',
     'unbalanced <span class="gn-color gn-color--red">smile :)</span>',
+    // Heading anchors: look-alikes typed into a block, and ones that are not a trailing suffix.
+    'ends like an anchor {#typed}',
+    '{#alone}',
+    'mid {#anchor} text',
+    'escaped \\{#not}',
 ];
+
+const ANCHORS = [' {#Computer_usage}', ' {#a} {#b}', '  {#x-y}', '\t{#tab}'];
 
 const COLORS: BlockColor[] = ['red', 'yellow_background', 'gray'];
 
@@ -90,6 +97,11 @@ const TYPES: BlockType[] = [
     'code',
     'table',
 ];
+
+function headingAnchor(type: BlockType, next: () => number): string | undefined {
+    if (!type.startsWith('heading') || next() <= 0.5) return undefined;
+    return ANCHORS[Math.floor(next() * ANCHORS.length)];
+}
 
 function makeBlocks(next: () => number, count: number): Block[] {
     const blocks: Block[] = [];
@@ -118,6 +130,7 @@ function makeBlocks(next: () => number, count: number): Block[] {
             };
             if (type === 'callout') block.calloutKind = 'info';
         }
+        block.headingAnchor = headingAnchor(type, next);
         if (type === 'code') block.html = 'const a = 1;<br>const b = 2;';
         if (type === 'callout' && next() > 0.5) block.calloutKind = 'warning';
         // A block colour on a quarter of the blocks, including the types that cannot keep one —

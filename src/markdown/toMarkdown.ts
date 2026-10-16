@@ -213,17 +213,12 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
         }
 
         case 'heading1':
-            return prefixed(content, indent, '# ');
         case 'heading2':
-            return prefixed(content, indent, '## ');
         case 'heading3':
-            return prefixed(content, indent, '### ');
         case 'heading4':
-            return prefixed(content, indent, '#### ');
         case 'heading5':
-            return prefixed(content, indent, '##### ');
         case 'heading6':
-            return prefixed(content, indent, '###### ');
+            return headingLines(block, content, indent);
         case 'quote':
             // A quote's own line breaks each need the marker, or they'd end the quote. A blank line
             // inside one gets a bare `>`: the parser reads lines after `trimEnd()`, so writing
@@ -255,6 +250,18 @@ function blockLines(block: Block, indent: string, ordinal: number): string[] {
             // spacing on the first save.
             return content === '' ? [`${indent}&nbsp;`] : prefixed(content, indent, '');
     }
+}
+
+/** One or more trailing YFM `{#id}` anchors on a heading line. */
+export const HEADING_ANCHOR = /(?:[ \t]+\{#[^\s{}]+\})+$/;
+
+function headingLines(block: Block, content: string, indent: string): string[] {
+    const marker = `${'#'.repeat(Number(block.type.slice('heading'.length)))} `;
+    const lines = prefixed(content, indent, marker);
+    const anchor = block.headingAnchor;
+    // Checked against the whole pattern because the field arrives verbatim from clipboard JSON too.
+    if (anchor && HEADING_ANCHOR.exec(anchor)?.index === 0) lines[0] += anchor;
+    return lines;
 }
 
 /**

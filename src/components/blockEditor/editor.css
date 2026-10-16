@@ -560,6 +560,24 @@
     align-items: flex-start;
 }
 
+.gn-block-editor .heading-anchor {
+    align-self: center;
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: normal;
+    color: var(--n-text-lighter);
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.gn-block-editor .block:hover .heading-anchor,
+.gn-block-editor .block:focus-within .heading-anchor {
+    opacity: 1;
+}
+
 .gn-block-editor .list-marker {
     width: 24px;
     min-width: 24px;

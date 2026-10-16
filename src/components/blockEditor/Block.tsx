@@ -299,8 +299,19 @@ function Block({
                 />
             );
             break;
-        default:
-            body = content;
+        default: {
+            const anchors = block.type.startsWith('heading') ? anchorIds(block.headingAnchor) : '';
+            body = anchors ? (
+                <div className="block-row">
+                    {content}
+                    <span className="heading-anchor" contentEditable={false} title="Heading anchor">
+                        {anchors}
+                    </span>
+                </div>
+            ) : (
+                content
+            );
+        }
     }
 
     const classes = ['block'];
@@ -350,6 +361,12 @@ function Block({
             </div>
             <div className="block-body">{body}</div>
         </div>
+    );
+}
+
+function anchorIds(suffix: string | undefined): string {
+    return Array.from(suffix?.matchAll(/\{#([^\s{}]+)\}/g) ?? [], (match) => `#${match[1]}`).join(
+        ' ',
     );
 }
 

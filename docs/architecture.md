@@ -231,7 +231,8 @@ is a callout/toggle row and their body is its indented subtree. Expanding a YFM 
 YFM has no persisted open attribute. The note-kind picker offers only the four YFM kinds for these
 notes. Newly inserted callouts still use Obsidian syntax and toggles use HTML details, preserving
 the spelling used by previous block-editor versions. Existing files are not converted between
-dialects. Unhandled YFM directives and heading anchors explicitly select source mode.
+dialects. A heading's trailing `{#id}` anchors are kept verbatim as block metadata; unhandled YFM
+directives and any other `{#…}` explicitly select source mode.
 
 The round trip is meant to be a fixed point: opening a note and saving it unchanged must not rewrite
 the file. Two rules protect that in the small — a `[[wiki link]]` is never escaped (it stays the
