@@ -2,7 +2,7 @@ import {useMemo, useState} from 'react';
 import type {KeyboardEvent} from 'react';
 
 import {OverlayPortal} from './OverlayPortal';
-import {COLOR_OPTIONS, ColorPalette} from './blockColors';
+import {COLOR_OPTIONS, ColorPalette, swatchStyle} from './blockColors';
 import {MENU_ITEMS} from './blockConfig';
 import {ChevronLeftIcon, ChevronRightIcon, DuplicateIcon, TickIcon, TrashIcon} from './icons';
 import type {BlockColor, BlockType} from './types';
@@ -144,10 +144,7 @@ export default function BlockMenu({
                         )}
                         {itemButton(
                             currentColorItem.label,
-                            <span
-                                className="menu-color-icon"
-                                style={{background: currentColorItem.swatch}}
-                            >
+                            <span className="menu-color-icon" style={swatchStyle(currentColorItem)}>
                                 A
                             </span>,
                             () => setView('color'),
