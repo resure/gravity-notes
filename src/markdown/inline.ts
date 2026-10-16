@@ -59,6 +59,8 @@ export function escapeHtml(text: string): string {
 /** Characters that would otherwise be read back as inline Markdown syntax. */
 const ESCAPABLE = /[`*[\]]/g;
 
+const YFM_MARK_CHARS = '=+#~^';
+
 /**
  * A backslash that would otherwise be READ as something: one before ASCII punctuation (CommonMark's
  * escape) or one at the end of a line (a hard break). Every OTHER backslash is already literal, and
@@ -95,16 +97,19 @@ const WIKI_LINK = /\[\[[^[\]\n]+\]\]/g;
  * - **A backslash is escaped only where it would be read as one** — see {@link MEANINGFUL_BACKSLASH}.
  */
 export function escapeMarkdownText(text: string): string {
-    const escape = (run: string) =>
-        run
-            // Backslashes first: escaping them after the others would also double the ones those
-            // rules just added.
-            .replace(MEANINGFUL_BACKSLASH, '\\\\')
-            .replace(/[=+#~^]/g, (char, index: number, source: string) =>
-                matchYfmMark(source, index) ? `\\${char}` : char,
+    const escape = (run: string) => {
+        // Backslashes first: escaping them after the others would also double the ones those
+        // rules just added.
+        const text = run.replace(MEANINGFUL_BACKSLASH, '\\\\');
+        // Literal backticks are escaped below, so they must not open a code span for the mark scan.
+        const scan = text.replace(/`/g, '\u0001');
+        return text
+            .replace(/[=+#~^]/g, (char, index: number) =>
+                matchYfmMark(scan, index) ? `\\${char}` : char,
             )
             .replace(ESCAPABLE, (char) => `\\${char}`)
             .replace(STRIKE_RUN, (tildes) => tildes.replace(/~/g, '\\~'));
+    };
     let out = '';
     let last = 0;
     for (const match of text.matchAll(WIKI_LINK)) {
@@ -208,8 +213,15 @@ export function inlineHtmlToMarkdown(html: string): string {
     }[] = [];
     // One entry per open `<span>`: its colour token, or null for a span that writes nothing.
     const openSpans: (string | null)[] = [];
+    // The delimiter a closing tag just wrote, so an identical opener right after it can merge into
+    // one span: `**a****b**` and `==a====b==` do not read back as two adjacent spans.
+    let closed: {wrapper: string; end: number} | null = null;
+    // Where the last text run ended, so a literal marker character touching a wrapper is escaped.
+    let textEnd = -1;
 
     const pushText = (text: string) => {
+        const after = closed;
+        closed = null;
         const decoded = decodeEntities(text);
         const open = openLinks[openLinks.length - 1];
         // An autolink's label IS its destination, so while it still matches the href the text
@@ -219,7 +231,14 @@ export function inlineHtmlToMarkdown(html: string): string {
             open.text += decoded;
             return;
         }
-        out += codeDepth > 0 ? decoded : escapeMarkdownText(decoded);
+        if (codeDepth > 0) {
+            out += decoded;
+            return;
+        }
+        const escaped = escapeMarkdownText(decoded);
+        const touches = after?.end === out.length && YFM_MARK_CHARS.includes(after.wrapper[0]);
+        out += touches && escaped.startsWith(after.wrapper[0]) ? `\\${escaped}` : escaped;
+        textEnd = out.length;
     };
 
     while (index < html.length) {
@@ -237,6 +256,8 @@ export function inlineHtmlToMarkdown(html: string): string {
         const tag = parseTag(html.slice(lt + 1, gt));
         index = gt + 1;
         if (!tag) continue;
+        const previous = closed;
+        closed = null;
 
         if (tag.name === 'br') {
             out += '\n';
@@ -324,7 +345,26 @@ export function inlineHtmlToMarkdown(html: string): string {
             continue;
         }
         const wrapper = WRAPPERS[tag.name];
-        if (wrapper) out += wrapper;
+        if (!wrapper) continue;
+        if (tag.closing) {
+            out += wrapper;
+            closed = {wrapper, end: out.length};
+            continue;
+        }
+        if (previous?.wrapper === wrapper && previous.end === out.length) {
+            out = out.slice(0, -wrapper.length);
+            continue;
+        }
+        const char = wrapper[0];
+        if (
+            YFM_MARK_CHARS.includes(char) &&
+            textEnd === out.length &&
+            out.endsWith(char) &&
+            !isEscaped(out, out.length - 1)
+        ) {
+            out = `${out.slice(0, -1)}\\${char}`;
+        }
+        out += wrapper;
     }
     // A trailing break (a closing `</div>`, or a stray `<br>` at the end) carries no meaning and
     // would come back as an empty last line.
@@ -542,16 +582,24 @@ const YFM_MARKS: Record<string, string> = {
 
 export function matchYfmMark(text: string, start: number) {
     const char = text[start];
-    if (!'=+#~^'.includes(char ?? '') || !char || isEscaped(text, start)) return null;
+    if (!YFM_MARK_CHARS.includes(char ?? '') || !char || isEscaped(text, start)) return null;
     const marker = '~^'.includes(char) ? char : char + char;
     if (!text.startsWith(marker, start)) return null;
-    if (text[start - 1] === char || text[start + marker.length] === char) return null;
+    if (text[start - 1] === char && !isEscaped(text, start - 1)) return null;
+    if (text[start + marker.length] === char) return null;
     const from = start + marker.length;
     if (!text[from] || /\s/.test(text[from])) return null;
-    for (let end = text.indexOf(marker, from); end !== -1; end = text.indexOf(marker, end + 1)) {
-        if (isEscaped(text, end) || text[end + marker.length] === char) continue;
+    for (let end = from; end < text.length; end++) {
+        if (text[end] === '`' && !isEscaped(text, end)) {
+            const fence = /^`+/.exec(text.slice(end))![0];
+            const close = text.indexOf(fence, end + fence.length);
+            end = (close === -1 ? end : close) + fence.length - 1;
+            continue;
+        }
+        if (!text.startsWith(marker, end) || isEscaped(text, end)) continue;
+        if (text[end - 1] === char || text[end + marker.length] === char) continue;
         const inner = text.slice(from, end);
-        if (!inner || /\s$/.test(inner)) return null;
+        if (/\s$/.test(inner)) continue;
         if (marker.length === 1 && /\s/.test(inner)) return null;
         if (inner.includes('\n')) return null;
         return {tag: YFM_MARKS[marker], inner, end: end + marker.length};

@@ -106,6 +106,38 @@ describe('inline HTML → Markdown', () => {
         },
     );
 
+    it.each(['==a ==b==', '++a ++b++', '##a ##b##', '==x===', 'x `==a` b=='])(
+        'writes literal text %s so it reloads unchanged',
+        (text) => {
+            const written = inlineHtmlToMarkdown(text);
+            expect(inlineMarkdownToHtml(written)).toBe(text);
+            expect(inlineHtmlToMarkdown(inlineMarkdownToHtml(written))).toBe(written);
+        },
+    );
+
+    it('keeps a code span inside a highlight intact', () => {
+        const html = '<mark>use <code>a==b</code></mark>';
+        const written = inlineHtmlToMarkdown(html);
+        expect(written).toBe('==use `a==b`==');
+        expect(inlineMarkdownToHtml(written)).toBe(html);
+    });
+
+    it.each([
+        ['<mark>a</mark><mark>b</mark>', '==ab==', '<mark>ab</mark>'],
+        ['<ins>a</ins><ins>b</ins>', '++ab++', '<ins>ab</ins>'],
+        ['<strong>a</strong><strong>b</strong>', '**ab**', '<strong>ab</strong>'],
+    ])('merges adjacent identical spans %s', (html, markdown, reloaded) => {
+        expect(inlineHtmlToMarkdown(html)).toBe(markdown);
+        expect(inlineMarkdownToHtml(markdown)).toBe(reloaded);
+    });
+
+    it.each(['x<sub>2</sub>~', '~<sub>2</sub>', 'a=<mark>b</mark>=c', '^<sup>2</sup>^'])(
+        'keeps a literal marker touching a span outside it: %s',
+        (html) => {
+            expect(inlineMarkdownToHtml(inlineHtmlToMarkdown(html))).toBe(html);
+        },
+    );
+
     it('maps the editor allowlist to its Markdown spelling', () => {
         expect(inlineHtmlToMarkdown('<strong>bold</strong>')).toBe('**bold**');
         expect(inlineHtmlToMarkdown('<b>bold</b>')).toBe('**bold**');
