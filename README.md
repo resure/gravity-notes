@@ -30,6 +30,8 @@ Markdown files, and they are yours.
 - **Colour** a block or a run of words — text or highlight — and it's saved with the note, as the
   `{red}(text)` / `{bg:yellow}(text)` syntax the preview understands (other Markdown tools show the
   braces; nothing portable exists)
+- **YFM inline formatting**: highlights, underline, subscript, superscript and monospace keep
+  their original Markdown spelling when opened and edited
 - **Code blocks** with a language picker and a copy button — the language is the fence's own info
   string, so preview highlights it and other tools see it
 - **Read-only preview** (`⌘⇧P`), rendering full CommonMark

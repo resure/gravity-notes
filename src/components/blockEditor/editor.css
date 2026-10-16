@@ -1494,3 +1494,15 @@
 .gn-block-editor.gn-block-editor_portal {
     display: contents;
 }
+.gn-block-editor .content ins {
+    text-decoration: underline;
+}
+
+.gn-block-editor .content mark {
+    color: inherit;
+    background: var(--g-color-base-warning-light);
+}
+
+.gn-block-editor .content samp {
+    font-family: var(--g-font-family-monospace);
+}

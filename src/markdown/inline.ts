@@ -100,6 +100,9 @@ export function escapeMarkdownText(text: string): string {
             // Backslashes first: escaping them after the others would also double the ones those
             // rules just added.
             .replace(MEANINGFUL_BACKSLASH, '\\\\')
+            .replace(/[=+#~^]/g, (char, index: number, source: string) =>
+                matchYfmMark(source, index) ? `\\${char}` : char,
+            )
             .replace(ESCAPABLE, (char) => `\\${char}`)
             .replace(STRIKE_RUN, (tildes) => tildes.replace(/~/g, '\\~'));
     let out = '';
@@ -171,6 +174,11 @@ const WRAPPERS: Record<string, string> = {
     s: '~~',
     strike: '~~',
     del: '~~',
+    mark: '==',
+    ins: '++',
+    sub: '~',
+    sup: '^',
+    samp: '##',
 };
 
 /**
@@ -499,6 +507,14 @@ function parseInline(text: string): string {
             }
         }
 
+        const yfm = matchYfmMark(text, i);
+        if (yfm) {
+            flush();
+            out += `<${yfm.tag}>${parseInline(yfm.inner)}</${yfm.tag}>`;
+            i = yfm.end;
+            continue;
+        }
+
         if (char === '*' || char === '~' || char === '_') {
             const emphasis = matchEmphasis(text, i);
             if (emphasis) {
@@ -514,6 +530,33 @@ function parseInline(text: string): string {
     }
     flush();
     return out;
+}
+
+const YFM_MARKS: Record<string, string> = {
+    '==': 'mark',
+    '++': 'ins',
+    '##': 'samp',
+    '~': 'sub',
+    '^': 'sup',
+};
+
+function matchYfmMark(text: string, start: number) {
+    const char = text[start];
+    if (!'=+#~^'.includes(char ?? '') || !char || isEscaped(text, start)) return null;
+    const marker = '~^'.includes(char) ? char : char + char;
+    if (!text.startsWith(marker, start)) return null;
+    if (text[start - 1] === char || text[start + marker.length] === char) return null;
+    const from = start + marker.length;
+    if (!text[from] || /\s/.test(text[from])) return null;
+    for (let end = text.indexOf(marker, from); end !== -1; end = text.indexOf(marker, end + 1)) {
+        if (isEscaped(text, end) || text[end + marker.length] === char) continue;
+        const inner = text.slice(from, end);
+        if (!inner || /\s$/.test(inner)) return null;
+        if (marker.length === 1 && /\s/.test(inner)) return null;
+        if (inner.includes('\n')) return null;
+        return {tag: YFM_MARKS[marker], inner, end: end + marker.length};
+    }
+    return null;
 }
 
 interface ColorMatch {

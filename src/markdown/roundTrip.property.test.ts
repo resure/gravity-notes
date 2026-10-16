@@ -29,6 +29,11 @@ function rng(seed: number): () => number {
 }
 
 const INLINE = [
+    '<mark>marked <strong>bold</strong></mark>',
+    '<ins>underlined</ins>',
+    'H<sub>2</sub>O and x<sup>2</sup>',
+    '<samp>monospace</samp>',
+    'literal ==equal== ++plus++ ##hash## ~sub~ ^sup^',
     'plain words',
     '<strong>bold</strong>',
     '<em>it</em>',

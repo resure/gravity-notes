@@ -206,6 +206,11 @@ portable encoding rather than a private one:
 | callout | an Obsidian `> [!note]` callout, which degrades to a quote         |
 | image   | `![alt](Attachments/…)`, like every other attachment               |
 
+YFM inline marks keep their spelling: `==mark==`, `++underline++`, `~sub~`, `^sup^`,
+and `##monospace##`. Existing `<u>` underline remains `<u>`; YFM underline uses `<ins>` only
+inside the editor DOM and writes back `++`. Literal runs that resemble these marks are escaped
+when saved as plain text. Subscript and superscript currently support single words without spaces.
+
 The round trip is meant to be a fixed point: opening a note and saving it unchanged must not rewrite
 the file. Two rules protect that in the small — a `[[wiki link]]` is never escaped (it stays the
 literal bytes Obsidian writes, which is also what the backlink scan reads), and a soft line break

@@ -40,6 +40,31 @@ function expectRoundTrip(blocks: Block[]) {
 }
 
 describe('inline HTML → Markdown', () => {
+    it.each([
+        ['==highlight==', '<mark>highlight</mark>'],
+        ['++underlined++', '<ins>underlined</ins>'],
+        ['H~2~O', 'H<sub>2</sub>O'],
+        ['x^2^', 'x<sup>2</sup>'],
+        ['##monospace##', '<samp>monospace</samp>'],
+        [
+            '==**bold** and [[Note]]==',
+            '<mark><strong>bold</strong> and <span class="wiki-link">[[Note]]</span></mark>',
+        ],
+    ])('preserves the YFM inline spelling %s', (source, html) => {
+        expect(inlineMarkdownToHtml(source)).toBe(html);
+        expect(inlineHtmlToMarkdown(html)).toBe(source);
+        expect(blocksToMarkdown(markdownToBlocks(source))).toBe(source);
+        expect(isRoundTripStable(source)).toBe(true);
+    });
+
+    it.each(['==literal==', '++literal++', '##literal##', '~literal~', '^literal^'])(
+        'does not turn literal text %s into formatting on reload',
+        (text) => {
+            const written = inlineHtmlToMarkdown(text);
+            expect(inlineMarkdownToHtml(written)).toBe(text);
+        },
+    );
+
     it('maps the editor allowlist to its Markdown spelling', () => {
         expect(inlineHtmlToMarkdown('<strong>bold</strong>')).toBe('**bold**');
         expect(inlineHtmlToMarkdown('<b>bold</b>')).toBe('**bold**');

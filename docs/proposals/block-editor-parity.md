@@ -20,35 +20,35 @@ P0 = data integrity/crash; P1 = daily writing or existing YFM files; P2 = specia
 
 ### Syntax
 
-| Construct                                       | Baseline block surface                          | Target spelling                       | Priority / status |
-| ----------------------------------------------- | ----------------------------------------------- | ------------------------------------- | ----------------- | --- | ------- |
-| Paragraphs, soft breaks, intentional empty rows | Existing tests                                  | Plain text, newline, `&nbsp;`         | P1 existing       |
-| Headings H1–H6                                  | Existing tests                                  | `#` through `######`                  | P1 existing       |
-| Bullets, ordered lists, nested lists            | Existing tests                                  | `-`, numbered markers; preserve start | P1 existing       |
-| Tasks                                           | Existing tests                                  | `- [ ]` / `- [x]`                     | P1 existing       |
-| Quotes, rules, fenced code and language         | Existing tests                                  | `>`, `---`, original fence/info       | P1 existing       |
-| Bold, italic, strike, code, links               | Existing tests                                  | CommonMark, GFM strike                | P1 existing       |
-| Mark                                            | Literal text                                    | `==text==`                            | P1 open           |
-| Underline                                       | HTML only                                       | Preserve `++text++` or `<u>`          | P1 open           |
-| Subscript / superscript                         | Literal text                                    | `~text~` / `^text^`                   | P2 open           |
-| Monospace                                       | Literal text                                    | `##text##`                            | P2 open           |
-| Colour                                          | Existing tests                                  | `{red}(text)`, `{bg:yellow}(text)`    | P1 existing       |
-| Images, attachment URLs and dimensions          | Existing tests                                  | `![alt](src =100x)`                   | P1 existing       |
-| GFM tables, alignment, padding                  | Existing tests                                  | Preserve pipe-table layout            | P1 existing       |
-| Obsidian callouts                               | Existing tests                                  | Preserve `> [!kind]` and fold marker  | P1 existing       |
-| YFM notes, title, nested content                | Unsupported                                     | Preserve `{% note kind "Title" %}`    | P1 open           |
-| HTML details and nested toggles                 | Existing tests                                  | Preserve `<details>` / `<summary>`    | P1 existing       |
-| YFM cuts                                        | Unsupported                                     | Preserve `{% cut "Title" %}`          | P1 open           |
-| YFM tabs                                        | Unsupported; preview plugin removed             | Preserve `{% list tabs %}`            | P2 open           |
-| YFM files                                       | Unsupported; preview plugin removed             | Preserve `{% file … %}`               | P2 open           |
-| YFM multiline tables                            | Unsupported                                     | Preserve `#                           | …                 | #`  | P2 open |
-| Definition lists                                | Unsupported                                     | `Term` followed by `: definition`     | P2 open           |
-| Heading anchors                                 | Literal suffix                                  | Preserve `{#id}`                      | P2 open           |
-| Video / YFM configuration blocks                | Unsupported                                     | Preserve original YFM                 | P2 open           |
-| Math and footnotes                              | Not in preset chain inspected                   | Preserve source                       | P2 open           |
-| HTML blocks                                     | Disabled in old app; details special-cased here | Preserve source                       | P2 open           |
-| YAML frontmatter                                | Source fallback                                 | Preserve source verbatim              | P0 existing guard |
-| Setext headings, indented code, reference links | Source fallback / literal                       | Preserve source                       | P2 open           |
+| Construct                                       | Baseline block surface                          | Target spelling                       | Priority / status                    |
+| ----------------------------------------------- | ----------------------------------------------- | ------------------------------------- | ------------------------------------ | --- | ------- |
+| Paragraphs, soft breaks, intentional empty rows | Existing tests                                  | Plain text, newline, `&nbsp;`         | P1 existing                          |
+| Headings H1–H6                                  | Existing tests                                  | `#` through `######`                  | P1 existing                          |
+| Bullets, ordered lists, nested lists            | Existing tests                                  | `-`, numbered markers; preserve start | P1 existing                          |
+| Tasks                                           | Existing tests                                  | `- [ ]` / `- [x]`                     | P1 existing                          |
+| Quotes, rules, fenced code and language         | Existing tests                                  | `>`, `---`, original fence/info       | P1 existing                          |
+| Bold, italic, strike, code, links               | Existing tests                                  | CommonMark, GFM strike                | P1 existing                          |
+| Mark                                            | Parser + editor tests                           | `==text==`                            | P1 implemented                       |
+| Underline                                       | Both spellings tested                           | Preserve `++text++` or `<u>`          | P1 implemented                       |
+| Subscript / superscript                         | Parser + editor tests                           | `~text~` / `^text^`                   | P2 implemented (single-word scripts) |
+| Monospace                                       | Parser + editor tests                           | `##text##`                            | P2 implemented (single-word scripts) |
+| Colour                                          | Existing tests                                  | `{red}(text)`, `{bg:yellow}(text)`    | P1 existing                          |
+| Images, attachment URLs and dimensions          | Existing tests                                  | `![alt](src =100x)`                   | P1 existing                          |
+| GFM tables, alignment, padding                  | Existing tests                                  | Preserve pipe-table layout            | P1 existing                          |
+| Obsidian callouts                               | Existing tests                                  | Preserve `> [!kind]` and fold marker  | P1 existing                          |
+| YFM notes, title, nested content                | Unsupported                                     | Preserve `{% note kind "Title" %}`    | P1 open                              |
+| HTML details and nested toggles                 | Existing tests                                  | Preserve `<details>` / `<summary>`    | P1 existing                          |
+| YFM cuts                                        | Unsupported                                     | Preserve `{% cut "Title" %}`          | P1 open                              |
+| YFM tabs                                        | Unsupported; preview plugin removed             | Preserve `{% list tabs %}`            | P2 open                              |
+| YFM files                                       | Unsupported; preview plugin removed             | Preserve `{% file … %}`               | P2 open                              |
+| YFM multiline tables                            | Unsupported                                     | Preserve `#                           | …                                    | #`  | P2 open |
+| Definition lists                                | Unsupported                                     | `Term` followed by `: definition`     | P2 open                              |
+| Heading anchors                                 | Literal suffix                                  | Preserve `{#id}`                      | P2 open                              |
+| Video / YFM configuration blocks                | Unsupported                                     | Preserve original YFM                 | P2 open                              |
+| Math and footnotes                              | Not in preset chain inspected                   | Preserve source                       | P2 open                              |
+| HTML blocks                                     | Disabled in old app; details special-cased here | Preserve source                       | P2 open                              |
+| YAML frontmatter                                | Source fallback                                 | Preserve source verbatim              | P0 existing guard                    |
+| Setext headings, indented code, reference links | Source fallback / literal                       | Preserve source                       | P2 open                              |
 
 ### Interaction and bug audit
 
