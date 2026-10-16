@@ -1628,6 +1628,27 @@ describe('dragging a block', () => {
         expect(onChange.mock.calls.at(-1)![0]).toBe(['- A', '- D', '- B', '- C'].join('\n'));
     });
 
+    it('marks the dragged block once the drag is under way', () => {
+        vi.useFakeTimers();
+        try {
+            renderEditor(['- A', '  - A1', '- B'].join('\n'));
+            const dataTransfer = {files: [], setData: vi.fn(), setDragImage: vi.fn()};
+            act(() => {
+                fireEvent.dragStart(blocks()[0].querySelector('.drag-btn')!, {dataTransfer});
+            });
+            act(() => {
+                vi.runAllTimers();
+            });
+            expect(blocks().map((block) => block.classList.contains('dragging'))).toEqual([
+                true,
+                true,
+                false,
+            ]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('lands at the level the drop indicator marks, leaving the target’s children alone', () => {
         // Dropping between a parent and its children used to keep the dragged block's own depth and
         // adopt them: `B` landed at depth 0 and `A1`/`A2` became its children rather than A's.

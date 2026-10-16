@@ -526,12 +526,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     } | null>(null);
     // The subtree ROOTS being dragged — several when the drag started inside a block selection.
     const [draggingRoots, setDraggingRoots] = useState<string[] | null>(null);
-    // Their descendants travel with them, so they have to LOOK dragged too.
-    const draggedIds = useMemo(
-        () =>
-            draggingRoots ? expandBlockIds(blocksRef.current, draggingRoots) : new Set<string>(),
-        [draggingRoots],
-    );
     const [dropTarget, setDropTarget] = useState<{id: string; edge: 'before' | 'after'} | null>(
         null,
     );
@@ -564,6 +558,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const blocksRef = useRef(blocks);
     blocksRef.current = blocks;
+    // Their descendants travel with them, so they have to LOOK dragged too.
+    const draggedIds = useMemo(
+        () =>
+            draggingRoots ? expandBlockIds(blocksRef.current, draggingRoots) : new Set<string>(),
+        [draggingRoots],
+    );
     const slashRef = useRef(slash);
     slashRef.current = slash;
     const wikiRef = useRef(wiki);
