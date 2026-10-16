@@ -48,6 +48,7 @@ function TableCell({blockId, row, column, html, header, props, onFocusCell}: Tab
     // Written by the ref callback below, so it is a mutable holder rather than a React-owned ref
     // (React 18's `useRef<T>(null)` types `.current` read-only).
     const ref = useRef<HTMLDivElement | null>(null);
+    const composing = useRef(false);
     const id = tableCellId(blockId, row, column);
 
     useLayoutEffect(() => {
@@ -55,7 +56,7 @@ function TableCell({blockId, row, column, html, header, props, onFocusCell}: Tab
         // Zero-width-insensitive, as the paragraph path is (see Block.tsx): cell state never carries
         // the caret-escape U+200B, but the DOM can — pasted text from the web often does — and
         // comparing raw then rewrote the element on every render, dropping the caret to its start.
-        if (!element || stripZeroWidth(element.innerHTML) === html) return;
+        if (!element || composing.current || stripZeroWidth(element.innerHTML) === html) return;
         element.innerHTML = html;
     }, [html]);
 
@@ -77,10 +78,20 @@ function TableCell({blockId, row, column, html, header, props, onFocusCell}: Tab
                 data-table-block-id={blockId}
                 data-table-row={row}
                 data-table-column={column}
-                onInput={(event) =>
-                    props.onCellInput(blockId, row, column, event.currentTarget.innerHTML)
-                }
-                onKeyDown={(event) => props.onCellKeyDown(event, blockId, row, column)}
+                onCompositionStart={() => {
+                    composing.current = true;
+                }}
+                onCompositionEnd={(event) => {
+                    composing.current = false;
+                    props.onCellInput(blockId, row, column, event.currentTarget.innerHTML);
+                }}
+                onInput={(event) => {
+                    if (!composing.current)
+                        props.onCellInput(blockId, row, column, event.currentTarget.innerHTML);
+                }}
+                onKeyDown={(event) => {
+                    if (!composing.current) props.onCellKeyDown(event, blockId, row, column);
+                }}
                 onPaste={(event) => props.onCellPaste(event, blockId, row, column)}
                 onFocus={() => {
                     onFocusCell();

@@ -184,6 +184,12 @@ A note becomes a document once per editing session: the editor parses the file i
 and is remounted per note. The pane carries the per-note scroll and caret across a switch, so
 returning to a note lands where you left it.
 
+IME composition owns its live DOM until confirmation: paragraph Markdown shortcuts and table
+navigation wait for composition to finish. Link opening passes the literal stored destination to
+the URL policy, so a relative note link cannot turn into a browser URL for the app's own origin.
+The compatibility audit and its validation log live in
+[block-editor-parity.md](proposals/block-editor-parity.md).
+
 Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, full CommonMark. That is
 deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get
 right, so the preview must understand more Markdown than the editor does, not the same amount.

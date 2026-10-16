@@ -1520,6 +1520,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         row: number,
         column: number,
     ) => {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         const block = findBlock(blockId);
         const table = block?.table ?? null;
         if (!block || !table) return;
@@ -1853,7 +1854,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const block = findBlock(id);
         const el = refs.current.get(id);
         if (!block || !el) return;
-        if ((e.nativeEvent as unknown as {isComposing?: boolean}).isComposing) return;
+        if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
 
         // Slash menu keyboard navigation.
         if (slash && slash.blockId === id) {
@@ -2332,9 +2333,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // An attachment is a file in the workspace, not a URL: `anchor.href` has already resolved it
         // against the app's own origin, so only the RAW attribute still names the file. The host
         // knows what to do with it (reveal it in Finder); `openExternalUrl` would simply drop it.
-        const ref = decodeURI(href);
-        if (isAttachmentRef(ref)) onOpenAttachment?.(ref);
-        else if (anchor) openExternalUrl(anchor.href);
+        if (isAttachmentRef(href)) {
+            try {
+                onOpenAttachment?.(decodeURI(href));
+            } catch {
+                showToast('Could not open the attachment link');
+            }
+        } else openExternalUrl(href);
     };
 
     // Mirror the live modifier state onto the root so links can show they're clickable before the
@@ -2363,6 +2368,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const el = refs.current.get(id);
         const block = findBlock(id);
         if (!el || !block) return;
+        if (composingRef.current) return;
         if (el.innerHTML === '<br>') el.innerHTML = '';
 
         const pending = pendingSlash.current;
