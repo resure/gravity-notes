@@ -1,4 +1,4 @@
-import {memo, useCallback, useLayoutEffect, useRef} from 'react';
+import {Fragment, memo, useCallback, useLayoutEffect, useRef} from 'react';
 import type {ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode} from 'react';
 
 import {anchorIds} from './AnchorEditor';
@@ -392,7 +392,12 @@ function Block({
                     <PlusIcon />
                 </button>
             </div>
-            <div className="block-body">{body}</div>
+            <div className="block-body">
+                {/* Keyed by type: the editable element's children are written by hand, not by React,
+                    so a turn-into that swaps it for a wrapper `div` (quote, toggle, heading row) must
+                    not let React reuse it — the reused node kept the old text beside the new one. */}
+                <Fragment key={block.type}>{body}</Fragment>
+            </div>
         </div>
     );
 }
