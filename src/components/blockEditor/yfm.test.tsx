@@ -1,4 +1,4 @@
-import {fireEvent, render} from '@testing-library/react';
+import {act, fireEvent, render, screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
 import Editor from './Editor';
@@ -34,6 +34,29 @@ describe('YFM container content', () => {
         fireEvent.keyDown(header, {key: 'Enter'});
         expect(document.querySelectorAll('.block')[1].getAttribute('data-depth')).toBe('1');
         expect(onChange.mock.calls.at(-1)?.[0]).toContain('Body\n\n{% endnote %}');
+    });
+    it('Enter in a note turned into text starts a sibling, not a child', () => {
+        const onChange = vi.fn();
+        render(<Editor value={'{% note info "Title" %}\n\n{% endnote %}'} onChange={onChange} />);
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        act(() => {
+            fireEvent.click(document.querySelectorAll<HTMLElement>('.block-menu .menu-item')[2]);
+        });
+        act(() => {
+            fireEvent.click(screen.getByRole('menuitem', {name: /^Text/}));
+        });
+        const paragraph = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            fireEvent.mouseDown(paragraph);
+            paragraph.focus();
+            setCaret(paragraph, 'end');
+        });
+        act(() => {
+            fireEvent.keyDown(paragraph, {key: 'Enter'});
+        });
+        expect(document.querySelectorAll('.block')[1].getAttribute('data-depth')).toBe('0');
     });
     it('offers only valid YFM note kinds', () => {
         const {getByRole, queryByRole} = render(

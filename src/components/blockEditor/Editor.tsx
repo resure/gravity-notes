@@ -189,6 +189,14 @@ const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
 };
 
 /** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
+// `yfm` survives "Turn into", so a paragraph that used to be a `{% note %}` still carries one.
+function isYfmContainer(block: BlockData): boolean {
+    const kind = block.yfm?.kind;
+    return (
+        (block.type === 'toggle' && kind === 'cut') || (block.type === 'callout' && kind === 'note')
+    );
+}
+
 function sameIds(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
     for (const id of a) if (!b.has(id)) return false;
@@ -1733,7 +1741,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const empty = isEmptyHtml(el.innerHTML);
 
         // Enter on an empty list/quote/callout resets it to plain text.
-        if (empty && !block.yfm && RESETS_ON_EMPTY_ENTER.includes(block.type)) {
+        if (empty && !isYfmContainer(block) && RESETS_ON_EMPTY_ENTER.includes(block.type)) {
             setBlocks((bs) =>
                 bs.map((b) =>
                     b.id === block.id
@@ -1768,7 +1776,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const depth = block.depth ?? 0;
         // A sibling inserted here would detach the existing body from its container.
         const intoToggle =
-            (block.type === 'toggle' || block.yfm?.kind === 'note') && depth < MAX_BLOCK_DEPTH;
+            (block.type === 'toggle' || isYfmContainer(block)) && depth < MAX_BLOCK_DEPTH;
         const nb = {...newBlock(continueType, after), depth: intoToggle ? depth + 1 : depth};
         const idx = indexOf(block.id);
         setBlocks((bs) => {
