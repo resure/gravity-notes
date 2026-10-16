@@ -1762,6 +1762,73 @@ describe('toolbar commands', () => {
     });
 });
 
+describe('keyboard block commands', () => {
+    useInsertTextStub();
+
+    function focusFirst(position: 'start' | 'end' | number = 'end') {
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            first.focus();
+            setCaret(first, position);
+        });
+        return first;
+    }
+
+    it.each([
+        ['Digit1', '# one'],
+        ['Digit4', '- [ ] one'],
+        ['Digit6', '1. one'],
+        ['Digit8', '```\none\n```'],
+    ])('⌘⌥ %s turns the block into its type', (code, written) => {
+        const onChange = renderEditor('one');
+        const first = focusFirst();
+        act(() => {
+            fireEvent.keyDown(first, {key: '¡', code, metaKey: true, altKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe(written);
+    });
+
+    it('⌘↵ ticks a to-do instead of splitting it', () => {
+        const onChange = renderEditor('- [ ] task');
+        const first = focusFirst();
+        act(() => {
+            fireEvent.keyDown(first, {key: 'Enter', metaKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- [x] task');
+    });
+
+    it('keeps the line indent on Enter in a code block and dedents on ⇧Tab', () => {
+        const onChange = renderEditor('```\n    indented\n```');
+        const first = focusFirst('end');
+        act(() => {
+            fireEvent.keyDown(first, {key: 'Enter'});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('```\n    indented\n    \n```');
+        act(() => {
+            fireEvent.keyDown(first, {key: 'Tab', shiftKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('```\n    indented\n  \n```');
+    });
+
+    it('⌘K with the caret inside a link selects it for editing', () => {
+        renderEditor('see [docs](https://example.com) here');
+        const link = document.querySelector('.content a')!;
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            first.focus();
+            const range = document.createRange();
+            range.setStart(link.firstChild!, 2);
+            range.collapse(true);
+            window.getSelection()!.removeAllRanges();
+            window.getSelection()!.addRange(range);
+        });
+        act(() => {
+            fireEvent.keyDown(first, {key: 'k', metaKey: true});
+        });
+        expect(screen.getByRole('textbox', {name: 'Link URL'})).toHaveValue('https://example.com');
+    });
+});
+
 describe('turn into', () => {
     it.each(['Quote', 'Heading 2', 'Bulleted list', 'Toggle list'])(
         'shows the text once after turning a paragraph into %s',

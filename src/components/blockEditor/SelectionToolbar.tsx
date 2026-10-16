@@ -22,6 +22,17 @@ interface ToolbarProps {
     hidden?: boolean;
 }
 
+/**
+ * What a typed link points at. Only something shaped like a bare domain gets `https://`: a relative
+ * path, an `Attachments/…` file or a `#heading` is already a link, and prefixing it broke it.
+ */
+export function linkHref(url: string): string {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url) || /^(#|\/|\.{1,2}\/)/.test(url)) return url;
+    return /^[\w-]+(\.[\w-]+)+(?::\d+)?(?:[/?#]|$)/.test(url) && !/^Attachments\//.test(url)
+        ? `https://${url}`
+        : url;
+}
+
 interface ToolbarState {
     x: number;
     y: number;
@@ -212,7 +223,7 @@ export default function SelectionToolbar({rootRef, onSync, linkRequest, hidden}:
             if (url === '') {
                 document.execCommand('unlink');
             } else {
-                const href = /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`;
+                const href = linkHref(url);
                 document.execCommand('createLink', false, href);
             }
             syncSelectionBlock();

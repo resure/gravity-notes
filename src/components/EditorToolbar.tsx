@@ -43,18 +43,32 @@ const BLOCK_GROUPS: BlockType[][] = [
     ['code', 'table', 'divider'],
 ];
 
+const CHORDS: Partial<Record<BlockType, string>> = {
+    text: '⌘⌥0',
+    heading1: '⌘⌥1',
+    heading2: '⌘⌥2',
+    heading3: '⌘⌥3',
+    todo: '⌘⌥4',
+    bulleted: '⌘⌥5',
+    numbered: '⌘⌥6',
+    toggle: '⌘⌥7',
+    code: '⌘⌥8',
+};
+
 const itemFor = (type: BlockType) => MENU_ITEMS.find((item) => item.type === type);
 
 interface ToolbarState {
     type: BlockType | null;
     marks: Set<InlineMark>;
+    /** A selection, or a caret inside a link: what the link button can act on. */
+    linkable: boolean;
 }
+
+const EMPTY: ToolbarState = {type: null, marks: new Set(), linkable: false};
 
 function readState(root: HTMLElement | null): ToolbarState {
     const active = document.activeElement;
-    if (!root || !(active instanceof HTMLElement) || !root.contains(active)) {
-        return {type: null, marks: new Set()};
-    }
+    if (!root || !(active instanceof HTMLElement) || !root.contains(active)) return EMPTY;
     // A table cell carries its own `data-block-type="text"`; the block it belongs to is the table.
     const type = (
         active.dataset.tableBlockId ? 'table' : (active.dataset.blockType ?? null)
@@ -63,10 +77,12 @@ function readState(root: HTMLElement | null): ToolbarState {
     for (const {mark, command} of MARKS) {
         if (command && document.queryCommandState(command)) marks.add(mark);
     }
-    const anchor = window.getSelection()?.anchorNode;
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode;
     const element = anchor instanceof Element ? anchor : anchor?.parentElement;
     if (element?.closest('code') && type !== 'code') marks.add('code');
-    return {type, marks};
+    const linkable = !selection?.isCollapsed || Boolean(element?.closest('a'));
+    return {type, marks, linkable};
 }
 
 interface EditorToolbarProps {
@@ -76,7 +92,7 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorToolbarProps) {
-    const [state, setState] = useState<ToolbarState>({type: null, marks: new Set()});
+    const [state, setState] = useState<ToolbarState>(EMPTY);
     const [scrolled, setScrolled] = useState(false);
 
     const refresh = useCallback(
@@ -85,6 +101,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                 const next = readState(rootRef.current);
                 const same =
                     next.type === current.type &&
+                    next.linkable === current.linkable &&
                     next.marks.size === current.marks.size &&
                     [...next.marks].every((mark) => current.marks.has(mark));
                 return same ? current : next;
@@ -124,12 +141,14 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
         icon: React.ReactNode,
         action: (editor: EditorHandle) => void,
         selected = false,
+        disabled = false,
     ) => (
         <Button
             key={key}
             view="flat"
             size="m"
             selected={selected}
+            disabled={disabled}
             title={label}
             aria-label={label}
             aria-pressed={selected}
@@ -140,6 +159,8 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
     );
 
     const currentStyle = TEXT_STYLES.includes(state.type as BlockType) ? state.type : null;
+    // Marks need a caret in text; a code block is literal and takes none.
+    const canFormat = state.type !== null && state.type !== 'code';
 
     return (
         <div className={`editor-toolbar${scrolled ? ' editor-toolbar_scrolled' : ''}`}>
@@ -170,6 +191,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                     )}
                     items={TEXT_STYLES.map((type) => ({
                         text: itemFor(type)?.label,
+                        title: CHORDS[type],
                         iconStart: (
                             <span className="editor-toolbar__item-icon">{itemFor(type)?.icon}</span>
                         ),
@@ -187,16 +209,26 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                         <Icon data={icon} />,
                         (e) => e.format(mark),
                         state.marks.has(mark),
+                        !canFormat,
                     ),
                 )}
-                {button('link', 'Link (⌘K)', <Icon data={Link} />, (e) => e.link())}
+                {button(
+                    'link',
+                    'Link (⌘K)',
+                    <Icon data={Link} />,
+                    (e) => e.link(),
+                    false,
+                    !canFormat || !state.linkable,
+                )}
                 {BLOCK_GROUPS.map((group) => [
                     <span key={`${group[0]}-divider`} className="editor-toolbar__divider" />,
                     ...group.map((type) => {
                         const item = itemFor(type);
                         return button(
                             type,
-                            item?.label ?? type,
+                            CHORDS[type]
+                                ? `${item?.label} (${CHORDS[type]})`
+                                : (item?.label ?? type),
                             <span className="editor-toolbar__block-icon">{item?.icon}</span>,
                             (e) => e.setBlockType(type),
                             state.type === type,

@@ -189,6 +189,44 @@ const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
     image: 'image',
 };
 
+/** With the caret inside a link, select the whole link so the link box edits it. */
+function selectLinkAtCaret(root: HTMLElement): boolean {
+    const selection = window.getSelection();
+    if (!selection?.isCollapsed || !selection.anchorNode) return false;
+    const node = selection.anchorNode;
+    const link = (node instanceof Element ? node : node.parentElement)?.closest('a');
+    if (!link || !root.contains(link)) return false;
+    const range = document.createRange();
+    range.selectNodeContents(link);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+}
+
+// Notion's chords. Matched on the physical key: ⌥ rewrites the character on macOS.
+const BLOCK_TYPE_CHORDS: Record<string, BlockType> = {
+    Digit0: 'text',
+    Digit1: 'heading1',
+    Digit2: 'heading2',
+    Digit3: 'heading3',
+    Digit4: 'todo',
+    Digit5: 'bulleted',
+    Digit6: 'numbered',
+    Digit7: 'toggle',
+    Digit8: 'code',
+};
+
+function blockTypeChord(e: {
+    metaKey: boolean;
+    ctrlKey: boolean;
+    altKey: boolean;
+    shiftKey: boolean;
+    code: string;
+}): BlockType | null {
+    if (!(e.metaKey || e.ctrlKey) || !e.altKey || e.shiftKey) return null;
+    return BLOCK_TYPE_CHORDS[e.code] ?? null;
+}
+
 // `yfm` survives "Turn into", so a paragraph that used to be a `{% note %}` still carries one.
 function isYfmContainer(block: BlockData): boolean {
     const kind = block.yfm?.kind;
@@ -743,7 +781,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         },
         format: applyMark,
         link() {
-            if (!activeEditable() || window.getSelection()?.isCollapsed) return;
+            const target = activeEditable();
+            if (!target) return;
+            if (!selectLinkAtCaret(target.el) && window.getSelection()?.isCollapsed) return;
             setLinkRequest((request) => request + 1);
         },
         setBlockType: applyBlockType,
@@ -2058,6 +2098,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             claimChord(e);
             return;
         }
+        // Otherwise ⌘↵ in a to-do ticks it, rather than splitting the line.
+        if (mod && !e.shiftKey && !e.altKey && e.key === 'Enter' && block.type === 'todo') {
+            claimChord(e);
+            setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, checked: !b.checked} : b)));
+            return;
+        }
+
+        const chordType = blockTypeChord(e);
+        if (chordType) {
+            claimChord(e);
+            applyBlockType(chordType);
+            return;
+        }
 
         if (mod && !e.altKey) {
             const k = e.key.toLowerCase();
@@ -2081,10 +2134,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 return;
             }
             if (!e.shiftKey && k === 'k' && block.type !== 'code') {
-                const selection = window.getSelection();
-                // With nothing selected there is no link to make, so the chord is left alone
-                // rather than swallowed — nothing else binds it.
-                if (selection && !selection.isCollapsed) {
+                // With nothing selected and no link under the caret there is nothing to link, so
+                // the chord is left alone rather than swallowed — nothing else binds it.
+                if (selectLinkAtCaret(el) || !window.getSelection()?.isCollapsed) {
                     claimChord(e);
                     setLinkRequest((request) => request + 1);
                 }
@@ -2194,7 +2246,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (e.shiftKey && block.type !== 'code') return; // native soft break
             e.preventDefault();
             if (block.type === 'code') {
-                insertPlainTextAtCaret('\n');
+                // The new line starts at the current line's indent, as in any code editor.
+                const text = el.textContent ?? '';
+                const offset = getCaretOffset(el);
+                const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+                const indent = /^[ \t]*/.exec(text.slice(lineStart, offset))?.[0] ?? '';
+                insertPlainTextAtCaret(`\n${indent}`);
                 commitHtml(id, el);
                 return;
             }
@@ -2273,7 +2330,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
         if (e.key === 'Tab') {
             e.preventDefault();
-            if (block.type === 'code') {
+            if (block.type === 'code' && e.shiftKey) {
+                const text = el.textContent ?? '';
+                const offset = getCaretOffset(el);
+                const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+                const lead = /^( {1,2}|\t)/.exec(text.slice(lineStart))?.[0];
+                if (lead) {
+                    deleteTextRange(el, lineStart, lineStart + lead.length);
+                    setCaret(el, Math.max(lineStart, offset - lead.length));
+                    commitHtml(id, el);
+                }
+            } else if (block.type === 'code') {
                 insertPlainTextAtCaret('  ');
                 commitHtml(id, el);
             } else {
@@ -2953,6 +3020,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!ownsDocumentEvent(e.target)) return;
         const selected = selectedIdsRef.current;
         const mod = e.metaKey || e.ctrlKey;
+        const chordType = blockTypeChord(e);
+        if (chordType) {
+            claimChord(e);
+            applyBlockType(chordType);
+            return;
+        }
         if (mod && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
             // ⌘⌥↑/↓ reorders the selected block. Single selection only: moving a multi-block range
             // as a unit is a different operation, and doing it one block at a time would shuffle

@@ -148,7 +148,8 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+enter',
-        description: 'Follow the [[wiki link]] under the caret (⌘-click does the same)',
+        description:
+            'Follow the [[wiki link]] under the caret (⌘-click does the same); tick a to-do',
         group: 'Editing',
         // Editor-scoped: the block editor's own key handler owns it, like `[[` below.
     },
@@ -284,7 +285,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     // chord the user cannot discover. Keep in sync with docs/shortcuts.md.
     {
         keys: '/',
-        description: 'Open the block menu at the start of an empty block',
+        description: 'Open the block menu (at the start of a block or after a space)',
         group: 'Editing',
     },
     {
@@ -325,6 +326,22 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
     },
     {
+        keys: 'mod+k',
+        description: 'Link the selection, or edit the link under the caret',
+        group: 'Editing',
+    },
+    {
+        keys: 'mod+alt+0',
+        description:
+            'Turn the block into text (⌘⌥1–3 headings, ⌘⌥4 to-do, ⌘⌥5 bullets, ⌘⌥6 numbers, ⌘⌥7 toggle, ⌘⌥8 code)',
+        group: 'Editing',
+    },
+    {
+        keys: 'shift+enter',
+        description: 'Line break inside the block',
+        group: 'Editing',
+    },
+    {
         keys: 'mod+a',
         description: 'Select the block, then every block in the note',
         group: 'Editing',
@@ -357,7 +374,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     {
         keys: 'tab',
         description:
-            'Indent a list item or the selected block (⇧Tab outdents); in a table, move to the next cell',
+            'Indent the block (⇧Tab outdents); in a table, move to the next cell; in code, indent the line',
         group: 'Editing',
     },
     {

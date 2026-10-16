@@ -4,6 +4,7 @@ import {describe, expect, it, vi} from 'vitest';
 import {openExternalUrl} from '../../openExternal';
 
 import Editor from './Editor';
+import {linkHref} from './SelectionToolbar';
 
 vi.mock('../../openExternal', () => ({openExternalUrl: vi.fn()}));
 
@@ -27,5 +28,18 @@ describe('link destinations', () => {
         render(<Editor value="[search](https://example.com/100%)" onChange={vi.fn()} />);
         fireEvent.click(document.querySelector('.content a')!, {metaKey: true});
         expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/100%');
+    });
+});
+
+describe('linkHref', () => {
+    it.each([
+        ['example.com', 'https://example.com'],
+        ['example.com/path?q=1', 'https://example.com/path?q=1'],
+        ['mailto:me@example.com', 'mailto:me@example.com'],
+        ['Attachments/report.pdf', 'Attachments/report.pdf'],
+        ['#usage', '#usage'],
+        ['../Other.md', '../Other.md'],
+    ])('reads %s as %s', (typed, href) => {
+        expect(linkHref(typed)).toBe(href);
     });
 });

@@ -40,11 +40,11 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, in a plain textarea                                                     |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
-| `⌘K`             | Insert a link over the selected text                                                                                                      |
+| `⌘K`             | Link the selected text, or edit the link the caret is in (clear the URL to unlink)                                                        |
 | `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
-| `⌘Enter`         | Follow the `[[wiki link]]` under the caret (⌘-click does the same)                                                                        |
-| Caret in a link  | Open / Edit / Unlink appear under it — Edit re-opens the note picker over the existing target                                             |
+| `⌘Enter`         | Follow the `[[wiki link]]` under the caret (⌘-click does the same); in a to-do, tick it                                                   |
+| Caret in a link  | For a `[[wiki link]]`, Open / Edit / Unlink appear under it — Edit re-opens the note picker over the existing target                      |
 | `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
 | `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's a typing chord)                                                     |
 | `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in the body it duplicates the block               |
@@ -54,24 +54,34 @@ The search box is the heart of the app (nvALT-style **search or create**):
 
 The block editor owns these itself; they do nothing outside the body.
 
-| Keys        | Action                                                                  |
-| ----------- | ----------------------------------------------------------------------- |
-| `/`         | Open the block menu at the start of an empty block                      |
-| `⌘B`        | Bold the selection                                                      |
-| `⌘I`        | Italicise the selection                                                 |
-| `⌘U`        | Underline the selection                                                 |
-| `⌘⇧S`       | Strike through the selection                                            |
-| `⌘E`        | Inline code                                                             |
-| `⌘C`        | Copy the selection as Markdown                                          |
-| `⌘⇧C`       | Copy the selection as plain text (Markdown stripped)                    |
-| `⌘⇧V`       | Paste without formatting                                                |
-| `⌘A`        | Select the block, then every block in the note                          |
-| `⌘]` / `⌘[` | Indent / outdent the block                                              |
-| `Tab`       | Indent a list item (`⇧Tab` outdents); in a table, move to the next cell |
-| `Esc`       | Select the block; again to leave the editor                             |
+| Keys        | Action                                                                |
+| ----------- | --------------------------------------------------------------------- |
+| `/`         | Open the block menu (at the start of a block or after a space)        |
+| `⌘B`        | Bold the selection                                                    |
+| `⌘I`        | Italicise the selection                                               |
+| `⌘U`        | Underline the selection                                               |
+| `⌘⇧S`       | Strike through the selection                                          |
+| `⌘E`        | Inline code                                                           |
+| `⌘C`        | Copy the selection as Markdown                                        |
+| `⌘⇧C`       | Copy the selection as plain text (Markdown stripped)                  |
+| `⌘⇧V`       | Paste without formatting                                              |
+| `⌘A`        | Select the block, then every block in the note                        |
+| `⌘⌥0`       | Turn the block into text                                              |
+| `⌘⌥1`–`⌘⌥3` | Heading 1–3                                                           |
+| `⌘⌥4`       | To-do                                                                 |
+| `⌘⌥5`       | Bulleted list                                                         |
+| `⌘⌥6`       | Numbered list                                                         |
+| `⌘⌥7`       | Toggle                                                                |
+| `⌘⌥8`       | Code block (pressing a block's own chord again turns it back to text) |
+| `⇧Enter`    | Line break inside the block                                           |
+| `⌘]` / `⌘[` | Indent / outdent the block                                            |
+| `Tab`       | Indent the block (`⇧Tab` outdents); in a table, move to the next cell |
+| `Esc`       | Select the block; again to leave the editor                           |
 
 As you type, `# ` through `###### ` make headings; `- `, `* ` and `+ ` make bullets;
-`7. ` starts numbering at 7; `[] ` and `[x] ` make tasks; `> ` makes a quote.
+`7. ` starts numbering at 7; `[] ` and `[x] ` make tasks; `> ` makes a quote; `---` makes a divider
+and ` ``` ` a code block. In a code block `Tab` / `⇧Tab` indent and dedent the line and `Enter`
+keeps its indent.
 Paired `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `==mark==` and `++underline++`
 apply inline formatting. A backslash before the opening delimiter keeps it literal.
 
