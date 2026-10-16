@@ -437,6 +437,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         // `display: none` hides the editor's own subtree, but its menus portal to
                         // `<body>` — they need telling.
                         hidden={preview}
+                        toolbarShown={showToolbar}
                     />
                 </div>
             </>

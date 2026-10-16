@@ -8,13 +8,15 @@ import {
     ChevronDown,
     Code,
     Italic,
+    LetterAUnderline,
     Link,
     Strikethrough,
     Underline,
 } from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon} from '@gravity-ui/uikit';
+import {Button, DropdownMenu, Icon, Popup} from '@gravity-ui/uikit';
 
 import type {EditorHandle, InlineMark} from './blockEditor/Editor';
+import {ColorPalette} from './blockEditor/blockColors';
 import {MENU_ITEMS} from './blockEditor/blockConfig';
 import type {BlockType} from './blockEditor/types';
 
@@ -94,6 +96,7 @@ interface EditorToolbarProps {
 export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorToolbarProps) {
     const [state, setState] = useState<ToolbarState>(EMPTY);
     const [scrolled, setScrolled] = useState(false);
+    const [paletteAnchor, setPaletteAnchor] = useState<HTMLElement | null>(null);
 
     const refresh = useCallback(
         () =>
@@ -212,6 +215,42 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                         !canFormat,
                     ),
                 )}
+                <Button
+                    view="flat"
+                    size="m"
+                    title="Color"
+                    aria-label="Color"
+                    aria-expanded={Boolean(paletteAnchor)}
+                    disabled={!canFormat}
+                    onClick={(event) =>
+                        setPaletteAnchor(paletteAnchor ? null : event.currentTarget)
+                    }
+                >
+                    <Icon data={LetterAUnderline} />
+                </Button>
+                <Popup
+                    open={Boolean(paletteAnchor)}
+                    anchorElement={paletteAnchor}
+                    placement="bottom-start"
+                    onOpenChange={(open) => {
+                        if (!open) setPaletteAnchor(null);
+                    }}
+                >
+                    {/* The editor's own palette, so its scoped styles apply; a press must not
+                        take focus from the text it colours. */}
+                    {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                    <div
+                        className="gn-block-editor editor-toolbar__palette"
+                        onMouseDown={(event) => event.preventDefault()}
+                    >
+                        <ColorPalette
+                            onPick={(color) => {
+                                setPaletteAnchor(null);
+                                run((e) => e.color(color));
+                            }}
+                        />
+                    </div>
+                </Popup>
                 {button(
                     'link',
                     'Link (⌘K)',

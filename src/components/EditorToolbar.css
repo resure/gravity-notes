@@ -64,3 +64,8 @@
     width: 16px;
     height: 16px;
 }
+
+.editor-toolbar__palette {
+    padding: 4px 0;
+    cursor: default;
+}

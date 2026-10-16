@@ -47,6 +47,7 @@ import type {WikiSuggestItem} from './WikiSuggestMenu';
 import WikiSuggestMenu, {WIKI_MENU_ID, wikiOptionId} from './WikiSuggestMenu';
 import {createEdgeScroller} from './autoScroll';
 import type {EdgeScroller} from './autoScroll';
+import {colorSelection} from './blockColors';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
 import {CALLOUT_ITEMS} from './callouts';
@@ -478,6 +479,8 @@ export interface EditorHandle {
     focus(): void;
     format(mark: InlineMark): void;
     link(): void;
+    /** Colour the selected text, or — with nothing selected — the block the caret is in. */
+    color(color: BlockColor): void;
     /**
      * Make the block the caret is in (or the selected blocks) this type, as the slash menu does; a
      * block already of that type goes back to text. A divider or table is inserted after a block
@@ -530,6 +533,8 @@ export interface EditorProps {
      * read-only, and their actions still committed edits to the note.
      */
     hidden?: boolean;
+    /** The host shows its own formatting toolbar, so the floating one keeps only its link box. */
+    toolbarShown?: boolean;
     /** ⌘-click on a link to a stored file — the host reveals it (there is no URL to open). */
     onOpenAttachment?: (ref: string) => void;
     /**
@@ -556,6 +561,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onEscape,
         onOpenAttachment,
         hidden = false,
+        toolbarShown = false,
         scrollContainerRef,
     },
     ref,
@@ -818,6 +824,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (target) focusNow(target.id, 'end');
         },
         format: applyMark,
+        color: applyColor,
         link() {
             const target = activeEditable();
             if (!target) return;
@@ -1543,6 +1550,31 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         } else {
             commitHtml(target.blockId, target.el);
         }
+    };
+
+    const applyColor = (color: BlockColor) => {
+        const target = activeEditable();
+        if (target && colorSelection(color, target.el)) {
+            if (target.cell) {
+                updateTableCell(
+                    target.blockId,
+                    target.cell.row,
+                    target.cell.column,
+                    target.el.innerHTML,
+                );
+            } else {
+                commitHtml(target.blockId, target.el);
+            }
+            return;
+        }
+        const ids = target ? [target.blockId] : [...selectedIdsRef.current];
+        setBlocks((current) =>
+            current.map((block) =>
+                ids.includes(block.id) && canCarryColor(block.type)
+                    ? {...block, color: color === 'default' ? undefined : color}
+                    : block,
+            ),
+        );
     };
 
     const applyBlockType = (type: BlockType) => {
@@ -3879,6 +3911,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 onSync={syncRichText}
                 linkRequest={linkRequest}
                 hidden={hidden}
+                linkOnly={toolbarShown}
             />
             {toast && (
                 // `position: fixed` again — portaled for the same reason as the overlays above.

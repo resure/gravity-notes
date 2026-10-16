@@ -7,6 +7,8 @@
 import {Fragment} from 'react';
 import type {CSSProperties} from 'react';
 
+import {colorClassFor, colorFromClass} from '../../markdown/color';
+
 import type {BlockColor} from './types';
 
 export interface ColorOption {
@@ -95,4 +97,49 @@ export function ColorPalette({
             ))}
         </>
     );
+}
+
+/**
+ * Colour the selected text inside `root` — the inline half of the palette (the block menu colours a
+ * whole block). The range is rebuilt rather than handed to `execCommand`: the browser's own
+ * `foreColor` writes inline styles that the editor's sanitizer strips, and a background has no
+ * command at all.
+ *
+ * Colours nest, and the innermost wins in both CSS and the file's `{red}({blue}(…))`. Default is
+ * therefore the one case that has to REMOVE something, and it removes any colour the selection
+ * touches, including one that started outside it — a colour you cannot see the end of is worse
+ * than one that gives up more than you asked.
+ */
+export function colorSelection(color: BlockColor, root: HTMLElement | null): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !root) return false;
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) return false;
+    if (color === 'default') {
+        const ancestor = (
+            range.commonAncestorContainer instanceof Element
+                ? range.commonAncestorContainer
+                : range.commonAncestorContainer.parentElement
+        )?.closest('span');
+        if (ancestor && colorFromClass(ancestor.className) && root.contains(ancestor)) {
+            ancestor.replaceWith(...ancestor.childNodes);
+        }
+    }
+    const fragment = range.extractContents();
+    for (const span of [...fragment.querySelectorAll('span')]) {
+        if (colorFromClass(span.className)) span.replaceWith(...span.childNodes);
+    }
+    let inserted: Node = fragment;
+    if (color !== 'default') {
+        const span = document.createElement('span');
+        span.className = colorClassFor(color);
+        span.appendChild(fragment);
+        inserted = span;
+    }
+    range.insertNode(inserted);
+    sel.removeAllRanges();
+    const restored = document.createRange();
+    restored.selectNodeContents(inserted);
+    sel.addRange(restored);
+    return true;
 }
