@@ -37,16 +37,7 @@ export function isRoundTripStable(markdown: string): boolean {
     try {
         const parsed = markdownToBlocks(markdown);
         if (parsed.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH)) return false;
-        if (
-            parsed.some(
-                (block) =>
-                    block.type !== 'code' &&
-                    /\{%[\s\S]*?%\}|\{#[^}]+\}/.test(
-                        block.html.replace(/<code>[\s\S]*?<\/code>/g, ''),
-                    ),
-            )
-        )
-            return false;
+        if (parsed.some(hasUnsupportedStructure)) return false;
         const written = blocksToMarkdown(parsed);
         // Byte-identical: nothing to argue about.
         if (written === markdown.trim()) return true;
@@ -69,6 +60,15 @@ export function isRoundTripStable(markdown: string): boolean {
         // A parser crash is emphatically not a note we should be writing back.
         return false;
     }
+}
+
+function hasUnsupportedStructure(block: Block): boolean {
+    if (block.type === 'code') return false;
+    const html = block.html.replace(/<code>[\s\S]*?<\/code>/g, '');
+    return (
+        /\{%[\s\S]*?%\}|\{#[^}]+\}/.test(html) ||
+        /(?:^|<br>)(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}(?:<br>|$))/.test(html)
+    );
 }
 
 /**

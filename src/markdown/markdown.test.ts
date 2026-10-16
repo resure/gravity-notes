@@ -70,6 +70,11 @@ describe('YFM containers', () => {
         '{% cut "Unclosed" %}\nBody',
         '{% list tabs %}\n- Tab\n\n  Body\n{% endlist %}',
         '# Heading {#anchor}',
+        '#|\n|| a | b ||\n|| c | d ||\n|#',
+        'Term\n: Definition',
+        'Setext title\n===',
+        '[docs]: https://example.com\n\nRead [docs].',
+        '[^1]: Footnote body\n\nText[^1].',
     ])('uses source for unsupported structure: %s', (source) => {
         expect(isRoundTripStable(source)).toBe(false);
     });

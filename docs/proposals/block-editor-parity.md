@@ -2,104 +2,209 @@
 
 ## Session summary
 
-Work in progress on `block-editor-v2`. Preserve the round-trip guard and literal wiki links;
-unsupported syntax remains editable in source. No release or push is part of this work.
+Completed the audited scope on `block-editor-v2` on 2026-10-16. Every row below is implemented
+with tests or explicitly deferred. Full old-editor parity is **not** claimed.
+
+- Added YFM mark, underline, subscript, superscript and monospace; existing spellings survive editing.
+- Added YFM notes and cuts with titles, kinds, nested content and original body spacing. Existing
+  Obsidian callouts and HTML details retain their dialect. Newly inserted blocks keep the previous
+  block editor's spelling; the decision is recorded in `docs/architecture.md`.
+- Restored YFM preview for notes, interactive tabs, files, multiline tables, definition lists and
+  inline marks. Preview now works from the current source buffer, including forced-source notes.
+- Fixed IME DOM/key handling, literal link destinations and malformed percent escapes, lost link
+  titles, Enter detaching a YFM note body, typed ordered-list starts, unsafe cross-block paste,
+  dropped suffixes after image paste and parsing only part of a Markdown paste. Saved the initial
+  delayed-drag fix as a separate commit. Added typed strike, mark and underline.
+- Strengthened the guard for excessive depth and unsupported structural syntax. Literal wiki links
+  and the `NoteStore` seam remain intact. Demo vault: **0/65 source fallbacks before and after**.
+- Deferred complex YFM block authoring, rich HTML paste, full CommonMark parsing, extended source
+  tooling and several interaction refinements with specific reasons below. No push, tag or release.
+
+No human approval is required for the completed work. The next product choice is whether to
+prioritise complex YFM authoring (D1–D4) or rich HTML paste (D9). macOS/WKWebView and real OS IME
+qualification remain a separate hands-on check (D14).
 
 ## Evidence and priorities
 
-Baseline: `f48953c6`. Old application: `c86b0c8`, `EditorPane.tsx` and its local extensions.
-The published **15.41.0** package was downloaded to a temporary directory and its actual
-`build/cjs/presets/{full,yfm,default,commonmark,zero}.js` inspected. `full` adds Mark and Color
-to YFM; Emoji is conditional. YFM adds Deflist, Subscript, Superscript, Underline, Checkbox,
-ImgSize, Monospace, Video, YfmConfigs, Cut, Note, File, Heading, Table and Tabs.
-The app set `md.html: false`, disabled fuzzy URL matching, and supplied attachment, clipboard,
-wiki, URL-opening and typed-link extensions. Math and footnotes must not be inferred from “full”.
+Baseline: `f48953c6`; old app: `c86b0c8`, `EditorPane.tsx`, `package.json`, and the local editor
+extensions for attachments, clipboard, wiki links, typed URLs, selection and external links.
+The published **15.41.0** package was downloaded outside the repository and its actual
+`build/cjs/presets/{full,yfm,default,commonmark,zero}.js` inspected. `full` adds Mark and Color to
+YFM; Emoji is conditional and was not configured. YFM adds Deflist, Subscript, Superscript,
+Underline, Checkbox, ImgSize, Monospace, Video, YfmConfigs, Cut, Note, File, Heading, Table and Tabs.
+YfmConfigs enables **id attributes** by default; it is not a separate configuration-block grammar.
+The old app set `md.html: false`, disabled fuzzy URL matching and enabled its own URL typing rule.
+Math and footnotes are absent from the inspected preset chain. The old preview at `c86b0c8` also
+omitted files/tabs: their missing preview was not introduced by this branch.
 
-P0 = data integrity/crash; P1 = daily writing or existing YFM files; P2 = specialised content.
-“Existing” means covered by the baseline tests; “open” requires work or an explicit decision.
+P0 = integrity/crash; P1 = daily writing or existing YFM files; P2 = specialised content.
+Implemented baseline features are covered by `markdown.test.ts`, `Editor.test.tsx`,
+`documentModel.test.ts`, `BlockEditorBody.test.tsx` and the storage/attachment suites. New coverage
+also lives in `composition.test.tsx`, `links.test.tsx`, `yfm.test.tsx`, `typing.test.tsx`,
+`paste.test.tsx` and `NotePreview.test.tsx`. Both seeded round-trip properties still run 20,000
+seeds each; their grammar now includes YFM marks and containers.
 
-### Syntax
+### Syntax matrix
 
-| Construct                                       | Baseline block surface                          | Target spelling                       | Priority / status                    |
-| ----------------------------------------------- | ----------------------------------------------- | ------------------------------------- | ------------------------------------ | --- | ------- |
-| Paragraphs, soft breaks, intentional empty rows | Existing tests                                  | Plain text, newline, `&nbsp;`         | P1 existing                          |
-| Headings H1–H6                                  | Existing tests                                  | `#` through `######`                  | P1 existing                          |
-| Bullets, ordered lists, nested lists            | Existing tests                                  | `-`, numbered markers; preserve start | P1 existing                          |
-| Tasks                                           | Existing tests                                  | `- [ ]` / `- [x]`                     | P1 existing                          |
-| Quotes, rules, fenced code and language         | Existing tests                                  | `>`, `---`, original fence/info       | P1 existing                          |
-| Bold, italic, strike, code, links               | Existing tests                                  | CommonMark, GFM strike                | P1 existing                          |
-| Mark                                            | Parser + editor tests                           | `==text==`                            | P1 implemented                       |
-| Underline                                       | Both spellings tested                           | Preserve `++text++` or `<u>`          | P1 implemented                       |
-| Subscript / superscript                         | Parser + editor tests                           | `~text~` / `^text^`                   | P2 implemented (single-word scripts) |
-| Monospace                                       | Parser + editor tests                           | `##text##`                            | P2 implemented (single-word scripts) |
-| Colour                                          | Existing tests                                  | `{red}(text)`, `{bg:yellow}(text)`    | P1 existing                          |
-| Images, attachment URLs and dimensions          | Existing tests                                  | `![alt](src =100x)`                   | P1 existing                          |
-| GFM tables, alignment, padding                  | Existing tests                                  | Preserve pipe-table layout            | P1 existing                          |
-| Obsidian callouts                               | Existing tests                                  | Preserve `> [!kind]` and fold marker  | P1 existing                          |
-| YFM notes, title, nested content                | Parser, editor and generated tests              | Preserve `{% note kind "Title" %}`    | P1 implemented                       |
-| HTML details and nested toggles                 | Existing tests                                  | Preserve `<details>` / `<summary>`    | P1 existing                          |
-| YFM cuts                                        | Parser, editor and generated tests              | Preserve `{% cut "Title" %}`          | P1 implemented                       |
-| YFM tabs                                        | Unsupported; preview not configured             | Preserve `{% list tabs %}`            | P2 open                              |
-| YFM files                                       | Unsupported; preview not configured             | Preserve `{% file … %}`               | P2 open                              |
-| YFM multiline tables                            | Unsupported                                     | Preserve `#                           | …                                    | #`  | P2 open |
-| Definition lists                                | Unsupported                                     | `Term` followed by `: definition`     | P2 open                              |
-| Heading anchors                                 | Explicit source fallback                        | Preserve `{#id}`                      | P2 open                              |
-| Video / YFM configuration blocks                | Unsupported                                     | Preserve original YFM                 | P2 open                              |
-| Math and footnotes                              | Not in preset chain inspected                   | Preserve source                       | P2 open                              |
-| HTML blocks                                     | Disabled in old app; details special-cased here | Preserve source                       | P2 open                              |
-| YAML frontmatter                                | Source fallback                                 | Preserve source verbatim              | P0 existing guard                    |
-| Setext headings, indented code, reference links | Source fallback / literal                       | Preserve source                       | P2 open                              |
+| Construct                                       | Target spelling                      | Result                                                                            | Priority |
+| ----------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- | -------- |
+| Paragraphs, soft breaks, intentional empty rows | Text, newline, `&nbsp;`              | Implemented; existing tests. A lone blank-row file remains guarded source.        | P1       |
+| Headings H1–H6                                  | `#` through `######`                 | Implemented; existing tests                                                       | P1       |
+| Bullets, ordered and nested lists               | `-`, numbered markers                | Implemented; typed starting number now retained                                   | P1       |
+| Tasks                                           | `- [ ]` / `- [x]`                    | Implemented; existing tests                                                       | P1       |
+| Quotes and rules                                | `>`, `---`                           | Implemented; existing tests                                                       | P1       |
+| Fenced code and language                        | Original fence/info string           | Implemented; editor highlighting deferred D11                                     | P1       |
+| Bold, italic, strike and code                   | CommonMark / GFM                     | Implemented; typing and escape regressions added                                  | P1       |
+| Links, autolinks and optional titles            | `[text](url "title")`, `<url>`       | Implemented; DOM sanitising retains titles                                        | P0       |
+| Mark                                            | `==text==`                           | Implemented in blocks, typing and preview                                         | P1       |
+| Underline                                       | Preserve `++text++` or `<u>`         | Implemented; existing underline command still writes `<u>`                        | P1       |
+| Subscript / superscript                         | `~text~` / `^text^`                  | Single-word forms implemented; extended forms deferred D5                         | P2       |
+| Monospace                                       | `##text##`                           | Implemented in blocks and preview; multiline forms deferred D5                    | P2       |
+| Colour                                          | `{red}(text)`, `{bg:yellow}(text)`   | Implemented; grammar limitations deferred D18                                     | P1       |
+| Images, attachment paths, alt and dimensions    | `![alt](src =100x)`                  | Implemented; existing tests, native interaction qualification D14                 | P1       |
+| GFM tables, alignment and layout                | Original pipe-table spelling         | Implemented; header-column persistence deferred D17                               | P1       |
+| Obsidian callouts                               | Preserve `> [!kind]` and fold marker | Implemented; existing tests                                                       | P1       |
+| YFM notes                                       | Preserve `{% note kind "Title" %}`   | Implemented; parser, editor, generated and preview tests                          | P1       |
+| HTML details                                    | Preserve `<details>` / `<summary>`   | Implemented; existing nested-toggle tests                                         | P1       |
+| YFM cuts                                        | Preserve `{% cut "Title" %}`         | Implemented; expansion is session-only, as required by YFM                        | P1       |
+| YFM tabs                                        | Preserve `{% list tabs %}`           | Preview implemented and browser-qualified; source authoring, block UI deferred D1 | P2       |
+| YFM files                                       | Preserve `{% file … %}`              | Preview implemented; source authoring, block UI deferred D1                       | P2       |
+| YFM multiline tables                            | Preserve `#\| … \|#`                 | Preview implemented; guarded source authoring, grid UI deferred D2                | P2       |
+| Definition lists                                | Term followed by `: definition`      | Preview implemented; guarded source authoring, block UI deferred D3               | P2       |
+| Heading anchors and id attributes               | Preserve `{#id}` / id attributes     | Guarded source; block metadata/navigation deferred D4                             | P2       |
+| Video                                           | Preserve original YFM                | Preview plugin enabled; block authoring and expanded qualification deferred D1    | P2       |
+| Math / footnotes                                | Preserve original source             | Not in the old preset; rendering/structured authoring deferred D6                 | P2       |
+| General HTML                                    | Preserve literal source              | Old app disabled HTML; executable rendering remains deferred D7                   | P2       |
+| YAML frontmatter                                | Preserve source verbatim             | Guarded source implemented; structured metadata UI deferred D8                    | P0       |
+| Setext / reference links                        | Preserve source                      | Explicit structural source guard tested; structured editing deferred D8           | P2       |
+| Indented non-fenced code                        | Preserve source                      | Parser expansion deferred D8; source remains the authoring surface                | P2       |
+| Optional emoji extension                        | Literal Unicode                      | Was not configured; Unicode editing remains supported, colon picker deferred D20  | P2       |
 
-### Interaction and bug audit
+### Interaction and bug matrix
 
-| Area                                                  | Baseline / next verification                                          | Priority / status        |
-| ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------ |
-| Delayed drag state                                    | Pre-existing uncommitted fix and regression test; preserve separately | P0 existing local change |
-| Focus, caret, title handoff, collapsed blocks         | Existing regressions; browser exercise required                       | P1 open                  |
-| Undo/redo, StrictMode, note switching                 | Existing tests; browser exercise required                             | P0 open                  |
-| Composition in paragraphs and tables                  | Paragraph input rules still run during IME; table keys unguarded      | P0 open                  |
-| Relative / malformed links                            | Root click resolves relative URLs and decodes unvalidated escapes     | P0 open                  |
-| Cross-block selection, copy/cut/delete                | Whole-block policy; existing tests                                    | P1 open                  |
-| HTML / Markdown / plain clipboard; URL over selection | Existing tests; browser exercise required                             | P1 open                  |
-| Nesting, moving, duplication, drag                    | Existing subtree tests; browser exercise required                     | P1 open                  |
-| Markdown typing rules                                 | Block and inline rules exist; audit composition and undo              | P1 open                  |
-| Slash / wiki menus and inline toolbar                 | Existing tests; browser exercise required                             | P1 open                  |
-| Tables, TSV paste, navigation                         | Existing tests; composition gap                                       | P1 open                  |
-| Long documents, large tables, recursive toggles       | Existing model/serializer stress tests; audit runtime                 | P1 open                  |
-| Empty-block placeholders, handles, turn-into menu     | Existing surfaces; browser exercise required                          | P1 open                  |
-| Bare URL linkification                                | Missing since old editor                                              | P1 open                  |
-| Preview grammar                                       | Colour/cut/checks/imsize loaded; files/tabs absent                    | P1 open                  |
+| Area                                              | Result / evidence                                                                                                        | Priority |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------- |
+| Delayed drag crash                                | Initial correction committed separately as `690d69d`; delayed-timer regression and Chromium drag pass                    | P0       |
+| IME paragraph mutation and confirmation           | Fixed test-first; no rewriting/input shortcuts during composition, including key-code 229                                | P0       |
+| IME table navigation                              | Fixed test-first; cells retain the composing DOM and ignore composition-owned navigation                                 | P0       |
+| Relative links and malformed `%`                  | Fixed test-first; raw href policy and guarded attachment decoding                                                        | P0       |
+| Link titles lost on unrelated edits               | Fixed test-first; title retained through sanitising                                                                      | P0       |
+| Enter in a YFM note title                         | Fixed for empty/nonempty titles; existing body remains inside the container                                              | P0       |
+| Preview from source / forced source               | Fixed test-first; unsaved buffer rendered and same textarea restored                                                     | P0       |
+| Paste ending in image/table                       | Fixed test-first; text after the caret retained as a separate block when needed                                          | P0       |
+| Paste crossing text blocks                        | Fixed test-first and browser-qualified; touched blocks replaced as a unit                                                | P0       |
+| First block of a Markdown paste                   | Fixed for an empty paragraph; headings, lists, tables and YFM note tested                                                | P1       |
+| Unsupported multiline paste                       | Refused visibly with a source-mode hint; source accepts the original bytes                                               | P0       |
+| Excessive nesting / false structural guard passes | Depth and unsupported-structure regression tests added; source fallback                                                  | P0       |
+| Typing Markdown / numbered starts                 | Implemented with tests and Chromium typing; escaped/invalid delimiters stay literal                                      | P1       |
+| Focus, caret and title handoff                    | Existing regressions pass; normal typing, collapsed cuts and toolbar exercised; native qualification D14                 | P1       |
+| Undo/redo, StrictMode and note switching          | Existing regressions pass; Chromium table undo exercised; retained history across notes/modes deferred D12               | P0       |
+| Cross-block copy/cut/delete                       | Existing whole-block model retained; partial-text replacement deferred D13                                               | P1       |
+| Markdown/plain/internal clipboard                 | Existing tests plus paste boundary regressions pass                                                                      | P1       |
+| Rich HTML clipboard                               | Plain/Markdown fallback remains; rich import deferred D9                                                                 | P1       |
+| Paste URL over selected text                      | Chromium native `execCommand` produces the expected anchor                                                               | P1       |
+| Nesting, dragging and duplication                 | Subtree tests pass; real drag, keyboard move and duplicate exercised                                                     | P1       |
+| Keyboard move of multiple selected roots          | Deferred D10; single-root move and multiple-root drag/duplicate remain available                                         | P2       |
+| Slash / wiki menus                                | Existing regressions pass; browser slash-table and wiki insertion pass; extra Notion commands deferred D10               | P1       |
+| Inline toolbar                                    | Chromium selection and Bold button pass; extra mark/sub/sup buttons deferred D5                                          | P1       |
+| Tables, TSV paste and navigation                  | Existing matrix/grid tests and Chromium Tab/undo pass; IME fixed                                                         | P1       |
+| Empty placeholders, handles, turn-into            | Existing component/menu regressions pass; browser furniture, slash and drag exercised                                    | P1       |
+| Long documents / large tables                     | 5,000-paragraph and 150,000-row serialization audit passes; 2,000-block browser edit passed; virtualisation deferred D15 | P1       |
+| Bare URL linkification                            | Preview still links explicit schemes; editor typing rule deferred D16                                                    | P1       |
+| Source syntax highlighting / advanced commands    | Textarea remains editable; CodeMirror-level tooling deferred D19                                                         | P2       |
+| Spellcheck / image resize / file drop             | Existing inheritance/upload plumbing retained; hardware/native qualification deferred D14                                | P1       |
 
-Notion reference: [keyboard and Markdown shortcuts](https://www.notion.com/help/keyboard-shortcuts)
+The comparison uses [Notion keyboard and Markdown shortcuts](https://www.notion.com/help/keyboard-shortcuts)
 and [writing basics](https://www.notion.com/help/writing-and-editing-basics), checked 2026-10-16.
-Use the interaction model where it fits plain Markdown; keep the app's documented shortcuts.
+Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens app help.
 
-## Validation log
+## Deferred work and reasons
 
-- Initial user changes saved as `/private/tmp/gravity-notes-initial.patch`; do not include them
-  in unrelated commits. Colour swatches and the delayed-drag correction predate this session.
-- Baseline: 52 test files, 1,159 tests pass; typecheck, lint, formatting and web build pass.
-- Demo vault baseline: **0/65** notes fall back to source; audit reads only, stored in `/private/tmp/gravity-vault-before.json`.
-- IME input/confirmation and table navigation: five new regression tests first failed, then passed
-  after deferring DOM transforms during composition and retaining raw link destinations.
+- **D1 — tabs, files and video block authoring.** A tab group owns multiple independently editable
+  bodies, and file/video nodes carry attributes absent from this flat text/image model. Mapping
+  them to ordinary paragraphs would lie about their structure. Their YFM source stays editable;
+  the preview handles the supported renderer grammar. Local file actions inside preview still
+  follow its existing URL policy; a native attachment-opening control needs explicit plumbing.
+- **D2 — YFM multiline-table editing.** Its cells can hold block content and merged structure;
+  `TableData` is a rectangular inline-string grid. Converting it to GFM would discard capabilities.
+  Use guarded source plus preview until a richer table model and conversion tests exist.
+- **D3 — definition-list editing.** The current list model has no term/definition pairing. Flattening
+  pairs into bullets would change semantics. Keep source plus rendered preview.
+- **D4 — anchors/id attributes.** Needs block identity metadata, rename/duplicate behaviour and local
+  anchor navigation. Keeping the suffix as editable prose risks changing the id; source is explicit.
+- **D5 — extended inline forms and controls.** Escaped whitespace in sub/sup, multiline mark runs
+  and additional toolbar buttons need delimiter/selection semantics beyond the tested single-word
+  scripts. Keep their literal/source spelling rather than inventing an alternative encoding.
+- **D6 — math and footnotes.** Neither was enabled by the inspected full preset. Math would need a
+  renderer and block model; footnotes need document-wide reference handling. No new rendering
+  dependency was added merely because the old package had transitive KaTeX. Footnote definitions
+  now explicitly select source; unsupported preview syntax can remain literal.
+- **D7 — executable/general HTML.** The old app explicitly disabled raw HTML. Keep that behaviour;
+  arbitrary HTML is not converted into executable editor nodes. Details and legacy inline underline
+  remain the supported exceptions. Literal HTML can still be edited or viewed in source.
+- **D8 — full CommonMark and structured frontmatter.** Setext, references, context-sensitive
+  indented code and YAML need a broader document grammar than this line parser. No parser expansion
+  was attempted for them. Explicit source guards cover the regression cases; canonical spelling
+  normalisation is still the documented fallback check, not a complete CommonMark equivalence proof.
+- **D9 — rich HTML paste.** A safe importer must map block structure, lists, tables and attachments,
+  not just retain HTML tags. The old editor supplied that conversion. This editor retains its
+  plain/Markdown fallback until a dedicated importer and interoperability corpus can be added.
+- **D10 — remaining Notion commands.** Moving several disjoint selected subtrees by keyboard and
+  `/turn`, `/color`, `/duplicate`, Alt-drag need clear ordering/selection semantics. Existing menus,
+  single-block keyboard moves and multiple-block drag/duplicate cover the underlying actions.
+- **D11 — editor syntax highlighting.** Code language and preview highlighting work; adding a live
+  highlight layer without breaking IME/caret/undo needs separate qualification. Plain code remains
+  editable and its fence/info preserved.
+- **D12 — history across note or source/block switches.** Per-note remounts intentionally prevent
+  undo crossing into another file. Retaining independent histories and transferring them across
+  source conversion needs the separate history design already tracked in the repository backlog.
+- **D13 — partial text across blocks.** Copy/cut/delete/paste use touched whole blocks. Partial tree
+  replacement would need a document-range model; letting the browser mutate React-owned block DOM
+  caused the reproduced exception and is no longer used for cross-block paste.
+- **D14 — native/hardware interaction qualification.** Chromium interactions and synthetic IME
+  tests ran; real OS composition, WKWebView caret/drag, native file dialogs and image resizing need
+  hands-on qualification. Rust `cargo check` passed; no signed/notarized app or full DMG build ran.
+- **D15 — editor virtualisation.** Every block stays mounted and every edit serializes the document.
+  The volume audit checks correctness, not sustained typing latency, memory ceilings or screen-reader
+  behaviour for very large vault notes. Those require a performance budget and a range-aware layout.
+- **D16 — bare URLs in the editor.** The previous typing extension changed spelling to autolinks.
+  A new rule should preserve the existing bare spelling and caret/undo as the URL is extended or
+  punctuated. Explicit `[label](url)` and `<url>` already work; fuzzy domains remain disabled.
+- **D17 — table header-column state.** GFM has no such spelling. The existing control is session-only
+  and says so; persisting it requires choosing a richer table dialect, rather than hidden metadata.
+- **D18 — colour grammar.** Unbalanced parentheses have the same limitations as the YFM extension;
+  there is no portable colour syntax. Existing token spelling is retained rather than changed.
+- **D19 — source tooling.** The source surface remains a dependency-free textarea. Highlighting,
+  structured source shortcuts and source/block undo transfer would reintroduce an editor subsystem;
+  source editing, preview, resizing and per-note content isolation remain covered.
+- **D20 — emoji picker.** The optional old Emoji extension was not configured. Native Unicode
+  input still works; a Notion-style colon picker is not necessary for the verified baseline.
 
-- YFM note/cut containers preserve their dialect, nested body and blank-line spelling; generated
-  round-trip coverage includes both container kinds. Unsupported directives fail closed to source.
+## Validation and progress log
 
-- Preview regression tests reproduced nine missing YFM constructs, then passed after enabling
-  notes, tabs, files, multiline tables, definition lists and inline marks. Source-mode preview
-  now renders the unsaved buffer, with the textarea preserved when returning to edit.
-- Chromium: typed heading/bold, slash table, table Tab/undo, YFM container editing, delayed drag
-  and switching to the second preview tab passed, with no JavaScript errors.
-- Tauri: locked offline `cargo check` passed with Rust 1.96.
+1. Baseline: 52 files / 1,159 tests; typecheck, lint, formatting and web build passed. Saved the
+   initial user diff in `/private/tmp/gravity-notes-initial.patch`.
+2. `169eefa`: IME and link-destination regressions; `0822018`: YFM inline marks.
+3. `93e9383`: YFM note/cut containers, title Enter regression, generated grammar coverage.
+4. `fc43c3f`: preview grammar and live source preview. File/tabs packages were already installed
+   transitively; direct declarations introduced no new resolved versions. Main JS gzip grew from
+   about 895.75 kB at baseline to 899.72 kB after the preview change.
+5. `17b0a18`: typing, paste boundaries, link titles and depth safety. `690d69d`: the initial
+   delayed-drag correction, kept separate from other work. Initial colour-swatch changes remain
+   uncommitted and untouched.
+6. The final guard sweep reproduced five false structural passes, then tested guarded source for
+   multiline YFM tables, definition lists, setext headings and reference/footnote definitions.
+7. Both property tests run 20,000 seeds. Demo vault read-only audits before, between and after
+   changes all report **0/65** fallbacks. No demo or personal note was written.
+8. Chromium: heading/bold typing, mark/underline, numbering from 7, wiki insertion, slash table,
+   table Tab/undo, YFM note/cut editing, real deferred drag, cross-block replacement, inline toolbar,
+   URL over selection, keyboard move/duplicate and switching preview tabs passed. No JavaScript
+   errors; existing Vite dependency-externalisation warnings remained.
+9. Node volume audit: 5,000 paragraphs and 150,000 table rows serialized/reparsed successfully
+   (587 ms in this local run; no performance guarantee). Native shell: locked offline
+   `cargo check` passed with Rust 1.96. Single-file web qualification and final counts follow below.
 
-- Additional test-first repairs: preserve link titles through DOM sanitising; retain typed ordered
-  list starts; refuse files deeper than the editor can represent; preserve the suffix after image
-  paste; parse complete Markdown pastes; replace cross-block selections without native DOM edits.
-- Added typed strikethrough, mark and underline. Escaped delimiters and edge whitespace remain
-  literal so the resulting formatting can survive reload.
-
-## Deferred work and human decisions
-
-Pending the implementation and runtime audit. Each remaining item will receive an explicit
-reason here before the session is complete.
+10. Final checks: **57 test files / 1,232 tests passed**, typecheck, lint (zero errors),
+    formatting, normal web build and `build:single` passed. These checks preceded the final commit.
+11. Chromium opened 2,000 blocks and accepted typing in the last one (`Paragraph 1999 edited`),
+    with all 2,000 blocks retained. This is a correctness smoke check, not a latency budget.

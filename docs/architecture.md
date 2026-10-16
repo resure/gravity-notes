@@ -263,13 +263,14 @@ Markdown over anything clever.
 
 ## Known limitations
 
-- **A note the block model can't hold opens as raw Markdown.** The block model is smaller than
-  Markdown — YAML frontmatter isn't a block at all, and the parser is line-oriented rather than full
-  CommonMark, so setext headings, indented code blocks, reference links and HTML blocks other than
-  `<details>` all degrade. Any file holding one fails the load-time check and opens on its source
-  instead, fully editable, with nothing re-serialized. **Measured: 0 of 65 notes in the demo vault
-  and 0 of 13 in a smaller real one now fall back** (they were 45% and 85%); the check stays either
-  way, for the constructs nobody has hit yet.
+- **A note rejected by the round-trip guard opens as raw Markdown.** Explicit structural checks
+  cover YAML frontmatter, unhandled YFM directives, multiline YFM tables, definition lists, setext
+  headings, reference definitions and heading ids. Source stays fully editable, with preview
+  available. This is still a line parser, not a complete CommonMark model: other shapes, such as
+  context-sensitive indented code and literal HTML, can remain literal when their spelling passes
+  the guard. Full grammar support is deferred in the
+  [parity audit](proposals/block-editor-parity.md). **Measured in this audit: 0 of 65 demo notes
+  fall back before or after the changes.**
 - **Structured nesting is limited to six levels.** Deeper files open in source because the editor's
   structural operations clamp depth; a parser-only fixed point would otherwise approve content
   that the mounted editor then flattens. The source remains fully editable.
