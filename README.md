@@ -26,7 +26,8 @@ Markdown files, and they are yours.
 - **A block editor** for the body: slash menu, drag-to-reorder, block selection, tables, to-dos,
   images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them, and a note
   the block model can't represent exactly opens on that source instead, so your file is never
-  rewritten to fit the editor
+  rewritten to fit the editor. An optional formatting toolbar (Settings › Show editor toolbar)
+  puts the marks, text styles and block types one click away
 - **Markdown as you type**: headings, lists, tasks, bold, italic, code, strikethrough,
   `==highlight==` and `++underline++`; Markdown paste keeps complete blocks and surrounding text
 - **Colour** a block or a run of words — text or highlight — and it's saved with the note, as the

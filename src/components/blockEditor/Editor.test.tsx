@@ -1,4 +1,4 @@
-import {StrictMode} from 'react';
+import {StrictMode, createRef} from 'react';
 
 import {createEvent, fireEvent, render, screen} from '@testing-library/react';
 import {act} from 'react-dom/test-utils';
@@ -7,6 +7,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {openExternalUrl} from '../../openExternal';
 
 import Editor from './Editor';
+import type {EditorHandle} from './Editor';
 import {setCaret} from './caret';
 
 vi.mock('../../openExternal', () => ({openExternalUrl: vi.fn()}));
@@ -1715,6 +1716,71 @@ describe('undo history survives StrictMode', () => {
         undo();
         expect(document.querySelectorAll('.block')).toHaveLength(2);
     });
+});
+
+describe('toolbar commands', () => {
+    function renderWithHandle(value: string) {
+        const onChange = vi.fn();
+        const ref = createRef<EditorHandle>();
+        render(<Editor ref={ref} value={value} onChange={onChange} />);
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            first.focus();
+            setCaret(first, 'end');
+        });
+        return {ref, onChange};
+    }
+
+    it('toggles the focused block between a type and text', () => {
+        const {ref, onChange} = renderWithHandle('one\n\ntwo');
+        act(() => ref.current!.setBlockType('bulleted'));
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('- one\n\ntwo');
+        act(() => ref.current!.setBlockType('bulleted'));
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('one\n\ntwo');
+    });
+
+    it('inserts a divider after a block that has text', () => {
+        const {ref, onChange} = renderWithHandle('one\n\ntwo');
+        act(() => ref.current!.setBlockType('divider'));
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('one\n\n---\n\ntwo');
+    });
+
+    it('wraps the selection in inline code, and undoes it', () => {
+        const {ref, onChange} = renderWithHandle('one two');
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            const range = document.createRange();
+            range.setStart(first.firstChild!, 4);
+            range.setEnd(first.firstChild!, 7);
+            window.getSelection()!.removeAllRanges();
+            window.getSelection()!.addRange(range);
+        });
+        act(() => ref.current!.format('code'));
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('one `two`');
+        act(() => ref.current!.undo());
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('one two');
+    });
+});
+
+describe('turn into', () => {
+    it.each(['Quote', 'Heading 2', 'Bulleted list', 'Toggle list'])(
+        'shows the text once after turning a paragraph into %s',
+        (label) => {
+            renderEditor('Some **bold** text');
+            act(() => {
+                fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+            });
+            act(() => {
+                fireEvent.click(screen.getByText('Text'));
+            });
+            act(() => {
+                fireEvent.click(screen.getByText(label));
+            });
+            const body = document.querySelector('.block-body')!;
+            expect(body.querySelector('.content')!.textContent).toBe('Some bold text');
+            expect(body.textContent!.match(/Some bold text/g)).toHaveLength(1);
+        },
+    );
 });
 
 describe('heading anchors', () => {

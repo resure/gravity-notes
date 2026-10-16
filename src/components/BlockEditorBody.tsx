@@ -11,6 +11,7 @@ import {
 import {isRoundTripStable} from '../markdown';
 import type {Note, NoteMeta} from '../storage/types';
 
+import {EditorToolbar} from './EditorToolbar';
 import {NotePreview} from './NotePreview';
 import BlockEditor, {type EditorCaret, type EditorHandle} from './blockEditor/Editor';
 
@@ -65,6 +66,8 @@ export interface BlockEditorBodyProps {
      * were. The pane scrolls, not the editor, so this can't be read from inside.
      */
     scrollContainerRef?: React.RefObject<HTMLElement>;
+    /** Show the formatting toolbar above the blocks (Settings › Show editor toolbar). */
+    showToolbar?: boolean;
 }
 
 /** Where the reader was in a note, restored when they come back to it. */
@@ -114,6 +117,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             onOpenAttachment,
             forceSource = false,
             scrollContainerRef,
+            showToolbar = false,
         },
         ref,
     ) {
@@ -404,6 +408,13 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         return (
             <>
                 {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
+                {showToolbar && !preview ? (
+                    <EditorToolbar
+                        editorRef={editorRef}
+                        rootRef={rootRef}
+                        scrollContainerRef={scrollContainerRef}
+                    />
+                ) : null}
                 <div ref={rootRef} style={preview ? {display: 'none'} : undefined}>
                     <BlockEditor
                         ref={editorRef}

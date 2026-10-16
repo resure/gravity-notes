@@ -1,0 +1,66 @@
+/* Sticky above the note body; full-width so its background and hairline span the pane, with the
+   button row itself in the text column (see the centering rule in index.css). */
+.editor-toolbar {
+    position: sticky;
+    top: 0;
+    /* Above the blocks, which paint later and would otherwise show through. */
+    z-index: 3;
+    background: var(--g-color-base-background);
+}
+
+/* Once the note scrolls under the bar, a hairline separates them (a shadow, so it adds no height). */
+.editor-toolbar_scrolled {
+    box-shadow: 0 1px 0 0 var(--g-color-line-generic);
+}
+
+.editor-toolbar__row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    /* The first icon lines up with the text edge: the gutter plus a block's 2px, less the button's
+       own icon inset. */
+    padding: 4px var(--editor-gutter, 16px) 4px calc(var(--editor-gutter, 16px) - 6px);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.editor-toolbar__divider {
+    flex: none;
+    width: 1px;
+    height: 18px;
+    margin: 0 6px;
+    background: var(--g-color-line-generic);
+}
+
+/* Fixed width, so the buttons after it stay put as the caret moves between text and headings. */
+.editor-toolbar__style {
+    flex: none;
+    width: 112px;
+}
+
+.editor-toolbar__style .g-button__text {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+/* The block icons are the slash menu's own SVGs, not Gravity `Icon`s, so the button lays them out
+   as text: centre them the way it centres an icon. */
+.editor-toolbar__row .g-button__text:has(.editor-toolbar__block-icon) {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+.editor-toolbar__block-icon,
+.editor-toolbar__item-icon {
+    display: flex;
+}
+
+.editor-toolbar__block-icon svg,
+.editor-toolbar__item-icon svg {
+    width: 16px;
+    height: 16px;
+}

@@ -398,9 +398,24 @@ export interface EditorCaret {
     offset: number;
 }
 
+/** The inline marks the formatting toolbar applies, each the same as its keyboard chord. */
+export type InlineMark = 'bold' | 'italic' | 'underline' | 'strike' | 'code';
+
 export interface EditorHandle {
     /** Put the caret back in the body (the shell's focus ladder). */
     focus(): void;
+    /** Toggle a mark on the selection, as ⌘B / ⌘I / ⌘U / ⌘⇧S / ⌘E do. */
+    format(mark: InlineMark): void;
+    /** Open the link box for the selection, as ⌘K does. */
+    link(): void;
+    /**
+     * Make the block the caret is in (or the selected blocks) this type, as the slash menu does; a
+     * block already of that type goes back to text. A divider or table is inserted after a block
+     * that has text.
+     */
+    setBlockType(type: BlockType): void;
+    undo(): void;
+    redo(): void;
     /** Open a fresh empty block above everything and land on it (Enter from the note title). */
     insertBlockAtTop(): void;
     /** The caret's current position, or null when focus isn't in an editable block. */
@@ -503,6 +518,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     );
     const [toast, setToast] = useState<string | null>(null);
     const [focusedId, setFocusedId] = useState<string | null>(null);
+    // Outlives a blur: the toolbar's text-style menu takes focus before it applies a type.
+    const lastFocusedRef = useRef<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [slash, setSlash] = useState<SlashState | null>(null);
     const [slashIndex, setSlashIndex] = useState(0);
@@ -727,6 +744,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const target = blocksRef.current.find((block) => isEditableType(block.type));
             if (target) focusNow(target.id, 'end');
         },
+        format: applyMark,
+        link() {
+            if (!activeEditable() || window.getSelection()?.isCollapsed) return;
+            setLinkRequest((request) => request + 1);
+        },
+        setBlockType: applyBlockType,
+        undo() {
+            restoreHistory('undo');
+        },
+        redo() {
+            restoreHistory('redo');
+        },
         insertBlockAtTop() {
             const block = newBlock('text');
             setBlocks((current) => [block, ...current]);
@@ -917,6 +946,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const normalizeHtml = (id: string, html: string) => {
         const clean = stripZeroWidth(html);
         setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, html: clean} : b)), 'silent');
+    };
+
+    /** The block (or table cell) the caret is in, for the formatting toolbar. */
+    const activeEditable = (): {
+        blockId: string;
+        el: HTMLElement;
+        cell?: {row: number; column: number};
+    } | null => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return null;
+        for (const [blockId, el] of refs.current) if (el === active) return {blockId, el};
+        for (const [cellId, el] of tableRefs.current) {
+            if (el !== active) continue;
+            const [blockId, , row, column] = cellId.split(':');
+            return {blockId, el, cell: {row: Number(row), column: Number(column)}};
+        }
+        return null;
     };
 
     const focusNow = (id: string, pos: CaretPos) => {
@@ -1386,6 +1432,77 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         );
         if (type === 'table') focusReq.current = {id: tableCellId(id, 0, 0), pos: 'end'};
         else if (type !== 'divider') focusReq.current = {id, pos: 'end'};
+    };
+
+    /** The toolbar's mark buttons: the same as ⌘B / ⌘I / ⌘U / ⌘⇧S / ⌘E. */
+    const applyMark = (mark: InlineMark) => {
+        const target = activeEditable();
+        if (!target || findBlock(target.blockId)?.type === 'code') return;
+        if (mark === 'code') {
+            toggleInlineCode();
+        } else {
+            document.execCommand('styleWithCSS', false, 'false');
+            document.execCommand(mark === 'strike' ? 'strikeThrough' : mark);
+        }
+        if (target.cell) {
+            const {row, column} = target.cell;
+            updateTableCell(target.blockId, row, column, target.el.innerHTML);
+        } else {
+            commitHtml(target.blockId, target.el);
+        }
+    };
+
+    /** The toolbar's block buttons: see `EditorHandle.setBlockType`. */
+    const applyBlockType = (type: BlockType) => {
+        const lastFocused = lastFocusedRef.current;
+        const target =
+            activeEditable() ??
+            (selectedIdsRef.current.size === 0 && lastFocused && refs.current.get(lastFocused)
+                ? {blockId: lastFocused, el: refs.current.get(lastFocused)!}
+                : null);
+        if (!target) {
+            for (const id of selectedIdsRef.current) {
+                const block = findBlock(id);
+                if (block && isEditableType(block.type) && type !== 'divider' && type !== 'table')
+                    turnInto(id, block.type === type ? 'text' : type);
+            }
+            return;
+        }
+        if (target.cell) return;
+        const block = findBlock(target.blockId);
+        if (!block) return;
+        if (type !== 'divider' && type !== 'table') {
+            turnInto(block.id, block.type === type ? 'text' : type);
+            return;
+        }
+        if (block.type === 'text' && isEmptyHtml(block.html)) {
+            turnInto(block.id, type);
+            if (type === 'divider') {
+                const at = indexOf(block.id);
+                const next = blocksRef.current
+                    .slice(at + 1)
+                    .find((candidate) => isEditableType(candidate.type));
+                if (next) {
+                    focusReq.current = {id: next.id, pos: 'start'};
+                } else {
+                    const line = {...newBlock('text'), depth: block.depth ?? 0};
+                    setBlocks((current) => [...current, line]);
+                    focusReq.current = {id: line.id, pos: 'start'};
+                }
+            }
+            return;
+        }
+        const inserted = {...newBlock(type), depth: block.depth ?? 0};
+        if (type === 'table') inserted.table = newTableData('');
+        setBlocks((current) => {
+            const start = current.findIndex((candidate) => candidate.id === block.id);
+            const depth = block.depth ?? 0;
+            let at = start + 1;
+            while (at < current.length && (current[at].depth ?? 0) > depth) at++;
+            return [...current.slice(0, at), inserted, ...current.slice(at)];
+        });
+        // A divider leaves the caret where it was; a table takes it, to be filled in.
+        if (type === 'table') focusReq.current = {id: tableCellId(inserted.id, 0, 0), pos: 'start'};
     };
 
     const moveBlocks = (srcIds: string[], dstId: string, edge: 'before' | 'after') => {
@@ -3256,7 +3373,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         onKeyDown,
         onPaste,
         onCopyCut,
-        onFocus: (id) => setFocusedId(id),
+        onFocus: (id) => {
+            setFocusedId(id);
+            lastFocusedRef.current = id;
+        },
         onBlur: (id) => setFocusedId((cur) => (cur === id ? null : cur)),
         onToggleTodo: (id) =>
             setBlocks((bs) => bs.map((b) => (b.id === id ? {...b, checked: !b.checked} : b))),

@@ -56,6 +56,8 @@ interface EditorPaneProps {
     showNoteIcons?: boolean;
     /** Enable native spellcheck in the note body (Settings › Check spelling; off by default). */
     spellcheck?: boolean;
+    /** Show the formatting toolbar above the body (Settings › Show editor toolbar). */
+    showToolbar?: boolean;
 }
 
 /**
@@ -82,6 +84,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         onSetIcon,
         showNoteIcons,
         spellcheck = false,
+        showToolbar = false,
     },
     ref,
 ) {
@@ -229,7 +232,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     // already returned by the time this runs.
                     if (
                         (event.target as HTMLElement).closest(
-                            '.gn-block-editor, .block-editor-source',
+                            '.gn-block-editor, .block-editor-source, .editor-toolbar',
                         )
                     )
                         return;
@@ -268,6 +271,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                     autofocus={autofocus}
                     wikiNotes={wikiNotes}
                     forceSource={!blocksSafe}
+                    showToolbar={showToolbar}
                     scrollContainerRef={paneRef}
                     onChange={onChange}
                     onUploadFile={onUploadFile}

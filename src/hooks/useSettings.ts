@@ -25,6 +25,8 @@ export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'u
 export interface Settings {
     /** Show a per-note icon in the list + the note title (experimental; the IconPicker feature). */
     showNoteIcons: boolean;
+    /** Show the formatting toolbar above the note body. Off by default: the editor is keyboard-first. */
+    showEditorToolbar: boolean;
     /** Enable native spellcheck in both note-body editor modes. Off by default. */
     spellcheck: boolean;
     /** Font for the editor + preview + title (note content only). Default `sans` (the system font). */
@@ -37,6 +39,7 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
     showNoteIcons: false,
+    showEditorToolbar: false,
     spellcheck: false,
     editorFont: 'sans',
     accentColor: 'amber',
@@ -96,6 +99,7 @@ function loadSettings(key: string): Settings {
         const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings>;
         return {
             showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
+            showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             spellcheck: bool(raw.spellcheck, DEFAULTS.spellcheck),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
             accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),

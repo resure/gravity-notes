@@ -265,6 +265,7 @@ body,
 }
 
 .editor-pane .note-title-row,
+.editor-pane .editor-toolbar__row,
 .editor-pane .note-preview__body,
 .editor-pane .gn-block-editor .page,
 .editor-pane .block-editor-markup {

@@ -405,7 +405,7 @@ Key modules:
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
-  text width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
+  text width + the note-icons / editor-toolbar / spellcheck toggles), `WorkspaceSettings` (per-workspace `'default'`-able
   overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
   deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
   and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
@@ -483,8 +483,11 @@ Key modules:
   carries drag-resize — persisted as the YFM ` =600x` suffix, which `NotePreview`'s `imsize` plugin
   understands — plus alt/caption editing and explicit loading/broken states),
   `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
-  Appearance for the app and workspace layers), `NoteAppearancePopover` (the per-note font/width
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons, editor-toolbar and
+  spellcheck toggles + Appearance for the app and workspace layers), `EditorToolbar` (the optional
+  sticky formatting bar above the blocks — each button runs the editor's own chord/slash path through
+  `EditorHandle.format` / `setBlockType` / `link` / `undo` / `redo`; buttons never take focus, and
+  the pane's empty-area click handler skips it so a press doesn't move the caret first), `NoteAppearancePopover` (the per-note font/width
   popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
   `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
   derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;

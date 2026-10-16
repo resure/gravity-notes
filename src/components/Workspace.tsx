@@ -1755,6 +1755,7 @@ export function Workspace({
                                         icon={notes.metadata.icons[notes.note.id]}
                                         onSetIcon={(name) => notes.setIcon(notes.note!.id, name)}
                                         spellcheck={settings.spellcheck}
+                                        showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
                                     />
                                 </div>
