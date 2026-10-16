@@ -486,8 +486,9 @@ Key modules:
   under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons, editor-toolbar and
   spellcheck toggles + Appearance for the app and workspace layers), `EditorToolbar` (the optional
   sticky formatting bar above the blocks — each button runs the editor's own chord/slash path through
-  `EditorHandle.format` / `setBlockType` / `link` / `undo` / `redo`; buttons never take focus, and
-  the pane's empty-area click handler skips it so a press doesn't move the caret first), `NoteAppearancePopover` (the per-note font/width
+  `EditorHandle.format` / `setBlockType` / `link` / `color` / `undo` / `redo`; buttons never take
+  focus, and the pane's empty-area click handler skips it so a press doesn't move the caret first;
+  while it is shown the floating selection bar keeps only its ⌘K link box (`linkOnly`)), `NoteAppearancePopover` (the per-note font/width
   popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
   `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
   derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
