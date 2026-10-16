@@ -33,7 +33,7 @@ import {blocksToMarkdown} from './toMarkdown';
  * note's trailing newline is not a difference worth refusing over).
  */
 export function isRoundTripStable(markdown: string): boolean {
-    if (hasFrontmatter(markdown)) return false;
+    if (hasFrontmatter(markdown) || hasUnsupportedLines(markdown)) return false;
     try {
         const parsed = markdownToBlocks(markdown);
         if (parsed.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH)) return false;
@@ -65,10 +65,27 @@ export function isRoundTripStable(markdown: string): boolean {
 function hasUnsupportedStructure(block: Block): boolean {
     if (block.type === 'code') return false;
     const html = block.html.replace(/<code>[\s\S]*?<\/code>/g, '');
-    return (
-        /\{%[\s\S]*?%\}|\{#[^}]+\}/.test(html) ||
-        /(?:^|<br>)(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}(?:<br>|$))/.test(html)
-    );
+    return /\{%[\s\S]*?%\}|\{#[^}]+\}/.test(html);
+}
+
+// Read from the SOURCE, not the parsed HTML: the parse has already dropped the backslash that makes
+// `\[\^1\]: text` literal prose, so the HTML cannot tell it from a real footnote definition.
+const UNSUPPORTED_LINE =
+    /^(?:[ \t]*(?:>|[-*+]\s|\d+[.)]\s))*[ \t]*(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}[ \t]*$)/;
+
+function hasUnsupportedLines(markdown: string): boolean {
+    let fence: string | null = null;
+    for (const line of markdown.split('\n')) {
+        const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+        if (fence) {
+            if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+        } else if (marker) {
+            fence = marker;
+        } else if (UNSUPPORTED_LINE.test(line)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

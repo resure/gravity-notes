@@ -78,6 +78,14 @@ describe('YFM containers', () => {
     ])('uses source for unsupported structure: %s', (source) => {
         expect(isRoundTripStable(source)).toBe(false);
     });
+
+    it.each([
+        '\\[\\^1\\]: Escaped footnote text\n\nText.',
+        'Term\n\\: Not a definition',
+        '```md\n[^1]: inside code\n```',
+    ])('keeps literal look-alikes of unsupported structure in blocks: %s', (source) => {
+        expect(isRoundTripStable(source)).toBe(true);
+    });
 });
 
 describe('inline HTML → Markdown', () => {
