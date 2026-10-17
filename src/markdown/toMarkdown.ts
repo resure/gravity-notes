@@ -286,7 +286,8 @@ function headingLines(block: Block, content: string, indent: string): string[] {
 // `\s`, not a literal space: the PARSER's block patterns all use `\s+`, so `#\tfoo` is a heading to
 // it. Matching only a space here wrote that line unescaped and it came back as a heading with the
 // tab gone.
-const BLOCK_START = /^(?:#{1,6}(?:\s|$)|[-*+](?:\s|$)|>|`{3,}|~{3,}|-{3,}$|_{3,}$|\*{3,}$)/;
+// A backtick run only opens a fence when no backtick follows it on the line (see fenceOpening).
+const BLOCK_START = /^(?:#{1,6}(?:\s|$)|[-*+](?:\s|$)|>|`{3,}[^`]*$|~{3,}|-{3,}$|_{3,}$|\*{3,}$)/;
 
 /** An ordered-list marker, whose escapable character is the `.` or `)` — not the digits. */
 const ORDERED_START = /^(\d+)[.)](?=\s|$)/;

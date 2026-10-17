@@ -142,7 +142,7 @@ function parseLines(lines: Line[], baseDepth: number): Block[] {
         }
 
         // ---- fenced code -------------------------------------------------------------------
-        const fence = /^(`{3,}|~{3,})(.*)$/.exec(line.text);
+        const fence = fenceOpening(line.text);
         if (fence) {
             const body: string[] = [];
             let j = i + 1;
@@ -377,6 +377,15 @@ function findDetailsEnd(lines: Line[], start: number): number {
     return -1;
 }
 
+/**
+ * A code fence's opening line. A backtick fence's info string cannot hold a backtick (CommonMark),
+ * so a line starting ```` ```` ```json ```` ```` is prose with inline code, not a fence.
+ */
+export function fenceOpening(text: string): RegExpExecArray | null {
+    const fence = /^(`{3,}|~{3,})(.*)$/.exec(text);
+    return fence && !(fence[1][0] === '`' && fence[2].includes('`')) ? fence : null;
+}
+
 function findYfmEnd(lines: Line[], start: number, kind: 'note' | 'cut'): number {
     const stack = [kind];
     let fence: string | null = null;
@@ -386,7 +395,7 @@ function findYfmEnd(lines: Line[], start: number, kind: 'note' | 'cut'): number 
             if (new RegExp(`^${fence[0]}{${fence.length},}\\s*$`).test(text)) fence = null;
             continue;
         }
-        const openingFence = /^(`{3,}|~{3,})/.exec(text);
+        const openingFence = fenceOpening(text);
         if (openingFence) {
             fence = openingFence[1];
             continue;

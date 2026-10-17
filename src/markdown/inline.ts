@@ -202,6 +202,8 @@ export function inlineHtmlToMarkdown(html: string): string {
     let codeDepth = 0;
     // The delimiter the open <code> chose, held so the matching close can repeat it.
     let codeFence = '`';
+    // Whether the open span was padded, so its close is padded to match.
+    let codePadded = false;
     // `start` is where this anchor's content begins in `out`, so an autolink whose label has been
     // EDITED can rewind and re-emit itself in the `[label](href)` form (see the closing tag below).
     const openLinks: {
@@ -271,8 +273,9 @@ export function inlineHtmlToMarkdown(html: string): string {
         if (tag.name === 'code') {
             if (tag.closing) {
                 codeDepth = Math.max(0, codeDepth - 1);
-                out += codeFence;
+                out += `${codePadded ? ' ' : ''}${codeFence}`;
                 codeFence = '`';
+                codePadded = false;
                 continue;
             }
             // Size the fence to the content BEFORE opening it: a span holding a backtick needs a
@@ -285,8 +288,14 @@ export function inlineHtmlToMarkdown(html: string): string {
             codeFence = '`'.repeat(longestRunOf(body, '`') + 1);
             codeDepth += 1;
             out += codeFence;
-            // A span that opens or ends with a backtick needs padding spaces, which the reader strips.
-            if (body.startsWith('`') || body.endsWith('`')) out += ' ';
+            // A span that opens or ends with a backtick needs padding on BOTH ends, which the reader
+            // strips as a pair; so does one that opens and ends with a space, or the reader would
+            // strip that space as padding.
+            codePadded =
+                body.startsWith('`') ||
+                body.endsWith('`') ||
+                (body.startsWith(' ') && body.endsWith(' ') && body.trim() !== '');
+            if (codePadded) out += ' ';
             continue;
         }
         if (tag.name === 'u') {

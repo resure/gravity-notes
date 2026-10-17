@@ -81,6 +81,35 @@ describe('YFM containers', () => {
         expect(isRoundTripStable(source)).toBe(false);
     });
 
+    it.each(['- item\u00a0\n- next', 'para\u00a0\n\nnext', '# Title\u00a0'])(
+        'treats a no-break space ending a line as layout: %j',
+        (source) => {
+            expect(isRoundTripStable(source)).toBe(true);
+        },
+    );
+
+    it.each([
+        ['<code>```html</code>', '```` ```html ````'],
+        ['<code>```</code>', '```` ``` ````'],
+        ['<code> x </code>', '`  x  `'],
+    ])('pads a code span on both ends when it needs padding: %s', (html, written) => {
+        expect(inlineHtmlToMarkdown(html)).toBe(written);
+        expect(inlineMarkdownToHtml(written)).toBe(html);
+    });
+
+    it('reads a line starting with a backtick run that holds inline code as prose', () => {
+        const source = 'Strip the fence:\n```` ```json ```` and the rest.\n\nAfter.';
+        expect(markdownToBlocks(source).map((block) => block.type)).toEqual(['text', 'text']);
+        expect(isRoundTripStable(source)).toBe(true);
+    });
+
+    it.each(['- a\n  * nested\n  * more', 'line one\\\nline two', '> **Bold**\\\n> \\\n> after'])(
+        'accepts a normalisation that keeps the meaning: %j',
+        (source) => {
+            expect(isRoundTripStable(source)).toBe(true);
+        },
+    );
+
     it('reads a code fence inside a quote as code, not as structure', () => {
         expect(hasUnsupportedMarkdown('> ```md\n> [^1]: inside code\n> ```')).toBe(false);
         expect(hasUnsupportedMarkdown('> [^1]: a real definition')).toBe(true);

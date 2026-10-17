@@ -22,7 +22,7 @@
 import {MAX_BLOCK_DEPTH} from '../components/blockEditor/documentModel';
 import type {Block} from '../components/blockEditor/types';
 
-import {markdownToBlocks} from './fromMarkdown';
+import {fenceOpening, markdownToBlocks} from './fromMarkdown';
 import {blocksToMarkdown} from './toMarkdown';
 
 /**
@@ -94,12 +94,13 @@ const LINE_PREFIX = String.raw`^(?:[ \t]*(?:>|[-*+]\s|\d+[.)]\s))*[ \t]*`;
 const UNSUPPORTED_LINE = new RegExp(
     String.raw`${LINE_PREFIX}(?:#\||:\s|\[[^\]\n]+\]:\s|={3,}[ \t]*$)`,
 );
-const FENCE = new RegExp(String.raw`${LINE_PREFIX}(\`{3,}|~{3,})`);
+const PREFIX = new RegExp(LINE_PREFIX);
 
 function hasUnsupportedLines(markdown: string): boolean {
     let fence: string | null = null;
     for (const line of markdown.split('\n')) {
-        const marker = FENCE.exec(line)?.[1];
+        const prefix = PREFIX.exec(line)?.[0] ?? '';
+        const marker = fenceOpening(line.slice(prefix.length))?.[1];
         if (fence) {
             if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
         } else if (marker) {
@@ -123,10 +124,16 @@ function canonical(markdown: string): string {
         markdown
             // A redundant backslash escape: `\+` and `+` are the same character.
             .replace(/\\([!-/:-@[-`{-~])/g, '$1')
+            // A backslash hard break and a plain newline are the same <br> to this app (and its
+            // preview, which renders breaks).
+            .replace(/\\$/gm, '')
             // `_emphasis_` and `*emphasis*` are the same markup; we always write the asterisk form.
             .replace(/_/g, '*')
             // `*`, `+` and `-` are the same bullet; we always write the dash.
-            .replace(/^[*+] /gm, '- ')
+            .replace(/^([ \t]*)[*+] /gm, '$1- ')
+            // Whitespace ending a line is layout — the parser trims it, a no-break space included,
+            // which Obsidian and the iOS keyboard leave behind.
+            .replace(/[^\S\n]+$/gm, '')
             // Table cell padding and trailing spaces are layout, not content.
             .replace(/[ \t]+/g, ' ')
             .replace(/^ | $/gm, '')
