@@ -18,6 +18,7 @@ import {Button, DropdownMenu, Icon, Popup} from '@gravity-ui/uikit';
 import type {EditorHandle, InlineMark} from './blockEditor/Editor';
 import {ColorPalette} from './blockEditor/blockColors';
 import {MENU_ITEMS} from './blockEditor/blockConfig';
+import {subscribeSelectionFrame} from './blockEditor/selectionFrame';
 import type {BlockType} from './blockEditor/types';
 
 import './EditorToolbar.css';
@@ -114,10 +115,10 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
 
     useEffect(() => {
         refresh();
-        document.addEventListener('selectionchange', refresh);
+        const unsubscribe = subscribeSelectionFrame(refresh);
         document.addEventListener('focusin', refresh);
         return () => {
-            document.removeEventListener('selectionchange', refresh);
+            unsubscribe();
             document.removeEventListener('focusin', refresh);
         };
     }, [refresh]);

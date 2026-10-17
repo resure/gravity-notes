@@ -27,6 +27,14 @@ const NOTE = [
     '![red dot](Attachments/red-dot.png)',
 ].join('\n');
 
+/** Announce a caret move the way a browser does; the overlays that follow it react a frame later. */
+async function selectionChanged() {
+    await act(async () => {
+        document.dispatchEvent(new Event('selectionchange'));
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+}
+
 function renderEditor(value: string, onChange = vi.fn()) {
     render(<Editor value={value} onChange={onChange} />);
     return onChange;
@@ -742,16 +750,14 @@ describe('[[ picker commits against the trigger, not the live caret', () => {
     }
 
     /** Move the caret to an absolute offset and announce it the way a browser would. */
-    function caretTo(el: HTMLElement, offset: number) {
-        act(() => {
-            setCaret(el, offset);
-            document.dispatchEvent(new Event('selectionchange'));
-        });
+    async function caretTo(el: HTMLElement, offset: number) {
+        setCaret(el, offset);
+        await selectionChanged();
     }
 
     useInsertTextStub();
 
-    it('dismisses the picker when the caret moves out of the trigger', () => {
+    it('dismisses the picker when the caret moves out of the trigger', async () => {
         const onChange = vi.fn();
         render(<Editor value="" notes={NOTES} noteId="Home.md" onChange={onChange} />);
         const block = document.querySelector<HTMLElement>('.content')!;
@@ -762,11 +768,11 @@ describe('[[ picker commits against the trigger, not the live caret', () => {
         expect(screen.queryByRole('listbox', {name: 'Link to a note'})).toBeInTheDocument();
 
         // Arrow keys type nothing, so `input` never fires — `selectionchange` is what has to notice.
-        caretTo(block, 3);
+        await caretTo(block, 3);
         expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
     });
 
-    it('dismisses the picker when the caret leaves the block entirely', () => {
+    it('dismisses the picker when the caret leaves the block entirely', async () => {
         render(<Editor value={'one\n\ntwo'} notes={NOTES} noteId="Home.md" onChange={vi.fn()} />);
         const [first, second] = [...document.querySelectorAll<HTMLElement>('.content')];
         first.focus();
@@ -777,10 +783,8 @@ describe('[[ picker commits against the trigger, not the live caret', () => {
         // The caret moves to another block. Committing from here used to compute an offset that
         // overshot block one and deleted it from `[[` to its end, while the inserted link went into
         // block two's DOM and was then dropped on the next render.
-        act(() => {
-            setCaret(second, 'end');
-            document.dispatchEvent(new Event('selectionchange'));
-        });
+        setCaret(second, 'end');
+        await selectionChanged();
         expect(screen.queryByRole('listbox', {name: 'Link to a note'})).not.toBeInTheDocument();
         expect(first.textContent).toBe('one [[Dai');
     });
@@ -1493,7 +1497,7 @@ describe('the [[wiki link]] actions', () => {
     const NOTES = [{id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3}];
 
     /** Put the caret inside the link's decoration span, as a click or an arrow key would. */
-    function caretInLink() {
+    async function caretInLink() {
         const span = document.querySelector<HTMLElement>('.wiki-link')!;
         const range = document.createRange();
         range.setStart(span.firstChild!, 2);
@@ -1501,12 +1505,10 @@ describe('the [[wiki link]] actions', () => {
         const selection = window.getSelection()!;
         selection.removeAllRanges();
         selection.addRange(range);
-        act(() => {
-            document.dispatchEvent(new Event('selectionchange'));
-        });
+        await selectionChanged();
     }
 
-    it('offers Open / Edit / Unlink for the link the caret is in', () => {
+    it('offers Open / Edit / Unlink for the link the caret is in', async () => {
         const onWikiLinkNavigate = vi.fn();
         render(
             <Editor
@@ -1519,7 +1521,7 @@ describe('the [[wiki link]] actions', () => {
         );
         expect(screen.queryByRole('toolbar', {name: /Link to/})).not.toBeInTheDocument();
 
-        caretInLink();
+        await caretInLink();
         expect(screen.getByRole('toolbar', {name: 'Link to Daily log'})).toBeInTheDocument();
 
         act(() => {
@@ -1528,7 +1530,7 @@ describe('the [[wiki link]] actions', () => {
         expect(onWikiLinkNavigate).toHaveBeenCalledWith('Daily log');
     });
 
-    it('unlinks to the bare title, leaving the words behind', () => {
+    it('unlinks to the bare title, leaving the words behind', async () => {
         const onChange = vi.fn();
         render(
             <Editor
@@ -1538,7 +1540,7 @@ describe('the [[wiki link]] actions', () => {
                 onChange={onChange}
             />,
         );
-        caretInLink();
+        await caretInLink();
         act(() => {
             fireEvent.click(screen.getByText('Unlink'));
         });

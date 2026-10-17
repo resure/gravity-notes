@@ -122,6 +122,14 @@ export interface Corpus {
     loading: boolean;
 }
 
+function whenIdle(callback: () => void): void {
+    if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(callback, {timeout: 1000});
+    } else {
+        window.setTimeout(callback, 0);
+    }
+}
+
 /** The slice of `NoteStore` the corpus needs (kept narrow so tests can pass a stub). */
 type CorpusSource = Pick<NoteStore, 'getAll' | 'get'>;
 
@@ -130,7 +138,12 @@ type CorpusSource = Pick<NoteStore, 'getAll' | 'get'>;
  * `active = a query is live OR a note is open`, so the (potentially large) read only happens when a
  * feature actually needs the bodies.
  */
-export function useCorpus(store: CorpusSource, notes: NoteMeta[], active: boolean): Corpus {
+export function useCorpus(
+    store: CorpusSource,
+    notes: NoteMeta[],
+    active: boolean,
+    urgent = false,
+): Corpus {
     // content/lower entries (search indices). Fresh identity on every update — search needs that.
     const [corpus, setCorpus] = useState<Map<string, CorpusEntry>>(() => new Map());
     // The wiki-link index is held SEPARATELY so it can keep a stable identity across an update that
@@ -150,6 +163,12 @@ export function useCorpus(store: CorpusSource, notes: NoteMeta[], active: boolea
     corpusRef.current = corpus;
     const linksRef = useRef(linksById);
     linksRef.current = linksById;
+    const urgentRef = useRef(urgent);
+    urgentRef.current = urgent;
+    const wakeRef = useRef<(() => void) | null>(null);
+    useEffect(() => {
+        if (urgent) wakeRef.current?.();
+    }, [urgent]);
 
     // Drop the cached corpus when the backend changes, so neither consumer serves another store's notes.
     useEffect(() => {
@@ -175,7 +194,19 @@ export function useCorpus(store: CorpusSource, notes: NoteMeta[], active: boolea
                 let nextCorpus: Map<string, CorpusEntry>;
                 let nextLinks: Map<string, WikiLinkRef[]> | null = null;
                 if (cachedCorpus.size === 0) {
-                    // First read for this store/session: one bulk pass over every note.
+                    // Opening a note is what usually starts this, and in a big vault the bulk read
+                    // would land on that note's first paint; it waits for idle time unless a search
+                    // needs it now.
+                    if (!urgentRef.current) {
+                        let wake = () => {};
+                        await new Promise<void>((resolve) => {
+                            wake = resolve;
+                            wakeRef.current = resolve;
+                            whenIdle(resolve);
+                        });
+                        if (wakeRef.current === wake) wakeRef.current = null;
+                        if (cancelled) return;
+                    }
                     const all = await store.getAll();
                     if (cancelled) return;
                     nextCorpus = new Map();

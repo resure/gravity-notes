@@ -25,6 +25,10 @@ import type {Block} from '../components/blockEditor/types';
 import {fenceOpening, markdownToBlocks} from './fromMarkdown';
 import {blocksToMarkdown} from './toMarkdown';
 
+// The guard runs right before the editor parses the same note; handing its parse over saves the
+// editor a second one. Taken once, so no two owners ever share the blocks.
+let handoff: {markdown: string; blocks: Block[]} | null = null;
+
 /**
  * Whether `markdown` survives a parse/serialize cycle byte-for-byte, i.e. whether the block editor
  * can hold this note without rewriting parts of it the user never edited.
@@ -33,32 +37,45 @@ import {blocksToMarkdown} from './toMarkdown';
  * note's trailing newline is not a difference worth refusing over).
  */
 export function isRoundTripStable(markdown: string): boolean {
+    handoff = null;
     if (hasFrontmatter(markdown) || hasUnsupportedLines(markdown)) return false;
     try {
         const parsed = markdownToBlocks(markdown);
-        if (cannotHold(parsed)) return false;
-        const written = blocksToMarkdown(parsed);
-        // Byte-identical: nothing to argue about.
-        if (written === markdown.trim()) return true;
-        // Otherwise accept only a MEANING-PRESERVING normalisation — the same text, differing just
-        // in how Markdown spells it (`\+` vs `+`, `_it_` vs `*it*`, a layout we can't reproduce).
-        //
-        // This compares against the ORIGINAL TEXT, not against a second parse. Comparing two parses
-        // cannot work: information lost at the first parse is missing from both sides, so `#### h`
-        // vs `### h` and `[!warning]` vs `[!note]` both looked identical — the two cases the guard
-        // most needs to refuse.
-        if (canonical(markdown) !== canonical(written)) return false;
-        const reparsed = markdownToBlocks(written);
-        // Belt and braces: the canonicalisation is textual, so a structural loss it cannot see has
-        // to be caught here.
-        if (!sameContent(parsed, reparsed)) return false;
-        // …and one that SETTLES. Without this a note could be rewritten differently on every save,
-        // which is how emphasis once compounded into literal asterisks over three saves.
-        return blocksToMarkdown(reparsed) === written;
+        const stable = checkParsed(markdown, parsed);
+        if (stable) handoff = {markdown, blocks: parsed};
+        return stable;
     } catch {
         // A parser crash is emphatically not a note we should be writing back.
         return false;
     }
+}
+
+export function takeParsedBlocks(markdown: string): Block[] | null {
+    const taken = handoff?.markdown === markdown ? handoff.blocks : null;
+    handoff = null;
+    return taken;
+}
+
+function checkParsed(markdown: string, parsed: Block[]): boolean {
+    if (cannotHold(parsed)) return false;
+    const written = blocksToMarkdown(parsed);
+    // Byte-identical: nothing to argue about.
+    if (written === markdown.trim()) return true;
+    // Otherwise accept only a MEANING-PRESERVING normalisation — the same text, differing just
+    // in how Markdown spells it (`\+` vs `+`, `_it_` vs `*it*`, a layout we can't reproduce).
+    //
+    // This compares against the ORIGINAL TEXT, not against a second parse. Comparing two parses
+    // cannot work: information lost at the first parse is missing from both sides, so `#### h`
+    // vs `### h` and `[!warning]` vs `[!note]` both looked identical — the two cases the guard
+    // most needs to refuse.
+    if (canonical(markdown) !== canonical(written)) return false;
+    const reparsed = markdownToBlocks(written);
+    // Belt and braces: the canonicalisation is textual, so a structural loss it cannot see has
+    // to be caught here.
+    if (!sameContent(parsed, reparsed)) return false;
+    // …and one that SETTLES. Without this a note could be rewritten differently on every save,
+    // which is how emphasis once compounded into literal asterisks over three saves.
+    return blocksToMarkdown(reparsed) === written;
 }
 
 /**

@@ -45,10 +45,10 @@ describe('linkHref', () => {
 });
 
 describe('link popup', () => {
-    function caretInLink() {
+    async function caretInLink() {
         const content = document.querySelector<HTMLElement>('.content')!;
         const link = content.querySelector('a')!;
-        act(() => {
+        await act(async () => {
             content.focus();
             const range = document.createRange();
             range.setStart(link.firstChild!, 2);
@@ -56,13 +56,14 @@ describe('link popup', () => {
             window.getSelection()!.removeAllRanges();
             window.getSelection()!.addRange(range);
             document.dispatchEvent(new Event('selectionchange'));
+            await new Promise((resolve) => window.requestAnimationFrame(resolve));
         });
         return {content, link};
     }
 
-    it('shows where the link points, and opens it', () => {
+    it('shows where the link points, and opens it', async () => {
         render(<Editor value="see [docs](https://example.com) here" onChange={vi.fn()} />);
-        caretInLink();
+        await caretInLink();
         const tip = screen.getByRole('toolbar', {name: 'Link to https://example.com'});
         expect(tip).toHaveTextContent('https://example.com');
         act(() => {
@@ -71,9 +72,9 @@ describe('link popup', () => {
         expect(openExternalUrl).toHaveBeenCalledWith('https://example.com');
     });
 
-    it('Enter in the link box is consumed, so it cannot split the paragraph it links', () => {
+    it('Enter in the link box is consumed, so it cannot split the paragraph it links', async () => {
         render(<Editor value="see [docs](https://example.com) here" onChange={vi.fn()} />);
-        caretInLink();
+        await caretInLink();
         act(() => {
             fireEvent.click(screen.getByRole('button', {name: 'Edit'}));
         });
@@ -90,16 +91,16 @@ describe('link popup', () => {
         expect(notPrevented).toBe(false);
     });
 
-    it('Edit opens the link box on the whole link', () => {
+    it('Edit opens the link box on the whole link', async () => {
         render(<Editor value="see [docs](https://example.com) here" onChange={vi.fn()} />);
-        caretInLink();
+        await caretInLink();
         act(() => {
             fireEvent.click(screen.getByRole('button', {name: 'Edit'}));
         });
         expect(screen.getByRole('textbox', {name: 'Link URL'})).toHaveValue('https://example.com');
     });
 
-    it('Unlink keeps the words and drops the link', () => {
+    it('Unlink keeps the words and drops the link', async () => {
         const original = document.execCommand;
         document.execCommand = ((command: string) => {
             if (command !== 'unlink') return false;
@@ -111,7 +112,7 @@ describe('link popup', () => {
         try {
             const onChange = vi.fn();
             render(<Editor value="see [docs](https://example.com) here" onChange={onChange} />);
-            caretInLink();
+            await caretInLink();
             act(() => {
                 fireEvent.click(screen.getByRole('button', {name: 'Unlink'}));
             });

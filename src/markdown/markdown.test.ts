@@ -4,7 +4,7 @@ import type {Block, BlockType} from '../components/blockEditor/types';
 
 import {markdownToBlocks} from './fromMarkdown';
 import {decodeEntities, inlineHtmlToMarkdown, inlineMarkdownToHtml} from './inline';
-import {hasUnsupportedMarkdown, isRoundTripStable} from './roundTrip';
+import {hasUnsupportedMarkdown, isRoundTripStable, takeParsedBlocks} from './roundTrip';
 import {blocksToMarkdown} from './toMarkdown';
 
 function block(type: BlockType, html: string, over: Partial<Block> = {}): Block {
@@ -893,5 +893,21 @@ describe('blocksToMarkdown — reused lines', () => {
         expect(blocksToMarkdown(blocks)).toBe('alpha\n\nbeta');
         blocks[1].html = 'gamma';
         expect(blocksToMarkdown(blocks)).toBe('alpha\n\ngamma');
+    });
+});
+
+describe('takeParsedBlocks', () => {
+    it('hands the guard’s parse to the next taker of the same note, once', () => {
+        expect(isRoundTripStable('# one\n\ntwo')).toBe(true);
+        expect(takeParsedBlocks('# other')).toBeNull();
+        expect(isRoundTripStable('# one\n\ntwo')).toBe(true);
+        const taken = takeParsedBlocks('# one\n\ntwo');
+        expect(taken?.map((block) => block.type)).toEqual(['heading1', 'text']);
+        expect(takeParsedBlocks('# one\n\ntwo')).toBeNull();
+    });
+
+    it('hands nothing over for a note the editor will not open in blocks', () => {
+        expect(isRoundTripStable('---\ntitle: x\n---\n\nbody')).toBe(false);
+        expect(takeParsedBlocks('---\ntitle: x\n---\n\nbody')).toBeNull();
     });
 });

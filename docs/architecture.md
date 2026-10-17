@@ -169,8 +169,11 @@ a **long-note mode**: off-screen block bodies get `content-visibility: auto` (sk
 and paint), drag handles are mounted only on the hovered/focused/selected block, and per-note
 scroll is restored by block anchor rather than raw `scrollTop`, since skipped blocks are laid out
 at estimated heights. WebKit has no CSS scroll anchoring, so there a `ResizeObserver` pays back
-height changes above the viewport by hand (`scrollAnchoring.ts`). Measured on a 1 MB note against
-the previous ProseMirror editor: open ≈650 ms vs ≈900 ms, typing frame ≈35 ms vs ≈50–80 ms.
+height changes above the viewport by hand (`scrollAnchoring.ts`). Opening a note parses it once:
+the round-trip guard hands its blocks to the editor (`takeParsedBlocks`), and normalization keeps
+unchanged blocks as the same objects, so the serializer's cache from the guard still applies. The
+overlays that follow the caret share one `selectionchange` listener that runs once per frame
+(`selectionFrame.ts`), and the first corpus load waits for idle time unless a search needs it.
 
 ## The desktop shell
 

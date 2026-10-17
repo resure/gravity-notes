@@ -27,6 +27,7 @@ import {
     inlineHtmlToText,
     inlineMarkdownToHtml,
     markdownToBlocks,
+    takeParsedBlocks,
 } from '../../markdown';
 import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
 import {openExternalUrl} from '../../openExternal';
@@ -94,6 +95,7 @@ import {
 } from './documentModel';
 import {LANGUAGE_ITEMS} from './languages';
 import {LONG_DOCUMENT_BLOCKS, useScrollAnchoring} from './scrollAnchoring';
+import {subscribeSelectionFrame} from './selectionFrame';
 import {
     BLOCK_COLORS,
     BLOCK_TYPES,
@@ -327,7 +329,20 @@ function keptSpanClass(className: string): string | null {
     return color ? colorClassFor(color) : null;
 }
 
+const sanitized = new Map<string, string>();
+
 function sanitizeInlineHtml(html: string): string {
+    // Text with none of these characters parses to a single text node and serializes back unchanged.
+    if (!/[<>&\u00a0]/.test(html)) return html;
+    const known = sanitized.get(html);
+    if (known !== undefined) return known;
+    if (sanitized.size >= 20000) sanitized.clear();
+    const clean = sanitizeMarkup(html);
+    sanitized.set(html, clean);
+    return clean;
+}
+
+function sanitizeMarkup(html: string): string {
     const template = document.createElement('template');
     template.innerHTML = html;
     const allowed = new Set([
@@ -444,23 +459,41 @@ const COLUMN_ALIGNMENTS = new Set<unknown>(['left', 'center', 'right']);
  * `<a href="javascript:…">` straight into the live contentEditable.
  */
 function normalizeParsedBlocks(blocks: BlockData[]): BlockData[] {
-    return blocks.map((block) => ({
-        ...block,
-        html: sanitizeInlineHtml(block.html),
-        depth: Math.max(0, Math.min(6, Number(block.depth) || 0)),
-        table: block.type === 'table' ? normalizeTableData(block.table) : undefined,
-        color:
+    return blocks.map((block) => {
+        const html = sanitizeInlineHtml(block.html);
+        const depth = Math.max(0, Math.min(6, Number(block.depth) || 0));
+        const color =
             typeof block.color === 'string' && BLOCK_COLOR_SET.has(block.color as BlockColor)
                 ? (block.color as BlockColor)
-                : undefined,
-    }));
+                : undefined;
+        // Kept as the same object when nothing changes, so the serializer's per-block cache, warmed
+        // by the round-trip check, still applies.
+        if (
+            html === block.html &&
+            depth === block.depth &&
+            color === block.color &&
+            block.type !== 'table' &&
+            block.table === undefined
+        ) {
+            return block;
+        }
+        return {
+            ...block,
+            html,
+            depth,
+            table: block.type === 'table' ? normalizeTableData(block.table) : undefined,
+            color,
+        };
+    });
 }
 
 /** Parse a note's Markdown into the editor's blocks (an empty note still gets one block to type in). */
 function documentFromMarkdown(markdown: string, decorate: (html: string) => string): BlockData[] {
-    const blocks = normalizeParsedBlocks(markdownToBlocks(markdown)).map((block) =>
-        block.html ? {...block, html: decorate(block.html)} : block,
-    );
+    const parsed = takeParsedBlocks(markdown) ?? markdownToBlocks(markdown);
+    const blocks = normalizeParsedBlocks(parsed).map((block) => {
+        const html = block.html ? decorate(block.html) : block.html;
+        return html === block.html ? block : {...block, html};
+    });
     return blocks.length ? blocks : [newBlock()];
 }
 
@@ -1376,8 +1409,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
             syncWikiMenu(state, el);
         };
-        document.addEventListener('selectionchange', onSelectionChange);
-        return () => document.removeEventListener('selectionchange', onSelectionChange);
+        return subscribeSelectionFrame(onSelectionChange);
         // Only the open/closed transition matters: the handler reads the live state through refs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wiki !== null]);
@@ -2743,8 +2775,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     : {blockId, ...range, x: rect.left, y: rect.bottom + 6},
             );
         };
-        document.addEventListener('selectionchange', update);
-        return () => document.removeEventListener('selectionchange', update);
+        return subscribeSelectionFrame(update);
     }, []);
 
     /** Replace the link's whole `[[…]]` run with `replacement`, leaving the caret after it. */

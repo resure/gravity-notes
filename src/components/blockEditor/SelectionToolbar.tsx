@@ -5,6 +5,7 @@ import {OverlayPortal} from './OverlayPortal';
 import {ColorPalette, colorSelection} from './blockColors';
 import {toggleInlineCode} from './caret';
 import {LinkIcon} from './icons';
+import {subscribeSelectionFrame} from './selectionFrame';
 import type {BlockColor} from './types';
 
 interface ToolbarProps {
@@ -122,7 +123,7 @@ export default function SelectionToolbar({
             // Let the browser settle the selection first.
             setTimeout(update, 0);
         };
-        document.addEventListener('selectionchange', update);
+        const unsubscribe = subscribeSelectionFrame(update);
         document.addEventListener('mousedown', onMouseDown);
         document.addEventListener('mouseup', onMouseUp);
         // The bar is `position: fixed` over a selection rect measured when the selection changed.
@@ -131,7 +132,7 @@ export default function SelectionToolbar({
         window.addEventListener('scroll', update, true);
         window.addEventListener('resize', update);
         return () => {
-            document.removeEventListener('selectionchange', update);
+            unsubscribe();
             document.removeEventListener('mousedown', onMouseDown);
             document.removeEventListener('mouseup', onMouseUp);
             window.removeEventListener('scroll', update, true);
