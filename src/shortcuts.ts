@@ -470,7 +470,7 @@ export function normalizeChord(keys: string[]): string {
 /** The chords the global handler acts on, which an embedded editor must leave alone. */
 export const GLOBAL_CHORDS = new Set(
     SHORTCUTS.flatMap(({global}) => {
-        if (!global || global.trigger === 'bare') return [];
+        if (!global || global.trigger === 'bare' || global.inTyping === false) return [];
         const keys = [global.trigger, global.key];
         if (global.shift) keys.push('shift');
         if (global.alt) keys.push('alt');

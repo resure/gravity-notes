@@ -534,3 +534,25 @@ describe('BlockEditorBody — undo survives a note switch', () => {
         expect(editAndComeBack('alpha changed elsewhere')).not.toHaveBeenCalled();
     });
 });
+
+describe('BlockEditorBody — focus across a note switch in source mode', () => {
+    it('does not carry the old note’s focus into the next note’s source', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const props = {
+            preview: false,
+            onChange: vi.fn(),
+            onUploadFile: async () => '',
+            onOpenWikiLink: () => {},
+            wikiNotes: [],
+        };
+        const {rerender} = render(
+            <BlockEditorBody ref={ref} note={note('A.md', 'alpha')} sessionId={1} {...props} />,
+        );
+        act(() => ref.current!.toggleMode());
+        act(() => document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!.focus());
+        rerender(
+            <BlockEditorBody ref={ref} note={note('B.md', 'beta')} sessionId={2} {...props} />,
+        );
+        expect(document.querySelector('.block-editor-markup')).not.toBe(document.activeElement);
+    });
+});

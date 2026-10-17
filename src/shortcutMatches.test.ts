@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import {SHORTCUTS, shortcutMatches} from './shortcuts';
+import {GLOBAL_CHORDS, SHORTCUTS, normalizeChord, shortcutMatches} from './shortcuts';
 
 const matching = (query: string) =>
     SHORTCUTS.filter((shortcut) => shortcutMatches(shortcut, query)).map((s) => s.keys);
@@ -29,5 +29,13 @@ describe('shortcutMatches', () => {
 
     it('keeps everything for an empty query', () => {
         expect(matching('  ')).toHaveLength(SHORTCUTS.length);
+    });
+});
+
+describe('GLOBAL_CHORDS', () => {
+    it('holds the chords the global handler fires while typing, and nothing list-only', () => {
+        expect(GLOBAL_CHORDS.has(normalizeChord(['mod', '/']))).toBe(true);
+        expect(GLOBAL_CHORDS.has(normalizeChord(['Mod', 'Shift', '\\']))).toBe(true);
+        expect(GLOBAL_CHORDS.has(normalizeChord(['mod', 'shift', 'm']))).toBe(false);
     });
 });

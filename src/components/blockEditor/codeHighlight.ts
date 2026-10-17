@@ -40,6 +40,8 @@ interface Token {
 }
 
 const owned = new Map<HTMLElement, {group: string; range: AbstractRange}[]>();
+// The text length each block was last tokenized at, so sizing it needs no fresh `textContent`.
+const lengths = new WeakMap<HTMLElement, number>();
 
 function highlightFor(group: string): Highlight {
     const name = `gn-hl-${group}`;
@@ -148,6 +150,7 @@ function highlightNow(root: HTMLElement, language: string | undefined): void {
     clearCodeHighlight(root);
     if (!root.isConnected) return;
     const {text, nodes} = textModel(root);
+    lengths.set(root, text.length);
     const ranges: {group: string; range: AbstractRange}[] = [];
     for (const token of tokenize(text, language)) {
         const from = point(nodes, token.start, false);
@@ -198,7 +201,10 @@ export function scheduleCodeHighlight(root: HTMLElement, language: string | unde
         pending.set(root, language);
         if (!frame) frame = window.requestAnimationFrame(flush);
     };
-    if ((root.textContent?.length ?? 0) > LARGE_BLOCK_CHARS && owned.has(root)) {
+    if ((lengths.get(root) ?? 0) > LARGE_BLOCK_CHARS) {
+        // Static ranges stay where they were painted, so a pause-long wait would show colours
+        // shifted off their tokens; plain text until then reads better.
+        clearCodeHighlight(root);
         delayed.set(root, window.setTimeout(enqueue, LARGE_BLOCK_DELAY_MS));
     } else {
         enqueue();

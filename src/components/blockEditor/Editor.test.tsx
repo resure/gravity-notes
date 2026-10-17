@@ -2402,6 +2402,29 @@ describe('bare URLs', () => {
 });
 
 describe('a click beside the text', () => {
+    function gapPress(modifiers: {metaKey?: boolean} = {}, moveTo?: number) {
+        const page = document.querySelector<HTMLElement>('.page')!;
+        page.setPointerCapture = () => {};
+        page.hasPointerCapture = () => false;
+        const gap = document.querySelector<HTMLElement>('.blocks')!;
+        const at = {button: 0, pointerType: 'mouse', pointerId: 1, clientX: 50, clientY: 62};
+        act(() => {
+            fireEvent.pointerDown(gap, {...at, ...modifiers});
+            if (moveTo !== undefined) fireEvent.pointerMove(gap, {...at, clientY: moveTo});
+            fireEvent.pointerUp(gap, {...at, ...modifiers});
+        });
+    }
+
+    it('keeps the caret where it was on a ⌘-press, and drops it once a marquee is dragged', () => {
+        renderEditor('one\n\ntwo');
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => first.focus());
+        gapPress({metaKey: true});
+        expect(document.activeElement).toBe(first);
+        gapPress({}, 140);
+        expect(document.activeElement).not.toBe(first);
+    });
+
     it('puts the caret in the nearest line instead of nowhere', () => {
         renderEditor('one\n\n&nbsp;\n\nthree');
         const blocks = [...document.querySelectorAll<HTMLElement>('.blocks > .block')];

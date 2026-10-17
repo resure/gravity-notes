@@ -9,6 +9,7 @@ import {
     useRef,
     useState,
 } from 'react';
+import type {MutableRefObject} from 'react';
 
 import {isRoundTripStable} from '../markdown';
 import type {Note, NoteMeta} from '../storage/types';
@@ -162,8 +163,9 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         const rootRef = useRef<HTMLDivElement>(null);
         const previewRef = useRef<HTMLDivElement>(null);
         const sourceRef = useRef<SourceHandle>(null);
-        // ⌘⇧; from inside the body moves the caret along to the other surface.
-        const focusOnToggleRef = useRef(false);
+        // ⌘⇧; from inside the body moves the caret along to the other surface. A fresh object per
+        // session, so a surface unmounting on a note switch writes to the old one, not the next note's.
+        const focusOnToggleRef = useRef<MutableRefObject<boolean>>({current: false});
         // The live buffer, so preview mode and the raw-Markdown mode both show what is ON SCREEN
         // rather than what is on disk.
         const bufferRef = useRef(note.content);
@@ -215,7 +217,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // `forceSource`. This component is NOT keyed, so it has to be cleared by hand — guarded
             // because a render-phase dispatch has no eager bailout and would re-render every open.
             if (stuckOnSource) setStuckOnSource(false);
-            focusOnToggleRef.current = false;
+            focusOnToggleRef.current = {current: false};
         } else if (noteIdRef.current !== note.id) {
             // A rename/move re-keys the open note in place (id changes, session doesn't) — carry
             // its saved position to the new id so a later switch-and-back still restores it.
@@ -257,7 +259,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // Representable again — release the latch, or `source` would stay true underneath a
             // flipped `markup` and the blocks surface would never come back.
             setStuckOnSource(false);
-            focusOnToggleRef.current = bodyHasFocus;
+            focusOnToggleRef.current.current = bodyHasFocus;
             setMarkup((on) => !on);
         };
 
@@ -379,7 +381,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 ref: sourceRef,
                 readValue: () => bufferRef.current,
                 onChange: handleChange,
-                focusOnMount: focusOnToggleRef,
+                focusOnMount: focusOnToggleRef.current,
             };
             return (
                 <>
@@ -432,7 +434,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         ref={editorRef}
                         key={sessionId}
                         value={bufferRef.current}
-                        autofocus={focusOnToggleRef.current ? 'body' : autofocus}
+                        autofocus={focusOnToggleRef.current.current ? 'body' : autofocus}
                         initialCaret={restoreRef.current?.caret ?? null}
                         resume={resumable(restoreRef.current?.history, bufferRef.current)}
                         notes={wikiNotes}
