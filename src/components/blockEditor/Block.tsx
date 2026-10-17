@@ -7,7 +7,7 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {calloutIcon, calloutLabel} from './callouts';
 import {setCaret, stripZeroWidth} from './caret';
-import {CheckIcon, DragIcon, PlusIcon} from './icons';
+import {CheckIcon, DragIcon} from './icons';
 import {languageLabel} from './languages';
 import type {Block as BlockData, ImageData} from './types';
 
@@ -59,7 +59,6 @@ export interface BlockHandlers {
     onTableToggleHeaderRow: (blockId: string) => void;
     onTableToggleHeaderColumn: (blockId: string) => void;
     onSelectBlock: (id: string) => void;
-    onPlusClick: (e: MouseEvent<HTMLButtonElement>, id: string) => void;
     onHandleClick: (e: MouseEvent<HTMLButtonElement>, id: string) => void;
     onDragStart: (e: DragEvent<HTMLButtonElement>, id: string) => void;
     onDragEnd: () => void;
@@ -370,8 +369,6 @@ function Block({
             onDragOver={(e) => handlers.onDragOver(e, block.id)}
             onDrop={(e) => handlers.onDrop(e, block.id)}
         >
-            {/* Both controls sit in the left gutter (see the handle slots in editor.css), which is
-                also the order they read in: add, drag, then the block itself. */}
             <div className="handles handle-slot handle-slot_left" contentEditable={false}>
                 <button
                     type="button"
@@ -384,18 +381,6 @@ function Block({
                     onDragEnd={handlers.onDragEnd}
                 >
                     <DragIcon />
-                </button>
-            </div>
-            <div className="handles handle-slot handle-slot_right" contentEditable={false}>
-                <button
-                    type="button"
-                    className="handle-btn plus-btn"
-                    title="Click to add a block below"
-                    tabIndex={0}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => handlers.onPlusClick(e, block.id)}
-                >
-                    <PlusIcon />
                 </button>
             </div>
             <div className="block-body">

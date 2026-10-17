@@ -2172,6 +2172,23 @@ describe('selection, clipboard and table edges', () => {
     });
 });
 
+describe('block menu', () => {
+    it('Add block below inserts after the block’s children and opens the slash menu', () => {
+        renderEditor('- a\n  - b\n\nc');
+        act(() => {
+            fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
+        });
+        act(() => {
+            fireEvent.click(screen.getByRole('menuitem', {name: 'Add block below'}));
+        });
+        const texts = [...document.querySelectorAll('.block')].map(
+            (block) => block.querySelector('.content')?.textContent,
+        );
+        expect(texts).toEqual(['a', 'b', '', 'c']);
+        expect(screen.getByRole('listbox', {name: 'Block types'})).toBeInTheDocument();
+    });
+});
+
 describe('turn into', () => {
     it.each(['Quote', 'Heading 2', 'Bulleted list', 'Toggle list'])(
         'shows the text once after turning a paragraph into %s',

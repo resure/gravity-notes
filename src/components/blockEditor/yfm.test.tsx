@@ -42,7 +42,7 @@ describe('YFM container content', () => {
             fireEvent.click(document.querySelector<HTMLElement>('.drag-btn')!);
         });
         act(() => {
-            fireEvent.click(document.querySelectorAll<HTMLElement>('.block-menu .menu-item')[2]);
+            fireEvent.click(screen.getByRole('menuitem', {name: /^Callout/}));
         });
         act(() => {
             fireEvent.click(screen.getByRole('menuitem', {name: /^Text/}));

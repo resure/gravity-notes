@@ -3507,7 +3507,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // ----- hover controls -----
 
-    const onPlusClick = (_e: MouseEvent<HTMLButtonElement>, id: string) => {
+    /** The block menu's "Add block below": an empty line after the block, with the slash menu open. */
+    const addBlockBelow = (id: string) => {
         const block = findBlock(id);
         if (!block) return;
         if (block.type === 'text' && isEmptyHtml(block.html)) {
@@ -3517,11 +3518,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
         const nb = {...newBlock('text'), depth: block.depth ?? 0};
-        const idx = indexOf(id);
+        // After the block's children, which stay its own.
         setBlocks((bs) => {
-            const arr = [...bs];
-            arr.splice(idx + 1, 0, nb);
-            return arr;
+            const at = afterSubtree(
+                bs,
+                bs.findIndex((candidate) => candidate.id === id),
+            );
+            return [...bs.slice(0, at), nb, ...bs.slice(at)];
         });
         focusReq.current = {id: nb.id, pos: 'start'};
         openMenuFor.current = nb.id;
@@ -3744,7 +3747,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         },
         onContentMouseDown,
         onSelectBlock: selectSingleBlock,
-        onPlusClick,
         onHandleClick,
         onDragStart,
         onDragEnd,
@@ -3837,6 +3839,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     y={blockMenu.y}
                     currentType={menuBlock.type}
                     currentColor={menuBlock.color}
+                    onAddBelow={() => {
+                        setBlockMenu(null);
+                        addBlockBelow(blockMenu.id);
+                    }}
                     onDelete={() => {
                         setBlockMenu(null);
                         removeBlocks([blockMenu.id]);

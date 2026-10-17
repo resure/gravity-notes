@@ -4,7 +4,14 @@ import type {KeyboardEvent} from 'react';
 import {OverlayPortal} from './OverlayPortal';
 import {COLOR_OPTIONS, ColorPalette, swatchStyle} from './blockColors';
 import {MENU_ITEMS} from './blockConfig';
-import {ChevronLeftIcon, ChevronRightIcon, DuplicateIcon, TickIcon, TrashIcon} from './icons';
+import {
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    DuplicateIcon,
+    PlusIcon,
+    TickIcon,
+    TrashIcon,
+} from './icons';
 import type {BlockColor, BlockType} from './types';
 import {useAnchoredOverlay} from './useAnchoredOverlay';
 
@@ -14,6 +21,7 @@ interface BlockMenuProps {
     y: number;
     currentType: BlockType;
     currentColor?: BlockColor;
+    onAddBelow: () => void;
     onDelete: () => void;
     onDuplicate: () => void;
     onTurnInto: (type: BlockType) => void;
@@ -30,6 +38,7 @@ export default function BlockMenu({
     y,
     currentType,
     currentColor = 'default',
+    onAddBelow,
     onDelete,
     onDuplicate,
     onTurnInto,
@@ -136,6 +145,8 @@ export default function BlockMenu({
             >
                 {view === 'main' && (
                     <>
+                        {itemButton('Add block below', <PlusIcon />, onAddBelow)}
+                        <div className="menu-divider" />
                         {itemButton('Delete', <TrashIcon />, onDelete, 'Del')}
                         {itemButton('Duplicate', <DuplicateIcon />, onDuplicate, '⌘D')}
                         <div className="menu-divider" />

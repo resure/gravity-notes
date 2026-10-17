@@ -367,25 +367,11 @@
     --gn-block-line: 24px;
 }
 
-/* Both controls live in the LEFT gutter, the way Notion has them: add, then drag, then the text.
-   The pane widens `--editor-gutter` to fit the pair (EditorPane.css), and the note title reads the
-   same variable, so title and body keep one left edge.
-
-   They are two absolutely-positioned slots rather than one flex row because the narrow layout puts
-   them back on opposite margins — a 16px gutter has room for neither, let alone both. */
+/* The drag handle lives in the LEFT gutter; adding a block is an item in its menu, so the gutter
+   only has to hold the one 18px button. The pane sizes `--editor-gutter` to fit it (EditorPane.css),
+   and the note title reads the same variable, so title and body keep one left edge. */
 .gn-block-editor .handle-slot_left {
     left: -23px;
-}
-
-.gn-block-editor .handle-slot_right {
-    right: -30px;
-}
-
-@media (min-width: 721px) {
-    .gn-block-editor .handle-slot_right {
-        right: auto;
-        left: -47px;
-    }
 }
 
 .gn-block-editor .block:hover .handles,
@@ -413,11 +399,6 @@
     opacity: 1;
     outline: 2px solid rgba(35, 131, 226, 0.35);
     outline-offset: -2px;
-}
-
-.gn-block-editor .plus-btn {
-    width: 24px;
-    height: 24px;
 }
 
 .gn-block-editor .drag-btn {
