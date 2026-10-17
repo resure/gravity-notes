@@ -53,21 +53,19 @@ export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
                         />
                     </div>
                     {groups.length === 0 && <Text color="secondary">No shortcut matches.</Text>}
-                    {groups.map(({group, rows}) => {
-                        return (
-                            <div key={group} className="shortcuts-dialog__group">
-                                <Text variant="subheader-1" color="secondary">
-                                    {group}
-                                </Text>
-                                {rows.map((shortcut) => (
-                                    <div key={shortcut.keys} className="shortcuts-dialog__row">
-                                        <Text>{shortcut.description}</Text>
-                                        <Hotkey value={shortcut.keys} />
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    })}
+                    {groups.map(({group, rows}) => (
+                        <div key={group} className="shortcuts-dialog__group">
+                            <Text variant="subheader-1" color="secondary">
+                                {group}
+                            </Text>
+                            {rows.map((shortcut) => (
+                                <div key={shortcut.keys} className="shortcuts-dialog__row">
+                                    <Text>{shortcut.description}</Text>
+                                    <Hotkey value={shortcut.keys} />
+                                </div>
+                            ))}
+                        </div>
+                    ))}
                 </div>
             </Dialog.Body>
         </Dialog>

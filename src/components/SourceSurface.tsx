@@ -1,4 +1,5 @@
 import {forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef} from 'react';
+import type {MutableRefObject} from 'react';
 
 /** What the pane asks of the raw-Markdown surface, whichever editor draws it. */
 export interface SourceHandle {
@@ -17,15 +18,16 @@ export interface SourceSurfaceProps {
      */
     readValue(): string;
     onChange(text: string): void;
-    autoFocus?: boolean;
+    /**
+     * Owned by the pane, per session: whether this surface should take focus when it mounts. The
+     * loading textarea leaves it set if it had focus, so CodeMirror takes over when it replaces it.
+     */
+    focusOnMount?: MutableRefObject<boolean>;
 }
-
-// Set while the loading fallback holds focus, so CodeMirror can take it over when it replaces it.
-export const fallbackFocus = {held: false};
 
 /** The plain textarea: what source mode shows while CodeMirror loads, and in tests. */
 export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(function TextareaSource(
-    {readValue, onChange, autoFocus},
+    {readValue, onChange, focusOnMount},
     ref,
 ) {
     const markupRef = useRef<HTMLTextAreaElement>(null);
@@ -52,10 +54,10 @@ export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(funct
     // different text width all re-wrap the text, which is what decides the height.
     useLayoutEffect(() => {
         const element = markupRef.current;
-        if (autoFocus) element?.focus();
+        if (focusOnMount?.current) element?.focus();
         // Runs while the textarea is still in the document, so it can still be asked.
         return () => {
-            fallbackFocus.held = document.activeElement === element;
+            if (focusOnMount) focusOnMount.current = document.activeElement === element;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at mount
     }, []);

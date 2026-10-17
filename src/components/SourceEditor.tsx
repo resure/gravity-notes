@@ -20,33 +20,19 @@ import {
 } from '@codemirror/view';
 import {tags} from '@lezer/highlight';
 
-import {SHORTCUTS} from '../shortcuts';
+import {GLOBAL_CHORDS, normalizeChord} from '../shortcuts';
 
-import {type SourceHandle, type SourceSurfaceProps, fallbackFocus} from './SourceSurface';
-
-const chord = (keys: string[]) =>
-    keys
-        .map((key) => key.toLowerCase())
-        .map((key) => ({arrowup: 'up', arrowdown: 'down', cmd: 'mod', meta: 'mod'})[key] ?? key)
-        .sort()
-        .join('+');
+import type {SourceHandle, SourceSurfaceProps} from './SourceSurface';
 
 // The app's global chords win: CodeMirror's defaults include ⌘/ (help here), ⌘⇧\ (the folder
-// rail)… Only chords with a modifier are given up — Enter and Tab stay the editor's.
-const APP_CHORDS = new Set(
-    SHORTCUTS.filter((shortcut) => shortcut.global)
-        .flatMap((shortcut) => shortcut.keys.split(' '))
-        .filter((keys) => /\b(mod|alt|ctrl)\+/.test(keys))
-        .map((keys) => chord(keys.split('+'))),
-);
-
+// rail)…
 function withoutAppChords(bindings: readonly KeyBinding[]): KeyBinding[] {
     return bindings.filter(({key, mac}) => {
         const binding = mac ?? key;
         if (!binding) return true;
         // `Mod-[` splits on its own dash only; a key that IS a dash would be the trailing empty part.
         const keys = binding.split(/-(?!$)/);
-        return !APP_CHORDS.has(chord(keys));
+        return !GLOBAL_CHORDS.has(normalizeChord(keys));
     });
 }
 
@@ -152,7 +138,7 @@ function emptyFirstLine(view: EditorView): boolean {
 }
 
 const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function SourceEditor(
-    {readValue, onChange, autoFocus},
+    {readValue, onChange, focusOnMount},
     ref,
 ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -209,8 +195,8 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
             }),
         });
         viewRef.current = view;
-        if (autoFocus || fallbackFocus.held) view.focus();
-        fallbackFocus.held = false;
+        if (focusOnMount?.current) view.focus();
+        if (focusOnMount) focusOnMount.current = false;
 
         const spellcheckChanges = new MutationObserver(() =>
             view.dispatch({effects: spellcheck.reconfigure(spellcheckAttribute())}),

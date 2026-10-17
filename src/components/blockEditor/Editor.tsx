@@ -60,7 +60,6 @@ import {
     caretLineRect,
     caretOnFirstLine,
     caretOnLastLine,
-    caretRangeFromPoint,
     deleteTextRange,
     escapeHtml,
     getCaretOffset,
@@ -71,6 +70,7 @@ import {
     rangeTextWithin,
     selectionHtml,
     setCaret,
+    setCaretAtPoint,
     splitHtmlAtCaret,
     stripZeroWidth,
     toggleInlineCode,
@@ -140,7 +140,6 @@ interface HistoryEntry {
     caret: number;
 }
 
-/** An editing session to resume: the document, its undo/redo stacks, and the Markdown it is. */
 export interface EditorSnapshot {
     blocks: BlockData[];
     past: HistoryEntry[];
@@ -508,16 +507,17 @@ function normalizeParsedBlocks(blocks: BlockData[]): BlockData[] {
     });
 }
 
+type Decorate = (html: string, type: BlockType) => string;
+
+function decorateBlock(block: BlockData, decorate: Decorate): BlockData {
+    const html = block.html ? decorate(block.html, block.type) : block.html;
+    return html === block.html ? block : {...block, html};
+}
+
 /** Parse a note's Markdown into the editor's blocks (an empty note still gets one block to type in). */
-function documentFromMarkdown(
-    markdown: string,
-    decorate: (html: string, type: BlockType) => string,
-): BlockData[] {
+function documentFromMarkdown(markdown: string, decorate: Decorate): BlockData[] {
     const parsed = takeParsedBlocks(markdown) ?? markdownToBlocks(markdown);
-    const blocks = normalizeParsedBlocks(parsed).map((block) => {
-        const html = block.html ? decorate(block.html, block.type) : block.html;
-        return html === block.html ? block : {...block, html};
-    });
+    const blocks = normalizeParsedBlocks(parsed).map((block) => decorateBlock(block, decorate));
     return blocks.length ? blocks : [newBlock()];
 }
 
@@ -670,7 +670,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // eslint-disable-next-line react-hooks/exhaustive-deps -- `notes` only matters by signature
     }, [wikiSignature, noteId]);
     const decorate = useMemo(
-        () => (html: string, type?: BlockType) => {
+        (): Decorate => (html, type) => {
             const linked = decorateWikiLinks(html, isWikiLinkBroken);
             return type === 'code' ? linked : decorateUrls(linked);
         },
@@ -687,10 +687,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const [blocks, setBlockState] = useState<BlockData[]>(() =>
         resume
-            ? resume.blocks.map((block) => {
-                  const html = block.html ? decorate(block.html, block.type) : block.html;
-                  return html === block.html ? block : {...block, html};
-              })
+            ? resume.blocks.map((block) => decorateBlock(block, decorate))
             : documentFromMarkdown(value, decorate),
     );
     const [toast, setToast] = useState<string | null>(null);
@@ -720,8 +717,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     // anchor gives no other way to see or change where it points.
     const [anchorTip, setAnchorTip] = useState<{
         anchor: HTMLElement;
-        // A bare URL is text, so there is nothing to edit or unlink: it only opens.
-        bare: boolean;
         href: string;
         x: number;
         y: number;
@@ -762,6 +757,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         startY: number;
         base: Set<string>;
         moved: boolean;
+        // ⌘/Ctrl held: the press adds to the block selection, so it never clears it or places a caret.
+        additive: boolean;
         /** Every block's viewport rect, measured ONCE at pointerdown — see onSelectionPointerMove. */
         rects: Array<{id: string; rect: DOMRect}>;
         /** The last hit set actually pushed into state, so an unchanged drag frame is a no-op. */
@@ -930,15 +927,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      */
     useEffect(() => {
         setBlocks((current) => {
-            let changed = false;
-            const next = current.map((block) => {
-                if (!block.html) return block;
-                const html = decorate(block.html, block.type);
-                if (html === block.html) return block;
-                changed = true;
-                return {...block, html};
-            });
-            return changed ? next : current;
+            const next = current.map((block) => decorateBlock(block, decorate));
+            return next.some((block, index) => block !== current[index]) ? next : current;
         }, 'silent');
         // eslint-disable-next-line react-hooks/exhaustive-deps -- setBlocks is a stable closure over refs
     }, [decorate]);
@@ -1155,11 +1145,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
         updateHtml(id, el.innerHTML);
-    };
-
-    const decorateBlock = (block: BlockData): BlockData => {
-        const html = block.html ? decorateRef.current(block.html, block.type) : block.html;
-        return html === block.html ? block : {...block, html};
     };
 
     const normalizeHtml = (id: string, html: string) => {
@@ -2801,7 +2786,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 setAnchorTip((current) =>
                     current?.anchor === anchor && current.href === href
                         ? current
-                        : {anchor, bare: Boolean(bareUrl), href, x: rect.left, y: rect.bottom + 6},
+                        : {anchor, href, x: rect.left, y: rect.bottom + 6},
                 );
             } else {
                 setAnchorTip((current) => (current ? null : current));
@@ -3238,7 +3223,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const index = indexOf(ids[0]);
         if (index < 0) return;
         const depth = blocksRef.current[index].depth ?? 0;
-        const pasted = incoming.map(decorateBlock);
+        const pasted = incoming.map((block) => decorateBlock(block, decorateRef.current));
         if (pasted.some((item) => (item.depth ?? 0) + depth > MAX_BLOCK_DEPTH)) {
             showToast('This paste is too deeply nested. Use source mode to keep its structure.');
             return;
@@ -3420,11 +3405,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
         if (first.type === 'text' && !first.depth) {
-            splitAtCaret(id, el, block, oneLineIfHeading(block.type, first.html), others, {
+            splitAtCaret(
+                id,
+                el,
+                block,
+                oneLineIfHeading(block.type, first.html),
+                others,
                 lead,
                 trail,
-            });
-        } else splitAtCaret(id, el, block, '', pasted, {lead: '', trail});
+            );
+        } else splitAtCaret(id, el, block, '', pasted, '', trail);
     };
 
     const splitAtCaret = (
@@ -3433,14 +3423,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         block: BlockData,
         firstHtml: string,
         pasted: BlockData[],
-        edges: {lead: string; trail: string} = {lead: '', trail: ''},
+        leadSpace = '',
+        trailSpace = '',
     ) => {
         const [beforeHtml, afterHtml] = splitHtmlAtCaret(el);
         // Only where text meets text: a paragraph never starts or ends on a space of its own.
-        const lead = beforeHtml && firstHtml ? edges.lead : '';
-        const trail = afterHtml ? edges.trail : '';
+        const lead = beforeHtml && firstHtml ? leadSpace : '';
+        const trail = afterHtml ? trailSpace : '';
         const rest = pasted.map((parsed) => ({
-            ...decorateBlock(parsed),
+            ...decorateBlock(parsed, decorateRef.current),
             depth: (block.depth ?? 0) + (parsed.depth ?? 0),
         }));
         const lastBlock = rest[rest.length - 1];
@@ -3849,6 +3840,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             startY: e.clientY,
             base,
             moved: false,
+            additive: e.metaKey || e.ctrlKey,
             // Measure every block ONCE, here. Nothing re-lays the document out while a marquee is
             // being dragged (the drawn rectangle assumes the same), so re-reading N
             // getBoundingClientRect()s on every pointermove only bought a forced layout per frame.
@@ -3858,10 +3850,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             hits: new Set(base),
         };
         selectionWasDragged.current = false;
-        // Whatever the drag ends up covering, it is a BLOCK gesture from here — so the caret goes
-        // now rather than blinking inside a block while a marquee is drawn over it.
-        dropCaret();
-        if (!(e.metaKey || e.ctrlKey)) clearBlockSelection();
     };
 
     const onSelectionPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
@@ -3869,6 +3857,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!drag || drag.pointerId !== e.pointerId) return;
         const distance = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
         if (!drag.moved && distance < DRAG_SLOP) return;
+        if (!drag.moved) {
+            // A BLOCK gesture from here, so the caret goes rather than blinking inside a block while
+            // a marquee is drawn over it.
+            dropCaret();
+            if (!drag.additive) clearBlockSelection();
+        }
         drag.moved = true;
         selectionWasDragged.current = true;
         const left = Math.min(drag.startX, e.clientX);
@@ -3913,15 +3907,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setSelectionBox(null);
         // Below the last block is `onPageClick`'s: it opens a new line there.
         const last = drag.rects[drag.rects.length - 1];
-        if (!drag.moved && e.type === 'pointerup' && last && e.clientY <= last.rect.bottom) {
-            placeCaretNear(e.clientX, e.clientY, drag.rects);
+        if (!drag.moved && !drag.additive && e.type === 'pointerup') {
+            clearBlockSelection();
+            if (last && e.clientY <= last.rect.bottom)
+                placeCaretNear(e.clientX, e.clientY, drag.rects);
         }
     };
 
     /**
      * A press on the furniture around the text — the gap between blocks, the padding round an empty
-     * line — starts a marquee and drops the caret; one that never moved was a click, and the caret
-     * belongs in the line nearest to it, or it is left nowhere at all.
+     * line — is a marquee only once it moves; one that never does was a click, and the caret
+     * belongs in the line nearest to it.
      */
     const placeCaretNear = (x: number, y: number, rects: {id: string; rect: DOMRect}[]) => {
         let nearest: {el: HTMLElement; distance: number} | null = null;
@@ -3932,22 +3928,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (!nearest || distance < nearest.distance) nearest = {el, distance};
         }
         if (!nearest) return;
-        const {el} = nearest;
-        const box = el.getBoundingClientRect();
-        const clamp = (value: number, low: number, high: number) =>
-            Math.min(Math.max(value, low), Math.max(low, high));
-        const range = caretRangeFromPoint(
-            clamp(x, box.left + 1, box.right - 1),
-            clamp(y, box.top + 1, box.bottom - 1),
-        );
-        el.focus({preventScroll: true});
-        if (range && el.contains(range.startContainer)) {
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
-            selection?.addRange(range);
-        } else {
-            setCaret(el, 'end');
-        }
+        nearest.el.focus({preventScroll: true});
+        setCaretAtPoint(nearest.el, x, y, 'end');
     };
 
     // ----- page & title -----
@@ -4344,7 +4326,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                         >
                             Open
                         </button>
-                        {!anchorTip.bare && (
+                        {/* A bare URL is text: nothing to edit or unlink, it only opens. */}
+                        {!anchorTip.anchor.classList.contains(URL_LINK_CLASS) && (
                             <>
                                 <button
                                     type="button"

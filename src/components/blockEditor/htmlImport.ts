@@ -1,5 +1,6 @@
 import {blocksToMarkdown, hasUnsupportedMarkdown, markdownToBlocks} from '../../markdown';
 import {escapeHtml} from '../../markdown/inline';
+import {isExternallyOpenable} from '../../openExternal';
 
 import {MAX_BLOCK_DEPTH} from './documentModel';
 import {newBlock} from './types';
@@ -142,8 +143,8 @@ const BLOCK = new Set(BLOCK_TAGS);
 const BLOCK_SELECTOR = BLOCK_TAGS.join(',');
 
 const LIST_TYPES = new Set<BlockType>(['bulleted', 'numbered', 'todo']);
-const LINK_SCHEME = /^(?:https?|mailto|tel):/i;
-const AUTOLINK = /^(?:https?|mailto):[^<>\s]+$/i;
+// The schemes `inline.ts` reads back as a `<url>` autolink.
+const AUTOLINK = /^(?:https?|mailto|tel):[^<>\s]+$/i;
 const MONOSPACE =
     /\b(?:monospace|courier|consolas|menlo|monaco|roboto mono|source code pro|fira code|jetbrains mono|sf mono)\b/i;
 const LANGUAGE = /^[\w+#.-]+$/;
@@ -204,8 +205,8 @@ class Importer {
         const nested = frame.item !== null || frame.quote !== null;
         if (/^h[1-6]$/.test(tag) && !nested) {
             const runs: Run[] = [];
-            collectInline(node, frame.marks, runs, ' ');
-            this.emit(`heading${tag[1]}` as BlockType, runsToHtml(unbold(runs), ' '), frame.depth);
+            collectInline(node, frame.marks, runs, true);
+            this.emit(`heading${tag[1]}` as BlockType, runsToHtml(unbold(runs)), frame.depth);
         } else if (tag === 'ul' || tag === 'ol') {
             const first = this.blocks.length;
             this.list(node, frame, listDepth(frame));
@@ -293,7 +294,7 @@ class Importer {
         const runs = rows.map((row) =>
             [...row.cells].map((cell) => {
                 const collected: Run[] = [];
-                collectInline(cell, frame.marks, collected, ' ');
+                collectInline(cell, frame.marks, collected, true);
                 return collected;
             }),
         );
@@ -304,7 +305,7 @@ class Importer {
             [...head.cells].every((cell) => cell.localName === 'th') ||
             (runs[0].some(hasText) && runs[0].every((cell) => !hasText(cell) || allBold(cell)));
         const cellHtml = (at: number, column: number) =>
-            runsToHtml(at === 0 && headerRow ? unbold(runs[at][column]) : runs[at][column], ' ');
+            runsToHtml(at === 0 && headerRow ? unbold(runs[at][column]) : runs[at][column]);
         // A few spanning cells can describe millions of grid cells; such a paste is kept as rows of
         // text rather than allocated.
         const spanned = rows.map((row) =>
@@ -457,7 +458,7 @@ function marksFor(element: Element, inherited: Marks): Marks {
     if (flag) set(flag, true);
     else if (tag === 'a') {
         const href = element.getAttribute('href')?.trim() ?? '';
-        if (LINK_SCHEME.test(href)) set('href', href);
+        if (isExternallyOpenable(href)) set('href', href);
     }
 
     // Google Docs and Chromium's copy of rendered text say it all in inline styles; Docs even
@@ -486,10 +487,11 @@ function textRun(node: Node, marks: Marks): Run {
 }
 
 /**
- * An element's content as inline runs. Inside a heading or a table cell there is nowhere for a
- * line break or a nested block to go, so both become `separator`.
+ * An element's content as inline runs. Inside a heading or a table cell (`flat`) there is nowhere
+ * for a line break or a nested block to go, so both become a space.
  */
-function collectInline(node: Element, marks: Marks, runs: Run[], separator?: string) {
+function collectInline(node: Element, marks: Marks, runs: Run[], flat = false) {
+    const boundary = (): Run => (flat ? {kind: 'text', text: ' ', marks: {}} : {kind: 'br'});
     const visit = (current: Node, inherited: Marks) => {
         if (current.nodeType === Node.TEXT_NODE) {
             runs.push(textRun(current, inherited));
@@ -498,7 +500,7 @@ function collectInline(node: Element, marks: Marks, runs: Run[], separator?: str
         if (!isElement(current) || isSkipped(current)) return;
         const tag = current.localName;
         if (tag === 'br') {
-            runs.push(separator ? {kind: 'text', text: separator, marks: {}} : {kind: 'br'});
+            runs.push(boundary());
             return;
         }
         if (tag === 'img') {
@@ -512,10 +514,10 @@ function collectInline(node: Element, marks: Marks, runs: Run[], separator?: str
             return;
         }
         const block = BLOCK.has(tag);
-        if (block) runs.push(separator ? {kind: 'text', text: ' ', marks: {}} : {kind: 'br'});
+        if (block) runs.push(boundary());
         const next = marksFor(current, inherited);
         for (const child of current.childNodes) visit(child, next);
-        if (block) runs.push(separator ? {kind: 'text', text: ' ', marks: {}} : {kind: 'br'});
+        if (block) runs.push(boundary());
     };
     visit(node, marks);
 }
@@ -587,20 +589,15 @@ function checkboxState(li: Element): boolean | null {
  * Runs → the editor's inline HTML. Whitespace collapses the way the page rendered it, and a mark
  * never opens or closes on a space (`** bold**` is not bold to a Markdown reader).
  */
-function runsToHtml(input: Run[], breakAs?: string): string {
+function runsToHtml(input: Run[]): string {
     const runs = imagesToText(input);
     const pieces: (Run & {kind: 'text' | 'br'})[] = [];
     let spaced = true;
     for (const run of runs) {
         if (run.kind === 'br') {
             trimTrailing(pieces);
-            if (breakAs) {
-                pieces.push({kind: 'text', text: breakAs, marks: {}});
-                spaced = true;
-            } else {
-                pieces.push(run);
-                spaced = true;
-            }
+            pieces.push(run);
+            spaced = true;
             continue;
         }
         if (run.kind !== 'text') continue;

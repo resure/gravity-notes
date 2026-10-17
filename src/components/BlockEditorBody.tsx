@@ -100,9 +100,15 @@ interface ViewState {
 
 // How many notes keep their undo history; each holds whole-document snapshots.
 const HISTORY_NOTES = 10;
+// Each undo step holds a whole document, so a huge note's history is not worth keeping.
+const HISTORY_MAX_CHARS = 256_000;
 
 // A session resumes only if the note is still exactly what it left behind: an edit made elsewhere
 // since then would make its undo history rewind somebody else's change.
+function keepable(history: EditorSnapshot | undefined) {
+    return history && history.markdown.length <= HISTORY_MAX_CHARS ? history : null;
+}
+
 function resumable(history: EditorSnapshot | null | undefined, content: string) {
     return history && history.markdown.trim() === content.trim() ? history : null;
 }
@@ -157,8 +163,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         const previewRef = useRef<HTMLDivElement>(null);
         const sourceRef = useRef<SourceHandle>(null);
         // ⌘⇧; from inside the body moves the caret along to the other surface.
-        const focusSourceRef = useRef(false);
-        const focusBodyRef = useRef(false);
+        const focusOnToggleRef = useRef(false);
         // The live buffer, so preview mode and the raw-Markdown mode both show what is ON SCREEN
         // rather than what is on disk.
         const bufferRef = useRef(note.content);
@@ -196,7 +201,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 scrollTop: scrollContainerRef?.current?.scrollTop ?? 0,
                 anchor: readScrollAnchor(rootRef.current, scrollContainerRef?.current),
                 caret: editorRef.current?.getCaret() ?? null,
-                history: editorRef.current?.snapshot() ?? null,
+                history: keepable(editorRef.current?.snapshot()),
             });
             let kept = 0;
             for (const [id, state] of [...states].reverse()) {
@@ -210,8 +215,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // `forceSource`. This component is NOT keyed, so it has to be cleared by hand — guarded
             // because a render-phase dispatch has no eager bailout and would re-render every open.
             if (stuckOnSource) setStuckOnSource(false);
-            focusSourceRef.current = false;
-            focusBodyRef.current = false;
+            focusOnToggleRef.current = false;
         } else if (noteIdRef.current !== note.id) {
             // A rename/move re-keys the open note in place (id changes, session doesn't) — carry
             // its saved position to the new id so a later switch-and-back still restores it.
@@ -253,8 +257,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // Representable again — release the latch, or `source` would stay true underneath a
             // flipped `markup` and the blocks surface would never come back.
             setStuckOnSource(false);
-            focusSourceRef.current = !markup && bodyHasFocus;
-            focusBodyRef.current = markup && bodyHasFocus;
+            focusOnToggleRef.current = bodyHasFocus;
             setMarkup((on) => !on);
         };
 
@@ -367,7 +370,6 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             else editorRef.current?.focus();
         }, [preview, source]);
 
-        // Raw Markdown over the same buffer: CodeMirror, loaded on first use.
         if (source) {
             // Keyed on the session: the surface reads `value` once, so without the key a switch made in
             // source mode would leave the PREVIOUS note's text on screen under the new title — and
@@ -377,7 +379,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 ref: sourceRef,
                 readValue: () => bufferRef.current,
                 onChange: handleChange,
-                autoFocus: focusSourceRef.current,
+                focusOnMount: focusOnToggleRef,
             };
             return (
                 <>
@@ -430,7 +432,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         ref={editorRef}
                         key={sessionId}
                         value={bufferRef.current}
-                        autofocus={focusBodyRef.current ? 'body' : autofocus}
+                        autofocus={focusOnToggleRef.current ? 'body' : autofocus}
                         initialCaret={restoreRef.current?.caret ?? null}
                         resume={resumable(restoreRef.current?.history, bufferRef.current)}
                         notes={wikiNotes}

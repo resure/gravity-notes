@@ -448,7 +448,32 @@ export function shortcutMatches(shortcut: ShortcutDescriptor, query: string): bo
     const typed = queryKeys(text);
     // A bare letter is a word, not a key: `k` would otherwise list every chord ending in K.
     if (typed.length === 1 && !MODIFIERS.has(typed[0]) && /^\w$/.test(typed[0])) return false;
-    return shortcut.keys
-        .split(' ')
-        .some((combo) => typed.every((key) => combo.toLowerCase().split('+').includes(key)));
+    return shortcut.keys.split(' ').some((combo) => {
+        const keys = combo.toLowerCase().split('+');
+        // Off macOS the sheet shows `mod` as Ctrl, so that is what gets typed.
+        if (!IS_MAC && keys.includes('mod')) keys.push('ctrl');
+        return typed.every((key) => keys.includes(key));
+    });
 }
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** A chord as one comparable string, however its keys are spelled or ordered. */
+export function normalizeChord(keys: string[]): string {
+    return keys
+        .map((key) => key.toLowerCase())
+        .map((key) => KEY_ALIASES[key] ?? key)
+        .sort()
+        .join('+');
+}
+
+/** The chords the global handler acts on, which an embedded editor must leave alone. */
+export const GLOBAL_CHORDS = new Set(
+    SHORTCUTS.flatMap(({global}) => {
+        if (!global || global.trigger === 'bare') return [];
+        const keys = [global.trigger, global.key];
+        if (global.shift) keys.push('shift');
+        if (global.alt) keys.push('alt');
+        return [normalizeChord(keys)];
+    }),
+);

@@ -87,7 +87,7 @@ export function setCaret(el: HTMLElement, pos: CaretPos): void {
     sel.addRange(range);
 }
 
-export function caretRangeFromPoint(x: number, y: number): Range | null {
+function caretRangeFromPoint(x: number, y: number): Range | null {
     const doc = document as Document & {
         caretRangeFromPoint?: (x: number, y: number) => Range | null;
         caretPositionFromPoint?: (
@@ -113,8 +113,23 @@ function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void
     const lh = lineHeightOf(el);
     const inset = Math.min(lh / 2, rect.height / 2);
     const y = edge === 'top' ? rect.top + inset : rect.bottom - inset;
-    const clampedX = Math.min(Math.max(x, rect.left + 2), rect.right - 2);
-    const range = caretRangeFromPoint(clampedX, y);
+    setCaretAtPoint(el, x, y, edge === 'top' ? 'start' : 'end');
+}
+
+/** The caret at the character under a viewport point, pulled inside `el`'s box first. */
+export function setCaretAtPoint(
+    el: HTMLElement,
+    x: number,
+    y: number,
+    fallback: 'start' | 'end',
+): void {
+    const rect = el.getBoundingClientRect();
+    const clamp = (value: number, low: number, high: number) =>
+        Math.min(Math.max(value, low), Math.max(low, high));
+    const range = caretRangeFromPoint(
+        clamp(x, rect.left + 2, rect.right - 2),
+        clamp(y, rect.top + 1, rect.bottom - 1),
+    );
     if (range && el.contains(range.startContainer)) {
         range.collapse(true);
         const sel = window.getSelection();
@@ -124,7 +139,7 @@ function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void
             return;
         }
     }
-    setCaret(el, edge === 'top' ? 'start' : 'end');
+    setCaret(el, fallback);
 }
 
 /** Viewport rect of the caret line; falls back to the element's first line when empty. */

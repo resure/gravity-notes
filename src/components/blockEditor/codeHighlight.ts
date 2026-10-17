@@ -39,7 +39,7 @@ interface Token {
     group: string;
 }
 
-const owned = new Map<HTMLElement, {group: string; range: Range}[]>();
+const owned = new Map<HTMLElement, {group: string; range: AbstractRange}[]>();
 
 function highlightFor(group: string): Highlight {
     const name = `gn-hl-${group}`;
@@ -137,7 +137,7 @@ function point(
     return next ? [next.node, 0] : null;
 }
 
-export function clearCodeHighlight(root: HTMLElement): void {
+function clearCodeHighlight(root: HTMLElement): void {
     const previous = owned.get(root);
     if (!previous || !supported()) return;
     for (const {group, range} of previous) highlightFor(group).delete(range);
@@ -148,14 +148,19 @@ function highlightNow(root: HTMLElement, language: string | undefined): void {
     clearCodeHighlight(root);
     if (!root.isConnected) return;
     const {text, nodes} = textModel(root);
-    const ranges: {group: string; range: Range}[] = [];
+    const ranges: {group: string; range: AbstractRange}[] = [];
     for (const token of tokenize(text, language)) {
         const from = point(nodes, token.start, false);
         const to = point(nodes, token.end, true);
         if (!from || !to) continue;
-        const range = document.createRange();
-        range.setStart(...from);
-        range.setEnd(...to);
+        // Static, not live: every live Range in the document is updated on every DOM edit, and a
+        // code-heavy note holds tens of thousands. The block is re-coloured after each edit anyway.
+        const range = new StaticRange({
+            startContainer: from[0],
+            startOffset: from[1],
+            endContainer: to[0],
+            endOffset: to[1],
+        });
         if (range.collapsed) continue;
         highlightFor(token.group).add(range);
         ranges.push({group: token.group, range});
@@ -177,17 +182,32 @@ function flush() {
     if (pending.size) frame = window.requestAnimationFrame(flush);
 }
 
-/**
- * Re-colour a code block on the next frame. A note full of code is coloured a few blocks per frame,
- * and the live ranges keep the old colours on the right characters while a keystroke waits its turn.
- */
+// Above this a block is re-coloured once typing pauses rather than on every frame: tokenizing it
+// takes longer than a frame has.
+const LARGE_BLOCK_CHARS = 5_000;
+const LARGE_BLOCK_DELAY_MS = 200;
+const delayed = new Map<HTMLElement, number>();
+
+/** Re-colour a code block soon. A note full of code is coloured a few blocks per frame. */
 export function scheduleCodeHighlight(root: HTMLElement, language: string | undefined): void {
     if (!supported()) return;
-    pending.set(root, language);
-    if (!frame) frame = window.requestAnimationFrame(flush);
+    window.clearTimeout(delayed.get(root));
+    delayed.delete(root);
+    const enqueue = () => {
+        delayed.delete(root);
+        pending.set(root, language);
+        if (!frame) frame = window.requestAnimationFrame(flush);
+    };
+    if ((root.textContent?.length ?? 0) > LARGE_BLOCK_CHARS && owned.has(root)) {
+        delayed.set(root, window.setTimeout(enqueue, LARGE_BLOCK_DELAY_MS));
+    } else {
+        enqueue();
+    }
 }
 
 export function cancelCodeHighlight(root: HTMLElement): void {
+    window.clearTimeout(delayed.get(root));
+    delayed.delete(root);
     pending.delete(root);
     clearCodeHighlight(root);
 }

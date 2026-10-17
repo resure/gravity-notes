@@ -45,7 +45,7 @@ export function trimUrl(url: string): string {
     return url.slice(0, end);
 }
 
-export function findUrls(text: string): {start: number; end: number}[] {
+function findUrls(text: string): {start: number; end: number}[] {
     const found: {start: number; end: number}[] = [];
     for (const match of text.matchAll(URL_PATTERN)) {
         const url = trimUrl(match[0]);
@@ -129,6 +129,8 @@ export function decorateUrls(html: string): string {
         out += tag;
         index = gt + 1;
     }
+    // Unchanged from the last pass, which already passed the check below.
+    if (out === html) return html;
     // The wrapper splits a text run in two, and escaping is decided per run: `\~https://x~` would
     // lose its backslash. Such a block simply stays undecorated.
     if (out !== source && inlineHtmlToMarkdown(out) !== inlineHtmlToMarkdown(source)) return source;
