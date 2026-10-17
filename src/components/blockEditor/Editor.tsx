@@ -645,6 +645,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         x: number;
         y: number;
     } | null>(null);
+    // The ordinary `[text](url)` link the caret is in: the same actions as a wiki link's, since an
+    // anchor gives no other way to see or change where it points.
+    const [anchorTip, setAnchorTip] = useState<{
+        anchor: HTMLAnchorElement;
+        href: string;
+        x: number;
+        y: number;
+    } | null>(null);
     const [wikiIndex, setWikiIndex] = useState(0);
     const [linkRequest, setLinkRequest] = useState(0);
     const [blockMenu, setBlockMenu] = useState<{id: string; x: number; y: number} | null>(null);
@@ -2692,6 +2700,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const selection = window.getSelection();
             const node = selection?.anchorNode;
             const element = node instanceof Element ? node : node?.parentElement;
+            const anchor = element?.closest('a');
+            const href = anchor?.getAttribute('href');
+            if (
+                anchor &&
+                href &&
+                selection?.isCollapsed &&
+                rootRef.current?.contains(anchor) &&
+                anchor.closest('[contenteditable="true"]')
+            ) {
+                const rect = anchor.getBoundingClientRect();
+                setAnchorTip((current) =>
+                    current?.anchor === anchor && current.href === href
+                        ? current
+                        : {anchor, href, x: rect.left, y: rect.bottom + 6},
+                );
+            } else {
+                setAnchorTip((current) => (current ? null : current));
+            }
             const span = element?.closest<HTMLElement>(`.${WIKI_LINK_CLASS}`);
             const content = span?.closest<HTMLElement>('[data-block-id]');
             const blockId = content?.dataset.blockId;
@@ -2777,6 +2803,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         if (!href) return;
         e.preventDefault();
         if (!(e.metaKey || e.ctrlKey)) return;
+        openHref(href);
+    };
+
+    const openHref = (href: string) => {
         // An attachment is a file in the workspace, not a URL: `anchor.href` has already resolved it
         // against the app's own origin, so only the RAW attribute still names the file. The host
         // knows what to do with it (reveal it in Finder); `openExternalUrl` would simply drop it.
@@ -2787,6 +2817,30 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 showToast('Could not open the attachment link');
             }
         } else openExternalUrl(href);
+    };
+
+    /** Select the whole link a tip is for, so the link box or `unlink` acts on all of it. */
+    const selectAnchor = (anchor: HTMLAnchorElement): boolean => {
+        if (!anchor.isConnected) return false;
+        const range = document.createRange();
+        range.selectNodeContents(anchor);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        return true;
+    };
+
+    const unlinkAnchor = (anchor: HTMLAnchorElement) => {
+        const host = anchor.closest<HTMLElement>('[data-block-id]');
+        if (!host || !selectAnchor(anchor)) return;
+        document.execCommand('unlink');
+        window.getSelection()?.collapseToEnd();
+        const {tableBlockId, tableRow, tableColumn, blockId} = host.dataset;
+        if (tableBlockId) {
+            updateTableCell(tableBlockId, Number(tableRow), Number(tableColumn), host.innerHTML);
+        } else if (blockId) {
+            commitHtml(blockId, host);
+        }
     };
 
     // Mirror the live modifier state onto the root so links can show they're clickable before the
@@ -4021,6 +4075,53 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                             type="button"
                             className="wiki-tip-btn"
                             onClick={() => replaceWikiLink(linkTip, linkTip.inner)}
+                        >
+                            Unlink
+                        </button>
+                    </div>
+                </OverlayPortal>
+            )}
+            {anchorTip && !hidden && (
+                <OverlayPortal>
+                    <div
+                        className="overlay-menu wiki-tip"
+                        style={{left: anchorTip.x, top: anchorTip.y}}
+                        role="toolbar"
+                        aria-label={`Link to ${anchorTip.href}`}
+                        // As the wiki tip: the buttons act on the link the caret is in, so a press
+                        // must not move the caret out of it first.
+                        onMouseDown={(event) => event.preventDefault()}
+                    >
+                        <span className="link-tip-href" title={anchorTip.href}>
+                            {anchorTip.href}
+                        </span>
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => openHref(anchorTip.href)}
+                        >
+                            Open
+                        </button>
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => {
+                                if (selectAnchor(anchorTip.anchor)) {
+                                    setAnchorTip(null);
+                                    setLinkRequest((request) => request + 1);
+                                }
+                            }}
+                        >
+                            Edit
+                        </button>
+                        <button
+                            type="button"
+                            className="wiki-tip-btn"
+                            onClick={() => {
+                                const {anchor} = anchorTip;
+                                setAnchorTip(null);
+                                unlinkAnchor(anchor);
+                            }}
                         >
                             Unlink
                         </button>

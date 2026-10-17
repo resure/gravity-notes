@@ -220,9 +220,19 @@ export default function SelectionToolbar({
         setLinkMode(true);
     };
 
+    // The link box holds focus while it is open; the text it links has to have it back before the
+    // command runs, or the command edits the box instead.
+    const refocusText = (range: Range) => {
+        const container = range.commonAncestorContainer;
+        (container instanceof Element ? container : container.parentElement)
+            ?.closest<HTMLElement>('[contenteditable="true"]')
+            ?.focus();
+    };
+
     const applyLink = () => {
         const sel = window.getSelection();
         if (sel && savedRange.current) {
+            refocusText(savedRange.current);
             sel.removeAllRanges();
             sel.addRange(savedRange.current);
             const url = linkValue.trim();
@@ -247,6 +257,7 @@ export default function SelectionToolbar({
     const cancelLink = () => {
         const sel = window.getSelection();
         if (sel && savedRange.current) {
+            refocusText(savedRange.current);
             sel.removeAllRanges();
             sel.addRange(savedRange.current);
         }
@@ -292,12 +303,20 @@ export default function SelectionToolbar({
                     <input
                         className="tb-link-input"
                         autoFocus
+                        // An existing link's address comes selected, so typing replaces it.
+                        onFocus={(e) => e.currentTarget.select()}
                         placeholder="Paste link"
                         aria-label="Link URL"
                         value={linkValue}
                         onChange={(e) => setLinkValue(e.target.value)}
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter') applyLink();
+                            if (e.key === 'Enter') {
+                                // Or the keypress goes on to split the paragraph at the selection
+                                // applyLink has just put back — replacing the linked words with a
+                                // line break.
+                                e.preventDefault();
+                                applyLink();
+                            }
                             if (e.key === 'Escape') {
                                 // Mark it handled — EditorPane's Esc ladder skips a
                                 // `defaultPrevented` Escape, so focus stays in the editor.

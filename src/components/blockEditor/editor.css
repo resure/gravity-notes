@@ -884,6 +884,17 @@
     padding: 4px;
 }
 
+.gn-block-editor .link-tip-href {
+    max-width: 240px;
+    overflow: hidden;
+    padding: 3px 6px 3px 8px;
+    color: var(--n-text-light);
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .gn-block-editor .wiki-tip-btn {
     padding: 3px 8px;
     border: 0;
