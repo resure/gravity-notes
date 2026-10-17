@@ -109,6 +109,7 @@ import {
     widestRow,
 } from './types';
 import type {BlockColor, Block as BlockData, BlockType, ColumnAlign, TableData} from './types';
+import {URL_LINK_CLASS, decorateUrls} from './urlDecorate';
 import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
 
 import './editor.css';
@@ -498,10 +499,13 @@ function normalizeParsedBlocks(blocks: BlockData[]): BlockData[] {
 }
 
 /** Parse a note's Markdown into the editor's blocks (an empty note still gets one block to type in). */
-function documentFromMarkdown(markdown: string, decorate: (html: string) => string): BlockData[] {
+function documentFromMarkdown(
+    markdown: string,
+    decorate: (html: string, type: BlockType) => string,
+): BlockData[] {
     const parsed = takeParsedBlocks(markdown) ?? markdownToBlocks(markdown);
     const blocks = normalizeParsedBlocks(parsed).map((block) => {
-        const html = block.html ? decorate(block.html) : block.html;
+        const html = block.html ? decorate(block.html, block.type) : block.html;
         return html === block.html ? block : {...block, html};
     });
     return blocks.length ? blocks : [newBlock()];
@@ -652,7 +656,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // eslint-disable-next-line react-hooks/exhaustive-deps -- `notes` only matters by signature
     }, [wikiSignature, noteId]);
     const decorate = useMemo(
-        () => (html: string) => decorateWikiLinks(html, isWikiLinkBroken),
+        () => (html: string, type?: BlockType) => {
+            const linked = decorateWikiLinks(html, isWikiLinkBroken);
+            return type === 'code' ? linked : decorateUrls(linked);
+        },
         [isWikiLinkBroken],
     );
     // Read live from event handlers and from the imperative handle, which are captured per render
@@ -693,7 +700,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     // The ordinary `[text](url)` link the caret is in: the same actions as a wiki link's, since an
     // anchor gives no other way to see or change where it points.
     const [anchorTip, setAnchorTip] = useState<{
-        anchor: HTMLAnchorElement;
+        anchor: HTMLElement;
+        // A bare URL is text, so there is nothing to edit or unlink: it only opens.
+        bare: boolean;
         href: string;
         x: number;
         y: number;
@@ -905,7 +914,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             let changed = false;
             const next = current.map((block) => {
                 if (!block.html) return block;
-                const html = decorate(block.html);
+                const html = decorate(block.html, block.type);
                 if (html === block.html) return block;
                 changed = true;
                 return {...block, html};
@@ -1112,7 +1121,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const commitHtml = (id: string, el: HTMLElement) => {
         const raw = el.innerHTML;
         if (!composingRef.current) {
-            const decorated = decorateRef.current(raw);
+            const decorated = decorateRef.current(raw, el.dataset.blockType as BlockType);
             if (decorated !== raw) {
                 const focused = document.activeElement === el;
                 const offset = focused ? getCaretOffset(el) : 0;
@@ -1121,6 +1130,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
         updateHtml(id, el.innerHTML);
+    };
+
+    const decorateBlock = (block: BlockData): BlockData => {
+        const html = block.html ? decorateRef.current(block.html, block.type) : block.html;
+        return html === block.html ? block : {...block, html};
     };
 
     const normalizeHtml = (id: string, html: string) => {
@@ -2748,8 +2762,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const selection = window.getSelection();
             const node = selection?.anchorNode;
             const element = node instanceof Element ? node : node?.parentElement;
-            const anchor = element?.closest('a');
-            const href = anchor?.getAttribute('href');
+            const bareUrl = element?.closest<HTMLElement>(`.${URL_LINK_CLASS}`);
+            const anchor = bareUrl ?? element?.closest('a');
+            const href = bareUrl ? bareUrl.textContent : anchor?.getAttribute('href');
             if (
                 anchor &&
                 href &&
@@ -2761,7 +2776,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 setAnchorTip((current) =>
                     current?.anchor === anchor && current.href === href
                         ? current
-                        : {anchor, href, x: rect.left, y: rect.bottom + 6},
+                        : {anchor, bare: Boolean(bareUrl), href, x: rect.left, y: rect.bottom + 6},
                 );
             } else {
                 setAnchorTip((current) => (current ? null : current));
@@ -2845,6 +2860,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * caret in the link text.
      */
     const onRootClick = (e: MouseEvent<HTMLDivElement>) => {
+        const bareUrl = (e.target as HTMLElement | null)?.closest(`.${URL_LINK_CLASS}`);
+        if (bareUrl && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            openExternalUrl(bareUrl.textContent ?? '');
+            return;
+        }
         const anchor = (e.target as HTMLElement | null)?.closest('a');
         const href = anchor?.getAttribute('href');
         if (!href) return;
@@ -2867,7 +2888,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     /** Select the whole link a tip is for, so the link box or `unlink` acts on all of it. */
-    const selectAnchor = (anchor: HTMLAnchorElement): boolean => {
+    const selectAnchor = (anchor: HTMLElement): boolean => {
         if (!anchor.isConnected) return false;
         const range = document.createRange();
         range.selectNodeContents(anchor);
@@ -2877,7 +2898,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return true;
     };
 
-    const unlinkAnchor = (anchor: HTMLAnchorElement) => {
+    const unlinkAnchor = (anchor: HTMLElement) => {
         const host = anchor.closest<HTMLElement>('[data-block-id]');
         if (!host || !selectAnchor(anchor)) return;
         document.execCommand('unlink');
@@ -3188,7 +3209,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const index = indexOf(ids[0]);
         if (index < 0) return;
         const depth = blocksRef.current[index].depth ?? 0;
-        const pasted = normalizeParsedBlocks(markdownToBlocks(text));
+        const pasted = normalizeParsedBlocks(markdownToBlocks(text)).map(decorateBlock);
         if (pasted.some((item) => (item.depth ?? 0) + depth > MAX_BLOCK_DEPTH)) {
             showToast('This paste is too deeply nested. Use source mode to keep its structure.');
             return;
@@ -3333,7 +3354,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // heading, or table arrives as real blocks rather than as literal syntax. Same sanitising
         // pass as the load path: the clipboard is as untrusted as a file.
         const rest = normalizeParsedBlocks(markdownToBlocks(lines.join('\n'))).map((parsed) => ({
-            ...parsed,
+            ...decorateBlock(parsed),
             depth: (block.depth ?? 0) + (parsed.depth ?? 0),
         }));
         const lastBlock = rest[rest.length - 1];
@@ -4200,29 +4221,33 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                         >
                             Open
                         </button>
-                        <button
-                            type="button"
-                            className="wiki-tip-btn"
-                            onClick={() => {
-                                if (selectAnchor(anchorTip.anchor)) {
-                                    setAnchorTip(null);
-                                    setLinkRequest((request) => request + 1);
-                                }
-                            }}
-                        >
-                            Edit
-                        </button>
-                        <button
-                            type="button"
-                            className="wiki-tip-btn"
-                            onClick={() => {
-                                const {anchor} = anchorTip;
-                                setAnchorTip(null);
-                                unlinkAnchor(anchor);
-                            }}
-                        >
-                            Unlink
-                        </button>
+                        {!anchorTip.bare && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    onClick={() => {
+                                        if (selectAnchor(anchorTip.anchor)) {
+                                            setAnchorTip(null);
+                                            setLinkRequest((request) => request + 1);
+                                        }
+                                    }}
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    onClick={() => {
+                                        const {anchor} = anchorTip;
+                                        setAnchorTip(null);
+                                        unlinkAnchor(anchor);
+                                    }}
+                                >
+                                    Unlink
+                                </button>
+                            </>
+                        )}
                     </div>
                 </OverlayPortal>
             )}

@@ -53,7 +53,7 @@ seeds each; their grammar now includes YFM marks and containers.
 | Bullets, ordered and nested lists               | `-`, numbered markers                | Implemented; typed starting number now retained                                   | P1       |
 | Tasks                                           | `- [ ]` / `- [x]`                    | Implemented; existing tests                                                       | P1       |
 | Quotes and rules                                | `>`, `---`                           | Implemented; existing tests                                                       | P1       |
-| Fenced code and language                        | Original fence/info string           | Implemented; editor highlighting deferred D11                                     | P1       |
+| Fenced code and language                        | Original fence/info string           | Implemented; editor highlighting implemented (D11)                                | P1       |
 | Bold, italic, strike and code                   | CommonMark / GFM                     | Implemented; typing and escape regressions added                                  | P1       |
 | Links, autolinks and optional titles            | `[text](url "title")`, `<url>`       | Implemented; DOM sanitising retains titles                                        | P0       |
 | Mark                                            | `==text==`                           | Implemented in blocks, typing and preview                                         | P1       |
@@ -110,7 +110,7 @@ seeds each; their grammar now includes YFM marks and containers.
 | Tables, TSV paste and navigation                  | Existing matrix/grid tests and Chromium Tab/undo pass; IME fixed                                                         | P1       |
 | Empty placeholders, handles, turn-into            | Existing component/menu regressions pass; browser furniture, slash and drag exercised                                    | P1       |
 | Long documents / large tables                     | 5,000-paragraph and 150,000-row serialization audit passes; 2,000-block browser edit passed; virtualisation deferred D15 | P1       |
-| Bare URL linkification                            | Preview still links explicit schemes; editor typing rule deferred D16                                                    | P1       |
+| Bare URL linkification                            | Implemented (D16): bare `http(s)://` URLs decorate as links, spelling kept; fuzzy domains stay text                      | P1       |
 | Source syntax highlighting / advanced commands    | Textarea remains editable; CodeMirror-level tooling deferred D19                                                         | P2       |
 | Spellcheck / image resize / file drop             | Existing inheritance/upload plumbing retained; hardware/native qualification deferred D14                                | P1       |
 
@@ -157,9 +157,10 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
 - **D10 — remaining Notion commands.** Moving several disjoint selected subtrees by keyboard and
   `/turn`, `/color`, `/duplicate`, Alt-drag need clear ordering/selection semantics. Existing menus,
   single-block keyboard moves and multiple-block drag/duplicate cover the underlying actions.
-- **D11 — editor syntax highlighting.** Code language and preview highlighting work; adding a live
-  highlight layer without breaking IME/caret/undo needs separate qualification. Plain code remains
-  editable and its fence/info preserved.
+- **D11 — editor syntax highlighting.** Implemented with the CSS Custom Highlight API
+  (`codeHighlight.ts`): highlight.js tokens become painted ranges, so the editable DOM, caret, IME
+  and undo are untouched, in the preview's palette. A highlight can only paint colour, so the
+  preview's bold keywords stay plain in the editor.
 - **D12 — history across note or source/block switches.** Per-note remounts intentionally prevent
   undo crossing into another file. Retaining independent histories and transferring them across
   source conversion needs the separate history design already tracked in the repository backlog.
@@ -172,9 +173,10 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
 - **D15 — editor virtualisation.** Every block stays mounted and every edit serializes the document.
   The volume audit checks correctness, not sustained typing latency, memory ceilings or screen-reader
   behaviour for very large vault notes. Those require a performance budget and a range-aware layout.
-- **D16 — bare URLs in the editor.** The previous typing extension changed spelling to autolinks.
-  A new rule should preserve the existing bare spelling and caret/undo as the URL is extended or
-  punctuated. Explicit `[label](url)` and `<url>` already work; fuzzy domains remain disabled.
+- **D16 — bare URLs in the editor.** Implemented (`urlDecorate.ts`) the way `[[wiki links]]` are:
+  a style-only wrapper whose text is the URL, re-derived on every keystroke, so the file keeps the
+  bare spelling. ⌘-click opens it and the caret tip offers Open. Explicit schemes only, like the
+  preview; fuzzy domains remain disabled.
 - **D17 — table header-column state.** GFM has no such spelling. The existing control is session-only
   and says so; persisting it requires choosing a richer table dialect, rather than hidden metadata.
 - **D18 — colour grammar.** Unbalanced parentheses have the same limitations as the YFM extension;

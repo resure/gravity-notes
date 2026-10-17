@@ -1,4 +1,12 @@
-import {Fragment, memo, useCallback, useLayoutEffect, useRef, useSyncExternalStore} from 'react';
+import {
+    Fragment,
+    memo,
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useSyncExternalStore,
+} from 'react';
 import type {ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode} from 'react';
 
 import {anchorIds} from './AnchorEditor';
@@ -7,6 +15,7 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {calloutIcon, calloutLabel} from './callouts';
 import {setCaret, stripZeroWidth} from './caret';
+import {cancelCodeHighlight, scheduleCodeHighlight} from './codeHighlight';
 import type {HoverStore} from './hoverStore';
 import {CheckIcon} from './icons';
 import {languageLabel} from './languages';
@@ -129,6 +138,16 @@ function Block({
             if (el.innerHTML !== block.html) handlers.onNormalize(block.id, el.innerHTML);
         }
     }, [block.html, block.type, block.id, handlers]);
+
+    useEffect(() => {
+        const el = contentRef.current;
+        if (block.type !== 'code' || !el) return undefined;
+        return () => cancelCodeHighlight(el);
+    }, [block.type]);
+    useEffect(() => {
+        const el = contentRef.current;
+        if (block.type === 'code' && el) scheduleCodeHighlight(el, block.language);
+    }, [block.type, block.html, block.language]);
 
     const editable = block.type !== 'divider' && block.type !== 'table' && block.type !== 'image';
 

@@ -2359,3 +2359,44 @@ describe('heading anchors', () => {
         expect(onChange.mock.calls.at(-1)?.[0]).toBe('Computer usage\n\nBody');
     });
 });
+
+describe('bare URLs', () => {
+    it('show as links without touching the file, and ⌘-click opens them', async () => {
+        const onChange = renderEditor('see https://example.com/a_b now');
+        const url = document.querySelector<HTMLElement>('.url-link')!;
+        expect(url.textContent).toBe('https://example.com/a_b');
+        expect(onChange).not.toHaveBeenCalled();
+
+        act(() => {
+            fireEvent.click(url, {metaKey: true});
+        });
+        expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/a_b');
+
+        const range = document.createRange();
+        range.setStart(url.firstChild!, 5);
+        range.collapse(true);
+        window.getSelection()!.removeAllRanges();
+        window.getSelection()!.addRange(range);
+        await selectionChanged();
+        const tip = screen.getByRole('toolbar', {name: 'Link to https://example.com/a_b'});
+        expect(tip.querySelectorAll('button')).toHaveLength(1);
+    });
+
+    it('become links as they are typed, and the note is written back as typed', () => {
+        const onChange = renderEditor('');
+        const block = document.querySelector<HTMLElement>('.content')!;
+        block.focus();
+        block.textContent = 'read https://example.com/x, later';
+        setCaret(block, 'end');
+        act(() => {
+            block.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(block.querySelector('.url-link')?.textContent).toBe('https://example.com/x');
+        expect(onChange).toHaveBeenLastCalledWith('read https://example.com/x, later');
+    });
+
+    it('stay plain text inside a code block', () => {
+        renderEditor('```\nhttps://example.com\n```');
+        expect(document.querySelector('.url-link')).toBeNull();
+    });
+});

@@ -312,7 +312,8 @@
     padding: 0.1em 0.4em 0.15em;
 }
 
-.gn-block-editor .content a {
+.gn-block-editor .content a,
+.gn-block-editor .url-link {
     color: inherit;
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -320,7 +321,8 @@
     transition: text-decoration-color 100ms ease-in;
 }
 
-.gn-block-editor .content a:hover {
+.gn-block-editor .content a:hover,
+.gn-block-editor .url-link:hover {
     text-decoration-color: rgba(var(--n-ink), 0.8);
 }
 
@@ -329,6 +331,7 @@
    promised a plain click would do something, and back when nothing handled that click the promise
    was kept by the webview navigating away from the app entirely. */
 .gn-block-editor_mod-pressed .content a,
+.gn-block-editor_mod-pressed .url-link,
 .gn-block-editor_mod-pressed .table-cell-content a {
     cursor: pointer;
 }
@@ -859,6 +862,40 @@
 
 .gn-block-editor .code-wrap .content code {
     all: unset;
+}
+
+/* Syntax colours (codeHighlight.ts): the preview's YFM palette, which index.css re-maps for the dark
+   theme. A highlight can only paint colour, so the preview's bold keywords stay plain here. */
+.gn-block-editor ::highlight(gn-hl-comment) {
+    color: var(--yfm-color-hljs-comment, #888888);
+}
+
+.gn-block-editor ::highlight(gn-hl-string) {
+    color: var(--yfm-color-hljs-deletion, #880000);
+}
+
+.gn-block-editor ::highlight(gn-hl-title) {
+    color: var(--yfm-color-hljs-section, #880000);
+}
+
+.gn-block-editor ::highlight(gn-hl-variable) {
+    color: var(--yfm-color-hljs-pseudo, #bc6060);
+}
+
+.gn-block-editor ::highlight(gn-hl-literal) {
+    color: var(--yfm-color-hljs-literal, #78a960);
+}
+
+.gn-block-editor ::highlight(gn-hl-builtin) {
+    color: var(--yfm-color-hljs-addition, #397300);
+}
+
+.gn-block-editor ::highlight(gn-hl-meta) {
+    color: var(--yfm-color-hljs-meta, #1f7199);
+}
+
+.gn-block-editor ::highlight(gn-hl-subst) {
+    color: var(--n-text);
 }
 
 /* The language and Copy float in the fence's top-right corner, fading in on hover or when either

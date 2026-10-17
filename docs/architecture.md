@@ -272,6 +272,9 @@ The same reasoning shapes how a `[[wiki link]]` is styled. It gets a wrapper ele
 still the literal `[[Title]]` bytes — never a decoration that hides the brackets, however much
 better that reads. The editor re-serializes from the live DOM, so a bracket-hiding decoration would
 rewrite every link in the file to a bare title the first time any character changed anywhere in it.
+Bare `http(s)://` URLs get the same kind of wrapper, which is why they show as links in the editor
+while the file keeps them bare. Code blocks are coloured without any wrapper at all: highlight.js
+tokens are painted as CSS Custom Highlight ranges over the untouched text.
 
 Editing a note in the block editor **does** rewrite the parts you touch into its own canonical form —
 that is what any structured editor does, and it is why the mapping favours plain, widely-understood

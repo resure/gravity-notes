@@ -37,8 +37,10 @@ Markdown files, and they are yours.
   their original Markdown spelling when opened and edited
 - **YFM notes and cuts** open as callouts and toggles while keeping their original syntax,
   nested content and spacing
-- **Code blocks** with a language picker and a copy button — the language is the fence's own info
-  string, so preview highlights it and other tools see it
+- **Code blocks** with syntax highlighting, a language picker and a copy button — the language is
+  the fence's own info string, so other tools see it too
+- **Bare URLs are links** as you type them (`⌘-click` opens one), while the note keeps them as plain
+  text
 - **Read-only preview** (`⌘⇧P`), available from blocks or source, rendering CommonMark and YFM
   notes, cuts, interactive tabs, files and multiline tables
 - **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add

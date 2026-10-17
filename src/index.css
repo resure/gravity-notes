@@ -210,7 +210,8 @@ body,
    palette, for the editor + preview `.yfm` alike. Strings/numbers stay in the red family (just made
    legible); the rest lift to conventional, cohesive hues. Light theme is untouched — its private
    defaults still apply. (Targets `g-root_theme_dark`; the app doesn't expose the high-contrast dark.) */
-.g-root_theme_dark .yfm {
+.g-root_theme_dark .yfm,
+.g-root_theme_dark .gn-block-editor {
     /* `.hljs-subst` spans (e.g. template-literal substitutions) otherwise fall back to #444 here: the
        existing dark code-foreground rule near the top of this file colors only the code/pre element,
        not these child spans. Point them at the theme text color so they stay readable. */
