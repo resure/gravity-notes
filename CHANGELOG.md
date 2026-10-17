@@ -4,6 +4,36 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-10-17
+
+### Added
+
+- **A new block editor** for every note — a slash menu (`/`), drag handles to reorder, block
+  selection, toggles, callouts, to-dos, tables, images and any dropped file, block and text colours,
+  and editable heading anchors. Notes stay plain `.md` files; a note the editor can't hold exactly
+  opens on its Markdown source instead, so your files are never rewritten to fit it.
+- **Formatting toolbar** (optional, Settings › Show editor toolbar): text style, marks, links,
+  colour and block types.
+- **Link actions** — put the caret in a link or a `[[wiki link]]` to open, edit or unlink it. Bare
+  `https://` addresses show as links as you type, and `⌘-click` opens them; the file keeps them as
+  plain text.
+- **Syntax highlighting** in code blocks.
+- **Rich paste** — text copied from a web page, Google Docs or Notion keeps its headings, lists,
+  to-dos, tables, links and emphasis.
+- **A real Markdown source mode** (`⌘⇧;`): highlighting, find and replace (`⌘F`), list continuation
+  and line moves.
+- **Undo survives switching notes** — come back to a note and `⌘Z` picks up where you left off.
+- **Filter the shortcut sheet** (`⌘/`) by what a shortcut does or by its keys — `link`, `cmd+k`,
+  `⌘⇧;`.
+
+### Changed
+
+- The block editor replaces the previous rich Markdown editor and its separate visual/markup modes.
+  Notes using YFM tabs, file embeds, multiline tables or definition lists open on their Markdown
+  source, where they stay fully editable.
+- Back / forward through visited notes is now `⌘⌥[` / `⌘⌥]`; `⌘[` / `⌘]` outdent and indent blocks.
+- Large notes open and respond to typing noticeably faster, using far less memory.
+
 ## [0.10.0] - 2026-09-05
 
 ### Added
