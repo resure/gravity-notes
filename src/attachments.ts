@@ -13,12 +13,13 @@ import type {NoteStore} from './storage/types';
 /**
  * Default LRU byte budget for resolved object URLs. Browsing image-heavy notes accumulates decoded
  * `blob:` URLs (the bytes stay alive until revoked); without a cap a long session over a large media
- * vault grows unbounded. 256 MB comfortably holds the open note's images plus a generous working set,
- * so eviction only fires in genuinely heavy sessions — and never revokes an on-screen image, since
- * every display surface subscribes to the refs it shows and {@link AttachmentUrlCache.evictToCap}
- * skips subscribed refs (making the budget a soft target — see that method).
+ * vault grows unbounded. 96 MB still holds a screenful of full-size photos plus a generous working
+ * set, while keeping a notes app's resident memory bounded — eviction never touches an on-screen
+ * image, since every display surface subscribes to the refs it shows and
+ * {@link AttachmentUrlCache.evictToCap} skips subscribed refs (making the budget a soft target —
+ * see that method).
  */
-const DEFAULT_MAX_BYTES = 256 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 96 * 1024 * 1024;
 
 /** One cached object URL plus the byte size of the blob behind it (for the LRU budget). */
 interface CachedUrl {
