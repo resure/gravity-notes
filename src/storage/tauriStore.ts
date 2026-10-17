@@ -154,6 +154,23 @@ export class TauriNoteStore implements NoteStore {
         };
     }
 
+    async heads(ids: string[]): Promise<(NoteMeta | null)[]> {
+        const entries = await invoke<(NoteHead | null)[]>('notes_heads', {
+            dir: this.dir,
+            names: ids,
+        });
+        return entries.map((entry) =>
+            entry
+                ? {
+                      id: entry.name,
+                      title: titleFromFileName(entry.name),
+                      updatedAt: entry.modifiedMs,
+                      preview: previewFromContent(entry.head),
+                  }
+                : null,
+        );
+    }
+
     /** O(1) bootstrap probe — opens the folder and reads one entry, no recursive walk. */
     async probe(): Promise<boolean> {
         return invoke<boolean>('notes_probe', {dir: this.dir});

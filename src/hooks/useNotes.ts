@@ -541,24 +541,22 @@ export function useNotes(
             }
             if (ids.size === 0) return true;
             if (ids.size > MAX_TARGETED_PATHS) return false; // bulk write → one walk is cheaper
+            if (!store.heads) return false;
+            const requested = [...ids];
+            let rows: (NoteMeta | null)[];
+            try {
+                rows = await store.heads(requested);
+            } catch {
+                return false; // unknown failure — surface it through a full refresh
+            }
             const known = new Set(notesRef.current.map((row) => row.id));
             const loaded: NoteMeta[] = [];
-            for (const id of ids) {
-                try {
-                    const current = await store.get(id);
-                    loaded.push({
-                        id,
-                        title: current.title,
-                        updatedAt: current.updatedAt,
-                        preview: previewFromContent(current.content),
-                    });
-                } catch (err) {
-                    if (err instanceof DOMException && err.name === 'NotFoundError') {
-                        // A known note disappearing needs the reconcile pass (stale metadata).
-                        if (known.has(id)) return false;
-                        continue; // a path we never listed and that is already gone
-                    }
-                    return false; // unknown failure — surface it through a full refresh
+            for (const [index, row] of rows.entries()) {
+                if (row) {
+                    loaded.push(row);
+                } else if (known.has(requested[index])) {
+                    // A known note disappearing needs the reconcile pass (stale metadata).
+                    return false;
                 }
             }
             if (loaded.length === 0) return true;
@@ -1702,7 +1700,11 @@ export function useNotes(
         // false-positive suppression (external dir event under an ancestor stamp; external
         // rewrite of a just-saved note) is healed a few seconds later instead of lost.
         function scheduleVerify(relPaths: string[]) {
-            if (timer) return; // a run is already due sooner and covers the same disk state
+            if (timer) {
+                // A run is already due sooner, but a targeted one reads only its own paths.
+                for (const path of relPaths) pendingPaths.add(path);
+                return;
+            }
             for (const path of relPaths) verifyPaths.add(path);
             if (verifyTimer) clearTimeout(verifyTimer);
             verifyTimer = setTimeout(() => {

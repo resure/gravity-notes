@@ -202,6 +202,21 @@ export class FileSystemNoteStore implements NoteStore {
         return {notes, folders, files: files.sort((a, b) => a.id.localeCompare(b.id))};
     }
 
+    async heads(ids: string[]): Promise<(NoteMeta | null)[]> {
+        return mapPool(ids, READ_CONCURRENCY, async (id): Promise<NoteMeta | null> => {
+            const handle = await this.fileHandle(id);
+            if (!handle) return null;
+            const file = await handle.getFile();
+            const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+            return {
+                id,
+                title: titleFromFileName(id),
+                updatedAt: file.lastModified,
+                preview: previewFromContent(head),
+            };
+        });
+    }
+
     async getAll(): Promise<Note[]> {
         const entries: {id: string; handle: FileSystemFileHandle}[] = [];
         for await (const entry of this.walkNotes()) entries.push(entry);

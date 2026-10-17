@@ -676,12 +676,12 @@ export function Workspace({
             const handle = window.setTimeout(check, 1_500);
             cancel = () => window.clearTimeout(handle);
         }
-        // Run once on mount; updater.check + add are stable.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         return () => {
             cancelled = true;
             cancel();
         };
+        // Run once on mount; updater.check + add are stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Set after following a wiki link to a freshly-created note, to land the caret in its body once

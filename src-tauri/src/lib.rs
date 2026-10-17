@@ -355,11 +355,7 @@ struct NoteSnapshot {
     files: Vec<String>,
 }
 
-fn collect_snapshot(
-    root: &Path,
-    current: &Path,
-    out: &mut NoteSnapshot,
-) -> std::io::Result<()> {
+fn collect_snapshot(root: &Path, current: &Path, out: &mut NoteSnapshot) -> std::io::Result<()> {
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
@@ -404,8 +400,7 @@ fn collect_snapshot(
                     modified_ms: modified_ms(&meta),
                     head,
                 });
-            } else if !name.ends_with(WRITE_TMP_SUFFIX) && !name.ends_with(RENAME_TMP_SUFFIX)
-            {
+            } else if !name.ends_with(WRITE_TMP_SUFFIX) && !name.ends_with(RENAME_TMP_SUFFIX) {
                 out.files.push(rel());
             }
         }
@@ -421,6 +416,45 @@ fn notes_snapshot(dir: String) -> Result<NoteSnapshot, String> {
     collect_snapshot(root, root, &mut out).map_err(stringify)?;
     out.files.sort();
     Ok(out)
+}
+
+/// List rows (mtime + head slice) for just these notes — the watcher's targeted refresh, so a
+/// small external batch doesn't re-walk the folder. `None` for a path that is gone or that the
+/// walks wouldn't list (a symlink). Shares their dataless guard: a full `notes_read_opt` here
+/// would block on (and force) the iCloud download of a file the OS just evicted.
+#[tauri::command(async)]
+fn notes_heads(dir: String, names: Vec<String>) -> Result<Vec<Option<NoteHead>>, String> {
+    names
+        .into_iter()
+        .map(|name| {
+            let path = resolve_within(&dir, &name)?;
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(err) => return Err(err.to_string()),
+            };
+            if meta.file_type().is_symlink() {
+                return Ok(None);
+            }
+            if !meta.is_file() {
+                return Err(format!("\"{name}\" is not a file"));
+            }
+            let head = if is_dataless(&meta) {
+                String::new()
+            } else {
+                let mut buf = Vec::new();
+                fs::File::open(&path)
+                    .and_then(|file| file.take(PREVIEW_SCAN_BYTES).read_to_end(&mut buf))
+                    .map_err(stringify)?;
+                String::from_utf8_lossy(&buf).into_owned()
+            };
+            Ok(Some(NoteHead {
+                name,
+                modified_ms: modified_ms(&meta),
+                head,
+            }))
+        })
+        .collect()
 }
 
 /// O(1) liveness check for a folder: open it and read one entry, without walking the tree.
@@ -1850,6 +1884,7 @@ pub fn run() {
             notes_list_dir,
             notes_read_all,
             notes_snapshot,
+            notes_heads,
             notes_probe,
             notes_read_opt,
             notes_write,
@@ -1940,7 +1975,10 @@ mod tests {
         let snap = notes_snapshot(s(&dir)).unwrap();
         let mut notes: Vec<_> = snap.notes.iter().map(|note| note.name.clone()).collect();
         notes.sort();
-        assert_eq!(notes, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
+        assert_eq!(
+            notes,
+            vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]
+        );
         let mut folders = snap.folders.clone();
         folders.sort();
         assert_eq!(folders, vec!["Work", "Work/Sub"]);
@@ -1955,6 +1993,24 @@ mod tests {
             "a"
         );
         assert!(notes_probe(s(&dir)).unwrap());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn heads_reads_only_the_named_notes() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Work/Roadmap.md".into(), "body".into()).unwrap();
+        fs::create_dir_all(dir.join("Folder.md")).unwrap();
+
+        let heads = notes_heads(s(&dir), vec!["Work/Roadmap.md".into(), "Gone.md".into()]).unwrap();
+        assert_eq!(heads.len(), 2);
+        let roadmap = heads[0].as_ref().unwrap();
+        assert_eq!(roadmap.name, "Work/Roadmap.md");
+        assert_eq!(roadmap.head, "body");
+        assert!(heads[1].is_none());
+        // A directory is not a note: the caller falls back to a full walk.
+        assert!(notes_heads(s(&dir), vec!["Folder.md".into()]).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

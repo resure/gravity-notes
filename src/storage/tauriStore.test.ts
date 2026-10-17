@@ -66,6 +66,13 @@ class FakeFs {
                 return this.readAll();
             case 'notes_snapshot':
                 return {notes: this.list(), folders: this.folders(), files: []};
+            case 'notes_heads':
+                return (args.names as string[]).map((n) => {
+                    const f = this.files.get(this.key(n));
+                    return f
+                        ? {name: f.name, modifiedMs: f.mtime, head: f.content.slice(0, 500)}
+                        : null;
+                });
             case 'notes_probe':
                 return true;
             case 'notes_read_opt':

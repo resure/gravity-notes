@@ -62,11 +62,11 @@ hljs.registerLanguage('yaml', yaml);
  */
 let fullHljs: typeof hljs | null = null;
 let fullLanguages: Promise<void> | null = null;
-// Set on the FIRST attempt (success or failure), so a fence whose language highlight.js genuinely
-// doesn't ship settles as plain text instead of re-triggering the load → re-schedule cycle.
-let fullLanguagesAttempted = false;
+// Set once the load SETTLES (success or failure): until then every caller waits on the same
+// promise, and afterwards a fence whose language highlight.js genuinely doesn't ship settles as
+// plain text instead of re-triggering the load → re-schedule cycle.
+let fullLanguagesSettled = false;
 function loadFullLanguages(): Promise<void> {
-    fullLanguagesAttempted = true;
     if (!fullLanguages) {
         fullLanguages = import('highlight.js')
             .then((module) => {
@@ -74,6 +74,9 @@ function loadFullLanguages(): Promise<void> {
             })
             .catch(() => {
                 // No fallback pack: unknown fences simply stay plain text.
+            })
+            .finally(() => {
+                fullLanguagesSettled = true;
             });
     }
     return fullLanguages;
@@ -283,7 +286,7 @@ export function scheduleCodeHighlight(root: HTMLElement, language: string | unde
     // A language outside the eager set: paint it plain now and re-colour once the fallback
     // grammars land. `loadFullLanguages` is memoized and resolves even on failure, so a fence
     // whose language highlight.js genuinely lacks settles as plain text instead of looping.
-    if (language && !hljs.getLanguage(language) && !fullLanguagesAttempted) {
+    if (language && !hljs.getLanguage(language) && !fullLanguagesSettled) {
         void loadFullLanguages().then(() => {
             if (root.isConnected) scheduleCodeHighlight(root, language);
         });

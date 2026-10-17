@@ -141,6 +141,12 @@ export interface NoteStore {
      */
     snapshot?(): Promise<StoreSnapshot>;
     /**
+     * List rows for just these note ids (`null` for one that is gone), read like `list()` reads
+     * them — head slice only, iCloud-dataless content skipped. Feeds the watcher's targeted
+     * refresh; callers fall back to a full re-list when absent.
+     */
+    heads?(ids: string[]): Promise<(NoteMeta | null)[]>;
+    /**
      * Cheap liveness check for a folder backend: "is this store still readable?", without the
      * per-note work of `list()`. Used by the bootstrap probe; absent backends fall back to `list()`.
      */

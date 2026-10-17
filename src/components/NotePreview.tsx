@@ -35,11 +35,9 @@ import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
 
 import {calloutIcon} from './blockEditor/callouts';
 import {newBlock} from './blockEditor/types';
-
-// YFM content styles (the lazy preview owns them — see yfmStyles.ts) + local preview styles and
-// the cut runtime stylesheet (which styles `.yfm-cut`).
 import './yfmStyles';
 
+// Local preview styles + the cut runtime stylesheet (which styles `.yfm-cut`).
 import './NotePreview.css';
 import '@diplodoc/cut-extension/runtime/styles.css';
 import '@diplodoc/file-extension/runtime/styles.css';

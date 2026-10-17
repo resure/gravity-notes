@@ -141,8 +141,9 @@ The desktop shell runs one debounced FSEvents watcher per open folder
 it. External changes — another app, another window, a sync agent — push a `notes:changed` event;
 the frontend re-checks the open note for conflicts and refreshes the list, which the search index
 and backlinks follow automatically. Batches that name only a handful of notes are patched by
-reading just those files; a directory path, a vanished known note, a bulk batch (>12 paths) or an
-empty "refresh everything" event falls back to a full re-list. The app's own saves are recognized
+reading just those files' heads (skipping iCloud-dataless content, like the walk); a directory
+path, a vanished known note, a bulk batch (>12 paths) or an empty "refresh everything" event
+falls back to a full re-list. The app's own saves are recognized
 and skipped, so typing never triggers refresh churn — an echo still schedules one deferred,
 targeted read past the suppression window rather than a folder walk. With a live watcher the
 focus handler only re-checks the open note's conflict; the full focus re-list remains for the

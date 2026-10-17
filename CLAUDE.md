@@ -41,7 +41,8 @@ Notes also move between backends via `.md` export/import (`src/storage/transfer.
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
 commands (`notes_list`/`notes_read_all`/`notes_list_folders`/`notes_list_files`/`notes_snapshot` are
 `#[tauri::command(async)]` — a sync command runs inline on the IPC/main thread, so a big walk used to
-stall other commands; `notes_snapshot` is the one-walk feed for a workspace's first paint, and
+stall other commands; `notes_snapshot` is the one-walk feed for a workspace's first paint,
+`notes_heads` the watcher's targeted few-notes read, and
 `notes_probe` the O(1) bootstrap check. The bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
 because reading one blocks on download; they list by name/mtime with empty previews, and an explicit
 single-note open still materializes), the folder ops, `reveal_path`, the **live folder watcher**
@@ -272,7 +273,9 @@ Key modules:
   update (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow
   the deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
   reason; the corpus follows the list signature for free). The update is **path-targeted**: a batch
-  naming only note ids is patched by `store.get`-ing just those files (newest-wins merge), while a
+  naming only note ids is patched by `store.heads`-ing just those files (head slice only, iCloud-
+  dataless content skipped like the walks — a full `get` would force the download; newest-wins
+  merge), while a
   directory/other-file path, a vanished known note (metadata must reconcile), more than
   `MAX_TARGETED_PATHS` (12 — a bulk write is cheaper as one `snapshot()` walk), or an EMPTY batch
   falls back to the full re-list. `checkOpenNoteConflict` RE-VALIDATES

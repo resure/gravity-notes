@@ -1748,6 +1748,7 @@ describe('useNotes — live watch', () => {
         await waitFor(() => expect(hook.result.current.saveState).toBe('saved'));
 
         const listCalls = listSpy.mock.calls.length;
+        const headsSpy = vi.spyOn(store, 'heads');
         const getSpy = vi.spyOn(store, 'get');
         const getCalls = getSpy.mock.calls.length;
         vi.useFakeTimers();
@@ -1766,13 +1767,42 @@ describe('useNotes — live watch', () => {
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(2_000);
             });
-            expect(getSpy.mock.calls.length).toBe(getCalls + 1);
-            expect(getSpy).toHaveBeenCalledWith('Note.md');
+            // Head-only, like the walk: a full get() would materialize an iCloud-dataless file.
+            expect(headsSpy).toHaveBeenCalledTimes(1);
+            expect(headsSpy).toHaveBeenCalledWith(['Note.md']);
+            expect(getSpy.mock.calls.length).toBe(getCalls);
             expect(listSpy.mock.calls.length).toBe(listCalls);
             expect(hook.result.current.conflict).toBeNull();
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('folds an echo batch into an already-armed targeted run', async () => {
+        const {hook, dir, watchState} = await setupWatched((d) => {
+            d.seedFile('A.md', 'a old', 100);
+            d.seedFile('Other.md', 'other', 100);
+        });
+        let createdId: string | null = null;
+        await act(async () => {
+            createdId = await hook.result.current.create('B'); // stamps B.md as a local write
+        });
+        expect(createdId).toBe('B.md');
+        await act(async () => {
+            await hook.result.current.open('Other.md');
+        });
+
+        dir.seedFile('A.md', 'a new', Date.now() + 10_000);
+        act(() => watchState.onChange!(['A.md'])); // arms the 300 ms targeted run
+        // An external rewrite of the just-created note: its batch matches B's local-write stamp.
+        dir.seedFile('B.md', 'b external', Date.now() + 10_000);
+        act(() => watchState.onChange!(['B.md']));
+
+        await waitFor(() => {
+            const byId = new Map(hook.result.current.notes.map((n) => [n.id, n]));
+            expect(byId.get('A.md')?.preview).toContain('a new');
+            expect(byId.get('B.md')?.preview).toContain('b external');
+        });
     });
 
     it('keeps the deleted note active (and its keystrokes) under the conflict banner', async () => {
