@@ -30,6 +30,9 @@ set -euo pipefail
 # rustup's toolchain, not a stray Homebrew rust — see the release script for why.
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
+# shellcheck source=lib/mac-dmg.sh
+source "$(dirname "$0")/lib/mac-dmg.sh"
+
 : "${APPLE_API_KEY:=${APPLE_API_KEY_ID:-}}"
 export APPLE_API_KEY
 
@@ -57,7 +60,14 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 echo "==> Building, signing, and notarizing the app ..."
-npx tauri build --config "$CONFIG" "$@"
+status=0
+tauri_build npx tauri build --config "$CONFIG" "$@" || status=$?
+if (( status == DMG_STEP_FAILED )); then
+  echo "==> Tauri's DMG step failed; building the DMG directly ..."
+  build_dmg_directly "Gravity Notes Preview" "Gravity Notes Preview_${VERSION}_aarch64.dmg"
+elif (( status )); then
+  exit "$status"
+fi
 
 # The preview's productName has spaces; the file friends download should not.
 RAW_DMG="$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)"

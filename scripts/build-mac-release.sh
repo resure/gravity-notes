@@ -27,6 +27,9 @@ set -euo pipefail
 # MSRV the Tauri deps require (see the rust-toolchain-tauri memory), failing the build at resolve time.
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
+# shellcheck source=lib/mac-dmg.sh
+source "$(dirname "$0")/lib/mac-dmg.sh"
+
 # Tauri's notarization reads APPLE_API_KEY (the App Store Connect key ID). Accept APPLE_API_KEY_ID as
 # an alias so either name in your profile works; export it so `tauri build` (a child) inherits it.
 : "${APPLE_API_KEY:=${APPLE_API_KEY_ID:-}}"
@@ -67,7 +70,16 @@ fi
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
 echo "==> Building, signing, and notarizing the app ..."
-npm run tauri:build -- "$@"
+status=0
+tauri_build npm run tauri:build -- "$@" || status=$?
+if (( status == DMG_STEP_FAILED )); then
+  # Tauri bails before writing the updater bundle when its DMG step fails.
+  echo "==> Tauri's DMG step failed; rebuilding the app alone, then the DMG directly ..."
+  npm run tauri:build -- --bundles app "$@"
+  build_dmg_directly "Gravity Notes" "Gravity Notes_${PKG_VERSION}_aarch64.dmg"
+elif (( status )); then
+  exit "$status"
+fi
 
 # --- rename the DMG to a space-free artifact name ----------------------------
 # productName stays "Gravity Notes" (the app's display name), but the DMG file
