@@ -2200,18 +2200,18 @@ describe('hover handles', () => {
         const handles = () => document.querySelectorAll('.drag-btn');
         expect(handles()).toHaveLength(0);
         act(() => {
-            fireEvent.mouseOver(blocks[10].querySelector('.content')!);
+            fireEvent.mouseMove(blocks[10].querySelector('.content')!);
         });
         expect(handles()).toHaveLength(1);
         expect(blocks[10].querySelector('.drag-btn')).not.toBeNull();
         act(() => {
-            fireEvent.mouseOver(document.querySelector('.blocks')!);
+            fireEvent.mouseMove(document.querySelector('.blocks')!);
         });
         expect(blocks[10].querySelector('.drag-btn')).not.toBeNull();
         const handle = blocks[10].querySelector<HTMLElement>('.drag-btn')!;
         act(() => {
             handle.focus();
-            fireEvent.mouseOver(blocks[20].querySelector('.content')!);
+            fireEvent.mouseMove(blocks[20].querySelector('.content')!);
         });
         expect(blocks[10].querySelector('.drag-btn')).toBe(handle);
         expect(blocks[20].querySelector('.drag-btn')).not.toBeNull();

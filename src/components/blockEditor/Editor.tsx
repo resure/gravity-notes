@@ -336,8 +336,9 @@ const sanitized = new Map<string, string>();
 let sanitizedChars = 0;
 
 function sanitizeInlineHtml(html: string): string {
-    // Text with none of these characters parses to a single text node and serializes back unchanged.
-    if (!/[<>&\u00a0]/.test(html)) return html;
+    // Text with none of these parses to a single text node and serializes back unchanged (the parser
+    // rewrites CR and drops NUL).
+    if (!/[<>&\u00a0\r\0]/.test(html)) return html;
     const known = sanitized.get(html);
     if (known !== undefined) return known;
     const markup = sanitizeMarkup(html);
@@ -1418,7 +1419,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
             syncWikiMenu(state, el);
         };
-        return subscribeSelectionFrame(onSelectionChange);
+        // Not frame-batched: Enter commits against this state, so it has to be current by the next
+        // keystroke, and the listener only exists while the picker is open.
+        document.addEventListener('selectionchange', onSelectionChange);
+        return () => document.removeEventListener('selectionchange', onSelectionChange);
         // Only the open/closed transition matters: the handler reads the live state through refs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wiki !== null]);
@@ -3581,11 +3585,21 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         id === focusedId ||
         id === handleFocusId ||
         id === blockMenu?.id;
-    // Only a block sets it, so crossing the gap between a block and its handle keeps the handle.
-    const onRootMouseOver = (e: MouseEvent<HTMLDivElement>) => {
+    // Only a block sets it, so crossing the gap between a block and its handle keeps the handle. In
+    // the gutter, where no handle is mounted yet, the block is the one level with the pointer.
+    const onRootMouseMove = (e: MouseEvent<HTMLDivElement>) => {
         if (!long) return;
-        const id = (e.target as Element).closest<HTMLElement>('.blocks > .block')?.id;
-        if (id) hover.set(id);
+        let block = (e.target as Element).closest<HTMLElement>('.blocks > .block');
+        if (!block) {
+            const list = rootRef.current?.querySelector('.blocks')?.getBoundingClientRect();
+            if (list && e.clientX < list.left) {
+                block =
+                    document
+                        .elementFromPoint?.(list.right - 2, e.clientY)
+                        ?.closest<HTMLElement>('.blocks > .block') ?? null;
+            }
+        }
+        if (block) hover.set(block.id);
     };
     const onRootFocusChange = (e: FocusEvent<HTMLDivElement>) => {
         if (!long) return;
@@ -3932,7 +3946,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             className={`gn-block-editor${long ? ' gn-block-editor_long' : ''}`}
             ref={rootRef}
             onClick={onRootClick}
-            onMouseOver={onRootMouseOver}
+            onMouseMove={onRootMouseMove}
             onMouseLeave={() => hover.set(null)}
             onFocus={onRootFocusChange}
             onBlur={onRootFocusChange}
