@@ -211,6 +211,10 @@ document into an empty paragraph parses its first block as well as the rest. Rep
 selection across blocks replaces the touched blocks as a unit, matching copy/cut/delete. A pasted
 image or table cannot consume the text that followed the caret. Multiline syntax that the block
 model cannot preserve is refused with a source-mode hint; it can be pasted into source instead.
+Rich clipboard HTML goes through `htmlImport.ts`, which builds blocks, writes them to Markdown and
+parses that back, so a paste is exactly what the note will reload as. It is used only when the HTML
+carries structure or marks beyond its plain-text flavour; images become alt text or a link, and
+colours and underline are dropped.
 
 Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, full CommonMark. That is
 deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get

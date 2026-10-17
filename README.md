@@ -29,7 +29,9 @@ Markdown files, and they are yours.
   rewritten to fit the editor. An optional formatting toolbar (Settings › Show editor toolbar)
   puts the marks, text styles and block types one click away
 - **Markdown as you type**: headings, lists, tasks, bold, italic, code, strikethrough,
-  `==highlight==` and `++underline++`; Markdown paste keeps complete blocks and surrounding text
+  `==highlight==` and `++underline++`; Markdown paste keeps complete blocks and surrounding text,
+  and rich text pasted from Google Docs, Notion or a web page keeps its headings, lists, to-dos,
+  tables, links and emphasis
 - **Colour** a block or a run of words — text or highlight — and it's saved with the note, as the
   `{red}(text)` / `{bg:yellow}(text)` syntax the preview understands (other Markdown tools show the
   braces; nothing portable exists)

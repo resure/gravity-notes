@@ -17,11 +17,11 @@ with tests or explicitly deferred. Full old-editor parity is **not** claimed.
   delayed-drag fix as a separate commit. Added typed strike, mark and underline.
 - Strengthened the guard for excessive depth and unsupported structural syntax. Literal wiki links
   and the `NoteStore` seam remain intact. Demo vault: **0/65 source fallbacks before and after**.
-- Deferred complex YFM block authoring, rich HTML paste, full CommonMark parsing, extended source
+- Deferred complex YFM block authoring, full CommonMark parsing, extended source
   tooling and several interaction refinements with specific reasons below. No push, tag or release.
 
-No human approval is required for the completed work. The next product choice is whether to
-prioritise complex YFM authoring (D1–D4) or rich HTML paste (D9). macOS/WKWebView and real OS IME
+No human approval is required for the completed work. Rich HTML paste (D9) has since landed; the
+next product choice is complex YFM authoring (D1–D4). macOS/WKWebView and real OS IME
 qualification remain a separate hands-on check (D14).
 
 ## Evidence and priorities
@@ -101,7 +101,7 @@ seeds each; their grammar now includes YFM marks and containers.
 | Undo/redo, StrictMode and note switching          | Existing regressions pass; Chromium table undo exercised; retained history across notes/modes deferred D12               | P0       |
 | Cross-block copy/cut/delete                       | Existing whole-block model retained; partial-text replacement deferred D13                                               | P1       |
 | Markdown/plain/internal clipboard                 | Existing tests plus paste boundary regressions pass                                                                      | P1       |
-| Rich HTML clipboard                               | Plain/Markdown fallback remains; rich import deferred D9                                                                 | P1       |
+| Rich HTML clipboard                               | Implemented (D9): `htmlImport.ts` maps structure and marks via the Markdown writer; corpus tests                         | P1       |
 | Paste URL over selected text                      | Chromium native `execCommand` produces the expected anchor                                                               | P1       |
 | Nesting, dragging and duplication                 | Subtree tests pass; real drag, keyboard move and duplicate exercised                                                     | P1       |
 | Keyboard move of multiple selected roots          | Deferred D10; single-root move and multiple-root drag/duplicate remain available                                         | P2       |
@@ -151,9 +151,13 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
   indented code and YAML need a broader document grammar than this line parser. No parser expansion
   was attempted for them. Explicit source guards cover the regression cases; canonical spelling
   normalisation is still the documented fallback check, not a complete CommonMark equivalence proof.
-- **D9 — rich HTML paste.** A safe importer must map block structure, lists, tables and attachments,
-  not just retain HTML tags. The old editor supplied that conversion. This editor retains its
-  plain/Markdown fallback until a dedicated importer and interoperability corpus can be added.
+- **D9 — rich HTML paste.** Implemented after the parity pass. `htmlImport.ts` maps clipboard
+  HTML (Google Docs, Notion, GitHub, Apple Notes, ordinary pages) to headings, nested lists, to-dos,
+  quotes, fenced code with its language, tables and rules, keeping only allowlisted marks and safe
+  absolute links. The result is written to Markdown and parsed back, so a paste holds exactly what
+  the note reloads as. HTML carrying no more than plain text (a code editor's coloured lines) still
+  yields to the plain/Markdown flavour. Images become alt text, or a link when standing alone;
+  colours and underline are dropped rather than guessed.
 - **D10 — remaining Notion commands.** Moving several disjoint selected subtrees by keyboard and
   `/turn`, `/color`, `/duplicate`, Alt-drag need clear ordering/selection semantics. Existing menus,
   single-block keyboard moves and multiple-block drag/duplicate cover the underlying actions.

@@ -95,6 +95,7 @@ import {
 } from './documentModel';
 import {createHoverStore} from './hoverStore';
 import type {HoverStore} from './hoverStore';
+import {htmlToBlocks} from './htmlImport';
 import {LANGUAGE_ITEMS} from './languages';
 import {LONG_DOCUMENT_BLOCKS, useScrollAnchoring} from './scrollAnchoring';
 import {subscribeSelectionFrame} from './selectionFrame';
@@ -3206,10 +3207,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             showToast('This Markdown needs source mode. Switch to source to paste it safely.');
             return;
         }
+        replaceWithBlocks(ids, normalizeParsedBlocks(markdownToBlocks(text)));
+    };
+
+    const replaceWithBlocks = (ids: string[], incoming: BlockData[]) => {
         const index = indexOf(ids[0]);
         if (index < 0) return;
         const depth = blocksRef.current[index].depth ?? 0;
-        const pasted = normalizeParsedBlocks(markdownToBlocks(text)).map(decorateBlock);
+        const pasted = incoming.map(decorateBlock);
         if (pasted.some((item) => (item.depth ?? 0) + depth > MAX_BLOCK_DEPTH)) {
             showToast('This paste is too deeply nested. Use source mode to keep its structure.');
             return;
@@ -3305,12 +3310,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
         const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
-        if (!text) return;
+        const html = e.clipboardData.getData('text/html');
+        const imported = html ? htmlToBlocks(html) : null;
+        const rich = imported && normalizeParsedBlocks(imported);
+        if (!text && !rich) return;
 
         if (crossesBlocks()) {
             const ids = selectionBlockIds();
             if (ids.length > 1) {
-                replaceWithMarkdown(ids, text);
+                if (rich) replaceWithBlocks(ids, rich);
+                else replaceWithMarkdown(ids, text);
                 return;
             }
         }
@@ -3332,6 +3341,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             commitHtml(id, el);
             return;
         }
+        if (rich) {
+            pasteBlocks(id, el, block, rich, text);
+            return;
+        }
         if (!text.includes('\n')) {
             insertInlineMarkdown(text);
             commitHtml(id, el);
@@ -3348,12 +3361,54 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
 
         const lines = text.replace(/\r/g, '').split('\n');
-        const [beforeHtml, afterHtml] = splitHtmlAtCaret(el);
         const first = lines.shift() ?? '';
         // Pasted text is read as Markdown, by the same parser that loads a note — so a pasted list,
         // heading, or table arrives as real blocks rather than as literal syntax. Same sanitising
         // pass as the load path: the clipboard is as untrusted as a file.
-        const rest = normalizeParsedBlocks(markdownToBlocks(lines.join('\n'))).map((parsed) => ({
+        splitAtCaret(
+            id,
+            el,
+            block,
+            escapeHtml(first),
+            normalizeParsedBlocks(markdownToBlocks(lines.join('\n'))),
+        );
+    };
+
+    const pasteBlocks = (
+        id: string,
+        el: HTMLElement,
+        block: BlockData,
+        pasted: BlockData[],
+        text: string,
+    ) => {
+        const [first, ...others] = pasted;
+        if (!others.length && first.type === 'text') {
+            // The paragraph lost the spaces at its edges; a selection taken mid-sentence had them.
+            const lead = /^\s/.test(text) ? ' ' : '';
+            const trail = /\s$/.test(text) ? ' ' : '';
+            const html = `${lead}${oneLineIfHeading(block.type, first.html)}${trail}`;
+            document.execCommand('insertHTML', false, html);
+            commitHtml(id, el);
+            return;
+        }
+        if (block.type === 'text' && isEmptyHtml(el.innerHTML)) {
+            replaceWithBlocks([id], pasted);
+            return;
+        }
+        if (first.type === 'text' && !first.depth) {
+            splitAtCaret(id, el, block, oneLineIfHeading(block.type, first.html), others);
+        } else splitAtCaret(id, el, block, '', pasted);
+    };
+
+    const splitAtCaret = (
+        id: string,
+        el: HTMLElement,
+        block: BlockData,
+        firstHtml: string,
+        pasted: BlockData[],
+    ) => {
+        const [beforeHtml, afterHtml] = splitHtmlAtCaret(el);
+        const rest = pasted.map((parsed) => ({
             ...decorateBlock(parsed),
             depth: (block.depth ?? 0) + (parsed.depth ?? 0),
         }));
@@ -3370,9 +3425,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
         const idx = indexOf(id);
         setBlocks((bs) => {
-            const arr = bs.map((b) =>
-                b.id === id ? {...b, html: beforeHtml + escapeHtml(first)} : b,
-            );
+            const arr = bs.map((b) => (b.id === id ? {...b, html: beforeHtml + firstHtml} : b));
             // With the caret at the end the host's children stay the host's; with text after the
             // caret they follow that text, which now ends the pasted run.
             arr.splice(afterHtml ? idx + 1 : afterSubtree(arr, idx), 0, ...rest);
