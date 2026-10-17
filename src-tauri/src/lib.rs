@@ -313,7 +313,7 @@ fn collect_md(
 }
 
 /// List every `.md` file (recursively, with subfolder paths) with its mtime and a head slice.
-#[tauri::command]
+#[tauri::command(async)]
 fn notes_list(dir: String) -> Result<Vec<NoteHead>, String> {
     let mut found = Vec::new();
     collect_md(Path::new(&dir), Path::new(&dir), false, &mut found).map_err(stringify)?;
@@ -328,7 +328,7 @@ fn notes_list(dir: String) -> Result<Vec<NoteHead>, String> {
 }
 
 /// Read every `.md` file (recursively) with full content — feeds the full-text search corpus.
-#[tauri::command]
+#[tauri::command(async)]
 fn notes_read_all(dir: String) -> Result<Vec<NoteFull>, String> {
     let mut found = Vec::new();
     collect_md(Path::new(&dir), Path::new(&dir), true, &mut found).map_err(stringify)?;
@@ -340,6 +340,99 @@ fn notes_read_all(dir: String) -> Result<Vec<NoteFull>, String> {
             content: f.body,
         })
         .collect())
+}
+
+/// Everything a workspace's first paint needs — notes (with head previews), folders and display-only
+/// files — collected in ONE walk. `useNotes` used to fire `notes_list`, `notes_list_folders` and
+/// `notes_list_files` together: three separate recursive traversals of the same tree, serialized on
+/// the IPC thread, for one screen. `files` is sorted like `notes_list_files`; `notes` keeps walk
+/// order (the TS store sorts by recency, exactly as `list()` does).
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NoteSnapshot {
+    notes: Vec<NoteHead>,
+    folders: Vec<String>,
+    files: Vec<String>,
+}
+
+fn collect_snapshot(
+    root: &Path,
+    current: &Path,
+    out: &mut NoteSnapshot,
+) -> std::io::Result<()> {
+    for entry in fs::read_dir(current)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        let rel = || {
+            path.strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
+        if file_type.is_dir() {
+            if is_skipped_dir(&name) {
+                continue;
+            }
+            // The root Attachments/ folder holds media, not notes — don't descend it.
+            if current == root && name == ATTACHMENTS_DIR {
+                continue;
+            }
+            out.folders.push(rel());
+            collect_snapshot(root, &path, out)?;
+        } else if file_type.is_file() && !name.starts_with('.') {
+            // Dot-named files stay hidden from both the note walk and the display-only file list.
+            if is_md(&name) {
+                let meta = entry.metadata()?;
+                // A not-yet-downloaded iCloud file: list it by name/mtime without reading its
+                // content (the read would block on the download) — mirrors `collect_md`.
+                let head = if is_dataless(&meta) {
+                    String::new()
+                } else {
+                    let mut buf = Vec::new();
+                    fs::File::open(&path)?
+                        .take(PREVIEW_SCAN_BYTES)
+                        .read_to_end(&mut buf)?;
+                    String::from_utf8_lossy(&buf).into_owned()
+                };
+                out.notes.push(NoteHead {
+                    name: rel(),
+                    modified_ms: modified_ms(&meta),
+                    head,
+                });
+            } else if !name.ends_with(WRITE_TMP_SUFFIX) && !name.ends_with(RENAME_TMP_SUFFIX)
+            {
+                out.files.push(rel());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One recursive walk returning notes + folders + display-only files.
+#[tauri::command(async)]
+fn notes_snapshot(dir: String) -> Result<NoteSnapshot, String> {
+    let root = Path::new(&dir);
+    let mut out = NoteSnapshot::default();
+    collect_snapshot(root, root, &mut out).map_err(stringify)?;
+    out.files.sort();
+    Ok(out)
+}
+
+/// O(1) liveness check for a folder: open it and read one entry, without walking the tree.
+/// The bootstrap probe only needs "is this folder still readable?" — previously it ran a full
+/// `notes_list` (every note's head) and threw the result away, then the workspace walked again.
+#[tauri::command(async)]
+fn notes_probe(dir: String) -> Result<bool, String> {
+    let mut entries = fs::read_dir(&dir).map_err(stringify)?;
+    match entries.next() {
+        Some(Ok(_)) | None => Ok(true),
+        Some(Err(err)) => Err(err.to_string()),
+    }
 }
 
 /// List the `.md` files directly inside `dir/sub` (non-recursive), each with its name and mtime.
@@ -644,7 +737,7 @@ fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
 }
 
 /// Display-only files: names/paths only, so binary and iCloud-dataless files are never read.
-#[tauri::command]
+#[tauri::command(async)]
 fn notes_list_files(dir: String) -> Result<Vec<String>, String> {
     fn walk(root: &Path, current: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
         for entry in fs::read_dir(current)? {
@@ -705,7 +798,7 @@ fn notes_move_dir(dir: String, from: String, to: String) -> Result<(), String> {
 }
 
 /// Every folder (recursively) relative to the root, including deliberately-empty `.gnkeep` ones.
-#[tauri::command]
+#[tauri::command(async)]
 fn notes_list_folders(dir: String) -> Result<Vec<String>, String> {
     let root = Path::new(&dir);
     let mut out = Vec::new();
@@ -1756,6 +1849,8 @@ pub fn run() {
             notes_list,
             notes_list_dir,
             notes_read_all,
+            notes_snapshot,
+            notes_probe,
             notes_read_opt,
             notes_write,
             notes_rename,
@@ -1827,6 +1922,41 @@ mod tests {
 
     fn s(p: &Path) -> String {
         p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn snapshot_collects_notes_folders_and_files_in_one_walk() {
+        let dir = temp_dir();
+        notes_write(s(&dir), "Inbox.md".into(), "a".into()).unwrap();
+        notes_write(s(&dir), "Work/Roadmap.md".into(), "b".into()).unwrap();
+        notes_write(s(&dir), "Work/Sub/Deep.md".into(), "c".into()).unwrap();
+        // A display-only file, an excluded Attachments/ folder, and a dot dir that must stay out.
+        fs::write(dir.join("Work").join("data.csv"), "x").unwrap();
+        fs::create_dir_all(dir.join("Attachments")).unwrap();
+        fs::write(dir.join("Attachments").join("img.png"), "x").unwrap();
+        fs::create_dir_all(dir.join(".hidden")).unwrap();
+        fs::write(dir.join(".hidden").join("Secret.md"), "x").unwrap();
+
+        let snap = notes_snapshot(s(&dir)).unwrap();
+        let mut notes: Vec<_> = snap.notes.iter().map(|note| note.name.clone()).collect();
+        notes.sort();
+        assert_eq!(notes, vec!["Inbox.md", "Work/Roadmap.md", "Work/Sub/Deep.md"]);
+        let mut folders = snap.folders.clone();
+        folders.sort();
+        assert_eq!(folders, vec!["Work", "Work/Sub"]);
+        assert_eq!(snap.files, vec!["Work/data.csv"]);
+        // The head slice is the same one the list command reads.
+        assert_eq!(
+            snap.notes
+                .iter()
+                .find(|note| note.name == "Inbox.md")
+                .unwrap()
+                .head,
+            "a"
+        );
+        assert!(notes_probe(s(&dir)).unwrap());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

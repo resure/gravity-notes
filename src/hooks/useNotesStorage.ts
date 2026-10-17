@@ -311,7 +311,7 @@ export function useNotesStorage(): NotesStorage {
             // on the loading screen forever. Skipped for shell-assigned windows (see OpenOpts).
             if (!opts.skipProbe) {
                 try {
-                    await withTimeout(tauriStore.list(), PROBE_TIMEOUT_MS, 'Folder probe');
+                    await withTimeout(tauriStore.probe(), PROBE_TIMEOUT_MS, 'Folder probe');
                 } catch (err) {
                     if (isStale(seq)) return false;
                     const timedOut = err instanceof TimeoutError;
@@ -560,7 +560,7 @@ export function useNotesStorage(): NotesStorage {
         // dead or endless (home-dir) pick never becomes the last-active launch pointer.
         try {
             await withTimeout(
-                new TauriNoteStore(selected).list(),
+                new TauriNoteStore(selected).probe(),
                 PROBE_TIMEOUT_MS,
                 'Folder probe',
             );

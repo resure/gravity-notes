@@ -39,7 +39,10 @@ metadata is per-folder anyway.
 
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
-commands (the bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
+commands (`notes_list`/`notes_read_all`/`notes_list_folders`/`notes_list_files`/`notes_snapshot` are
+`#[tauri::command(async)]` — a sync command runs inline on the IPC/main thread, so a big walk used to
+stall other commands; `notes_snapshot` is the one-walk feed for a workspace's first paint, and
+`notes_probe` the O(1) bootstrap check. The bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
 because reading one blocks on download; they list by name/mtime with empty previews, and an explicit
 single-note open still materializes), the folder ops, `reveal_path`, the **live folder watcher**
 (`notes_watch`/`notes_unwatch` + the `Watchers` state: ONE debounced `notify`/FSEvents stream per
@@ -146,7 +149,9 @@ Key modules:
   Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus. The
   seam also covers nested folders (`create(title, parentPath)`, `move`, `createFolder`/`removeFolder`/
   `moveFolder`/`listFolders`, and `listsRecursively` so metadata reconcile never prunes ids a backend
-  can't yet enumerate), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
+  can't yet enumerate), an optional `snapshot()` (notes + folders + files from ONE traversal — the
+  desktop fs store implements it so a workspace load doesn't walk the tree three times) and an
+  optional `probe()` (O(1) folder liveness for the bootstrap, instead of a discarded full `list()`), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
   `listAttachments`/`removeAttachment`), an optional desktop-only `reveal(relPath)`, and an optional
   desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; resolves
   to a SYNC disposer; `TauriNoteStore.watch` listens window-scoped for `notes:changed` filtered by

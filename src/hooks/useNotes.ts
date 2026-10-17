@@ -462,11 +462,19 @@ export function useNotes(
     }, []);
 
     const refresh = useCallback(async () => {
-        const [list, folderList, fileList] = await Promise.all([
-            store.list(),
-            store.listFolders(),
-            store.listFiles?.() ?? [],
-        ]);
+        // One traversal where the backend can do it (the desktop fs store), three otherwise.
+        let list: NoteMeta[];
+        let folderList: string[];
+        let fileList: OtherFile[];
+        if (store.snapshot) {
+            ({notes: list, folders: folderList, files: fileList} = await store.snapshot());
+        } else {
+            [list, folderList, fileList] = await Promise.all([
+                store.list(),
+                store.listFolders(),
+                store.listFiles?.() ?? [],
+            ]);
+        }
         // Newest-wins per row: an autosave can land while list() walks the folder, so its
         // bumpInList row (fresher mtime + preview) must survive this snapshot — which was read
         // before the write and would otherwise clobber it back to stale (and the save's own
@@ -1301,13 +1309,18 @@ export function useNotes(
         let cancelled = false;
         void (async () => {
             try {
-                const [list, folderList, raw, trashList, fileList] = await Promise.all([
-                    store.list(),
-                    store.listFolders(),
-                    store.readMetadata(),
-                    store.listTrash(),
-                    store.listFiles?.() ?? [],
-                ]);
+                const [{notes: list, folders: folderList, files: fileList}, raw, trashList] =
+                    await Promise.all([
+                        store.snapshot
+                            ? store.snapshot()
+                            : Promise.all([
+                                  store.list(),
+                                  store.listFolders(),
+                                  store.listFiles?.() ?? [],
+                              ]).then(([notes, folders, files]) => ({notes, folders, files})),
+                        store.readMetadata(),
+                        store.listTrash(),
+                    ]);
                 if (cancelled) return;
                 const meta = reconcile(raw, [...list.map((n) => n.id), ...folderList], {
                     recursive: store.listsRecursively,

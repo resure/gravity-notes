@@ -64,6 +64,10 @@ class FakeFs {
                 return this.listDir(args.sub as string);
             case 'notes_read_all':
                 return this.readAll();
+            case 'notes_snapshot':
+                return {notes: this.list(), folders: this.folders(), files: []};
+            case 'notes_probe':
+                return true;
             case 'notes_read_opt':
                 if (this.readOptError) throw this.readOptError;
                 return this.readOpt(name);
@@ -205,6 +209,16 @@ class FakeFs {
             .map((f) => ({name: f.name, modifiedMs: f.mtime, head: f.content.slice(0, 500)}));
     }
 
+    /** Every ancestor folder implied by a note path (the Rust walk reports real dirs). */
+    private folders() {
+        const out = new Set<string>();
+        for (const f of this.mdFiles()) {
+            const parts = f.name.split('/');
+            for (let i = 1; i < parts.length; i++) out.add(parts.slice(0, i).join('/'));
+        }
+        return [...out];
+    }
+
     private readAll() {
         return this.mdFiles().map((f) => ({
             name: f.name,
@@ -230,6 +244,16 @@ describe('TauriNoteStore', () => {
 
     beforeEach(() => {
         ({store, fs} = newStore());
+    });
+
+    it('returns the list, folder tree and files from one snapshot command', async () => {
+        await store.create('One', 'Work');
+        await store.create('Two');
+        const snap = await store.snapshot();
+        expect(snap.notes.map((n) => n.id).sort()).toEqual(['Two.md', 'Work/One.md']);
+        expect(snap.folders).toEqual(['Work']);
+        expect(snap.files).toEqual([]);
+        expect(await store.probe()).toBe(true);
     });
 
     it('creates a note with the canonical body shape and reads it back stripped', async () => {

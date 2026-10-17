@@ -31,6 +31,7 @@ import {
     type NoteStore,
     type NotesMetadata,
     type OtherFile,
+    type StoreSnapshot,
 } from './types';
 
 /** Shapes returned by the Rust `notes_*` commands (see `src-tauri/src/lib.rs`). */
@@ -131,6 +132,31 @@ export class TauriNoteStore implements NoteStore {
         }));
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return metas;
+    }
+
+    /** One walk for the initial list + folder tree + file list (see `notes_snapshot`). */
+    async snapshot(): Promise<StoreSnapshot> {
+        const snap = await invoke<{notes: NoteHead[]; folders: string[]; files: string[]}>(
+            'notes_snapshot',
+            {dir: this.dir},
+        );
+        const notes: NoteMeta[] = snap.notes.map((entry) => ({
+            id: entry.name,
+            title: titleFromFileName(entry.name),
+            updatedAt: entry.modifiedMs,
+            preview: previewFromContent(entry.head),
+        }));
+        notes.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return {
+            notes,
+            folders: snap.folders,
+            files: snap.files.map((id) => ({id, name: basename(id)})),
+        };
+    }
+
+    /** O(1) bootstrap probe — opens the folder and reads one entry, no recursive walk. */
+    async probe(): Promise<boolean> {
+        return invoke<boolean>('notes_probe', {dir: this.dir});
     }
 
     async getAll(): Promise<Note[]> {

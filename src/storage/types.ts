@@ -124,9 +124,27 @@ export interface NotesMetadata {
     trashed: readonly TrashEntry[];
 }
 
+/** The three list-shaped reads a workspace renders, collected in one backend pass. */
+export interface StoreSnapshot {
+    notes: NoteMeta[];
+    folders: string[];
+    files: OtherFile[];
+}
+
 export interface NoteStore {
     /** List all notes, typically sorted by most-recently-updated. */
     list(): Promise<NoteMeta[]>;
+    /**
+     * Notes + folders + display-only files from a SINGLE traversal, for backends that would
+     * otherwise walk the tree three times on every workspace load (the desktop fs store). Callers
+     * fall back to `list()`/`listFolders()`/`listFiles()` when absent.
+     */
+    snapshot?(): Promise<StoreSnapshot>;
+    /**
+     * Cheap liveness check for a folder backend: "is this store still readable?", without the
+     * per-note work of `list()`. Used by the bootstrap probe; absent backends fall back to `list()`.
+     */
+    probe?(): Promise<boolean>;
     /**
      * Load every note with its full content, in a single pass (one IndexedDB read / one directory
      * scan). Feeds the in-memory full-text search index, which lives above the storage seam so
