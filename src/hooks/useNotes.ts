@@ -18,7 +18,7 @@ import {
     withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
-import {dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
+import {MD_EXT, dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -107,6 +107,11 @@ const LOCAL_WRITE_WINDOW_MS = 3_000;
  * can't fire it mid-burst.
  */
 const WATCH_SUPPRESSED_VERIFY_MS = LOCAL_WRITE_WINDOW_MS + WATCH_REFRESH_DEBOUNCE_MS;
+/**
+ * Cap on a targeted watcher refresh. Past this many paths a batch is a bulk external write, and one
+ * full `snapshot()`/list walk (500-byte heads, one traversal) beats reading every named file in full.
+ */
+const MAX_TARGETED_PATHS = 12;
 
 /**
  * Tell the desktop shell a note's id (rel-path) changed, so any single-note WINDOW pinned to the
@@ -280,11 +285,18 @@ export function useNotes(
     initialNoteId?: string | null,
 ): UseNotes {
     const [notes, setNotes] = useState<NoteMeta[]>([]);
+    // Mirrors the list for callers that must decide what to patch without re-rendering.
+    const notesRef = useRef<NoteMeta[]>([]);
+    notesRef.current = notes;
     const [files, setFiles] = useState<OtherFile[]>([]);
     const [folders, setFolders] = useState<string[]>([]);
     const [trashedNotes, setTrashedNotes] = useState<TrashedNote[]>([]);
     const [note, setNote] = useState<Note | null>(null);
     const [saveState, setSaveState] = useState<SaveState>('idle');
+    // True while a native folder watcher is subscribed. The focus re-list is a fallback for
+    // backends without one (web/iOS) or a failed subscription; with a live watcher it would
+    // duplicate work on every alt-tab.
+    const watchActiveRef = useRef(false);
     const [conflict, setConflict] = useState<NoteConflict | null>(null);
     const [metadata, setMetadata] = useState<NotesMetadata>(DEFAULT_METADATA);
     const metadataRef = useRef<NotesMetadata>(DEFAULT_METADATA);
@@ -508,6 +520,65 @@ export function useNotes(
         // change (e.g. files removed on disk) is reconciled lazily by refreshTrash() when the trash
         // view next opens, not on every refresh.
     }, [store, applyMetadata]);
+
+    /**
+     * Patch only the notes a watcher batch reported, instead of re-walking the folder. Returns
+     * false when a full `refresh()` is required: any dir/non-note path (folders or display files
+     * may have changed), a KNOWN note that vanished (metadata reconcile must prune its pin/icon/
+     * appearance), or an unexpected read error. Empty/many-changes batches never reach here.
+     *
+     * Rows merge newest-wins like `refresh()`, so a save that landed while the batch was queued
+     * isn't clobbered back to a stale preview. The corpus follows the list signature for free.
+     */
+    const refreshPaths = useCallback(
+        async (paths: string[]): Promise<boolean> => {
+            const ids = new Set<string>();
+            for (const path of paths) {
+                if (!path.toLowerCase().endsWith(MD_EXT)) return false;
+                // The stores stage writes through temp siblings; their churn is not a note.
+                if (path.endsWith('.gn-tmp') || path.endsWith('.rename-tmp')) continue;
+                ids.add(path);
+            }
+            if (ids.size === 0) return true;
+            if (ids.size > MAX_TARGETED_PATHS) return false; // bulk write → one walk is cheaper
+            const known = new Set(notesRef.current.map((row) => row.id));
+            const loaded: NoteMeta[] = [];
+            for (const id of ids) {
+                try {
+                    const current = await store.get(id);
+                    loaded.push({
+                        id,
+                        title: current.title,
+                        updatedAt: current.updatedAt,
+                        preview: previewFromContent(current.content),
+                    });
+                } catch (err) {
+                    if (err instanceof DOMException && err.name === 'NotFoundError') {
+                        // A known note disappearing needs the reconcile pass (stale metadata).
+                        if (known.has(id)) return false;
+                        continue; // a path we never listed and that is already gone
+                    }
+                    return false; // unknown failure — surface it through a full refresh
+                }
+            }
+            if (loaded.length === 0) return true;
+            setNotes((prev) => {
+                const updates = new Map(loaded.map((row) => [row.id, row]));
+                const seen = new Set<string>();
+                const next = prev.map((row) => {
+                    const update = updates.get(row.id);
+                    if (!update) return row;
+                    seen.add(row.id);
+                    // Newest-wins: an autosave can land while this batch is being read.
+                    return (row.updatedAt ?? 0) > (update.updatedAt ?? 0) ? row : update;
+                });
+                for (const update of loaded) if (!seen.has(update.id)) next.push(update);
+                return next;
+            });
+            return true;
+        },
+        [store],
+    );
 
     // Re-read just the folder list after an incremental note patch. On the folder backends this is a
     // cheap directory walk (no per-file reads, unlike the full list() in refresh()), so an emptied
@@ -1555,7 +1626,14 @@ export function useNotes(
             // pin `active`) BEFORE refresh()'s reconcile can null the vanished pointer —
             // refresh-first would swallow the banner and dead-end the editor.
             checkOpenNoteConflict()
-                .then(() => refresh())
+                .then(() => {
+                    // With a live folder watcher the list already follows external changes (and
+                    // replays batches latched while hidden), so a full re-list here would just
+                    // walk the folder again on every alt-tab. Keep it as the fallback for the
+                    // web/iOS backends and a failed subscription.
+                    if (!watchActiveRef.current) return refresh();
+                    return undefined;
+                })
                 .catch(() => {
                     // A transient read failure keeps the current list; the next focus retries.
                 });
@@ -1596,15 +1674,23 @@ export function useNotes(
         let running = false;
         let queued = false;
         let pendingWhileHidden = false;
+        // What the next run should do: a full re-list, or a patch of just these rel-paths.
+        let pendingFull = false;
+        let pendingPaths = new Set<string>();
+        // Echo-only batches deferred past the local-write stamp window (see scheduleVerify).
+        let verifyPaths = new Set<string>();
 
         // Trailing debounce on top of the backend's own event debounce, so a burst of batches
         // (bulk external writes) lands as one refresh. Function declarations: run and schedule
         // reference each other, in deferred positions only.
         function schedule() {
-            // A sooner full run supersedes a pending echo-verify (it reads the same disk truth).
+            // A run is due sooner than the echo-verify: fold its paths into this request (a
+            // deferred echo is only ever a safety net — the sooner run reads the same disk).
             if (verifyTimer) {
                 clearTimeout(verifyTimer);
                 verifyTimer = null;
+                for (const path of verifyPaths) pendingPaths.add(path);
+                verifyPaths = new Set();
             }
             if (timer) clearTimeout(timer);
             timer = setTimeout(() => {
@@ -1615,12 +1701,17 @@ export function useNotes(
         // Echo-only batches: one deferred run per burst, trailing past the stamp window, so a
         // false-positive suppression (external dir event under an ancestor stamp; external
         // rewrite of a just-saved note) is healed a few seconds later instead of lost.
-        function scheduleVerify() {
-            if (timer) return; // a full run is already due sooner
+        function scheduleVerify(relPaths: string[]) {
+            if (timer) return; // a run is already due sooner and covers the same disk state
+            for (const path of relPaths) verifyPaths.add(path);
             if (verifyTimer) clearTimeout(verifyTimer);
             verifyTimer = setTimeout(() => {
                 verifyTimer = null;
-                void run();
+                // Hand the deferred paths to the normal pipeline; `run` patches just those
+                // notes, so a false-positive suppression costs one read, not a folder walk.
+                for (const path of verifyPaths) pendingPaths.add(path);
+                verifyPaths = new Set();
+                schedule();
             }, WATCH_SUPPRESSED_VERIFY_MS);
         }
         async function run() {
@@ -1633,18 +1724,29 @@ export function useNotes(
                 // replay on visibility. Checked at fire time so a timer armed while visible
                 // can't walk the store behind a window that hid meanwhile.
                 pendingWhileHidden = true;
+                pendingFull = true;
+                pendingPaths = new Set();
                 return;
             }
             if (moveInProgressRef.current) {
                 schedule(); // re-arm rather than drop; the move settles in well under a window
                 return;
             }
+            const request = {full: pendingFull, paths: [...pendingPaths]};
+            pendingFull = false;
+            pendingPaths = new Set();
             running = true;
             try {
                 // Conflict check FIRST: refresh()'s reconcile nulls a vanished `active`, so the
                 // other order would miss an externally-deleted open note (no banner).
                 await checkOpenNoteConflict();
-                await refresh();
+                if (!request.full && request.paths.length > 0) {
+                    // Targeted: only the notes this batch named. Falls back to the full walk for
+                    // anything ambiguous (dir paths, a vanished known note, a read error).
+                    if (!(await refreshPaths(request.paths))) await refresh();
+                } else {
+                    await refresh();
+                }
             } catch {
                 // A transient read failure keeps the current list; the next event/focus retries.
             } finally {
@@ -1660,14 +1762,24 @@ export function useNotes(
             // Pure echoes of our own writes defer to the verify run. Empty = "many/unknown
             // changes" — NEVER suppressible ([].every() is vacuously true).
             if (relPaths.length > 0 && relPaths.every(isRecentLocalWrite)) {
-                scheduleVerify();
+                scheduleVerify(relPaths);
                 return;
             }
             if (document.visibilityState === 'hidden') {
                 // Latch and replay on visibility: becoming visible doesn't imply gaining focus,
-                // so the focus re-list above wouldn't cover it.
+                // so the focus re-list above wouldn't cover it. Paths are dropped in favour of a
+                // full run — a hidden batch is unbounded and cheap targeting isn't worth the
+                // bookkeeping across a suspension.
                 pendingWhileHidden = true;
+                pendingFull = true;
                 return;
+            }
+            if (relPaths.length === 0) {
+                // FSEvents overflow / root event / watcher error: refresh everything.
+                pendingFull = true;
+                pendingPaths = new Set();
+            } else if (!pendingFull) {
+                for (const path of relPaths) pendingPaths.add(path);
             }
             schedule();
         };
@@ -1682,8 +1794,12 @@ export function useNotes(
             (dispose) => {
                 // Unmounted while subscribing (StrictMode remount / workspace switch): the
                 // backend refcounts subscriptions, so disposing the late handle is exact.
-                if (disposed) dispose();
-                else unwatch = dispose;
+                if (disposed) {
+                    dispose();
+                } else {
+                    unwatch = dispose;
+                    watchActiveRef.current = true;
+                }
             },
             (err: unknown) => {
                 // Watching is best-effort — the focus-driven refresh still covers external
@@ -1696,12 +1812,13 @@ export function useNotes(
         );
         return () => {
             disposed = true;
+            watchActiveRef.current = false;
             if (timer) clearTimeout(timer);
             if (verifyTimer) clearTimeout(verifyTimer);
             document.removeEventListener('visibilitychange', onVisible);
             unwatch?.();
         };
-    }, [ready, store, refresh, checkOpenNoteConflict, isRecentLocalWrite]);
+    }, [ready, store, refresh, refreshPaths, checkOpenNoteConflict, isRecentLocalWrite]);
 
     return {
         notes,

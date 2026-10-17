@@ -1673,6 +1673,44 @@ describe('useNotes — live watch', () => {
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
     });
 
+    it('patches the reported note without re-listing the whole folder', async () => {
+        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+            d.seedFile('A.md', 'old body', 100),
+        );
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        const listCalls = listSpy.mock.calls.length;
+
+        dir.seedFile('A.md', 'new body', 200); // external edit, no create/delete
+        act(() => watchState.onChange!(['A.md']));
+
+        await waitFor(() => expect(hook.result.current.notes[0].preview).toContain('new body'));
+        // The targeted patch reads the one note; the folder was not walked.
+        expect(listSpy.mock.calls.length).toBe(listCalls);
+    });
+
+    it('falls back to a full walk for a directory path (folder rename)', async () => {
+        const {hook, watchState, listSpy} = await setupWatched((d) => d.seedFile('A.md', 'a', 100));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        const listCalls = listSpy.mock.calls.length;
+
+        // A Finder folder rename reports dir paths only — folders/tree may have changed.
+        act(() => watchState.onChange!(['Work']));
+        await waitFor(() => expect(listSpy.mock.calls.length).toBe(listCalls + 1));
+    });
+
+    it('falls back when a listed note vanished, so metadata is reconciled', async () => {
+        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+            d.seedFile('A.md', 'a', 100),
+        );
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        const listCalls = listSpy.mock.calls.length;
+
+        await dir.removeEntry('A.md');
+        act(() => watchState.onChange!(['A.md']));
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(0));
+        expect(listSpy.mock.calls.length).toBeGreaterThan(listCalls);
+    });
+
     it('raises a conflict for an externally-changed open note without any focus event', async () => {
         const {hook, dir, watchState} = await setupWatched((d) =>
             d.seedFile('Note.md', 'disk v1', 100),
@@ -1688,8 +1726,8 @@ describe('useNotes — live watch', () => {
         expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: false});
     });
 
-    it('defers the echo of its own autosave to one trailing verify run', async () => {
-        const {hook, watchState, listSpy} = await setupWatched((d) =>
+    it('defers the echo of its own autosave to one trailing verify read', async () => {
+        const {hook, store, watchState, listSpy} = await setupWatched((d) =>
             d.seedFile('Note.md', 'v1', 100),
         );
         await act(async () => {
@@ -1705,6 +1743,8 @@ describe('useNotes — live watch', () => {
         await waitFor(() => expect(hook.result.current.saveState).toBe('saved'));
 
         const listCalls = listSpy.mock.calls.length;
+        const getSpy = vi.spyOn(store, 'get');
+        const getCalls = getSpy.mock.calls.length;
         vi.useFakeTimers();
         try {
             // The watcher echoes our own write back; no refresh at the fast 300 ms cadence…
@@ -1714,13 +1754,16 @@ describe('useNotes — live watch', () => {
             });
             expect(listSpy.mock.calls.length).toBe(listCalls);
             expect(hook.result.current.conflict).toBeNull();
-            // …but the batch is deferred, not dropped: ONE verify run fires once the echoes go
+            // …but the batch is deferred, not dropped: ONE verify read fires once the echoes go
             // quiet — a stamp false-positive (e.g. an external dir event matching an ancestor
-            // stamp) may only ever delay a refresh, never lose one.
+            // stamp) may only ever delay a refresh, never lose one. It re-reads the named note
+            // instead of walking the whole folder.
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(2_000);
             });
-            expect(listSpy.mock.calls.length).toBe(listCalls + 1);
+            expect(getSpy.mock.calls.length).toBe(getCalls + 1);
+            expect(getSpy).toHaveBeenCalledWith('Note.md');
+            expect(listSpy.mock.calls.length).toBe(listCalls);
             expect(hook.result.current.conflict).toBeNull();
         } finally {
             vi.useRealTimers();

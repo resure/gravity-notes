@@ -29,7 +29,10 @@ vi.mock('../storage/workspaceRegistry', async (importOriginal) => {
 vi.mock('../storage/tauriStore', () => ({
     // Each instance probes through the shared spy WITH its folder path, so per-folder behavior
     // (workspace A reads fine, workspace B hangs) is scriptable from a test.
-    TauriNoteStore: vi.fn().mockImplementation((dir: string) => ({list: () => listMock(dir)})),
+    TauriNoteStore: vi.fn().mockImplementation((dir: string) => ({
+        list: () => listMock(dir),
+        probe: () => listMock(dir),
+    })),
 }));
 
 // The hook loads Tauri APIs via dynamic import; vitest intercepts those too.

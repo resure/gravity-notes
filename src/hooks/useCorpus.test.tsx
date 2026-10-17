@@ -75,6 +75,29 @@ describe('useCorpus — loading lifecycle', () => {
         expect(store.get).toHaveBeenCalledTimes(1);
     });
 
+    it('seeds the just-saved open note without reading it back', async () => {
+        const store = makeStore({'Alpha.md': 'old body'});
+        const saved: Note = {
+            id: 'Alpha.md',
+            title: 'Alpha',
+            updatedAt: 99,
+            content: 'new body\n\n',
+        };
+        const {result, rerender} = renderHook(
+            ({notes, open}: {notes: NoteMeta[]; open: Note | null}) =>
+                useCorpus(store, notes, true, false, open),
+            {initialProps: {notes: NOTES, open: null as Note | null}},
+        );
+        await waitFor(() => expect(store.getAll).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(result.current.contentById.get('Alpha.md')).toBe('old body'));
+
+        const bumped = NOTES.map((n) => (n.id === 'Alpha.md' ? {...n, updatedAt: 99} : n));
+        rerender({notes: bumped, open: saved});
+        await waitFor(() => expect(result.current.contentById.get('Alpha.md')).toBe('new body'));
+        // The in-memory save is authoritative — no file was re-read for it.
+        expect(store.get).not.toHaveBeenCalled();
+    });
+
     it('drops the cache when the backend changes', async () => {
         const storeA = makeStore({'Alpha.md': 'a body'});
         const storeB = makeStore({'Alpha.md': 'b body'});

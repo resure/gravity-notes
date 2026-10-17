@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import type {NoteMeta, NoteStore} from '../storage/types';
+import {stripTrailingNewlines} from '../storage/noteText';
+import type {Note, NoteMeta, NoteStore} from '../storage/types';
 import {type WikiLinkRef, extractWikiLinks} from '../wikiLinks';
 
 /**
@@ -118,6 +119,8 @@ export interface Corpus {
     lowerById: Map<string, string>;
     /** Note id → the body's `[[wiki links]]`, pre-extracted once (backlinks scan this). */
     linksById: Map<string, WikiLinkRef[]>;
+    /** Total characters held by the corpus — search scales with this, not with the note count. */
+    bytes: number;
     /** True while a query/open is active but the corpus doesn't yet reflect the current note list. */
     loading: boolean;
 }
@@ -144,6 +147,12 @@ export function useCorpus(
     notes: NoteMeta[],
     active: boolean,
     urgent = false,
+    /**
+     * The open note, when it is the just-saved copy. A save is already in memory, so the
+     * incremental refresh seeds this body instead of reading it back from the store (one file/IPC
+     * round-trip per autosave). Used only while its `updatedAt` still matches the list row.
+     */
+    openNote?: Note | null,
 ): Corpus {
     // content/lower entries (search indices). Fresh identity on every update — search needs that.
     const [corpus, setCorpus] = useState<Map<string, CorpusEntry>>(() => new Map());
@@ -166,6 +175,8 @@ export function useCorpus(
     linksRef.current = linksById;
     const urgentRef = useRef(urgent);
     urgentRef.current = urgent;
+    const openNoteRef = useRef(openNote);
+    openNoteRef.current = openNote;
     const wakeRef = useRef<(() => void) | null>(null);
     useEffect(() => {
         if (urgent) wakeRef.current?.();
@@ -222,9 +233,15 @@ export function useCorpus(
                 } else {
                     // Incremental: re-read only notes whose updatedAt changed (or are new); reuse the
                     // rest, and drop any that vanished. Avoids a full re-scan when one note is edited.
+                    const saved = openNoteRef.current;
+                    const isSavedCopy = (n: NoteMeta) =>
+                        saved?.id === n.id && (saved.updatedAt ?? 0) === (n.updatedAt ?? 0);
                     const stale = currentNotes.filter((n) => {
                         const cached = cachedCorpus.get(n.id);
-                        if (!cached || cached.updatedAt !== (n.updatedAt ?? 0)) return true;
+                        if (!cached || cached.updatedAt !== (n.updatedAt ?? 0)) {
+                            // Our own save is already in hand — don't read it back from disk.
+                            return !isSavedCopy(n);
+                        }
                         // An iCloud-dataless file was cached with an EMPTY body, and downloading
                         // it doesn't bump mtime — but the list preview flips non-empty once the
                         // content is local. Re-read then; a still-dataless file keeps an empty
@@ -263,6 +280,26 @@ export function useCorpus(
                         });
                         fetchedLinks.set(f.id, extractWikiLinks(f.content));
                     }
+                    // Seed the just-saved open note from the in-memory copy (see `openNote`).
+                    if (saved) {
+                        const row = currentNotes.find((n) => n.id === saved.id);
+                        if (row && (row.updatedAt ?? 0) === (saved.updatedAt ?? 0)) {
+                            const content = stripTrailingNewlines(saved.content);
+                            const cached = nextCorpus.get(saved.id);
+                            if (
+                                !cached ||
+                                cached.updatedAt !== (saved.updatedAt ?? 0) ||
+                                cached.content !== content
+                            ) {
+                                nextCorpus.set(saved.id, {
+                                    updatedAt: saved.updatedAt ?? 0,
+                                    content,
+                                    lower: content.toLowerCase(),
+                                });
+                                fetchedLinks.set(saved.id, extractWikiLinks(content));
+                            }
+                        }
+                    }
                     nextLinks = mergeLinkIndex(cachedLinks, present, fetchedLinks);
                     // else: leave linksById untouched (stable identity) — the graph didn't change.
                 }
@@ -296,5 +333,17 @@ export function useCorpus(
         return map;
     }, [corpus]);
 
-    return {contentById, lowerById, linksById, loading: active && loadedSignature !== signature};
+    const bytes = useMemo(() => {
+        let total = 0;
+        for (const entry of corpus.values()) total += entry.content.length;
+        return total;
+    }, [corpus]);
+
+    return {
+        contentById,
+        lowerById,
+        linksById,
+        bytes,
+        loading: active && loadedSignature !== signature,
+    };
 }

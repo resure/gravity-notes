@@ -143,15 +143,27 @@ export interface NoteListProps {
     onFocusRail: () => void;
 }
 
+// One compiled pattern per query's term list. `terms` is a stable array per query (memoized in
+// NoteList), so this compiles once per keystroke instead of once per visible ROW per field.
+const patternByTerms = new WeakMap<string[], RegExp>();
+function highlightPattern(terms: string[]): RegExp {
+    let pattern = patternByTerms.get(terms);
+    if (!pattern) {
+        // Longest term first so that when one term is a prefix of another (e.g. "java" vs
+        // "javascript"), regex leftmost-alternation still highlights the longer match.
+        const ordered = [...terms].sort((a, b) => b.length - a.length);
+        // A capturing group makes String.split interleave the matched delimiters into the result,
+        // so odd indices are the matches to mark and even indices are the surrounding plain text.
+        pattern = new RegExp(`(${ordered.map(escapeRegExp).join('|')})`, 'gi');
+        patternByTerms.set(terms, pattern);
+    }
+    return pattern;
+}
+
 /** Wrap every occurrence of any `term` (case-insensitive) in `text` with a highlight `<mark>`. */
 function highlightTerms(text: string, terms: string[]): ReactNode {
     if (terms.length === 0 || !text) return text;
-    // Longest term first so that when one term is a prefix of another (e.g. "java" vs "javascript"),
-    // regex leftmost-alternation still highlights the longer match rather than shadowing it.
-    const ordered = [...terms].sort((a, b) => b.length - a.length);
-    // A capturing group makes String.split interleave the matched delimiters into the result, so
-    // odd indices are the matches to mark and even indices are the surrounding plain text.
-    const pattern = new RegExp(`(${ordered.map(escapeRegExp).join('|')})`, 'gi');
+    const pattern = highlightPattern(terms);
     return text.split(pattern).map((part, i) =>
         i % 2 === 1 ? (
             <mark key={`${i}:${part}`} className="note-list__match">

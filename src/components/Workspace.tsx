@@ -101,12 +101,15 @@ interface WorkspaceProps {
 }
 
 /**
- * Above this many notes, the search query is debounced by {@link SEARCH_DEBOUNCE_MS} before it drives
- * re-scoring + the (large) result-list re-render; at or below it, search stays instant (no debounce).
- * Keeps small vaults snappy-as-you-type while sparing a huge vault a full re-score + list reconcile on
+ * Above this many notes OR this much body text, the search query is debounced by
+ * {@link SEARCH_DEBOUNCE_MS} before it drives re-scoring + the (large) result-list re-render; below
+ * both, search stays instant (no debounce). The byte threshold matters because scoring is linear in
+ * the corpus, not in the note count: 200 very long notes are as expensive per keystroke as 5,000
+ * short ones. Keeps small vaults snappy-as-you-type while sparing a heavy corpus a full re-score on
  * every keystroke of a fast typist.
  */
 const SEARCH_DEBOUNCE_THRESHOLD = 500;
+const SEARCH_DEBOUNCE_BYTES = 4 * 1024 * 1024;
 const SEARCH_DEBOUNCE_MS = 120;
 
 // Per-workspace UI state (layout + rail selection) lives under workspace-namespaced keys, so each
@@ -345,16 +348,23 @@ export function Workspace({
     // `query` is the live text in the box (instant); `debouncedQuery` is what actually drives scoring +
     // the result-list render, debounced only on a large vault (see SEARCH_DEBOUNCE_THRESHOLD).
     const [query, setQuery] = useState('');
-    const debouncedQuery = useDebouncedValue(
-        query,
-        notes.notes.length > SEARCH_DEBOUNCE_THRESHOLD ? SEARCH_DEBOUNCE_MS : 0,
-    );
+    const queryLive = query.trim().length > 0;
     // Load the body corpus once a query is live OR a note is open, and share it between full-text
     // search and backlinks — so getAll() runs once (one big IPC on desktop) and bodies are held once.
     // Gate on the live `query` so the (lazy) corpus read starts on the first keystroke, not after the
-    // debounce settles.
-    const queryLive = query.trim().length > 0;
-    const corpus = useCorpus(store, orderedNotes, notes.activeId !== null || queryLive, queryLive);
+    // debounce settles. The open note is passed as the just-saved copy: its autosave seeds the
+    // corpus instead of re-reading the file.
+    const corpus = useCorpus(
+        store,
+        orderedNotes,
+        notes.activeId !== null || queryLive,
+        queryLive,
+        notes.note,
+    );
+    // Debounce by corpus WEIGHT (bytes), not just note count — see SEARCH_DEBOUNCE_BYTES.
+    const heavyCorpus =
+        notes.notes.length > SEARCH_DEBOUNCE_THRESHOLD || corpus.bytes > SEARCH_DEBOUNCE_BYTES;
+    const debouncedQuery = useDebouncedValue(query, heavyCorpus ? SEARCH_DEBOUNCE_MS : 0);
     const {
         filteredNotes,
         snippetById,
@@ -640,20 +650,38 @@ export function Workspace({
         // Main-window-only so a workspace window doesn't fire a second concurrent check (each
         // window is its own JS context — the updater's in-flight guard can't see across them).
         if (!updater.supported || !import.meta.env.PROD || !isMainWindow()) return;
-        void (async () => {
-            const found = await updater.check({silent: true});
-            if (!found) return;
-            add({
-                name: `update-available-${toastSeq++}`,
-                title: 'Update available',
-                content: `Gravity Notes v${found.version} is ready to install.`,
-                theme: 'info',
-                autoHiding: false,
-                actions: [{label: 'View', onClick: () => setUpdateDialogOpen(true)}],
-            });
-        })();
+        // Off the launch path: the check is a network round-trip and nothing on screen waits for
+        // it. Safari/WKWebView has no requestIdleCallback, so fall back to a short delay.
+        let cancelled = false;
+        let cancel: () => void;
+        const check = () => {
+            if (cancelled) return;
+            void (async () => {
+                const found = await updater.check({silent: true});
+                if (!found || cancelled) return;
+                add({
+                    name: `update-available-${toastSeq++}`,
+                    title: 'Update available',
+                    content: `Gravity Notes v${found.version} is ready to install.`,
+                    theme: 'info',
+                    autoHiding: false,
+                    actions: [{label: 'View', onClick: () => setUpdateDialogOpen(true)}],
+                });
+            })();
+        };
+        if (typeof window.requestIdleCallback === 'function') {
+            const handle = window.requestIdleCallback(check, {timeout: 4_000});
+            cancel = () => window.cancelIdleCallback?.(handle);
+        } else {
+            const handle = window.setTimeout(check, 1_500);
+            cancel = () => window.clearTimeout(handle);
+        }
         // Run once on mount; updater.check + add are stable.
         // eslint-disable-next-line react-hooks/exhaustive-deps
+        return () => {
+            cancelled = true;
+            cancel();
+        };
     }, []);
     const [pendingListFocus, setPendingListFocus] = useState(false);
     // Set after following a wiki link to a freshly-created note, to land the caret in its body once
@@ -943,23 +971,25 @@ export function Workspace({
     // and pushing `set_window_note(null)` then would wipe the label→note entry the shell seeded
     // before this page loaded — leaving per-note focus-if-open blind for the whole load (a second
     // ⌘↵ would duplicate the window) and flashing the native title through the workspace fallback.
-    const openNote = notes.note;
+    // Depend on id/title, not the note OBJECT: `flush()` replaces the note object on every
+    // autosave (new content + mtime), so an object dependency fired two IPC calls per save.
+    const openNoteTitle = notes.note?.title;
     useEffect(() => {
         if (!noteWindow || !notes.ready) return;
         void (async () => {
             try {
                 const {invoke} = await import('@tauri-apps/api/core');
-                await invoke('set_window_note', {noteId: openNote?.id ?? null});
+                await invoke('set_window_note', {noteId: openNoteId ?? null});
                 const {getCurrentWindow} = await import('@tauri-apps/api/window');
                 await getCurrentWindow().setTitle(
-                    openNote?.title ??
+                    openNoteTitle ??
                         (storageLabel ? `${storageLabel} — Gravity Notes` : 'Gravity Notes'),
                 );
             } catch {
                 // Best-effort: a failure only leaves the title stale / focus-if-open duplicable.
             }
         })();
-    }, [noteWindow, notes.ready, openNote, storageLabel]);
+    }, [noteWindow, notes.ready, openNoteId, openNoteTitle, storageLabel]);
 
     // Global Esc fallback: when focus is somewhere that doesn't handle Esc itself (the top
     // bar, the document body), send it back to the note list so keyboard nav resumes. When the

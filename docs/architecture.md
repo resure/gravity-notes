@@ -140,10 +140,16 @@ The desktop shell runs one debounced FSEvents watcher per open folder
 (`notify` in [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)), shared by every window showing
 it. External changes — another app, another window, a sync agent — push a `notes:changed` event;
 the frontend re-checks the open note for conflicts and refreshes the list, which the search index
-and backlinks follow automatically. The app's own saves are recognized and skipped, so typing
-never triggers refresh churn. Noise (`.DS_Store`, the sidecar, `Attachments/`, temp files) is
-filtered at the source. On the web there's no watching API, so external edits surface when the tab
-regains focus — or via **Reload notes** in the storage menu.
+and backlinks follow automatically. Batches that name only a handful of notes are patched by
+reading just those files; a directory path, a vanished known note, a bulk batch (>12 paths) or an
+empty "refresh everything" event falls back to a full re-list. The app's own saves are recognized
+and skipped, so typing never triggers refresh churn — an echo still schedules one deferred,
+targeted read past the suppression window rather than a folder walk. With a live watcher the
+focus handler only re-checks the open note's conflict; the full focus re-list remains for the
+web/iOS backends (no watcher) and as the fallback when a subscription fails. Noise
+(`.DS_Store`, the sidecar, `Attachments/`, temp files) is filtered at the source. On the web
+there's no watching API, so external edits surface when the tab regains focus — or via **Reload
+notes** in the storage menu.
 
 ## Search, backlinks & performance
 
@@ -151,8 +157,10 @@ Full-text ranking ([`src/search.ts`](../src/search.ts)) and wiki-link/backlink r
 ([`src/wikiLinks.ts`](../src/wikiLinks.ts)) are pure functions with no I/O — they score a shared
 in-memory corpus loaded once by [`src/hooks/useCorpus.ts`](../src/hooks/useCorpus.ts) (one bulk
 read, lazily, only while searching or a note is open). The corpus refreshes **incrementally** —
-only notes whose mtime changed are re-read — and the backlink graph is rebuilt only when a note's
-links actually change, so a plain autosave costs nothing. The note list is virtualized
+only notes whose mtime changed are re-read, and the just-saved open note is seeded from the
+in-memory body instead of being read back — and the backlink graph is rebuilt only when a note's
+links actually change, so a plain autosave costs nothing. Query debouncing keys on corpus SIZE
+(bytes), not just note count, because scoring is linear in the text. The note list is virtualized
 (`@tanstack/react-virtual`). There is deliberately **no inverted search index**: for
 personal-vault sizes, scanning a pre-lowercased corpus is fast enough that an index would cost
 more in build/invalidations than it saves.

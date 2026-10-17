@@ -153,7 +153,8 @@ Key modules:
   desktop fs store implements it so a workspace load doesn't walk the tree three times) and an
   optional `probe()` (O(1) folder liveness for the bootstrap, instead of a discarded full `list()`), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
   `listAttachments`/`removeAttachment`), an optional desktop-only `reveal(relPath)`, and an optional
-  desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; resolves
+  desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; small
+  note-only batches are patched by the watcher pipeline instead of re-walking; resolves
   to a SYNC disposer; `TauriNoteStore.watch` listens window-scoped for `notes:changed` filtered by
   `payload.dir === this.dir`, subscribes the listener BEFORE invoking `notes_watch` so no event can
   slip the gap, and unlistens+rethrows if the invoke fails).
@@ -211,7 +212,7 @@ Key modules:
   `gravity-notes:<wsId>:note:<id>:appearance` keys into the sidecar on first ready load.
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
-  change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a
+  change/unmount. LRU **byte-budget eviction** (96 MB cap): callers `subscribe(ref, …)` to pin a
   visible image's URL (subscribed entries are never evicted) and get notified when it's FORGOTTEN —
   `notify` fires only from `forget()`, so a listener must re-run its whole load rather than `peek`
   (which returns undefined there, and renders as "still loading" instead of broken); `peek`
@@ -262,13 +263,19 @@ Key modules:
   every later metadata write from that hook (pin, appearance, wiki-link navigation, close) substitutes
   the LIVE on-disk `active` at the write boundary (`writeMetadataNow` re-reads the sidecar; in-memory
   `active` keeps tracking the window's own note for the conflict checks). Re-lists on window focus
-  (2 s throttle, `ready`-gated) — main + note windows
-  routinely show the same folder now, so a returning window picks up notes created/edited elsewhere.
+  (2 s throttle, `ready`-gated) — but ONLY while no live watcher is subscribed (`watchActiveRef`):
+  main + note windows routinely show the same folder now, and on desktop the watcher already
+  delivers (and replays latched) external changes, so the focus path only re-checks the open note's
+  conflict. The full focus re-list remains for web/iOS and a failed subscription.
   On desktop it also subscribes to `store.watch` (`ready`-gated): external changes push a
-  300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN `refresh()`
-  (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow the
-  deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
-  reason; the corpus follows the list signature for free). `checkOpenNoteConflict` RE-VALIDATES
+  300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN a list
+  update (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow
+  the deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
+  reason; the corpus follows the list signature for free). The update is **path-targeted**: a batch
+  naming only note ids is patched by `store.get`-ing just those files (newest-wins merge), while a
+  directory/other-file path, a vanished known note (metadata must reconcile), more than
+  `MAX_TARGETED_PATHS` (12 — a bulk write is cheaper as one `snapshot()` walk), or an EMPTY batch
+  falls back to the full re-list. `checkOpenNoteConflict` RE-VALIDATES
   after its `store.stat` await (same id, no conflict/pending/save, baseline unchanged) — a note
   switch mid-stat would otherwise raise a phantom conflict for the WRONG note, whose banner
   actions key off `conflict.id` and would cross-contaminate the two notes — and mirrors a raised
@@ -284,8 +291,9 @@ Key modules:
   the 300 ms cadence but are NEVER dropped — they defer ONE trailing verify run
   (`WATCH_SUPPRESSED_VERIFY_MS`, past the stamp window, superseded by any sooner real run), so a
   stamp false-positive (an external dir-only event under an ancestor stamp, an external rewrite
-  of a just-saved note) delays a refresh instead of losing it; correctness additionally never
-  rests on suppression because a save advances `baselineRef` before its echo lands.
+  of a just-saved note) delays a refresh instead of losing it, and the deferred verify re-reads
+  just the echoed paths (falling back to a full list for a dir path); correctness additionally
+  never rests on suppression because a save advances `baselineRef` before its echo lands.
   `saveInFlightRef` gates the conflict check (mid-save, `pendingRef` is already null and
   `baselineRef` stale → phantom conflict). Events while `hidden` latch and replay on
   `visibilitychange` (visible ≠ focused, so the focus re-list wouldn't cover it; `run()` re-checks
@@ -298,8 +306,10 @@ Key modules:
 - `src/hooks/useCorpus.ts` — the **shared body corpus**, loaded once (lazily, while a query is live or a
   note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
   desktop) and every body is held once. Derives `contentById` (raw, for snippets), `lowerById`
-  (pre-lowercased), and `linksById` (`[[…]]` pre-extracted). Refreshes **incrementally** (re-reads only
-  notes whose `updatedAt` changed — plus any cached with an EMPTY body whose list preview turned
+  (pre-lowercased), and `linksById` (`[[…]]` pre-extracted), and reports `bytes` (total body text —
+  `Workspace` uses it to debounce search by corpus WEIGHT, not just note count). Refreshes
+  **incrementally** (re-reads only notes whose `updatedAt` changed, and seeds the just-saved OPEN
+  note from the in-memory copy instead of reading it back — plus any cached with an EMPTY body whose list preview turned
   non-empty: an iCloud-dataless file materializes without an mtime bump, so the preview flip is the
   only signal its content became readable; the signature includes that bit) and keeps `linksById`'s
   identity stable across a non-link edit, so a
@@ -311,8 +321,8 @@ Key modules:
   which the help dialog also renders from). Punctuation chords match by `event.code` (e.g. `⌘⇧;` →
   `Semicolon`), since the shifted `event.key` differs. `useShortcuts` skips ALL global chords while a
   `[role="dialog"]` modal is open (the dialog owns the keyboard — so ⌘N can't create a note behind the
-  ⌃R switcher). `useDebouncedValue` debounces the query (120 ms) only above a 500-note vault (wired in
-  `Workspace`).
+  ⌃R switcher). `useDebouncedValue` debounces the query (120 ms) only above a 500-note OR 4 MB corpus (wired in
+  `Workspace`, which reads `Corpus.bytes`).
 - `src/hooks/useListboxNav.ts` — the shared filter-over-listbox keyboard model for the ⌃R workspace
   switcher AND the ⌘⇧M move-to picker: a DOCUMENT-level keydown listener while open (↑/↓ skip-disabled,
   ↵ commit, ⌘⌫ remove, Esc close), a range/disabled clamp on list change, and scroll-into-view. It's

@@ -19,6 +19,7 @@ function corpusOf(bodies: Record<string, string> = {}, loading = false): Corpus 
         contentById: new Map(entries),
         lowerById: new Map(entries.map(([id, body]) => [id, body.toLowerCase()])),
         linksById: new Map(),
+        bytes: entries.reduce((total, [, body]) => total + body.length, 0),
         loading,
     };
 }
