@@ -1,4 +1,4 @@
-import {Fragment, memo, useCallback, useLayoutEffect, useRef} from 'react';
+import {Fragment, memo, useCallback, useLayoutEffect, useRef, useSyncExternalStore} from 'react';
 import type {ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode} from 'react';
 
 import {anchorIds} from './AnchorEditor';
@@ -7,6 +7,7 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {calloutIcon, calloutLabel} from './callouts';
 import {setCaret, stripZeroWidth} from './caret';
+import type {HoverStore} from './hoverStore';
 import {CheckIcon} from './icons';
 import {languageLabel} from './languages';
 import type {Block as BlockData, ImageData} from './types';
@@ -64,6 +65,7 @@ export interface BlockHandlers {
     onDragEnd: () => void;
     onDragOver: (e: DragEvent<HTMLDivElement>, id: string) => void;
     onDrop: (e: DragEvent<HTMLDivElement>, id: string) => void;
+    hover: HoverStore;
 }
 
 interface BlockProps {
@@ -75,7 +77,7 @@ interface BlockProps {
     placeholder?: string;
     /** The slash or `[[` menu this block is typing into, and its highlighted row, for assistive tech. */
     menu?: {listbox: string; option: string};
-    handle?: boolean;
+    handle: boolean;
     handlers: BlockHandlers;
 }
 
@@ -87,10 +89,16 @@ function Block({
     dropEdge,
     placeholder,
     menu,
-    handle = true,
+    handle,
     handlers,
 }: BlockProps) {
     const contentRef = useRef<HTMLDivElement | null>(null);
+    const subscribeHover = useCallback(
+        (listener: () => void) => handlers.hover.subscribe(block.id, listener),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [block.id],
+    );
+    const hovered = useSyncExternalStore(subscribeHover, () => handlers.hover.is(block.id));
 
     const setRef = useCallback(
         (el: HTMLDivElement | null) => {
@@ -371,7 +379,7 @@ function Block({
             onDragOver={(e) => handlers.onDragOver(e, block.id)}
             onDrop={(e) => handlers.onDrop(e, block.id)}
         >
-            {handle && (
+            {(handle || hovered) && (
                 <div className="handles handle-slot handle-slot_left" contentEditable={false}>
                     <button
                         type="button"

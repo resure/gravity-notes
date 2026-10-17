@@ -25,8 +25,9 @@ import type {Block} from '../components/blockEditor/types';
 import {fenceOpening, markdownToBlocks} from './fromMarkdown';
 import {blocksToMarkdown} from './toMarkdown';
 
-// The guard runs right before the editor parses the same note; handing its parse over saves the
-// editor a second one. Taken once, so no two owners ever share the blocks.
+// The guard runs right before the editor parses the same note, in the same render; handing its
+// parse over saves the editor a second one. Taken once, so no two owners ever share the blocks, and
+// dropped once the current task ends, so an untaken parse is not held.
 let handoff: {markdown: string; blocks: Block[]} | null = null;
 
 /**
@@ -42,7 +43,13 @@ export function isRoundTripStable(markdown: string): boolean {
     try {
         const parsed = markdownToBlocks(markdown);
         const stable = checkParsed(markdown, parsed);
-        if (stable) handoff = {markdown, blocks: parsed};
+        if (stable) {
+            const offered = {markdown, blocks: parsed};
+            handoff = offered;
+            queueMicrotask(() => {
+                if (handoff === offered) handoff = null;
+            });
+        }
         return stable;
     } catch {
         // A parser crash is emphatically not a note we should be writing back.

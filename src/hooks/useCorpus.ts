@@ -126,7 +126,8 @@ function whenIdle(callback: () => void): void {
     if (typeof window.requestIdleCallback === 'function') {
         window.requestIdleCallback(callback, {timeout: 1000});
     } else {
-        window.setTimeout(callback, 0);
+        // WebKit has no idle callback; after the next paint is the point of waiting.
+        window.requestAnimationFrame(() => window.setTimeout(callback, 0));
     }
 }
 
@@ -198,13 +199,10 @@ export function useCorpus(
                     // would land on that note's first paint; it waits for idle time unless a search
                     // needs it now.
                     if (!urgentRef.current) {
-                        let wake = () => {};
                         await new Promise<void>((resolve) => {
-                            wake = resolve;
                             wakeRef.current = resolve;
                             whenIdle(resolve);
                         });
-                        if (wakeRef.current === wake) wakeRef.current = null;
                         if (cancelled) return;
                     }
                     const all = await store.getAll();

@@ -339,8 +339,8 @@ export function Workspace({
     // search and backlinks — so getAll() runs once (one big IPC on desktop) and bodies are held once.
     // Gate on the live `query` so the (lazy) corpus read starts on the first keystroke, not after the
     // debounce settles.
-    const corpusActive = notes.activeId !== null || query.trim().length > 0;
-    const corpus = useCorpus(store, orderedNotes, corpusActive, query.trim().length > 0);
+    const queryLive = query.trim().length > 0;
+    const corpus = useCorpus(store, orderedNotes, notes.activeId !== null || queryLive, queryLive);
     const {
         filteredNotes,
         snippetById,

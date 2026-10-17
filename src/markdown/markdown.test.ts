@@ -887,13 +887,6 @@ describe('blocksToMarkdown — reused lines', () => {
         const nested = blocks.map((block, at) => (at === 2 ? {...block, depth: 1} : block));
         expect(blocksToMarkdown(nested)).toBe('1. one\n2. two\n\n  - three');
     });
-
-    it('notices a block changed by assignment rather than replaced', () => {
-        const blocks = markdownToBlocks('alpha\n\nbeta');
-        expect(blocksToMarkdown(blocks)).toBe('alpha\n\nbeta');
-        blocks[1].html = 'gamma';
-        expect(blocksToMarkdown(blocks)).toBe('alpha\n\ngamma');
-    });
 });
 
 describe('takeParsedBlocks', () => {

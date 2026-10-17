@@ -93,6 +93,8 @@ import {
     selectionRoots,
     setTableCell,
 } from './documentModel';
+import {createHoverStore} from './hoverStore';
+import type {HoverStore} from './hoverStore';
 import {LANGUAGE_ITEMS} from './languages';
 import {LONG_DOCUMENT_BLOCKS, useScrollAnchoring} from './scrollAnchoring';
 import {subscribeSelectionFrame} from './selectionFrame';
@@ -329,15 +331,22 @@ function keptSpanClass(className: string): string | null {
     return color ? colorClassFor(color) : null;
 }
 
+const SANITIZED_BUDGET = 4_000_000;
 const sanitized = new Map<string, string>();
+let sanitizedChars = 0;
 
 function sanitizeInlineHtml(html: string): string {
     // Text with none of these characters parses to a single text node and serializes back unchanged.
     if (!/[<>&\u00a0]/.test(html)) return html;
     const known = sanitized.get(html);
     if (known !== undefined) return known;
-    if (sanitized.size >= 20000) sanitized.clear();
-    const clean = sanitizeMarkup(html);
+    const markup = sanitizeMarkup(html);
+    const clean = markup === html ? html : markup;
+    sanitizedChars += html.length + (clean === html ? 0 : clean.length);
+    if (sanitizedChars > SANITIZED_BUDGET) {
+        sanitized.clear();
+        sanitizedChars = 0;
+    }
     sanitized.set(html, clean);
     return clean;
 }
@@ -3561,18 +3570,25 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // A long note mounts a drag handle only where one can be seen or used: most of a note's DOM
     // was handles nobody was pointing at.
-    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const hoverRef = useRef<HoverStore | null>(null);
+    hoverRef.current ??= createHoverStore();
+    const hover = hoverRef.current;
     const [handleFocusId, setHandleFocusId] = useState<string | null>(null);
-    const handleIds = new Set<string>([...selectedIds, ...draggedIds]);
-    for (const id of [hoveredId, handleFocusId, focusedId, blockMenu?.id])
-        if (id) handleIds.add(id);
+    const showsHandle = (id: string) =>
+        !long ||
+        selectedIds.has(id) ||
+        draggedIds.has(id) ||
+        id === focusedId ||
+        id === handleFocusId ||
+        id === blockMenu?.id;
     // Only a block sets it, so crossing the gap between a block and its handle keeps the handle.
     const onRootMouseOver = (e: MouseEvent<HTMLDivElement>) => {
         if (!long) return;
         const id = (e.target as Element).closest<HTMLElement>('.blocks > .block')?.id;
-        if (id && id !== hoveredId) setHoveredId(id);
+        if (id) hover.set(id);
     };
     const onRootFocusChange = (e: FocusEvent<HTMLDivElement>) => {
+        if (!long) return;
         const handleOf = (target: EventTarget | null) =>
             target instanceof Element && target.closest('.drag-btn')
                 ? (target.closest<HTMLElement>('.blocks > .block')?.id ?? null)
@@ -3816,6 +3832,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const nextHandlers: BlockHandlers = {
+        hover,
         onContentRef: (id, el) => {
             if (el) refs.current.set(id, el);
             else refs.current.delete(id);
@@ -3916,7 +3933,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             ref={rootRef}
             onClick={onRootClick}
             onMouseOver={onRootMouseOver}
-            onMouseLeave={() => setHoveredId(null)}
+            onMouseLeave={() => hover.set(null)}
             onFocus={onRootFocusChange}
             onBlur={onRootFocusChange}
         >
@@ -3946,7 +3963,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                     blocks.length === 1,
                                 )}
                                 menu={menuFor(b.id)}
-                                handle={!long || handleIds.has(b.id)}
+                                handle={showsHandle(b.id)}
                                 handlers={handlers}
                             />
                         ))}

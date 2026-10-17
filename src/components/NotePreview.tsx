@@ -28,7 +28,7 @@ import * as videoExtension from '@diplodoc/transform/lib/plugins/video';
 import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
-import {blocksToMarkdown, isRoundTripStable, markdownToBlocks} from '../markdown';
+import {blocksToMarkdown, isRoundTripStable, markdownToBlocks, takeParsedBlocks} from '../markdown';
 import {previewInline} from '../markdown/previewInline';
 import {openExternalUrl} from '../openExternal';
 import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
@@ -226,7 +226,7 @@ export function withWikiLinks(html: string): string {
  */
 export function withToggleCuts(markup: string): {markup: string; open: boolean[]} {
     if (!/<details/i.test(markup) || !isRoundTripStable(markup)) return {markup, open: []};
-    const blocks = markdownToBlocks(markup);
+    const blocks = takeParsedBlocks(markup) ?? markdownToBlocks(markup);
     const open: boolean[] = [];
     const converted: typeof blocks = [];
     blocks.forEach((block, index) => {

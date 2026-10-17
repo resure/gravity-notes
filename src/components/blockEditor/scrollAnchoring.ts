@@ -62,8 +62,8 @@ export interface ScrollAnchor {
     offset: number;
 }
 
-function blockElements(root: HTMLElement): HTMLElement[] {
-    return Array.from(root.querySelectorAll<HTMLElement>('.blocks > .block'));
+function blockElements(root: HTMLElement): HTMLCollection | [] {
+    return root.querySelector('.blocks')?.children ?? [];
 }
 
 export function readScrollAnchor(

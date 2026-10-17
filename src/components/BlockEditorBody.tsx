@@ -14,8 +14,11 @@ import type {Note, NoteMeta} from '../storage/types';
 import {EditorToolbar} from './EditorToolbar';
 import {NotePreview} from './NotePreview';
 import BlockEditor, {type EditorCaret, type EditorHandle} from './blockEditor/Editor';
-import {readScrollAnchor, restoreScrollAnchor} from './blockEditor/scrollAnchoring';
-import type {ScrollAnchor} from './blockEditor/scrollAnchoring';
+import {
+    type ScrollAnchor,
+    readScrollAnchor,
+    restoreScrollAnchor,
+} from './blockEditor/scrollAnchoring';
 
 /**
  * The Notion-style block editor as `EditorPane`'s note body. It implements the imperative contract
