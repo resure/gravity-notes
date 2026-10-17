@@ -87,7 +87,7 @@ export function setCaret(el: HTMLElement, pos: CaretPos): void {
     sel.addRange(range);
 }
 
-function caretRangeFromPoint(x: number, y: number): Range | null {
+export function caretRangeFromPoint(x: number, y: number): Range | null {
     const doc = document as Document & {
         caretRangeFromPoint?: (x: number, y: number) => Range | null;
         caretPositionFromPoint?: (

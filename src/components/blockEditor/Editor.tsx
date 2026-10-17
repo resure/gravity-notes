@@ -60,6 +60,7 @@ import {
     caretLineRect,
     caretOnFirstLine,
     caretOnLastLine,
+    caretRangeFromPoint,
     deleteTextRange,
     escapeHtml,
     getCaretOffset,
@@ -3910,6 +3911,43 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         selectionDrag.current = null;
         edgeScroller.stop();
         setSelectionBox(null);
+        // Below the last block is `onPageClick`'s: it opens a new line there.
+        const last = drag.rects[drag.rects.length - 1];
+        if (!drag.moved && e.type === 'pointerup' && last && e.clientY <= last.rect.bottom) {
+            placeCaretNear(e.clientX, e.clientY, drag.rects);
+        }
+    };
+
+    /**
+     * A press on the furniture around the text — the gap between blocks, the padding round an empty
+     * line — starts a marquee and drops the caret; one that never moved was a click, and the caret
+     * belongs in the line nearest to it, or it is left nowhere at all.
+     */
+    const placeCaretNear = (x: number, y: number, rects: {id: string; rect: DOMRect}[]) => {
+        let nearest: {el: HTMLElement; distance: number} | null = null;
+        for (const {id, rect} of rects) {
+            const el = refs.current.get(id);
+            if (!el || rect.height === 0) continue;
+            const distance = Math.max(rect.top - y, y - rect.bottom, 0);
+            if (!nearest || distance < nearest.distance) nearest = {el, distance};
+        }
+        if (!nearest) return;
+        const {el} = nearest;
+        const box = el.getBoundingClientRect();
+        const clamp = (value: number, low: number, high: number) =>
+            Math.min(Math.max(value, low), Math.max(low, high));
+        const range = caretRangeFromPoint(
+            clamp(x, box.left + 1, box.right - 1),
+            clamp(y, box.top + 1, box.bottom - 1),
+        );
+        el.focus({preventScroll: true});
+        if (range && el.contains(range.startContainer)) {
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+        } else {
+            setCaret(el, 'end');
+        }
     };
 
     // ----- page & title -----

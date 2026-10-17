@@ -2400,3 +2400,39 @@ describe('bare URLs', () => {
         expect(document.querySelector('.url-link')).toBeNull();
     });
 });
+
+describe('a click beside the text', () => {
+    it('puts the caret in the nearest line instead of nowhere', () => {
+        renderEditor('one\n\n&nbsp;\n\nthree');
+        const blocks = [...document.querySelectorAll<HTMLElement>('.blocks > .block')];
+        const contents = blocks.map((block) => block.querySelector<HTMLElement>('.content')!);
+        // Three 24px lines, 12px apart: the empty middle one spans 36..60.
+        blocks.forEach((block, index) => {
+            const top = index * 36;
+            const rect = {top, bottom: top + 24, left: 0, right: 600, height: 24, width: 600};
+            block.getBoundingClientRect = () => rect as DOMRect;
+            contents[index].getBoundingClientRect = () => rect as DOMRect;
+        });
+        const page = document.querySelector<HTMLElement>('.page')!;
+        page.setPointerCapture = () => {};
+        page.hasPointerCapture = () => false;
+        const gap = document.querySelector<HTMLElement>('.blocks')!;
+        act(() => {
+            fireEvent.pointerDown(gap, {
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                clientX: 50,
+                clientY: 62,
+            });
+            fireEvent.pointerUp(gap, {
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                clientX: 50,
+                clientY: 62,
+            });
+        });
+        expect(document.activeElement).toBe(contents[1]);
+    });
+});
