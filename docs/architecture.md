@@ -67,7 +67,9 @@ format, in full:
 - **Blank lines** persist on disk as `&nbsp;` lines — the spelling this app has always used, since
   Markdown has no way to write an intentional blank ROW (a bare blank line is just block
   separation). They read back as empty blocks, and an empty block you type here is written the same
-  way, so deliberate spacing survives a save in both directions.
+  way, so deliberate spacing survives a save in both directions. A table header row with every cell
+  empty is written with `&nbsp;` in each cell for the same reason: GFM has no headerless table, so a
+  truly empty header row is how a table WITHOUT a header is spelled.
 
 ## Workspaces & windows
 
@@ -307,10 +309,7 @@ Markdown over anything clever.
 - **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write —
   read-only preview highlights them, using the language set from the block's own picker (it rides on
   the fence's info string, so it is what any other Markdown tool reads too). A table's **header-column** flag has no Markdown spelling and
-  is dropped on save; it still applies for the session, and says so in a toast when you use it. A
-  table whose header cells you empty **entirely** loses that row on reload, for the same reason: GFM
-  has no headerless table, so an empty header row is exactly how one is spelled, and it reads back as
-  a table with no header rather than as a blank one.
+  is dropped on save; it still applies for the session, and says so in a toast when you use it.
 - **Bare URLs are not linkified as you type.** `<https://example.com>` (a CommonMark autolink) and
   `[text](url)` render as real links; a bare `https://example.com` stays plain text until you wrap
   it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a

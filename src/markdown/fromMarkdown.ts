@@ -493,9 +493,12 @@ function parseTable(rows: string[]): TableData {
     const columns = Math.max(header.length, widestRow(body), 1);
     const pad = (row: string[]) =>
         Array.from({length: columns}, (_, column) => inlineMarkdownToHtml(row[column] ?? ''));
-    // An all-empty header row is how a headerless table is written (GFM demands *some* header).
-    const headerRow = header.some((cell) => cell !== '');
-    const cells = headerRow ? [pad(header), ...body.map(pad)] : body.map(pad);
+    // An all-empty header row is how a headerless table is written (GFM demands *some* header),
+    // and an all-`&nbsp;` one is how the writer spells a real header row that is empty.
+    const emptyHeader = header.length > 0 && header.every((cell) => cell === NBSP_ROW);
+    const headerRow = emptyHeader || header.some((cell) => cell !== '');
+    const head = emptyHeader ? header.map(() => '') : header;
+    const cells = headerRow ? [pad(head), ...body.map(pad)] : body.map(pad);
     const align = splitRow(rows[1]).map(columnAlign);
     const table: TableData = {
         cells: cells.length > 0 ? cells : [Array.from({length: columns}, () => '')],

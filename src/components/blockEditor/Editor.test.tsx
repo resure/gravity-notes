@@ -4,6 +4,7 @@ import {createEvent, fireEvent, render, screen} from '@testing-library/react';
 import {act} from 'react-dom/test-utils';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {markdownToBlocks} from '../../markdown';
 import {openExternalUrl} from '../../openExternal';
 
 import Editor from './Editor';
@@ -1953,6 +1954,46 @@ describe('structural edits keep the file and the screen in step', () => {
         expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^5\.\s*\n6\. a\n7\. b$/);
     });
 
+    it('a numbered list keeps counting from its old number when its first item is retyped', () => {
+        const onChange = renderEditor('5. a\n6. b\n7. c');
+        press(caretIn(0, 'start'), 'Backspace');
+        expect(onChange.mock.calls.at(-1)?.[0]).toMatch(/^a\n\n6\. b\n7\. c$/);
+    });
+
+    it('a numbered list keeps counting from its old number when its first item is deleted', () => {
+        const onChange = renderEditor('5. a\n6. b\n7. c');
+        const first = caretIn(0, 'end');
+        act(() => {
+            fireEvent.keyDown(first, {key: 'Escape'});
+        });
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'Backspace'});
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('6. b\n7. c');
+        expect(
+            [...document.querySelectorAll('.list-marker')].map((marker) => marker.textContent),
+        ).toEqual(['6.', '7.']);
+    });
+
+    it('forward Delete does not pull a collapsed toggle’s hidden children out', () => {
+        const onChange = renderEditor(
+            'before\n\n<details>\n<summary>T</summary>\n\nhidden\n\n</details>',
+        );
+        press(caretIn(0, 'end'), 'Delete');
+        expect(onChange).not.toHaveBeenCalled();
+        expect(screen.queryByText('hidden', {selector: '.content'})).toBeNull();
+    });
+
+    it('forward Delete on an empty line before a collapsed toggle removes the line', () => {
+        const onChange = renderEditor(
+            '&nbsp;\n\n<details>\n<summary>T</summary>\n\nhidden\n\n</details>',
+        );
+        press(caretIn(0, 'end'), 'Delete');
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe(
+            '<details>\n<summary>T</summary>\n\nhidden\n\n</details>',
+        );
+    });
+
     it('AltGr (Ctrl+Alt on Windows and Linux) types its character instead of a chord', () => {
         const onChange = renderEditor('one');
         const el = caretIn(0, 'end');
@@ -2083,6 +2124,38 @@ describe('selection, clipboard and table edges', () => {
             fireEvent.keyDown(document.body, {key: 'z', metaKey: true});
         });
         expect(onChange.mock.calls.at(-1)?.[0]).toBe('A\n\nB\n\nC');
+    });
+
+    it('keeps a header row whose cells are all empty through a reload', () => {
+        const onChange = renderEditor('|  |\n| --- |\n|  |\n| c |');
+        act(() => {
+            fireEvent.click(screen.getByRole('button', {name: 'Header row'}));
+        });
+        const written = onChange.mock.calls.at(-1)?.[0] as string;
+        expect(written).toBe('| &nbsp; |\n| --- |\n| c |');
+        expect(markdownToBlocks(written)[0].table).toMatchObject({
+            cells: [[''], ['c']],
+            headerRow: true,
+        });
+    });
+
+    it('a selection ending on the table toolbar does not take the table with it', () => {
+        const onChange = renderEditor('para\n\n| a |\n| --- |\n| c |');
+        const para = document.querySelector<HTMLElement>('.content')!;
+        const label = screen.getByRole('button', {name: 'Header row'}).firstChild!;
+        act(() => {
+            para.focus();
+            const range = document.createRange();
+            range.setStart(para.firstChild!, 2);
+            range.setEnd(label, 3);
+            window.getSelection()!.removeAllRanges();
+            window.getSelection()!.addRange(range);
+        });
+        act(() => {
+            fireEvent.keyDown(para, {key: 'Backspace'});
+        });
+        expect(document.querySelector('.simple-table')).toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
     });
 
     it('Enter in a table cell moves to the cell below', () => {

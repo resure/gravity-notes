@@ -57,6 +57,60 @@ export function selectionRoots(blocks: readonly Block[], ids: ReadonlySet<string
  * the file comes back one level flatter than the screen and the two disagree until the note is
  * reopened. Running this afterwards means the screen shows what the file will say.
  */
+export interface ListNumber {
+    ordinal: number;
+    /** Whether the item opens its run, the one place `listStart` is read. */
+    first: boolean;
+}
+
+/** Each numbered item's number, counted the way `blocksToMarkdown` writes it. */
+export function listNumbers(blocks: readonly Block[]): Map<string, ListNumber> {
+    const numbers = new Map<string, ListNumber>();
+    const running = new Map<number, number>();
+    for (const block of blocks) {
+        const depth = block.depth ?? 0;
+        const numbered = block.type === 'numbered';
+        for (const level of [...running.keys()])
+            if (level > depth || (level === depth && !numbered)) running.delete(level);
+        if (!numbered) continue;
+        const previous = running.get(depth);
+        const ordinal = previous === undefined ? (block.listStart ?? 1) : previous + 1;
+        running.set(depth, ordinal);
+        numbers.set(block.id, {ordinal, first: previous === undefined});
+    }
+    return numbers;
+}
+
+/**
+ * Keep a list's numbers when an edit takes away the item its `listStart` lives on: deleting or
+ * retyping the `5.` of `5. 6. 7.` otherwise renumbered the rest from 1. The item that now opens the
+ * run takes the number it already showed. A list counting from 1 has no number to keep.
+ */
+export function carryListStarts(previous: readonly Block[], next: Block[]): Block[] {
+    if (previous === next) return next;
+    let before: Map<string, ListNumber> | null = null;
+    let after: Map<string, ListNumber> | null = null;
+    const carried = new Map<string, number>();
+    for (let index = 0; index < previous.length; index++) {
+        const head = previous[index];
+        if (head.type !== 'numbered' || (head.listStart ?? 1) === 1) continue;
+        before ??= listNumbers(previous);
+        after ??= listNumbers(next);
+        if (!before.get(head.id)?.first || after.get(head.id)?.first) continue;
+        const depth = head.depth ?? 0;
+        const successor = previous
+            .slice(index + 1)
+            .find((block) => block.type === 'numbered' && (block.depth ?? 0) === depth);
+        const shown = successor && before.get(successor.id);
+        if (!successor || !shown || shown.first || !after.get(successor.id)?.first) continue;
+        carried.set(successor.id, shown.ordinal);
+    }
+    if (carried.size === 0) return next;
+    return next.map((block) =>
+        carried.has(block.id) ? {...block, listStart: carried.get(block.id)} : block,
+    );
+}
+
 export function normalizeDepths(blocks: readonly Block[]): Block[] {
     // The ancestor chain of the block being emitted, as (depth as written → depth being written).
     // Renumbering off the chain rather than off the previous block alone is what keeps SIBLINGS

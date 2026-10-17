@@ -400,25 +400,24 @@ function tableLines(block: Block, indent: string): string[] {
     // GFM has no headerless table, so a table whose first row is data gets an EMPTY header row —
     // which the parser reads back as `headerRow: false` rather than as a real row.
     const headerRow = block.table?.headerRow;
-    const rows = headerRow ? cells : [Array.from({length: columns}, () => ''), ...cells];
+    const rows = (headerRow ? cells : [[], ...cells]).map((row) =>
+        Array.from({length: columns}, (_, column) => text(row, column)),
+    );
+    // That same empty row is how a REAL header row with nothing typed in it would come out, and it
+    // reloaded as a headerless table one row shorter. `&nbsp;` throughout is the parser's cue.
+    if (headerRow && rows[0].every((cell) => cell === '')) rows[0] = rows[0].map(() => '&nbsp;');
 
     // 0 when the source was compact; otherwise the width it was written at, never narrower than
     // the content it has to hold (or than the separator's own three dashes).
     const written = block.table?.widths;
     const widths = Array.from({length: columns}, (_, column) =>
         written
-            ? rows.reduce(
-                  (max, row) => Math.max(max, text(row, column).length),
-                  written[column] ?? 1,
-              )
+            ? rows.reduce((max, row) => Math.max(max, row[column].length), written[column] ?? 1)
             : 0,
     );
     const gap = ' '.repeat(block.table?.pad ?? 1);
     const join = (cells: string[]) => `${indent}|${gap}${cells.join(`${gap}|${gap}`)}${gap}|`;
-    const render = (row: string[]) =>
-        join(
-            Array.from({length: columns}, (_, column) => text(row, column).padEnd(widths[column])),
-        );
+    const render = (row: string[]) => join(row.map((cell, column) => cell.padEnd(widths[column])));
     const separator = join(
         Array.from({length: columns}, (_, column) => separatorCell(align[column], widths[column])),
     );

@@ -78,11 +78,13 @@ import {
     addTableColumnData,
     addTableRowData,
     blockRangeIds,
+    carryListStarts,
     changeBlockDepth,
     deleteTableColumnData,
     deleteTableRowData,
     duplicateBlockGroups,
     expandBlockIds,
+    listNumbers,
     moveBlockSubtrees,
     normalizeDepths,
     pasteTableGrid,
@@ -752,7 +754,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const setBlocks = (updater: BlocksUpdater, mode: ChangeMode = 'structural', inputId = '') => {
         setBlockState((current) => {
-            const next = typeof updater === 'function' ? updater(current) : updater;
+            const next = carryListStarts(
+                current,
+                typeof updater === 'function' ? updater(current) : updater,
+            );
             if (next === current) return current;
             if (mode !== 'silent') {
                 const now = Date.now();
@@ -2214,12 +2219,22 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * across a paragraph boundary — each block is its own editing host, so it never does.
      */
     const handleDeleteAtEnd = (block: BlockData, el: HTMLDivElement) => {
-        const visible = visibleBlockIds(blocksRef.current);
+        const all = blocksRef.current;
+        const visible = visibleBlockIds(all);
         const idx = indexOf(block.id);
-        const next = blocksRef.current
-            .slice(idx + 1)
-            .find((candidate) => visible.has(candidate.id));
+        const nextIdx = all.findIndex((candidate, at) => at > idx && visible.has(candidate.id));
+        const next = all[nextIdx];
         if (!next) return;
+        // Merging a collapsed toggle's summary would leave its hidden children under the merged
+        // text, out in the open. Refuse, as Backspace does — only an empty line simply goes.
+        const hidesChildren = nextIdx + 1 < all.length && !visible.has(all[nextIdx + 1].id);
+        if (hidesChildren) {
+            if (nextIdx === idx + 1 && isEmptyHtml(el.innerHTML)) {
+                setBlocks((current) => normalizeDepths(current.filter((b) => b.id !== block.id)));
+                focusReq.current = {id: next.id, pos: 'start'};
+            }
+            return;
+        }
         if (next.type === 'divider') {
             setBlocks((bs) => normalizeDepths(bs.filter((b) => b.id !== next.id)));
             return;
@@ -2979,9 +2994,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         for (let index = 0; index < blocks.length; index++) {
             // Editable blocks are measured on their CONTENT element — the wrapper also holds the
             // list marker, which a range that merely stops at the block's first character would
-            // still cover, pulling in a block the user selected nothing in. Tables and images have
-            // no content element, so there the wrapper is all there is (and has no such prefix).
-            const el = refs.current.get(blocks[index].id) ?? wrappers.get(blocks[index].id);
+            // still cover, pulling in a block the user selected nothing in. A table is measured on
+            // its grid, since the wrapper also holds the toolbar and add buttons, whose labels are
+            // text a drag can brush. Images have no content element, so the wrapper is all there is.
+            const wrapper = wrappers.get(blocks[index].id);
+            const el =
+                refs.current.get(blocks[index].id) ??
+                wrapper?.querySelector<HTMLElement>('.simple-table') ??
+                wrapper;
             if (!el || rangeTextWithin(el, range) === '') continue;
             if (first < 0) first = index;
             last = index;
@@ -3637,21 +3657,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     // ----- render -----
 
-    const numbers = new Map<string, number>();
-    {
-        const counters = new Map<number, number>();
-        for (const b of blocks) {
-            const depth = b.depth ?? 0;
-            if (b.type === 'numbered') {
-                for (const key of [...counters.keys()]) if (key > depth) counters.delete(key);
-                const n = (counters.get(depth) ?? 0) + 1;
-                counters.set(depth, n);
-                numbers.set(b.id, n);
-            } else {
-                for (const key of [...counters.keys()]) if (key >= depth) counters.delete(key);
-            }
-        }
-    }
+    const numbers = listNumbers(blocks);
 
     const visibleIds = visibleBlockIds(blocks);
     const menuFor = (id: string) => {
@@ -3780,7 +3786,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                             <Block
                                 key={b.id}
                                 block={b}
-                                listNumber={numbers.get(b.id) ?? 1}
+                                listNumber={numbers.get(b.id)?.ordinal ?? 1}
                                 selected={selectedIds.has(b.id)}
                                 dragging={draggedIds.has(b.id)}
                                 dropEdge={dropTarget?.id === b.id ? dropTarget.edge : null}

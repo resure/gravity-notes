@@ -648,6 +648,20 @@ describe('round trips', () => {
         expectRoundTrip([block('table', '', {table: {cells: [['a | b', 'c']], headerRow: false}})]);
     });
 
+    it('survives a header row whose cells are all empty', () => {
+        expectRoundTrip([
+            block('table', '', {
+                table: {
+                    cells: [
+                        ['', ''],
+                        ['c', 'd'],
+                    ],
+                    headerRow: true,
+                },
+            }),
+        ]);
+    });
+
     it('survives code containing a fence', () => {
         expectRoundTrip([block('code', '```\nnested\n```')]);
     });
