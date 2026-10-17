@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Gravity Notes Preview",
   "identifier": "com.gravitynotes.desktop.preview",
-  "version": "0.11.0-preview.5",
+  "version": "0.11.0-preview.6",
   "app": {
     "windows": [
       {
