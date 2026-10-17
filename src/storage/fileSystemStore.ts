@@ -29,6 +29,7 @@ import {
     type NoteStore,
     type NotesMetadata,
     type OtherFile,
+    type StoreSnapshot,
 } from './types';
 
 /**
@@ -140,6 +141,65 @@ export class FileSystemNoteStore implements NoteStore {
         ).filter((m): m is NoteMeta => m !== null);
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return metas;
+    }
+
+    /**
+     * Notes + folders + display-only files from ONE traversal (see `NoteStore.snapshot`). The three
+     * individual readers each walked the whole tree, so opening a workspace on the web paid for
+     * three passes over the same directories. Reads still overlap: the walk only collects handles,
+     * then the note heads go through the same bounded pool as `list()`.
+     */
+    async snapshot(): Promise<StoreSnapshot> {
+        const entries: {id: string; handle: FileSystemFileHandle}[] = [];
+        const folders: string[] = [];
+        const files: OtherFile[] = [];
+        const recurse = async (dir: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+            for await (const handle of dir.values()) {
+                if (handle.kind === 'directory') {
+                    if (isSkippedDir(handle.name)) continue;
+                    // The root Attachments/ folder is media storage, not a user folder.
+                    if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
+                    const path = `${prefix}${handle.name}`;
+                    folders.push(path);
+                    await recurse(handle, `${path}/`);
+                } else if (!handle.name.startsWith('.')) {
+                    const id = `${prefix}${handle.name}`;
+                    if (handle.name.toLowerCase().endsWith(MD_EXT)) {
+                        entries.push({id, handle});
+                    } else if (
+                        !handle.name.endsWith('.gn-tmp') &&
+                        !handle.name.endsWith('.rename-tmp')
+                    ) {
+                        files.push({id, name: handle.name});
+                    }
+                }
+            }
+        };
+        await recurse(this.dir, '');
+
+        const notes = (
+            await mapPool(
+                entries,
+                READ_CONCURRENCY,
+                async ({id, handle}): Promise<NoteMeta | null> => {
+                    try {
+                        const file = await handle.getFile();
+                        const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+                        return {
+                            id,
+                            title: titleFromFileName(id),
+                            updatedAt: file.lastModified,
+                            preview: previewFromContent(head),
+                        };
+                    } catch (err) {
+                        console.warn(`Skipping unreadable note "${id}":`, err);
+                        return null;
+                    }
+                },
+            )
+        ).filter((meta): meta is NoteMeta => meta !== null);
+        notes.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        return {notes, folders, files: files.sort((a, b) => a.id.localeCompare(b.id))};
     }
 
     async getAll(): Promise<Note[]> {

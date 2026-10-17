@@ -149,8 +149,8 @@ Key modules:
   Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus. The
   seam also covers nested folders (`create(title, parentPath)`, `move`, `createFolder`/`removeFolder`/
   `moveFolder`/`listFolders`, and `listsRecursively` so metadata reconcile never prunes ids a backend
-  can't yet enumerate), an optional `snapshot()` (notes + folders + files from ONE traversal — the
-  desktop fs store implements it so a workspace load doesn't walk the tree three times) and an
+  can't yet enumerate), an optional `snapshot()` (notes + folders + files from ONE traversal — both
+  folder stores implement it so a workspace load doesn't walk the tree three times) and an
   optional `probe()` (O(1) folder liveness for the bootstrap, instead of a discarded full `list()`), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
   `listAttachments`/`removeAttachment`), an optional desktop-only `reveal(relPath)`, and an optional
   desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; small

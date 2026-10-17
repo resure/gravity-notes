@@ -15,6 +15,24 @@ describe('FileSystemNoteStore', () => {
     });
 
     describe('folders: recursive listing', () => {
+        it('snapshots notes, folders and display files from one walk', async () => {
+            dir.seedFile('A.md', 'a', 1);
+            dir.seedFile('Work/B.md', 'b', 2);
+            dir.seedFile('Work/data.csv', 'x', 3);
+
+            const snap = await store.snapshot();
+
+            expect(snap.notes.map((n) => n.id).sort()).toEqual(['A.md', 'Work/B.md']);
+            expect(snap.folders).toEqual(['Work']);
+            expect(snap.files).toEqual([{id: 'Work/data.csv', name: 'data.csv'}]);
+            // Parity with the three individual readers it replaces.
+            expect((await store.list()).map((n) => n.id).sort()).toEqual(
+                snap.notes.map((n) => n.id).sort(),
+            );
+            expect((await store.listFolders()).sort()).toEqual([...snap.folders].sort());
+            expect(await store.listFiles()).toEqual(snap.files);
+        });
+
         it('lists nested notes with forward-slash path ids, newest-first', async () => {
             dir.seedFile('Inbox.md', 'a', 100);
             dir.seedFile('Work/Roadmap.md', 'b', 300);

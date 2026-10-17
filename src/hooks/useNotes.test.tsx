@@ -1643,7 +1643,8 @@ async function setupWatched(seed?: (dir: FakeDirectoryHandle) => void) {
     const onError = vi.fn();
     const dir = new FakeDirectoryHandle();
     seed?.(dir);
-    const store: NoteStore = new FileSystemNoteStore(asDirectoryHandle(dir));
+    const fsStore = new FileSystemNoteStore(asDirectoryHandle(dir));
+    const store: NoteStore = fsStore;
     const watchState = {
         onChange: null as ((relPaths: string[]) => void) | null,
     };
@@ -1654,11 +1655,13 @@ async function setupWatched(seed?: (dir: FakeDirectoryHandle) => void) {
         };
     };
     const listSpy = vi.spyOn(store, 'list');
+    // Full refreshes go through the one-walk snapshot when the store has it (FSA/Tauri now do).
+    const snapshotSpy = vi.spyOn(fsStore, 'snapshot');
     const hook = renderHook(() => useNotes(store, onError));
     await waitFor(() => expect(hook.result.current.ready).toBe(true));
     // The watch effect subscribes once `ready` lands (async — the store's watch() awaits).
     await waitFor(() => expect(watchState.onChange).not.toBeNull());
-    return {hook, dir, store, onError, watchState, listSpy};
+    return {hook, dir, store, onError, watchState, listSpy, snapshotSpy};
 }
 
 describe('useNotes — live watch', () => {
@@ -1689,26 +1692,28 @@ describe('useNotes — live watch', () => {
     });
 
     it('falls back to a full walk for a directory path (folder rename)', async () => {
-        const {hook, watchState, listSpy} = await setupWatched((d) => d.seedFile('A.md', 'a', 100));
-        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        const listCalls = listSpy.mock.calls.length;
-
-        // A Finder folder rename reports dir paths only — folders/tree may have changed.
-        act(() => watchState.onChange!(['Work']));
-        await waitFor(() => expect(listSpy.mock.calls.length).toBe(listCalls + 1));
-    });
-
-    it('falls back when a listed note vanished, so metadata is reconciled', async () => {
-        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+        const {hook, watchState, snapshotSpy} = await setupWatched((d) =>
             d.seedFile('A.md', 'a', 100),
         );
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
-        const listCalls = listSpy.mock.calls.length;
+        const snapshots = snapshotSpy.mock.calls.length;
+
+        // A Finder folder rename reports dir paths only — folders/tree may have changed.
+        act(() => watchState.onChange!(['Work']));
+        await waitFor(() => expect(snapshotSpy.mock.calls.length).toBe(snapshots + 1));
+    });
+
+    it('falls back when a listed note vanished, so metadata is reconciled', async () => {
+        const {hook, dir, watchState, snapshotSpy} = await setupWatched((d) =>
+            d.seedFile('A.md', 'a', 100),
+        );
+        await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
+        const snapshots = snapshotSpy.mock.calls.length;
 
         await dir.removeEntry('A.md');
         act(() => watchState.onChange!(['A.md']));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(0));
-        expect(listSpy.mock.calls.length).toBeGreaterThan(listCalls);
+        expect(snapshotSpy.mock.calls.length).toBeGreaterThan(snapshots);
     });
 
     it('raises a conflict for an externally-changed open note without any focus event', async () => {
@@ -1816,7 +1821,7 @@ describe('useNotes — live watch', () => {
     });
 
     it('an empty paths list ("many changes") refreshes even right after a local write', async () => {
-        const {hook, dir, watchState, listSpy} = await setupWatched((d) =>
+        const {hook, dir, watchState, snapshotSpy} = await setupWatched((d) =>
             d.seedFile('Note.md', 'v1', 100),
         );
         await act(async () => {
@@ -1831,11 +1836,11 @@ describe('useNotes — live watch', () => {
         await waitFor(() => expect(hook.result.current.saveState).toBe('saved'));
 
         dir.seedFile('Bulk.md', 'x', 300);
-        const listCalls = listSpy.mock.calls.length;
+        const snapshots = snapshotSpy.mock.calls.length;
         // Empty = "unknown/overflow": never suppressible ([].every() is vacuously true).
         act(() => watchState.onChange!([]));
 
-        await waitFor(() => expect(listSpy.mock.calls.length).toBeGreaterThan(listCalls));
+        await waitFor(() => expect(snapshotSpy.mock.calls.length).toBeGreaterThan(snapshots));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(2));
     });
 
