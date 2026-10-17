@@ -191,9 +191,13 @@ block is its own `contentEditable`, with a slash menu, drag-to-reorder, block se
 to-dos, images, and `[[wiki links]]`. It has no page chrome of its own — the pane above supplies the
 title, the read-only preview, the Esc ladder, and the backlinks panel.
 
-⌘⇧; swaps the blocks for the **raw Markdown** behind them: a plain textarea over the note's source,
-deliberately dependency-free. It is also where a note lands when the block model can't hold it (see
-below), so it is a real editing surface rather than a viewer.
+⌘⇧; swaps the blocks for the **raw Markdown** behind them, in CodeMirror (`SourceEditor.tsx`):
+Markdown and fenced-code highlighting, find and replace, list continuation. It is loaded on first
+use (warmed while idle), with a plain textarea (`SourceSurface.tsx`) standing in until it arrives,
+and gives the app's global chords precedence over its own defaults. It is also where a note lands
+when the block model can't hold it (see below), so it is a real editing surface rather than a viewer.
+Each note keeps its block-editor undo history across note switches (the ten most recent), for as
+long as the file still holds exactly what that history ends in.
 
 A note becomes a document once per editing session: the editor parses the file into blocks at mount
 and is remounted per note. The pane carries the per-note scroll and caret across a switch, so
@@ -309,8 +313,7 @@ Markdown over anything clever.
   app's on-disk spelling for an intentional blank row, and it round-trips as one — but a note whose
   ENTIRE content is that one row reads back as an empty note, which is a different file, so the
   check above diverts it rather than rewrite it. Blank rows inside a note are unaffected.
-- **The source view is a plain textarea.** No syntax highlighting and no Markdown-aware editing —
-  deliberately dependency-free. A CodeMirror surface is a possible upgrade, not a requirement.
+- **Undo does not cross the blocks ↔ source switch.** Each surface keeps its own history.
 - **A selection dragged across blocks acts on whole blocks.** Every block is its own
   `contentEditable`, but one browser selection extends right across them — and deleting half of one
   block and half of the next through the browser would edit DOM that React owns, behind its back, so

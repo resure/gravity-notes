@@ -237,6 +237,11 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         },
     },
     {
+        keys: 'mod+f',
+        description: 'Find and replace in Markdown source',
+        group: 'Editing',
+    },
+    {
         keys: 'mod+shift+p',
         description: 'Toggle read-only preview',
         group: 'Editing',

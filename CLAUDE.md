@@ -394,9 +394,11 @@ Key modules:
   ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
   and IS a textbox; the rules can't tell, and the editor drives focus itself).
 - `src/components/BlockEditorBody.tsx` — the **adapter** between `EditorPane` and the block editor:
-  it owns the ⌘⇧; blocks↔source flip (a plain textarea; `forceSource` pins it there for a note that
-  fails the round-trip guard, and `toggleMode` is then a no-op) and the per-note scroll + caret
-  restore. The editor is keyed on `sessionId`, so a note switch REMOUNTS it — the outgoing note's
+  it owns the ⌘⇧; blocks↔source flip (CodeMirror in `SourceEditor.tsx`, lazily loaded, with the
+  `SourceSurface.tsx` textarea as its loading fallback and the surface tests drive; `forceSource`
+  pins it there for a note that fails the round-trip guard, and `toggleMode` is then a no-op) and
+  the per-note scroll + caret + undo-history restore (an `EditorSnapshot` resumes only while the
+  file still holds exactly its Markdown). The editor is keyed on `sessionId`, so a note switch REMOUNTS it — the outgoing note's
   scroll and caret are therefore captured in RENDER, before the keyed child unmounts, which is the
   last moment `editorRef` still points at the old instance. Block ids are minted per parse, so the
   caret is saved as a block INDEX (`EditorCaret`), not an id. `focus()` is deliberately

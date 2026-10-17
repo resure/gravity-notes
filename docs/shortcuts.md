@@ -37,7 +37,8 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | Keys             | Action                                                                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
-| `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, in a plain textarea                                                     |
+| `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, with Markdown highlighting                                              |
+| `⌘F`             | In Markdown source: find and replace (`⌘G` / `⌘⇧G` next / previous); `⌥↑` / `⌥↓` move a line, `Enter` continues a list                    |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
 | `⌘K`             | Link the selected text, or edit the link the caret is in (clear the URL to unlink)                                                        |

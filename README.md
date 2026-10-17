@@ -24,7 +24,8 @@ Markdown files, and they are yours.
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
 - **A block editor** for the body: slash menu, drag-to-reorder, block selection, tables, to-dos,
-  images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them, and a note
+  images — writing the same plain `.md` files. `⌘⇧;` shows the raw Markdown behind them (with
+  highlighting, find and replace, and list continuation), and a note
   the block model can't represent exactly opens on that source instead, so your file is never
   rewritten to fit the editor. An optional formatting toolbar (Settings › Show editor toolbar)
   puts the marks, text styles and block types one click away
@@ -121,7 +122,6 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 - Preserve cmd+z across the blocks ↔ source switch
 - Cmd+z for undoing deleting of notes and moves between folders?
 
-- Source mode on CodeMirror instead of a textarea: Markdown highlighting, search, commands
 - Edit YFM tabs, files and video, multiline tables (`#| |#`) and definition lists as blocks — such
   notes open in source today (parity doc D1–D3)
 

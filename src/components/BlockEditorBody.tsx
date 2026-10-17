@@ -1,5 +1,7 @@
 import {
+    Suspense,
     forwardRef,
+    lazy,
     useCallback,
     useEffect,
     useImperativeHandle,
@@ -13,6 +15,7 @@ import type {Note, NoteMeta} from '../storage/types';
 
 import {EditorToolbar} from './EditorToolbar';
 import {NotePreview} from './NotePreview';
+import {type SourceHandle, TextareaSource} from './SourceSurface';
 import BlockEditor, {
     type EditorCaret,
     type EditorHandle,
@@ -23,6 +26,11 @@ import {
     readScrollAnchor,
     restoreScrollAnchor,
 } from './blockEditor/scrollAnchoring';
+
+const loadSourceEditor = () => import('./SourceEditor');
+const SourceEditor = lazy(loadSourceEditor);
+// Lazy, so it arrives after the render a test asserts on; tests drive the textarea fallback instead.
+const CODEMIRROR = import.meta.env.MODE !== 'test';
 
 /**
  * The Notion-style block editor as `EditorPane`'s note body. It implements the imperative contract
@@ -145,7 +153,10 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         const editorRef = useRef<EditorHandle>(null);
         const rootRef = useRef<HTMLDivElement>(null);
         const previewRef = useRef<HTMLDivElement>(null);
-        const markupRef = useRef<HTMLTextAreaElement>(null);
+        const sourceRef = useRef<SourceHandle>(null);
+        // ⌘⇧; from inside the body moves the caret along to the other surface.
+        const focusSourceRef = useRef(false);
+        const focusBodyRef = useRef(false);
         // The live buffer, so preview mode and the raw-Markdown mode both show what is ON SCREEN
         // rather than what is on disk.
         const bufferRef = useRef(note.content);
@@ -197,6 +208,8 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // `forceSource`. This component is NOT keyed, so it has to be cleared by hand — guarded
             // because a render-phase dispatch has no eager bailout and would re-render every open.
             if (stuckOnSource) setStuckOnSource(false);
+            focusSourceRef.current = false;
+            focusBodyRef.current = false;
         } else if (noteIdRef.current !== note.id) {
             // A rename/move re-keys the open note in place (id changes, session doesn't) — carry
             // its saved position to the new id so a later switch-and-back still restores it.
@@ -228,47 +241,9 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             [onChange],
         );
 
-        /**
-         * Grow the source textarea to its content, so the PANE scrolls it — exactly as it scrolls
-         * the blocks.
-         *
-         * A textarea doesn't size itself, and a fixed box inside a scrolling pane gives a long note
-         * two scrollbars and one usable screenful: flipping to source on a 180-line note showed its
-         * first 20 lines with the rest reachable only by scrolling inside the box, while the pane
-         * below it sat empty. The two surfaces read as different notes.
-         */
-        const autosize = useCallback(() => {
-            const element = markupRef.current;
-            if (!element) return;
-            // Both writes are load-bearing: `auto` is what lets the box SHRINK, so the measurement
-            // that follows has to be written back even when it matches — skipping it leaves the
-            // textarea at its default two rows.
-            element.style.height = 'auto';
-            element.style.height = `${element.scrollHeight}px`;
-        }, []);
-
-        // On the way in, and whenever the box's WIDTH changes — a resized window, a dragged divider
-        // or a different text width all re-wrap the text, which is what decides the height.
-        useLayoutEffect(() => {
-            if (!source) return undefined;
-            autosize();
-            const element = markupRef.current;
-            if (!element?.parentElement || typeof ResizeObserver === 'undefined') return undefined;
-            let lastWidth = element.clientWidth;
-            // The PARENT is observed, never the textarea: observing the element whose height this
-            // callback sets is a feedback loop.
-            const observer = new ResizeObserver(() => {
-                const width = element.clientWidth;
-                if (width === lastWidth) return;
-                lastWidth = width;
-                autosize();
-            });
-            observer.observe(element.parentElement);
-            return () => observer.disconnect();
-        }, [source, sessionId, autosize]);
-
         const toggleSourceMode = () => {
             if (forceSource) return;
+            const bodyHasFocus = Boolean(rootRef.current?.contains(document.activeElement));
             if (markup && !isRoundTripStable(bufferRef.current)) {
                 setStuckOnSource(true);
                 return;
@@ -276,6 +251,8 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // Representable again — release the latch, or `source` would stay true underneath a
             // flipped `markup` and the blocks surface would never come back.
             setStuckOnSource(false);
+            focusSourceRef.current = !markup && bodyHasFocus;
+            focusBodyRef.current = markup && bodyHasFocus;
             setMarkup((on) => !on);
         };
 
@@ -293,7 +270,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 // click-to-focus path. Moving to the first block whenever focus is ALREADY in the
                 // body would undo both. Only place the caret when it isn't here yet.
                 if (rootRef.current?.contains(document.activeElement)) return;
-                if (source) markupRef.current?.focus();
+                if (source) sourceRef.current?.focus();
                 else editorRef.current?.focus();
             },
             /**
@@ -319,18 +296,16 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 // silently did nothing for exactly the notes that fall back to it, which is the
                 // largest group of all. Arrowing down from the title left the caret wherever the
                 // browser had last put it.
-                const markup = markupRef.current;
-                if (source && markup) {
-                    markup.setSelectionRange(0, 0);
+                if (source && sourceRef.current) {
+                    sourceRef.current.moveCursor('start');
                     return;
                 }
                 const target = firstContent(rootRef.current);
                 if (target) placeCaret(target, 'start');
             },
             moveCursorEnd() {
-                const markup = markupRef.current;
-                if (source && markup) {
-                    markup.setSelectionRange(markup.value.length, markup.value.length);
+                if (source && sourceRef.current) {
+                    sourceRef.current.moveCursor('end');
                     return;
                 }
                 // The LAST block, not the last `.content`: a table renders `.table-cell-content` and
@@ -347,17 +322,9 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             },
             /** Backspace-into-the-title only applies when the caret sits in an empty first block. */
             atEmptyFirstLine() {
-                const markup = markupRef.current;
-                if (source && markup) {
-                    // In source mode the equivalent is the caret at the very start of an empty
-                    // first line, which is what makes Backspace mean "leave for the title".
-                    if (document.activeElement !== markup) return false;
-                    // Collapsed, or ⌘A on a note whose first line is blank also starts at 0 — and
-                    // the pane would then hand Backspace to the title instead of deleting the
-                    // selection, swallowing a select-all-and-delete entirely.
-                    if (markup.selectionStart !== markup.selectionEnd) return false;
-                    return markup.selectionStart === 0 && markup.value.split('\n')[0] === '';
-                }
+                // In source mode the equivalent is the caret at the very start of an empty first
+                // line, which is what makes Backspace mean "leave for the title".
+                if (source && sourceRef.current) return sourceRef.current.atEmptyFirstLine();
                 const first = firstContent(rootRef.current);
                 if (!first || document.activeElement !== first) return false;
                 if (window.getSelection()?.isCollapsed === false) return false;
@@ -367,13 +334,24 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 // The first line is empty and the caret is leaving for the title; both surfaces keep
                 // their content, so there is nothing to remove — blur so the caret does not linger
                 // in a surface the user has left.
-                if (source) markupRef.current?.blur();
+                if (source) sourceRef.current?.blur();
                 else firstContent(rootRef.current)?.blur();
             },
             focusPreview() {
                 previewRef.current?.focus();
             },
         }));
+
+        // Fetched while idle, so the first ⌘⇧; rarely shows the textarea it falls back to.
+        useEffect(() => {
+            if (!CODEMIRROR) return;
+            const warm = () => void loadSourceEditor();
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(warm, {timeout: 5000});
+            } else {
+                window.setTimeout(warm, 2000);
+            }
+        }, []);
 
         // Move focus when preview is toggled, the same handoff the pane expects. Leaving preview has
         // to put the caret back or the user must click before they can type. `preventScroll` is
@@ -383,14 +361,22 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             if (preview === prevPreviewRef.current) return;
             prevPreviewRef.current = preview;
             if (preview) previewRef.current?.focus({preventScroll: true});
-            else if (source) markupRef.current?.focus();
+            else if (source) sourceRef.current?.focus();
             else editorRef.current?.focus();
         }, [preview, source]);
 
-        // Raw Markdown: a plain textarea over the same buffer. Deliberately not CodeMirror — this is
-        // the "just let me see the file" escape hatch (and the safe surface for a note the block
-        // model can't hold), so being dependency-free outweighs syntax highlighting.
+        // Raw Markdown over the same buffer: CodeMirror, loaded on first use.
         if (source) {
+            // Keyed on the session: the surface reads `value` once, so without the key a switch made in
+            // source mode would leave the PREVIOUS note's text on screen under the new title — and
+            // the next keystroke would save it into the newly opened note.
+            const surface = {
+                key: sessionId,
+                ref: sourceRef,
+                value: bufferRef.current,
+                onChange: handleChange,
+                autoFocus: focusSourceRef.current,
+            };
             return (
                 <>
                     {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
@@ -406,25 +392,13 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                                     : 'This note contains Markdown the block editor can’t represent — editing as source, so nothing else in the file is rewritten.'}
                             </p>
                         ) : null}
-                        <textarea
-                            // Keyed on the session: this is an UNCONTROLLED input, and once the user has
-                            // typed in it the browser sets its dirty-value flag, after which React's
-                            // `defaultValue` update is ignored (per the HTML spec). Without the key, a
-                            // note switch made in markup mode would leave the PREVIOUS note's source in
-                            // the box under the new note's title — and the next keystroke would save
-                            // that text into the newly opened note, destroying it.
-                            key={sessionId}
-                            ref={markupRef}
-                            className="block-editor-markup"
-                            aria-label="Markdown source"
-                            // Unset so it inherits Settings › Check spelling from the pane wrapper,
-                            // the way the blocks surface does — the setting covers both modes.
-                            defaultValue={bufferRef.current}
-                            onChange={(event) => {
-                                handleChange(event.target.value);
-                                autosize();
-                            }}
-                        />
+                        {CODEMIRROR ? (
+                            <Suspense fallback={<TextareaSource {...surface} />}>
+                                <SourceEditor {...surface} />
+                            </Suspense>
+                        ) : (
+                            <TextareaSource {...surface} />
+                        )}
                     </div>
                 </>
             );
@@ -454,7 +428,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         ref={editorRef}
                         key={sessionId}
                         value={bufferRef.current}
-                        autofocus={autofocus}
+                        autofocus={focusBodyRef.current ? 'body' : autofocus}
                         initialCaret={restoreRef.current?.caret ?? null}
                         resume={resumable(restoreRef.current?.history, bufferRef.current)}
                         notes={wikiNotes}
