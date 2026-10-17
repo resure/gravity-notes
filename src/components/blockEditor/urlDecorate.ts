@@ -5,7 +5,7 @@
  * Obsidian and GitHub all link on their own.
  */
 
-import {WIKI_LINK_CLASS, decodeEntities} from '../../markdown';
+import {WIKI_LINK_CLASS, decodeEntities, inlineHtmlToMarkdown} from '../../markdown';
 
 export const URL_LINK_CLASS = 'url-link';
 
@@ -13,20 +13,36 @@ const EXISTING_WRAPPER = new RegExp(`<span class="${URL_LINK_CLASS}">([^<]*)</sp
 const NEEDS_PASS = new RegExp(`https?://|class="${URL_LINK_CLASS}"`, 'i');
 // Explicit schemes only, like the preview's linkify: a bare `example.com` stays text.
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
-const TRAILING = /[.,;:!?'"*_~]+$/;
+const TRAILING = new Set(['.', ',', ';', ':', '!', '?', "'", '"', '*', '_', '~']);
+const BRACKETS = [
+    ['(', ')'],
+    ['[', ']'],
+];
 
-/** Where a URL found in prose really ends: sentence punctuation and an unopened bracket are not part of it. */
+/**
+ * Where a URL found in prose really ends: sentence punctuation and an unopened bracket are not part
+ * of it. Walks an index rather than re-slicing, so a run of thousands of `)` stays linear.
+ */
 export function trimUrl(url: string): string {
-    let end = url.replace(TRAILING, '');
-    for (const [open, close] of [
-        ['(', ')'],
-        ['[', ']'],
-    ]) {
-        while (end.endsWith(close) && end.split(open).length < end.split(close).length) {
-            end = end.slice(0, -1).replace(TRAILING, '');
+    let end = url.length;
+    const skipTrailing = () => {
+        while (end > 0 && TRAILING.has(url[end - 1])) end--;
+    };
+    skipTrailing();
+    for (const [open, close] of BRACKETS) {
+        let opens = 0;
+        let closes = 0;
+        for (let at = 0; at < end; at++) {
+            if (url[at] === open) opens++;
+            else if (url[at] === close) closes++;
+        }
+        while (end > 0 && url[end - 1] === close && opens < closes) {
+            end--;
+            closes--;
+            skipTrailing();
         }
     }
-    return end;
+    return url.slice(0, end);
 }
 
 export function findUrls(text: string): {start: number; end: number}[] {
@@ -113,5 +129,8 @@ export function decorateUrls(html: string): string {
         out += tag;
         index = gt + 1;
     }
+    // The wrapper splits a text run in two, and escaping is decided per run: `\~https://x~` would
+    // lose its backslash. Such a block simply stays undecorated.
+    if (out !== source && inlineHtmlToMarkdown(out) !== inlineHtmlToMarkdown(source)) return source;
     return out;
 }

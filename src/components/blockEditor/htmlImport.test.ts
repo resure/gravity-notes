@@ -334,3 +334,27 @@ describe('htmlToBlocks — property', () => {
         }
     });
 });
+
+describe('htmlToBlocks — spanning table cells', () => {
+    it('keeps a row under a rowspan cell in its own columns', () => {
+        const html =
+            '<table><tr><th>Person</th><th>Q1</th><th>Q2</th></tr>' +
+            '<tr><td rowspan="2">Alice</td><td>10</td><td>20</td></tr>' +
+            '<tr><td>30</td><td>40</td></tr></table>';
+        const table = htmlToBlocks(html)?.find((block) => block.type === 'table')?.table;
+        expect(table?.cells).toEqual([
+            ['Person', 'Q1', 'Q2'],
+            ['Alice', '10', '20'],
+            ['', '30', '40'],
+        ]);
+    });
+
+    it('does not build a table whose spans describe a huge grid', () => {
+        const wide = Array.from({length: 1000}, () => '<td colspan="50">x</td>').join('');
+        const rows = Array.from({length: 2000}, () => '<tr><td>y</td></tr>').join('');
+        const started = performance.now();
+        const blocks = htmlToBlocks(`<table><tr>${wide}</tr>${rows}</table>`) ?? [];
+        expect(blocks.some((block) => block.type === 'table')).toBe(false);
+        expect(performance.now() - started).toBeLessThan(2000);
+    });
+});

@@ -24,3 +24,12 @@ describe('tokenize', () => {
         expect(tokenize('const a = "x"', 'nosuchlang')).toEqual([]);
     });
 });
+
+describe('tokenize — size limit', () => {
+    it('leaves a fence too large to colour within a frame plain', () => {
+        const code = 'const s = "x";\n'.repeat(10_000);
+        const started = performance.now();
+        expect(tokenize(code, 'js')).toEqual([]);
+        expect(performance.now() - started).toBeLessThan(50);
+    });
+});

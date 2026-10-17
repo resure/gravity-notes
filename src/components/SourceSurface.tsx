@@ -10,8 +10,12 @@ export interface SourceHandle {
 }
 
 export interface SourceSurfaceProps {
-    /** Read once, at mount: the surface is keyed per editing session. */
-    value: string;
+    /**
+     * The text to start from, read once at mount (the surface is keyed per editing session). A
+     * getter, not a value: CodeMirror replaces the loading textarea later, after edits made in it
+     * that never re-rendered the parent.
+     */
+    readValue(): string;
     onChange(text: string): void;
     autoFocus?: boolean;
 }
@@ -21,7 +25,7 @@ export const fallbackFocus = {held: false};
 
 /** The plain textarea: what source mode shows while CodeMirror loads, and in tests. */
 export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(function TextareaSource(
-    {value, onChange, autoFocus},
+    {readValue, onChange, autoFocus},
     ref,
 ) {
     const markupRef = useRef<HTMLTextAreaElement>(null);
@@ -100,7 +104,7 @@ export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(funct
             aria-label="Markdown source"
             // Unset so it inherits Settings › Check spelling from the pane wrapper, the way the
             // blocks surface does — the setting covers both modes.
-            defaultValue={value}
+            defaultValue={readValue()}
             onChange={(event) => {
                 onChange(event.target.value);
                 autosize();

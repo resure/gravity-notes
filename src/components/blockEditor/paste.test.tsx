@@ -192,6 +192,43 @@ describe('rich HTML paste', () => {
         expect(isRoundTripStable(written)).toBe(true);
     });
 
+    it('keeps the spaces a mid-sentence selection had at its edges', () => {
+        const onChange = vi.fn();
+        render(<Editor value="leftright" onChange={onChange} />);
+        const content = document.querySelector<HTMLElement>('.content')!;
+        content.focus();
+        setCaret(content, 4);
+        pasteFlavours(content, {
+            'text/plain': ' one\ntwo ',
+            'text/html': '<p> <b>one</b></p><p>two </p>',
+        });
+        expect(onChange.mock.calls.at(-1)?.[0]).toBe('left **one**\n\ntwo right');
+    });
+
+    it('pastes plain text into a code block without importing the HTML', () => {
+        const onChange = vi.fn();
+        render(<Editor value={'```\nx\n```'} onChange={onChange} />);
+        const content = document.querySelector<HTMLElement>('.content')!;
+        content.focus();
+        setCaret(content, 'end');
+        const getData = vi.fn((type: string) =>
+            type === 'text/plain'
+                ? 'y'
+                : type === 'text/html'
+                  ? '<table><tr><td>y</td></tr></table>'
+                  : '',
+        );
+        const insert = vi.fn(() => true);
+        Object.defineProperty(document, 'execCommand', {value: insert, configurable: true});
+        try {
+            fireEvent.paste(content, {clipboardData: {files: [], getData}});
+        } finally {
+            delete (document as Partial<Document>).execCommand;
+        }
+        expect(insert).toHaveBeenCalledWith('insertText', false, 'y');
+        expect(getData).not.toHaveBeenCalledWith('text/html');
+    });
+
     it('replaces a cross-block selection with the imported blocks', () => {
         const onChange = vi.fn();
         render(<Editor value={'First\n\nSecond\n\nThird'} onChange={onChange} />);

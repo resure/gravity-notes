@@ -74,3 +74,25 @@ describe('decorateUrls', () => {
         }
     });
 });
+
+describe('decorateUrls — review regressions', () => {
+    it('stays off a URL whose wrapper would change how the block is written', () => {
+        for (const markdown of [
+            '\\~https://example.com~',
+            '\\*https://example.com\\*',
+            'a\\_https://x.com\\_',
+        ]) {
+            const html = inlineMarkdownToHtml(markdown);
+            expect(inlineHtmlToMarkdown(decorateUrls(html)), markdown).toBe(
+                inlineHtmlToMarkdown(html),
+            );
+        }
+    });
+
+    it('trims a long run of unmatched brackets in linear time', () => {
+        const url = `https://example.com/${')'.repeat(200_000)}`;
+        const started = performance.now();
+        expect(trimUrl(url)).toBe('https://example.com/');
+        expect(performance.now() - started).toBeLessThan(200);
+    });
+});

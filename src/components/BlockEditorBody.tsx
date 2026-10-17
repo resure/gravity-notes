@@ -28,7 +28,9 @@ import {
 } from './blockEditor/scrollAnchoring';
 
 const loadSourceEditor = () => import('./SourceEditor');
-const SourceEditor = lazy(loadSourceEditor);
+// A chunk that fails to load (offline, or a web deploy replaced it) keeps the textarea rather than
+// taking the workspace down with it.
+const SourceEditor = lazy(() => loadSourceEditor().catch(() => ({default: TextareaSource})));
 // Lazy, so it arrives after the render a test asserts on; tests drive the textarea fallback instead.
 const CODEMIRROR = import.meta.env.MODE !== 'test';
 
@@ -345,7 +347,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         // Fetched while idle, so the first ⌘⇧; rarely shows the textarea it falls back to.
         useEffect(() => {
             if (!CODEMIRROR) return;
-            const warm = () => void loadSourceEditor();
+            const warm = () => void loadSourceEditor().catch(() => undefined);
             if (typeof window.requestIdleCallback === 'function') {
                 window.requestIdleCallback(warm, {timeout: 5000});
             } else {
@@ -373,7 +375,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             const surface = {
                 key: sessionId,
                 ref: sourceRef,
-                value: bufferRef.current,
+                readValue: () => bufferRef.current,
                 onChange: handleChange,
                 autoFocus: focusSourceRef.current,
             };

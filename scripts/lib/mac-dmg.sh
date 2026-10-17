@@ -10,12 +10,17 @@
 BUNDLE_DIR="src-tauri/target/release/bundle"
 DMG_STEP_FAILED=75
 
+stale_dmg_devices() {
+  # Only this checkout's own scratch images: another project's build may have one mounted right now.
+  awk -v prefix="$(pwd -P)/$BUNDLE_DIR/" '
+    /^image-path/ { sub(/^image-path[ \t]*:[ \t]*/, ""); img = $0 }
+    /^\/dev\/disk[0-9]+[ \t]/ && index(img, prefix) == 1 && img ~ /\/(macos|dmg)\/rw\.[0-9]+\./ { print $1; img = "" }
+  '
+}
+
 detach_stale_dmg_mounts() {
   local dev
-  for dev in $(hdiutil info | awk '
-    /^image-path/ { img = $0 }
-    /^\/dev\/disk[0-9]+[ \t]/ && img ~ /\/bundle\/(macos|dmg)\/rw\.[0-9]+\./ { print $1; img = "" }
-  '); do
+  for dev in $(hdiutil info | stale_dmg_devices); do
     echo "    detaching stale scratch image $dev"
     hdiutil detach -force "$dev" >/dev/null || true
   done

@@ -168,6 +168,10 @@ export function htmlToBlocks(html: string): Block[] | null {
     return markdownToBlocks(markdown);
 }
 
+const MAX_TABLE_CELLS = 20_000;
+
+const colSpanOf = (cell: HTMLTableCellElement) => Math.min(Math.max(1, cell.colSpan || 1), 50);
+
 class Importer {
     private blocks: Block[] = [];
     private runs: Run[] = [];
@@ -299,14 +303,47 @@ class Importer {
             head.parentElement?.localName === 'thead' ||
             [...head.cells].every((cell) => cell.localName === 'th') ||
             (runs[0].some(hasText) && runs[0].every((cell) => !hasText(cell) || allBold(cell)));
-        const cells = rows.map((row, at) =>
-            [...row.cells].flatMap((cell, column) => {
-                const content = runs[at][column];
-                const html = runsToHtml(at === 0 && headerRow ? unbold(content) : content, ' ');
-                const span = Math.min(Math.max(1, cell.colSpan || 1), 50);
-                return [html, ...Array<string>(span - 1).fill('')];
-            }),
+        const cellHtml = (at: number, column: number) =>
+            runsToHtml(at === 0 && headerRow ? unbold(runs[at][column]) : runs[at][column], ' ');
+        // A few spanning cells can describe millions of grid cells; such a paste is kept as rows of
+        // text rather than allocated.
+        const spanned = rows.map((row) =>
+            [...row.cells].reduce((sum, cell) => sum + colSpanOf(cell), 0),
         );
+        if (spanned.reduce((max, n) => Math.max(max, n), 0) * rows.length > MAX_TABLE_CELLS) {
+            rows.forEach((row, at) => {
+                const html = [...row.cells].map((_, column) => cellHtml(at, column)).join(' ');
+                if (frame.quote) this.appendToQuote(frame.quote, html);
+                else this.place(newBlock('text', html), frame);
+            });
+            return;
+        }
+        // Rows below a `rowspan` cell leave its columns out, so they are reserved here or every
+        // later cell in those rows would shift left into the wrong column.
+        const covered: number[] = [];
+        const cells = rows.map((row, at) => {
+            const out: string[] = [];
+            const skipCovered = () => {
+                while ((covered[out.length] ?? 0) > 0) {
+                    covered[out.length]--;
+                    out.push('');
+                }
+            };
+            [...row.cells].forEach((cell, column) => {
+                skipCovered();
+                const below = Math.min(Math.max(1, cell.rowSpan || 1), rows.length - at) - 1;
+                for (let part = 0; part < colSpanOf(cell); part++) {
+                    covered[out.length] = below;
+                    out.push(part === 0 ? cellHtml(at, column) : '');
+                }
+            });
+            for (let column = out.length; column < covered.length; column++) {
+                if ((covered[column] ?? 0) <= 0) continue;
+                covered[column]--;
+                while (out.length <= column) out.push('');
+            }
+            return out;
+        });
         const width = cells.reduce((max, row) => Math.max(max, row.length), 0);
         if (!width) return;
         for (const row of cells) while (row.length < width) row.push('');
@@ -315,7 +352,7 @@ class Importer {
             return;
         }
         const align = [...head.cells].flatMap((cell) =>
-            Array<ColumnAlign | null>(Math.max(1, cell.colSpan || 1)).fill(cellAlign(cell)),
+            Array<ColumnAlign | null>(colSpanOf(cell)).fill(cellAlign(cell)),
         );
         const block = newBlock('table');
         block.table = {

@@ -6,7 +6,7 @@ import {markdown, markdownKeymap, markdownLanguage} from '@codemirror/lang-markd
 import {HighlightStyle, bracketMatching, syntaxHighlighting} from '@codemirror/language';
 import {languages} from '@codemirror/language-data';
 import {highlightSelectionMatches, search, searchKeymap} from '@codemirror/search';
-import {EditorState} from '@codemirror/state';
+import {Compartment, EditorState} from '@codemirror/state';
 import {
     Decoration,
     type DecorationSet,
@@ -146,12 +146,20 @@ const theme = EditorView.theme({
     },
 });
 
+function emptyFirstLine(view: EditorView): boolean {
+    const {main} = view.state.selection;
+    return main.empty && main.head === 0 && view.state.doc.line(1).length === 0;
+}
+
 const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function SourceEditor(
-    {value, onChange, autoFocus},
+    {readValue, onChange, autoFocus},
     ref,
 ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    // Whether Backspace began on an empty first line. The pane asks after CodeMirror has already
+    // handled the key, and a select-all + Backspace would otherwise read as "leave for the title".
+    const emptyBeforeKeyRef = useRef<boolean | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
 
@@ -159,11 +167,16 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
         const host = hostRef.current;
         if (!host) return undefined;
         // Settings › Check spelling is an attribute on the pane, which the textarea simply inherited.
-        const spellcheck = host.closest('[spellcheck]')?.getAttribute('spellcheck') ?? 'false';
+        const spellcheckHost = host.closest('[spellcheck]');
+        const spellcheck = new Compartment();
+        const spellcheckAttribute = () =>
+            EditorView.contentAttributes.of({
+                spellcheck: spellcheckHost?.getAttribute('spellcheck') ?? 'false',
+            });
         const view = new EditorView({
             parent: host,
             state: EditorState.create({
-                doc: value,
+                doc: readValue(),
                 extensions: [
                     history(),
                     drawSelection(),
@@ -177,10 +190,8 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
                     syntaxHighlighting(markdownStyle),
                     wikiLinks,
                     theme,
-                    EditorView.contentAttributes.of({
-                        'aria-label': 'Markdown source',
-                        spellcheck,
-                    }),
+                    EditorView.contentAttributes.of({'aria-label': 'Markdown source'}),
+                    spellcheck.of(spellcheckAttribute()),
                     keymap.of(
                         withoutAppChords([
                             ...closeBracketsKeymap,
@@ -200,11 +211,28 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
         viewRef.current = view;
         if (autoFocus || fallbackFocus.held) view.focus();
         fallbackFocus.held = false;
+
+        const spellcheckChanges = new MutationObserver(() =>
+            view.dispatch({effects: spellcheck.reconfigure(spellcheckAttribute())}),
+        );
+        if (spellcheckHost) {
+            spellcheckChanges.observe(spellcheckHost, {attributeFilter: ['spellcheck']});
+        }
+        const recordBackspace = (event: KeyboardEvent) => {
+            if (event.key !== 'Backspace') return;
+            emptyBeforeKeyRef.current = emptyFirstLine(view);
+            window.setTimeout(() => {
+                emptyBeforeKeyRef.current = null;
+            }, 0);
+        };
+        host.addEventListener('keydown', recordBackspace, true);
         return () => {
+            host.removeEventListener('keydown', recordBackspace, true);
+            spellcheckChanges.disconnect();
             view.destroy();
             viewRef.current = null;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- `value` is read once, at mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- the text is read once, at mount
     }, []);
 
     useImperativeHandle(ref, () => ({
@@ -219,8 +247,7 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
         atEmptyFirstLine() {
             const view = viewRef.current;
             if (!view?.hasFocus) return false;
-            const {main} = view.state.selection;
-            return main.empty && main.head === 0 && view.state.doc.line(1).length === 0;
+            return emptyBeforeKeyRef.current ?? emptyFirstLine(view);
         },
     }));
 

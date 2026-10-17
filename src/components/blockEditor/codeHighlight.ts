@@ -77,8 +77,11 @@ function textModel(root: HTMLElement): {text: string; nodes: {node: Text; start:
     return {text, nodes};
 }
 
+// One fence this long would take far more than a frame to colour, and recolour on every keystroke.
+const MAX_HIGHLIGHT_CHARS = 100_000;
+
 export function tokenize(text: string, language: string | undefined): Token[] {
-    if (!language || !hljs.getLanguage(language)) return [];
+    if (text.length > MAX_HIGHLIGHT_CHARS || !language || !hljs.getLanguage(language)) return [];
     let html: string;
     try {
         html = hljs.highlight(text, {language, ignoreIllegals: true}).value;

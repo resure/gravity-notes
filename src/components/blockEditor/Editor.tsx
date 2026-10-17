@@ -3333,18 +3333,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
         const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
+        const replaced = crossesBlocks() ? selectionBlockIds() : [];
+        // Code takes the plain text whatever the HTML holds, so there is nothing to import.
+        if (block.type === 'code' && replaced.length <= 1) {
+            if (!text) return;
+            insertPlainTextAtCaret(text);
+            commitHtml(id, el);
+            return;
+        }
         const html = e.clipboardData.getData('text/html');
         const imported = html ? htmlToBlocks(html) : null;
         const rich = imported && normalizeParsedBlocks(imported);
         if (!text && !rich) return;
 
-        if (crossesBlocks()) {
-            const ids = selectionBlockIds();
-            if (ids.length > 1) {
-                if (rich) replaceWithBlocks(ids, rich);
-                else replaceWithMarkdown(ids, text);
-                return;
-            }
+        if (replaced.length > 1) {
+            if (rich) replaceWithBlocks(replaced, rich);
+            else replaceWithMarkdown(replaced, text);
+            return;
         }
 
         const selection = window.getSelection();
@@ -3359,11 +3364,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
-        if (block.type === 'code') {
-            insertPlainTextAtCaret(text);
-            commitHtml(id, el);
-            return;
-        }
         if (rich) {
             pasteBlocks(id, el, block, rich, text);
             return;
@@ -3405,10 +3405,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         text: string,
     ) => {
         const [first, ...others] = pasted;
+        // The import trims each paragraph's edges; a selection taken mid-sentence had the spaces.
+        const lead = /^\s/.test(text) ? ' ' : '';
+        const trail = /\s$/.test(text) ? ' ' : '';
         if (!others.length && first.type === 'text') {
-            // The paragraph lost the spaces at its edges; a selection taken mid-sentence had them.
-            const lead = /^\s/.test(text) ? ' ' : '';
-            const trail = /\s$/.test(text) ? ' ' : '';
             const html = `${lead}${oneLineIfHeading(block.type, first.html)}${trail}`;
             document.execCommand('insertHTML', false, html);
             commitHtml(id, el);
@@ -3419,8 +3419,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
         if (first.type === 'text' && !first.depth) {
-            splitAtCaret(id, el, block, oneLineIfHeading(block.type, first.html), others);
-        } else splitAtCaret(id, el, block, '', pasted);
+            splitAtCaret(id, el, block, oneLineIfHeading(block.type, first.html), others, {
+                lead,
+                trail,
+            });
+        } else splitAtCaret(id, el, block, '', pasted, {lead: '', trail});
     };
 
     const splitAtCaret = (
@@ -3429,8 +3432,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         block: BlockData,
         firstHtml: string,
         pasted: BlockData[],
+        edges: {lead: string; trail: string} = {lead: '', trail: ''},
     ) => {
         const [beforeHtml, afterHtml] = splitHtmlAtCaret(el);
+        // Only where text meets text: a paragraph never starts or ends on a space of its own.
+        const lead = beforeHtml && firstHtml ? edges.lead : '';
+        const trail = afterHtml ? edges.trail : '';
         const rest = pasted.map((parsed) => ({
             ...decorateBlock(parsed),
             depth: (block.depth ?? 0) + (parsed.depth ?? 0),
@@ -3439,7 +3446,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         let caretTarget: {id: string; pos: CaretPos} = {id, pos: 'end'};
         if (lastBlock && isEditableType(lastBlock.type)) {
             const lastLen = htmlToText(lastBlock.html).length;
-            lastBlock.html += afterHtml;
+            lastBlock.html += trail + afterHtml;
             caretTarget = {id: lastBlock.id, pos: lastLen};
         } else if (afterHtml) {
             const suffix = {...newBlock('text', afterHtml), depth: block.depth ?? 0};
@@ -3448,7 +3455,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
         const idx = indexOf(id);
         setBlocks((bs) => {
-            const arr = bs.map((b) => (b.id === id ? {...b, html: beforeHtml + firstHtml} : b));
+            const arr = bs.map((b) =>
+                b.id === id ? {...b, html: beforeHtml + lead + firstHtml} : b,
+            );
             // With the caret at the end the host's children stay the host's; with text after the
             // caret they follow that text, which now ends the pasted run.
             arr.splice(afterHtml ? idx + 1 : afterSubtree(arr, idx), 0, ...rest);
