@@ -1,6 +1,7 @@
 # Keyboard shortcuts
 
-Press `⌘/` inside the app for this sheet, always up to date. `⌘` reads as `Ctrl` outside macOS.
+Press `⌘/` inside the app for this sheet, always up to date; type to filter it by action or by keys
+(`link`, `cmd+k`, `⌘⇧;`). `⌘` reads as `Ctrl` outside macOS.
 
 ## The search box
 

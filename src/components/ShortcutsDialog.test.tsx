@@ -1,4 +1,4 @@
-import {screen} from '@testing-library/react';
+import {fireEvent, screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
 import {SHORTCUTS} from '../shortcuts';
@@ -28,6 +28,24 @@ describe('ShortcutsDialog', () => {
             screen.getByText('Edit the selected note (in the title → jump to the body)'),
         ).toBeInTheDocument();
         expect(screen.getByText('Editor → list, then close (or clear search)')).toBeInTheDocument();
+    });
+
+    it('filters by what a shortcut does or by its keys, however they are spelled', () => {
+        renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
+        const filter = screen.getByRole('textbox', {name: 'Filter shortcuts'});
+        const rows = () =>
+            [...document.querySelectorAll('.shortcuts-dialog__row')].map((row) => row.textContent);
+
+        fireEvent.change(filter, {target: {value: 'cmd-k'}});
+        expect(rows().some((row) => row?.startsWith('Link the selection'))).toBe(true);
+        expect(rows().every((row) => !row?.startsWith('Toggle read-only preview'))).toBe(true);
+
+        fireEvent.change(filter, {target: {value: 'go back'}});
+        expect(rows()).toHaveLength(1);
+
+        fireEvent.change(filter, {target: {value: 'nothing like this'}});
+        expect(rows()).toHaveLength(0);
+        expect(screen.getByText('No shortcut matches.')).toBeInTheDocument();
     });
 
     it('renders nothing when closed', () => {

@@ -399,3 +399,56 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
 
 /** Help-dialog group order. */
 export const SHORTCUT_GROUPS: ShortcutDescriptor['group'][] = ['Navigation', 'Editing', 'General'];
+
+const KEY_ALIASES: Record<string, string> = {
+    cmd: 'mod',
+    command: 'mod',
+    meta: 'mod',
+    '⌘': 'mod',
+    control: 'ctrl',
+    '⌃': 'ctrl',
+    opt: 'alt',
+    option: 'alt',
+    '⌥': 'alt',
+    '⇧': 'shift',
+    return: 'enter',
+    '↵': 'enter',
+    '⏎': 'enter',
+    escape: 'esc',
+    '⎋': 'esc',
+    delete: 'backspace',
+    '⌫': 'backspace',
+    '↑': 'up',
+    arrowup: 'up',
+    '↓': 'down',
+    arrowdown: 'down',
+};
+
+const MODIFIERS = new Set(['mod', 'ctrl', 'alt', 'shift']);
+
+/** A typed chord's keys: `cmd+k`, `cmd-k`, `⌘K` and `Command K` all read as `mod`, `k`. */
+function queryKeys(query: string): string[] {
+    return query
+        .toLowerCase()
+        .replace(/[⌘⌃⌥⇧↵⏎⎋⌫↑↓]/g, (symbol) => ` ${symbol} `)
+        .split(/[\s+]+|(?<=\w)-(?=\S)/)
+        .filter(Boolean)
+        .map((key) => KEY_ALIASES[key] ?? key);
+}
+
+/**
+ * Whether the help sheet's filter keeps `shortcut`: every word of `query` in its description, or
+ * `query` read as a chord that is part of the shortcut's own.
+ */
+export function shortcutMatches(shortcut: ShortcutDescriptor, query: string): boolean {
+    const text = query.trim().toLowerCase();
+    if (!text) return true;
+    const description = shortcut.description.toLowerCase();
+    if (text.split(/\s+/).every((word) => description.includes(word))) return true;
+    const typed = queryKeys(text);
+    // A bare letter is a word, not a key: `k` would otherwise list every chord ending in K.
+    if (typed.length === 1 && !MODIFIERS.has(typed[0]) && /^\w$/.test(typed[0])) return false;
+    return shortcut.keys
+        .split(' ')
+        .some((combo) => typed.every((key) => combo.toLowerCase().split('+').includes(key)));
+}

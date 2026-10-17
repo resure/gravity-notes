@@ -4,6 +4,8 @@
     gap: 16px;
     /* The dialog has no footer, so give the last group a little breathing room from the edge. */
     padding-bottom: 16px;
+    /* Filtering shortens the list; a fixed height keeps the centred dialog from jumping as you type. */
+    height: min(560px, 70vh);
 }
 
 .shortcuts-dialog__group {
@@ -17,4 +19,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 24px;
+}
+
+/* Stays put above the groups while they scroll under it, covering the gap above it too. */
+.shortcuts-dialog__filter {
+    position: sticky;
+    top: -12px;
+    z-index: 1;
+    margin-top: -12px;
+    padding: 12px 0 4px;
+    background: var(--g-color-base-modal);
 }
