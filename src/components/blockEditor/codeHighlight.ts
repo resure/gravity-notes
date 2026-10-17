@@ -1,4 +1,79 @@
-import hljs from 'highlight.js';
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import c from 'highlight.js/lib/languages/c';
+import cpp from 'highlight.js/lib/languages/cpp';
+import csharp from 'highlight.js/lib/languages/csharp';
+import css from 'highlight.js/lib/languages/css';
+import diff from 'highlight.js/lib/languages/diff';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import go from 'highlight.js/lib/languages/go';
+import graphql from 'highlight.js/lib/languages/graphql';
+import java from 'highlight.js/lib/languages/java';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import kotlin from 'highlight.js/lib/languages/kotlin';
+import lua from 'highlight.js/lib/languages/lua';
+import markdown from 'highlight.js/lib/languages/markdown';
+import php from 'highlight.js/lib/languages/php';
+import python from 'highlight.js/lib/languages/python';
+import ruby from 'highlight.js/lib/languages/ruby';
+import rust from 'highlight.js/lib/languages/rust';
+import scss from 'highlight.js/lib/languages/scss';
+import sql from 'highlight.js/lib/languages/sql';
+import swift from 'highlight.js/lib/languages/swift';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
+import yaml from 'highlight.js/lib/languages/yaml';
+
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('c', c);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('csharp', csharp);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('diff', diff);
+hljs.registerLanguage('dockerfile', dockerfile);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('graphql', graphql);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('kotlin', kotlin);
+hljs.registerLanguage('lua', lua);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('php', php);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('scss', scss);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('swift', swift);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('yaml', yaml);
+
+/**
+ * The full highlight.js build, loaded only when a fence names a language the picker's short list
+ * doesn't cover (`jsonc`, `nix`, …). It preserves the colouring the app had when it shipped the
+ * whole package eagerly, while keeping ~1 MB of grammars out of the startup bundle: a note with
+ * only the picker's languages never fetches this chunk.
+ *
+ * It is a SEPARATE instance (the full build auto-registers every grammar), so `tokenize` routes a
+ * language the core instance doesn't know to it rather than trying to copy definitions across.
+ */
+let fullHljs: typeof hljs | null = null;
+let fullLanguages: Promise<void> | null = null;
+function loadFullLanguages(): Promise<void> {
+    if (!fullLanguages) {
+        fullLanguages = import('highlight.js')
+            .then((module) => {
+                fullHljs = module.default ?? module;
+            })
+            .catch(() => {
+                // No fallback pack: unknown fences simply stay plain text.
+            });
+    }
+    return fullLanguages;
+}
 
 // Code blocks are coloured with the CSS Custom Highlight API: ranges painted over the text, so the
 // editable element's DOM, the caret and what is serialized are never touched. Token groups follow
@@ -83,10 +158,15 @@ function textModel(root: HTMLElement): {text: string; nodes: {node: Text; start:
 const MAX_HIGHLIGHT_CHARS = 100_000;
 
 export function tokenize(text: string, language: string | undefined): Token[] {
-    if (text.length > MAX_HIGHLIGHT_CHARS || !language || !hljs.getLanguage(language)) return [];
+    if (text.length > MAX_HIGHLIGHT_CHARS || !language) return [];
+    // The eager core covers the picker's list; anything else routes to the lazily-loaded full
+    // build (loaded by scheduleCodeHighlight before it re-schedules the block).
+    let highlighter: typeof hljs | null = hljs.getLanguage(language) ? hljs : null;
+    if (!highlighter && fullHljs?.getLanguage(language)) highlighter = fullHljs;
+    if (!highlighter) return [];
     let html: string;
     try {
-        html = hljs.highlight(text, {language, ignoreIllegals: true}).value;
+        html = highlighter.highlight(text, {language, ignoreIllegals: true}).value;
     } catch {
         return [];
     }
@@ -196,6 +276,16 @@ export function scheduleCodeHighlight(root: HTMLElement, language: string | unde
     if (!supported()) return;
     window.clearTimeout(delayed.get(root));
     delayed.delete(root);
+    // A language outside the eager set: paint it plain now and re-colour once the fallback
+    // grammars land. `loadFullLanguages` is memoized and resolves even on failure, so a fence
+    // whose language highlight.js genuinely lacks settles as plain text instead of looping.
+    if (language && !hljs.getLanguage(language)) {
+        void loadFullLanguages().then(() => {
+            if (root.isConnected) scheduleCodeHighlight(root, language);
+        });
+        clearCodeHighlight(root);
+        return;
+    }
     const enqueue = () => {
         delayed.delete(root);
         pending.set(root, language);

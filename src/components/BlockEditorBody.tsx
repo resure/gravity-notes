@@ -15,7 +15,6 @@ import {isRoundTripStable} from '../markdown';
 import type {Note, NoteMeta} from '../storage/types';
 
 import {EditorToolbar} from './EditorToolbar';
-import {NotePreview} from './NotePreview';
 import {type SourceHandle, TextareaSource} from './SourceSurface';
 import BlockEditor, {
     type EditorCaret,
@@ -32,6 +31,11 @@ const loadSourceEditor = () => import('./SourceEditor');
 // A chunk that fails to load (offline, or a web deploy replaced it) keeps the textarea rather than
 // taking the workspace down with it.
 const SourceEditor = lazy(() => loadSourceEditor().catch(() => ({default: TextareaSource})));
+// Read-only preview is its own chunk: it is the only reason `@diplodoc/transform` (and its
+// cheerio/parse5/postcss stack) would otherwise sit in the startup bundle. Only ⌘⇧P renders it.
+const NotePreview = lazy(() =>
+    import('./NotePreview').then((module) => ({default: module.NotePreview})),
+);
 // Lazy, so it arrives after the render a test asserts on; tests drive the textarea fallback instead.
 const CODEMIRROR = import.meta.env.MODE !== 'test';
 
@@ -385,7 +389,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             };
             return (
                 <>
-                    {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
+                    {preview ? (
+                        <Suspense fallback={null}>
+                            <NotePreview ref={previewRef} markup={bufferRef.current} />
+                        </Suspense>
+                    ) : null}
                     <div
                         ref={rootRef}
                         className="block-editor-source"
@@ -421,7 +429,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         // textarea can rewrite the buffer, and the editor only reads `value` at mount.
         return (
             <>
-                {preview ? <NotePreview ref={previewRef} markup={bufferRef.current} /> : null}
+                {preview ? (
+                    <Suspense fallback={null}>
+                        <NotePreview ref={previewRef} markup={bufferRef.current} />
+                    </Suspense>
+                ) : null}
                 {showToolbar && !preview ? (
                     <EditorToolbar
                         editorRef={editorRef}

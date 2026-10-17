@@ -474,7 +474,9 @@ Key modules:
   otherwise occasionally leaves a stale paint of the caret line behind after a swap/resize (a ghost
   "doubled" line) — and widens `--editor-gutter` to 28px for the block editor's drag handle) with
   `NoteTitle` and
-  `NotePreview` (read-only render via `@diplodoc/transform` — deliberately a WIDER grammar than the
+  `NotePreview` (read-only render via `@diplodoc/transform`, loaded as a LAZY chunk with
+  `UpdateDialog` so that renderer stack (cheerio/parse5/postcss/markdown-it) never enters the
+  startup bundle — deliberately a WIDER grammar than the
   block editor's own parser, since the notes blocks can't hold are exactly the ones a preview must
   get right; linkify with fuzzy matching OFF (`.md` is a real TLD, so fuzzy would turn a `Notes.md`
   mention into a link); every link click routes through `openExternalUrl` instead of navigating the
@@ -507,8 +509,10 @@ Key modules:
   `openInNewWindow(activeWorkspaceId)` (fallback `focus_main_window` when no workspace is mounted —
   bootstrapping, or parked on the gate).
 - `src/main.tsx` — app-shell stylesheet imports, in cascade order (the one file where `import/order`
-  is off). The YFM content styles come straight from `@diplodoc/transform`; the small `--yfm-*`
-  variable maps that used to arrive with `@gravity-ui/markdown-editor` are vendored in
+  is off). The YFM content styles come straight from `@diplodoc/transform` via
+  `components/yfmStyles.ts`, imported by the LAZY `NotePreview`/`UpdateDialog` chunks rather than
+  here — they're `.yfm`-scoped, so loading them on demand changes no cascade outcome. The small
+  `--yfm-*` variable maps that used to arrive with `@gravity-ui/markdown-editor` are vendored in
   `src/yfm-tokens.css`.
 
 ## Conventions

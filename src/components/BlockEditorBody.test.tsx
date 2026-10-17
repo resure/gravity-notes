@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {fireEvent, render} from '@testing-library/react';
+import {fireEvent, render, waitFor} from '@testing-library/react';
 import {act} from 'react-dom/test-utils';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -13,29 +13,37 @@ function note(id: string, content: string): Note {
 }
 
 describe('BlockEditorBody — the raw-Markdown escape hatch', () => {
-    it.each([true, false])('previews the live source buffer (forced source: %s)', (forceSource) => {
-        const ref = createRef<BlockEditorBodyHandle>();
-        const props = {
-            note: note('A.md', 'Original'),
-            sessionId: 1,
-            forceSource,
-            onChange: vi.fn(),
-            onUploadFile: async () => '',
-            onOpenWikiLink: () => {},
-            wikiNotes: [],
-        };
-        const {rerender} = render(<BlockEditorBody ref={ref} {...props} preview={false} />);
-        if (!forceSource) act(() => ref.current!.toggleMode());
-        const textarea = document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!;
-        fireEvent.change(textarea, {target: {value: '# Unsaved title'}});
-        rerender(<BlockEditorBody ref={ref} {...props} preview />);
-        expect(document.querySelector('.note-preview h1')?.textContent).toContain('Unsaved title');
-        expect(textarea).not.toBeVisible();
-        rerender(<BlockEditorBody ref={ref} {...props} preview={false} />);
-        expect(document.querySelector('.block-editor-markup')).toBe(textarea);
-        expect(textarea.value).toBe('# Unsaved title');
-        expect(textarea).toBeVisible();
-    });
+    it.each([true, false])(
+        'previews the live source buffer (forced source: %s)',
+        async (forceSource) => {
+            const ref = createRef<BlockEditorBodyHandle>();
+            const props = {
+                note: note('A.md', 'Original'),
+                sessionId: 1,
+                forceSource,
+                onChange: vi.fn(),
+                onUploadFile: async () => '',
+                onOpenWikiLink: () => {},
+                wikiNotes: [],
+            };
+            const {rerender} = render(<BlockEditorBody ref={ref} {...props} preview={false} />);
+            if (!forceSource) act(() => ref.current!.toggleMode());
+            const textarea = document.querySelector<HTMLTextAreaElement>('.block-editor-markup')!;
+            fireEvent.change(textarea, {target: {value: '# Unsaved title'}});
+            rerender(<BlockEditorBody ref={ref} {...props} preview />);
+            // The preview is a lazy chunk — wait for it to resolve before asserting.
+            await waitFor(() =>
+                expect(document.querySelector('.note-preview h1')?.textContent).toContain(
+                    'Unsaved title',
+                ),
+            );
+            expect(textarea).not.toBeVisible();
+            rerender(<BlockEditorBody ref={ref} {...props} preview={false} />);
+            expect(document.querySelector('.block-editor-markup')).toBe(textarea);
+            expect(textarea.value).toBe('# Unsaved title');
+            expect(textarea).toBeVisible();
+        },
+    );
     /**
      * The pane is not keyed, so this component (and its ⌘⇧; mode flag) survives a note switch. The
      * textarea is uncontrolled, and once the user has typed in it the browser sets its dirty-value
@@ -308,7 +316,7 @@ describe('BlockEditorBody — preview keeps the editor alive', () => {
         expect(document.querySelector('.gn-block-editor .content')).toBe(before);
     });
 
-    it('shows the preview and hides the editor while previewing', () => {
+    it('shows the preview and hides the editor while previewing', async () => {
         const ref = createRef<BlockEditorBodyHandle>();
         render(
             <BlockEditorBody
@@ -320,9 +328,9 @@ describe('BlockEditorBody — preview keeps the editor alive', () => {
                 {...props}
             />,
         );
+        await waitFor(() => expect(document.querySelector('.note-preview')).not.toBeNull());
         const hidden = document.querySelector<HTMLElement>('.gn-block-editor')?.parentElement;
         expect(hidden?.style.display).toBe('none');
-        expect(document.querySelector('.note-preview')).not.toBeNull();
     });
 
     /**
@@ -454,7 +462,7 @@ describe('BlockEditorBody — the end of the note', () => {
 });
 
 describe('BlockEditorBody — focus while previewing', () => {
-    it('focuses the preview surface, not the hidden editor', () => {
+    it('focuses the preview surface, not the hidden editor', async () => {
         const ref = createRef<BlockEditorBodyHandle>();
         render(
             <BlockEditorBody
@@ -468,6 +476,7 @@ describe('BlockEditorBody — focus while previewing', () => {
                 wikiNotes={[]}
             />,
         );
+        await waitFor(() => expect(document.querySelector('.note-preview')).not.toBeNull());
         act(() => ref.current!.focus());
         // The editor is mounted behind the preview so it keeps its undo history — but it is
         // hidden, and a hidden element cannot take focus, so this used to do nothing at all and

@@ -1,4 +1,13 @@
-import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {
+    Suspense,
+    lazy,
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import type {CSSProperties} from 'react';
 
 import {Eye} from '@gravity-ui/icons';
@@ -47,11 +56,16 @@ import {SettingsDialog} from './SettingsDialog';
 import {ShortcutsDialog} from './ShortcutsDialog';
 import {TopBar} from './TopBar';
 import {TrashDialog} from './TrashDialog';
-import {UpdateDialog} from './UpdateDialog';
 import {WorkspaceSwitcherDialog} from './WorkspaceSwitcherDialog';
 import {type ThemePref} from './theme';
 
 import './Workspace.css';
+
+// UpdateDialog imports `@diplodoc/transform` (release notes are Markdown). Lazy so that stack —
+// shared with NotePreview — stays out of the startup bundle until the sheet is actually opened.
+const UpdateDialog = lazy(() =>
+    import('./UpdateDialog').then((module) => ({default: module.UpdateDialog})),
+);
 
 interface WorkspaceProps {
     store: NoteStore;
@@ -1795,11 +1809,15 @@ export function Workspace({
 
                 <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
-                <UpdateDialog
-                    open={updateDialogOpen}
-                    updater={updater}
-                    onClose={() => setUpdateDialogOpen(false)}
-                />
+                {updateDialogOpen ? (
+                    <Suspense fallback={null}>
+                        <UpdateDialog
+                            open
+                            updater={updater}
+                            onClose={() => setUpdateDialogOpen(false)}
+                        />
+                    </Suspense>
+                ) : null}
 
                 <AttachmentsDialog
                     open={attachmentsOpen}

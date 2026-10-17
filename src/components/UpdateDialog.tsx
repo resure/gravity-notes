@@ -5,6 +5,8 @@ import {Dialog, Loader, Progress, Text} from '@gravity-ui/uikit';
 
 import type {AppUpdater, UpdaterStatus} from '../hooks/useAppUpdater';
 
+import './yfmStyles';
+
 import './UpdateDialog.css';
 
 export interface UpdateDialogProps {

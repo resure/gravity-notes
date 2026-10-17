@@ -1,7 +1,8 @@
 /* YFM variable maps for the read-only preview (NotePreview, UpdateDialog's release notes).
    ─────────────────────────────────────────────────────────────────────────────────────────────
    The preview renders through `@diplodoc/transform`, whose stylesheet (`dist/css/base.css` +
-   `_yfm-only.css`, imported in main.tsx) styles `.yfm` content but leaves every colour as a
+   `_yfm-only.css`, imported by the lazy preview/update chunks — see
+   `components/yfmStyles.ts`) styles `.yfm` content but leaves every colour as a
    `--yfm-color-*` variable for the host to fill in.
 
    Those maps used to arrive with `@gravity-ui/markdown-editor`'s stylesheets — nine imports that
