@@ -194,7 +194,7 @@ const COLORLESS_NOUN: Partial<Record<BlockType, string>> = {
     image: 'image',
 };
 
-/** The browser's file picker, as a promise; an empty list when cancelled. */
+/** The browser's file picker, as a promise; null when cancelled. */
 function pickFiles(accept: string): Promise<FileList | null> {
     return new Promise((resolve) => {
         const input = document.createElement('input');

@@ -47,16 +47,6 @@ export function selectionRoots(blocks: readonly Block[], ids: ReadonlySet<string
     return roots;
 }
 
-/**
- * Restore the depth invariant: the first block sits at 0, and no block is more than one level
- * deeper than the one before it.
- *
- * Structural operations move subtrees around VERBATIM — that is what keeps a delete or a paste from
- * re-indenting what it carries — so any of them can leave a block without the parent its depth
- * implies. Markdown has no way to write that: `blocksToMarkdown` indents from the depth alone, so
- * the file comes back one level flatter than the screen and the two disagree until the note is
- * reopened. Running this afterwards means the screen shows what the file will say.
- */
 export interface ListNumber {
     ordinal: number;
     /** Whether the item opens its run, the one place `listStart` is read. */
@@ -94,6 +84,17 @@ export function carryListStarts(previous: readonly Block[], next: Block[]): Bloc
     for (let index = 0; index < previous.length; index++) {
         const head = previous[index];
         if (head.type !== 'numbered' || (head.listStart ?? 1) === 1) continue;
+        // Still in place, still numbered, with the same block before it: nothing can have taken
+        // its place as the run's opener. That is every keystroke typed into a list.
+        const same = next[index];
+        if (
+            same?.id === head.id &&
+            same.type === 'numbered' &&
+            same.depth === head.depth &&
+            (index === 0 || next[index - 1] === previous[index - 1])
+        ) {
+            continue;
+        }
         before ??= listNumbers(previous);
         after ??= listNumbers(next);
         if (!before.get(head.id)?.first || after.get(head.id)?.first) continue;
@@ -111,6 +112,16 @@ export function carryListStarts(previous: readonly Block[], next: Block[]): Bloc
     );
 }
 
+/**
+ * Restore the depth invariant: the first block sits at 0, and no block is more than one level
+ * deeper than the one before it.
+ *
+ * Structural operations move subtrees around VERBATIM — that is what keeps a delete or a paste from
+ * re-indenting what it carries — so any of them can leave a block without the parent its depth
+ * implies. Markdown has no way to write that: `blocksToMarkdown` indents from the depth alone, so
+ * the file comes back one level flatter than the screen and the two disagree until the note is
+ * reopened. Running this afterwards means the screen shows what the file will say.
+ */
 export function normalizeDepths(blocks: readonly Block[]): Block[] {
     // The ancestor chain of the block being emitted, as (depth as written → depth being written).
     // Renumbering off the chain rather than off the previous block alone is what keeps SIBLINGS

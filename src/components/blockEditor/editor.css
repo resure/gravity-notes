@@ -1124,6 +1124,18 @@
     background: rgba(var(--n-ink), 0.12);
 }
 
+/* The narrow layout's 16px gutter is too tight for the 18px handle, which touch screens show
+   permanently: a slimmer one fits inside it instead of hanging off the pane edge. */
+@media (max-width: 720px) {
+    .gn-block-editor .handle-slot_left {
+        left: -16px;
+    }
+
+    .gn-block-editor .drag-btn {
+        width: 14px;
+    }
+}
+
 @media (max-width: 720px) {
     /* The narrow page has no right margin to hold the add-column button. */
     .gn-block-editor .table-block-shell {
