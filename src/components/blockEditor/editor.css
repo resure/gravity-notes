@@ -379,6 +379,11 @@
     opacity: 1;
 }
 
+/* While typing, only the block with the caret keeps its handle (see KEYBOARD_CLASS in Editor.tsx). */
+.gn-block-editor.gn-block-editor_keyboard .block:hover:not(:focus-within) .handles {
+    opacity: 0;
+}
+
 .gn-block-editor .handle-btn {
     display: flex;
     align-items: center;

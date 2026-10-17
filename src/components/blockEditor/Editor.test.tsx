@@ -2172,6 +2172,36 @@ describe('selection, clipboard and table edges', () => {
     });
 });
 
+describe('hover handles', () => {
+    it('a key press hides them until the mouse really moves', () => {
+        renderEditor('one\n\ntwo');
+        const root = document.querySelector<HTMLElement>('.gn-block-editor')!;
+        const first = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            fireEvent.mouseMove(document, {clientX: 10, clientY: 10});
+            fireEvent.keyDown(first, {key: 'ArrowDown'});
+        });
+        expect(root).toHaveClass('gn-block-editor_keyboard');
+        act(() => {
+            fireEvent.mouseMove(document, {clientX: 10, clientY: 10});
+        });
+        expect(root).toHaveClass('gn-block-editor_keyboard');
+        act(() => {
+            fireEvent.mouseMove(document, {clientX: 12, clientY: 10});
+        });
+        expect(root).not.toHaveClass('gn-block-editor_keyboard');
+    });
+
+    it('a bare modifier does not hide them', () => {
+        renderEditor('one');
+        const root = document.querySelector<HTMLElement>('.gn-block-editor')!;
+        act(() => {
+            fireEvent.keyDown(document.querySelector<HTMLElement>('.content')!, {key: 'Meta'});
+        });
+        expect(root).not.toHaveClass('gn-block-editor_keyboard');
+    });
+});
+
 describe('block menu', () => {
     it('Add block below inserts after the block’s children and opens the slash menu', () => {
         renderEditor('- a\n  - b\n\nc');

@@ -151,6 +151,8 @@ const BLOCK_COLOR_SET = new Set<BlockColor>(BLOCK_COLORS);
  * `editor.css`.
  */
 const MOD_PRESSED_CLASS = 'gn-block-editor_mod-pressed';
+const KEYBOARD_CLASS = 'gn-block-editor_keyboard';
+const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Alt', 'Shift', 'CapsLock']);
 
 const LIST_TYPES: BlockType[] = ['bulleted', 'numbered', 'todo'];
 const RESETS_ON_EMPTY_ENTER: BlockType[] = [
@@ -2804,6 +2806,32 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             document.removeEventListener('keydown', sync, true);
             document.removeEventListener('keyup', sync, true);
             window.removeEventListener('blur', clear);
+        };
+    }, []);
+
+    // A key pressed in the editor means the hand left the mouse: the block under the resting pointer
+    // drops its hover handle until the pointer actually moves again (a re-layout under a still
+    // pointer can fire `mousemove` at the same coordinates, so those don't count).
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return undefined;
+        let last: {x: number; y: number} | null = null;
+        const onKeyDown = (event: globalThis.KeyboardEvent) => {
+            if (MODIFIER_KEYS.has(event.key)) return;
+            if (event.target instanceof Node && root.contains(event.target)) {
+                root.classList.add(KEYBOARD_CLASS);
+            }
+        };
+        const onMouseMove = (event: globalThis.MouseEvent) => {
+            const moved = !last || last.x !== event.clientX || last.y !== event.clientY;
+            last = {x: event.clientX, y: event.clientY};
+            if (moved) root.classList.remove(KEYBOARD_CLASS);
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+        document.addEventListener('mousemove', onMouseMove, true);
+        return () => {
+            document.removeEventListener('keydown', onKeyDown, true);
+            document.removeEventListener('mousemove', onMouseMove, true);
         };
     }, []);
 
