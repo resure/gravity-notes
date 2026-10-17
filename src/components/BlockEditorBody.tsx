@@ -14,6 +14,8 @@ import type {Note, NoteMeta} from '../storage/types';
 import {EditorToolbar} from './EditorToolbar';
 import {NotePreview} from './NotePreview';
 import BlockEditor, {type EditorCaret, type EditorHandle} from './blockEditor/Editor';
+import {readScrollAnchor, restoreScrollAnchor} from './blockEditor/scrollAnchoring';
+import type {ScrollAnchor} from './blockEditor/scrollAnchoring';
 
 /**
  * The Notion-style block editor as `EditorPane`'s note body. It implements the imperative contract
@@ -73,6 +75,7 @@ export interface BlockEditorBodyProps {
 /** Where the reader was in a note, restored when they come back to it. */
 interface ViewState {
     scrollTop: number;
+    anchor: ScrollAnchor | null;
     caret: EditorCaret | null;
 }
 
@@ -158,6 +161,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         if (sessionRef.current !== sessionId) {
             viewStateByIdRef.current.set(noteIdRef.current, {
                 scrollTop: scrollContainerRef?.current?.scrollTop ?? 0,
+                anchor: readScrollAnchor(rootRef.current, scrollContainerRef?.current),
                 caret: editorRef.current?.getCaret() ?? null,
             });
             sessionRef.current = sessionId;
@@ -182,7 +186,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         // editor itself (it owns focus), from `initialCaret` below.
         useLayoutEffect(() => {
             const container = scrollContainerRef?.current;
-            if (container) container.scrollTop = restoreRef.current?.scrollTop ?? 0;
+            if (!container) return;
+            const saved = restoreRef.current;
+            if (saved?.anchor && restoreScrollAnchor(rootRef.current, container, saved.anchor))
+                return;
+            container.scrollTop = saved?.scrollTop ?? 0;
             // eslint-disable-next-line react-hooks/exhaustive-deps -- once per editing session
         }, [sessionId]);
 

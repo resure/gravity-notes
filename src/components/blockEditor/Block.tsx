@@ -7,7 +7,7 @@ import TableBlock from './TableBlock';
 import {blockLabel} from './blockConfig';
 import {calloutIcon, calloutLabel} from './callouts';
 import {setCaret, stripZeroWidth} from './caret';
-import {CheckIcon, DragIcon} from './icons';
+import {CheckIcon} from './icons';
 import {languageLabel} from './languages';
 import type {Block as BlockData, ImageData} from './types';
 
@@ -75,6 +75,7 @@ interface BlockProps {
     placeholder?: string;
     /** The slash or `[[` menu this block is typing into, and its highlighted row, for assistive tech. */
     menu?: {listbox: string; option: string};
+    handle?: boolean;
     handlers: BlockHandlers;
 }
 
@@ -86,6 +87,7 @@ function Block({
     dropEdge,
     placeholder,
     menu,
+    handle = true,
     handlers,
 }: BlockProps) {
     const contentRef = useRef<HTMLDivElement | null>(null);
@@ -369,20 +371,20 @@ function Block({
             onDragOver={(e) => handlers.onDragOver(e, block.id)}
             onDrop={(e) => handlers.onDrop(e, block.id)}
         >
-            <div className="handles handle-slot handle-slot_left" contentEditable={false}>
-                <button
-                    type="button"
-                    className="handle-btn drag-btn"
-                    title="Drag to move. Click to open menu"
-                    tabIndex={0}
-                    draggable
-                    onClick={(e) => handlers.onHandleClick(e, block.id)}
-                    onDragStart={(e) => handlers.onDragStart(e, block.id)}
-                    onDragEnd={handlers.onDragEnd}
-                >
-                    <DragIcon />
-                </button>
-            </div>
+            {handle && (
+                <div className="handles handle-slot handle-slot_left" contentEditable={false}>
+                    <button
+                        type="button"
+                        className="handle-btn drag-btn"
+                        title="Drag to move. Click to open menu"
+                        tabIndex={0}
+                        draggable
+                        onClick={(e) => handlers.onHandleClick(e, block.id)}
+                        onDragStart={(e) => handlers.onDragStart(e, block.id)}
+                        onDragEnd={handlers.onDragEnd}
+                    />
+                </div>
+            )}
             <div className="block-body">
                 {/* Keyed by type: the editable element's children are written by hand, not by React,
                     so a turn-into that swaps it for a wrapper `div` (quote, toggle, heading row) must

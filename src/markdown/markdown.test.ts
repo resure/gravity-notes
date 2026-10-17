@@ -878,3 +878,20 @@ describe('regressions: crashes and drops on the save path', () => {
         expect(() => blocksToMarkdown([table])).not.toThrow();
     });
 });
+
+describe('blocksToMarkdown — reused lines', () => {
+    it('re-renders a block whose context changed, not just its identity', () => {
+        const blocks = markdownToBlocks('1. one\n2. two\n\n- three');
+        expect(blocksToMarkdown(blocks)).toBe('1. one\n2. two\n\n- three');
+        expect(blocksToMarkdown(blocks.slice(1))).toBe('1. two\n\n- three');
+        const nested = blocks.map((block, at) => (at === 2 ? {...block, depth: 1} : block));
+        expect(blocksToMarkdown(nested)).toBe('1. one\n2. two\n\n  - three');
+    });
+
+    it('notices a block changed by assignment rather than replaced', () => {
+        const blocks = markdownToBlocks('alpha\n\nbeta');
+        expect(blocksToMarkdown(blocks)).toBe('alpha\n\nbeta');
+        blocks[1].html = 'gamma';
+        expect(blocksToMarkdown(blocks)).toBe('alpha\n\ngamma');
+    });
+});

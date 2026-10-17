@@ -19,17 +19,6 @@ export const PlusIcon = ({size = 16}: IconProps) => (
     </svg>
 );
 
-export const DragIcon = ({size = 14}: IconProps) => (
-    <svg width={size} height={size + 4} viewBox="0 0 10 14" fill="currentColor" stroke="none">
-        <circle cx="3" cy="2.2" r="1.3" />
-        <circle cx="7" cy="2.2" r="1.3" />
-        <circle cx="3" cy="7" r="1.3" />
-        <circle cx="7" cy="7" r="1.3" />
-        <circle cx="3" cy="11.8" r="1.3" />
-        <circle cx="7" cy="11.8" r="1.3" />
-    </svg>
-);
-
 export const CheckIcon = ({size = 12}: IconProps) => (
     <svg
         width={size}

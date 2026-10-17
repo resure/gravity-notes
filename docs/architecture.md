@@ -162,6 +162,16 @@ keystrokes flow into a ref + a 500 ms autosave timer, so the editor instance is 
 mid-typing. Conflicts (a note changing underneath you) are detected by mtime and resolved through
 a banner: reload / keep mine / save a copy / discard.
 
+The block editor re-serializes the whole note on every keystroke, but `blocksToMarkdown` reuses
+each unchanged block's lines (a `WeakMap` keyed by block, checked against a shallow snapshot), so
+only the edited block is re-rendered to Markdown. A note of 200+ blocks also switches the editor to
+a **long-note mode**: off-screen block bodies get `content-visibility: auto` (skipping their layout
+and paint), drag handles are mounted only on the hovered/focused/selected block, and per-note
+scroll is restored by block anchor rather than raw `scrollTop`, since skipped blocks are laid out
+at estimated heights. WebKit has no CSS scroll anchoring, so there a `ResizeObserver` pays back
+height changes above the viewport by hand (`scrollAnchoring.ts`). Measured on a 1 MB note against
+the previous ProseMirror editor: open ≈650 ms vs ≈900 ms, typing frame ≈35 ms vs ≈50–80 ms.
+
 ## The desktop shell
 
 [`src-tauri/`](../src-tauri) is a thin Tauri 2 shell: the `notes_*`/`attachment_*` filesystem

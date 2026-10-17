@@ -79,9 +79,14 @@ describe('link popup', () => {
         });
         const input = screen.getByRole('textbox', {name: 'Link URL'});
         let notPrevented = true;
-        act(() => {
-            notPrevented = fireEvent.keyDown(input, {key: 'Enter'});
-        });
+        Object.defineProperty(document, 'execCommand', {value: () => true, configurable: true});
+        try {
+            act(() => {
+                notPrevented = fireEvent.keyDown(input, {key: 'Enter'});
+            });
+        } finally {
+            delete (document as Partial<Document>).execCommand;
+        }
         expect(notPrevented).toBe(false);
     });
 

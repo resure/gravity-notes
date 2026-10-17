@@ -122,10 +122,44 @@ function serializeRange(blocks: Block[], from: number, to: number, baseDepth: nu
             continue;
         }
 
-        for (const line of blockLines(block, indent, ordinals.get(depth) ?? 1)) lines.push(line);
+        for (const line of cachedBlockLines(block, indent, ordinals.get(depth) ?? 1))
+            lines.push(line);
         previous = block;
     }
     return lines;
+}
+
+interface CachedLines {
+    snapshot: Block;
+    indent: string;
+    ordinal: number;
+    lines: string[];
+}
+
+// The editor re-serializes the whole document on every keystroke while only the edited block gets
+// a new identity, so every other block's lines can be reused. Validated against a shallow snapshot
+// rather than trusted on identity alone: a few paths still build a block by assignment.
+const lineCache = new WeakMap<Block, CachedLines>();
+
+function cachedBlockLines(block: Block, indent: string, ordinal: number): string[] {
+    const hit = lineCache.get(block);
+    if (
+        hit &&
+        hit.indent === indent &&
+        hit.ordinal === ordinal &&
+        shallowEqual(hit.snapshot, block)
+    ) {
+        return hit.lines;
+    }
+    const lines = blockLines(block, indent, ordinal);
+    lineCache.set(block, {snapshot: {...block}, indent, ordinal, lines});
+    return lines;
+}
+
+function shallowEqual(a: Block, b: Block): boolean {
+    const keys = Object.keys(a) as (keyof Block)[];
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((key) => a[key] === b[key]);
 }
 
 function yfmLines(

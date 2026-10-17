@@ -222,6 +222,18 @@
     margin-block: -2px;
 }
 
+/* A long note skips layout and paint for the blocks off screen. On the body, not the block: this
+   containment clips paint, and the drag handle sits outside the body. Tables and images draw their
+   controls past their own edges, so they stay out. */
+.gn-block-editor_long .block:not([data-type='table'], [data-type='image']) > .block-body {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 28px;
+}
+
+.gn-block-editor_long .block[data-type='code'] > .block-body {
+    contain-intrinsic-block-size: auto 160px;
+}
+
 .gn-block-editor .content {
     padding: var(--gn-pad-y) 2px;
     outline: none;
@@ -379,6 +391,13 @@
     opacity: 1;
 }
 
+/* A long note mounts the handle on hover, and a new element has no previous opacity to fade from. */
+@starting-style {
+    .gn-block-editor .block:hover .handles {
+        opacity: 0;
+    }
+}
+
 /* While typing, only the block with the caret keeps its handle (see KEYBOARD_CLASS in Editor.tsx). */
 .gn-block-editor.gn-block-editor_keyboard .block:hover:not(:focus-within) .handles {
     opacity: 0;
@@ -410,6 +429,17 @@
     width: 18px;
     height: 24px;
     cursor: grab;
+}
+
+/* Drawn by a mask rather than an inline SVG: every block carries one, and the SVG's seven nodes
+   were most of a long note's DOM. */
+.gn-block-editor .drag-btn::before {
+    content: '';
+    width: 14px;
+    height: 18px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 14'%3E%3Ccircle cx='3' cy='2.2' r='1.3'/%3E%3Ccircle cx='7' cy='2.2' r='1.3'/%3E%3Ccircle cx='3' cy='7' r='1.3'/%3E%3Ccircle cx='7' cy='7' r='1.3'/%3E%3Ccircle cx='3' cy='11.8' r='1.3'/%3E%3Ccircle cx='7' cy='11.8' r='1.3'/%3E%3C/svg%3E")
+        center / contain no-repeat;
 }
 
 .gn-block-editor .drag-btn:active {

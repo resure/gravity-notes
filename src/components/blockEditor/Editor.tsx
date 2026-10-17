@@ -10,6 +10,7 @@ import {
 import type {
     ClipboardEvent,
     DragEvent,
+    FocusEvent,
     KeyboardEvent,
     MouseEvent,
     PointerEvent as ReactPointerEvent,
@@ -92,6 +93,7 @@ import {
     setTableCell,
 } from './documentModel';
 import {LANGUAGE_ITEMS} from './languages';
+import {LONG_DOCUMENT_BLOCKS, useScrollAnchoring} from './scrollAnchoring';
 import {
     BLOCK_COLORS,
     BLOCK_TYPES,
@@ -917,7 +919,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // editor is rebuilt per note, so this is what makes switching back land where you left off.
         const saved = initialCaret ? blocksRef.current[initialCaret.block] : undefined;
         if (saved && isEditableType(saved.type)) {
-            focusNow(saved.id, initialCaret!.offset);
+            // The host has already put the scroll back where the reader left it.
+            focusNow(saved.id, initialCaret!.offset, true);
             return;
         }
         const target = blocksRef.current.find((block) => isEditableType(block.type));
@@ -1098,10 +1101,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return null;
     };
 
-    const focusNow = (id: string, pos: CaretPos) => {
+    const focusNow = (id: string, pos: CaretPos, preventScroll = false) => {
         const el = refs.current.get(id) ?? tableRefs.current.get(id);
         if (!el) return;
-        el.focus();
+        el.focus({preventScroll});
         setCaret(el, pos);
     };
 
@@ -3522,6 +3525,30 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     }
     const edgeScroller = edgeScrollerRef.current;
 
+    const long = blocks.length >= LONG_DOCUMENT_BLOCKS;
+    useScrollAnchoring(rootRef, scrollContainerRef, long);
+
+    // A long note mounts a drag handle only where one can be seen or used: most of a note's DOM
+    // was handles nobody was pointing at.
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [handleFocusId, setHandleFocusId] = useState<string | null>(null);
+    const handleIds = new Set<string>([...selectedIds, ...draggedIds]);
+    for (const id of [hoveredId, handleFocusId, focusedId, blockMenu?.id])
+        if (id) handleIds.add(id);
+    // Only a block sets it, so crossing the gap between a block and its handle keeps the handle.
+    const onRootMouseOver = (e: MouseEvent<HTMLDivElement>) => {
+        if (!long) return;
+        const id = (e.target as Element).closest<HTMLElement>('.blocks > .block')?.id;
+        if (id && id !== hoveredId) setHoveredId(id);
+    };
+    const onRootFocusChange = (e: FocusEvent<HTMLDivElement>) => {
+        const handleOf = (target: EventTarget | null) =>
+            target instanceof Element && target.closest('.drag-btn')
+                ? (target.closest<HTMLElement>('.blocks > .block')?.id ?? null)
+                : null;
+        setHandleFocusId(e.type === 'focus' ? handleOf(e.target) : handleOf(e.relatedTarget));
+    };
+
     // `dragover` on the document, not on each block: the pointer spends a good part of a drag over
     // the gap below the last block (or over another block's furniture), and those frames are
     // exactly the ones that need to keep scrolling.
@@ -3853,7 +3880,15 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const menuBlock = blockMenu ? findBlock(blockMenu.id) : undefined;
 
     return (
-        <div className="gn-block-editor" ref={rootRef} onClick={onRootClick}>
+        <div
+            className={`gn-block-editor${long ? ' gn-block-editor_long' : ''}`}
+            ref={rootRef}
+            onClick={onRootClick}
+            onMouseOver={onRootMouseOver}
+            onMouseLeave={() => setHoveredId(null)}
+            onFocus={onRootFocusChange}
+            onBlur={onRootFocusChange}
+        >
             <main
                 className="page"
                 onClick={onPageClick}
@@ -3880,6 +3915,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                     blocks.length === 1,
                                 )}
                                 menu={menuFor(b.id)}
+                                handle={!long || handleIds.has(b.id)}
                                 handlers={handlers}
                             />
                         ))}

@@ -2192,6 +2192,34 @@ describe('hover handles', () => {
         expect(root).not.toHaveClass('gn-block-editor_keyboard');
     });
 
+    it('a long note mounts one only where the pointer, the caret or the keyboard is', () => {
+        renderEditor(Array.from({length: 250}, (_, at) => `paragraph ${at}`).join('\n\n'));
+        const blocks = document.querySelectorAll<HTMLElement>('.blocks > .block');
+        const handles = () => document.querySelectorAll('.drag-btn');
+        expect(handles()).toHaveLength(0);
+        act(() => {
+            fireEvent.mouseOver(blocks[10].querySelector('.content')!);
+        });
+        expect(handles()).toHaveLength(1);
+        expect(blocks[10].querySelector('.drag-btn')).not.toBeNull();
+        act(() => {
+            fireEvent.mouseOver(document.querySelector('.blocks')!);
+        });
+        expect(blocks[10].querySelector('.drag-btn')).not.toBeNull();
+        const handle = blocks[10].querySelector<HTMLElement>('.drag-btn')!;
+        act(() => {
+            handle.focus();
+            fireEvent.mouseOver(blocks[20].querySelector('.content')!);
+        });
+        expect(blocks[10].querySelector('.drag-btn')).toBe(handle);
+        expect(blocks[20].querySelector('.drag-btn')).not.toBeNull();
+        act(() => {
+            blocks[30].querySelector<HTMLElement>('.content')!.focus();
+        });
+        expect(blocks[10].querySelector('.drag-btn')).toBeNull();
+        expect(blocks[30].querySelector('.drag-btn')).not.toBeNull();
+    });
+
     it('a bare modifier does not hide them', () => {
         renderEditor('one');
         const root = document.querySelector<HTMLElement>('.gn-block-editor')!;
