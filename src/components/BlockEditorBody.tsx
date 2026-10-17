@@ -13,7 +13,11 @@ import type {Note, NoteMeta} from '../storage/types';
 
 import {EditorToolbar} from './EditorToolbar';
 import {NotePreview} from './NotePreview';
-import BlockEditor, {type EditorCaret, type EditorHandle} from './blockEditor/Editor';
+import BlockEditor, {
+    type EditorCaret,
+    type EditorHandle,
+    type EditorSnapshot,
+} from './blockEditor/Editor';
 import {
     type ScrollAnchor,
     readScrollAnchor,
@@ -80,6 +84,17 @@ interface ViewState {
     scrollTop: number;
     anchor: ScrollAnchor | null;
     caret: EditorCaret | null;
+    // Undo history, so ⌘Z still works after switching away and back.
+    history: EditorSnapshot | null;
+}
+
+// How many notes keep their undo history; each holds whole-document snapshots.
+const HISTORY_NOTES = 10;
+
+// A session resumes only if the note is still exactly what it left behind: an edit made elsewhere
+// since then would make its undo history rewind somebody else's change.
+function resumable(history: EditorSnapshot | null | undefined, content: string) {
+    return history && history.markdown.trim() === content.trim() ? history : null;
 }
 
 /** The first editable block's contentEditable, which is what the caret helpers act on. */
@@ -162,11 +177,19 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         const sessionRef = useRef(sessionId);
         const noteIdRef = useRef(note.id);
         if (sessionRef.current !== sessionId) {
-            viewStateByIdRef.current.set(noteIdRef.current, {
+            const states = viewStateByIdRef.current;
+            states.delete(noteIdRef.current);
+            states.set(noteIdRef.current, {
                 scrollTop: scrollContainerRef?.current?.scrollTop ?? 0,
                 anchor: readScrollAnchor(rootRef.current, scrollContainerRef?.current),
                 caret: editorRef.current?.getCaret() ?? null,
+                history: editorRef.current?.snapshot() ?? null,
             });
+            let kept = 0;
+            for (const [id, state] of [...states].reverse()) {
+                if (state.history && ++kept > HISTORY_NOTES)
+                    states.set(id, {...state, history: null});
+            }
             sessionRef.current = sessionId;
             restoreRef.current = viewStateByIdRef.current.get(note.id) ?? null;
             bufferRef.current = note.content;
@@ -433,6 +456,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                         value={bufferRef.current}
                         autofocus={autofocus}
                         initialCaret={restoreRef.current?.caret ?? null}
+                        resume={resumable(restoreRef.current?.history, bufferRef.current)}
                         notes={wikiNotes}
                         noteId={note.id}
                         onChange={handleChange}

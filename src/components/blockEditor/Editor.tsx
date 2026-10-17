@@ -139,6 +139,14 @@ interface HistoryEntry {
     caret: number;
 }
 
+/** An editing session to resume: the document, its undo/redo stacks, and the Markdown it is. */
+export interface EditorSnapshot {
+    blocks: BlockData[];
+    past: HistoryEntry[];
+    future: HistoryEntry[];
+    markdown: string;
+}
+
 interface SelectionBox {
     left: number;
     top: number;
@@ -573,6 +581,7 @@ export interface EditorHandle {
     insertBlockAtTop(): void;
     /** The caret's current position, or null when focus isn't in an editable block. */
     getCaret(): EditorCaret | null;
+    snapshot(): EditorSnapshot;
 }
 
 export interface EditorProps {
@@ -582,6 +591,8 @@ export interface EditorProps {
     autofocus?: 'body' | 'title' | null;
     /** Where to put the caret when `autofocus` is 'body' — a position saved before a note switch. */
     initialCaret?: EditorCaret | null;
+    /** A session of this same note to pick up instead of parsing `value`; it must serialize to it. */
+    resume?: EditorSnapshot | null;
     /**
      * Every note (id + title), for `[[wiki link]]` resolution: the broken-link styling and the `[[`
      * picker's ranking both read it. Empty is safe — every link then simply renders unbroken.
@@ -632,6 +643,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         value,
         autofocus,
         initialCaret,
+        resume,
         notes = EMPTY_NOTES,
         noteId = '',
         onChange,
@@ -673,7 +685,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     noteIdRef.current = noteId;
 
     const [blocks, setBlockState] = useState<BlockData[]>(() =>
-        documentFromMarkdown(value, decorate),
+        resume
+            ? resume.blocks.map((block) => {
+                  const html = block.html ? decorate(block.html, block.type) : block.html;
+                  return html === block.html ? block : {...block, html};
+              })
+            : documentFromMarkdown(value, decorate),
     );
     const [toast, setToast] = useState<string | null>(null);
     const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -733,8 +750,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const focusReq = useRef<{id: string; pos: CaretPos} | null>(null);
     const openMenuFor = useRef<string | null>(null);
     const pendingSlash = useRef<{blockId: string; anchor: number} | null>(null);
-    const historyPast = useRef<HistoryEntry[]>([]);
-    const historyFuture = useRef<HistoryEntry[]>([]);
+    const historyPast = useRef<HistoryEntry[]>(resume?.past ?? []);
+    const historyFuture = useRef<HistoryEntry[]>(resume?.future ?? []);
     const typingGroup = useRef<{blockId: string; at: number} | null>(null);
     const selectionAnchor = useRef<string | null>(null);
     const selectionFocus = useRef<string | null>(null);
@@ -950,6 +967,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             setBlocks((current) => [block, ...current]);
             focusReq.current = {id: block.id, pos: 'start'};
         },
+        snapshot: () => ({
+            blocks: blocksRef.current,
+            past: [...historyPast.current],
+            future: [...historyFuture.current],
+            markdown: emittedRef.current ?? blocksToMarkdown(blocksRef.current),
+        }),
         getCaret() {
             const active = document.activeElement;
             const el =

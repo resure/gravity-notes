@@ -475,3 +475,62 @@ describe('BlockEditorBody — focus while previewing', () => {
         expect(document.activeElement).toBe(document.querySelector('.note-preview'));
     });
 });
+
+describe('BlockEditorBody — undo survives a note switch', () => {
+    const props = {
+        preview: false,
+        onUploadFile: async () => '',
+        onOpenWikiLink: () => {},
+        wikiNotes: [],
+    };
+
+    function editAndComeBack(backContent: string) {
+        const onChange = vi.fn();
+        const {rerender} = render(
+            <BlockEditorBody
+                note={note('A.md', 'alpha')}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        const block = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            block.textContent = 'alpha edited';
+            block.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(onChange).toHaveBeenLastCalledWith('alpha edited');
+        rerender(
+            <BlockEditorBody
+                note={note('B.md', 'beta')}
+                sessionId={2}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        rerender(
+            <BlockEditorBody
+                note={note('A.md', backContent)}
+                sessionId={3}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        onChange.mockClear();
+        act(() => {
+            fireEvent.keyDown(document.querySelector<HTMLElement>('.content')!, {
+                key: 'z',
+                metaKey: true,
+            });
+        });
+        return onChange;
+    }
+
+    it('undoes an edit made before switching away', () => {
+        expect(editAndComeBack('alpha edited\n')).toHaveBeenLastCalledWith('alpha');
+    });
+
+    it('starts afresh when the note changed elsewhere in the meantime', () => {
+        expect(editAndComeBack('alpha changed elsewhere')).not.toHaveBeenCalled();
+    });
+});
