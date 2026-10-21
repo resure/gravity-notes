@@ -4,6 +4,31 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-10-21
+
+### Added
+
+- **Move several blocks at once** — select a run of blocks and `⌘⌥↑` / `⌘⌥↓` moves them together.
+
+### Changed
+
+- **A quieter drag handle** — smaller, and shown only when the pointer comes near the left edge of
+  a block (or while the block is selected or its menu is open), instead of on every block the mouse
+  crosses. A narrow window keeps a margin left of the handle instead of clipping it.
+- **Selecting several blocks** draws one continuous highlight instead of a stack of rounded pills,
+  with a single handle at the top.
+- **Faster launch and refresh on big folders** — a folder is read in one pass instead of three, on
+  the desktop and the web, and edits made outside the app are picked up without re-reading the whole
+  folder.
+- **A smaller, faster-starting app** — the preview renderer and the full syntax highlighter load
+  only when first needed, and the app holds less memory for images.
+
+### Fixed
+
+- In a narrow window, the ⋯ button's hover highlight flickered and vanished, and the top bar grew
+  taller than in a wide one.
+- Serif text could render basic Latin characters in a fallback font.
+
 ## [0.11.0] - 2026-10-17
 
 ### Added
