@@ -432,4 +432,23 @@ describe('TopBar — narrow panes', () => {
         expect(screen.getByRole('button', {name: 'Back to notes'})).toBeInTheDocument();
         expect(screen.getByRole('button', {name: 'Note appearance'})).toBeInTheDocument();
     });
+
+    it('sizes the bar for touch only under a coarse pointer', () => {
+        const backSize = () =>
+            screen.getByRole('button', {name: 'Back to notes'}).className.match(/size_(\w+)/)?.[1];
+        const {props, view} = setup({mobile: true, mobilePane: 'editor', noteOpen: true});
+        expect(backSize()).toBe('m');
+
+        const original = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            ...original(query),
+            matches: query.includes('pointer: coarse'),
+        })) as typeof window.matchMedia;
+        try {
+            view.rerender(<TopBar {...({...props, query: 'x'} as TopBarProps)} />);
+            expect(backSize()).toBe('l');
+        } finally {
+            window.matchMedia = original;
+        }
+    });
 });

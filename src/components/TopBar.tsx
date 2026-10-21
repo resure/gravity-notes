@@ -203,6 +203,10 @@ export function TopBar({
     onSetNoteAppearance,
     onResetNoteAppearance,
 }: TopBarProps) {
+    // Touch-sized (36px) controls only for a finger: the narrow layout also serves a narrow desktop
+    // window, where they made the bar 8px taller for no reason.
+    const controlSize = mobile && window.matchMedia?.('(pointer: coarse)').matches ? 'l' : 'm';
+
     // The ⋯ "Note appearance" button (right edge) that the popover anchors to; null until it mounts.
     const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLElement | null>(null);
 
@@ -521,7 +525,7 @@ export function TopBar({
             {mobile ? (
                 <Button
                     view="flat"
-                    size="l"
+                    size={controlSize}
                     className={`topbar__back${mobilePane === 'editor' ? '' : ' topbar__back_placeholder'}`}
                     onClick={onMobileBack}
                     aria-label="Back to notes"
@@ -559,11 +563,10 @@ export function TopBar({
             />
             <TextInput
                 className="topbar__search"
-                // Match the mobile editor pane's Back button (size "l", 36px) so the bar is
-                // the SAME height in both panes — otherwise it grew by 8px when a note
-                // opened and the whole header visibly jumped. A 36px field is also a far
-                // better touch target than the 28px default.
-                size={mobile ? 'l' : 'm'}
+                // Match the mobile editor pane's Back button so the bar is the SAME height in
+                // both panes — otherwise it grew by 8px when a note opened and the whole header
+                // visibly jumped.
+                size={controlSize}
                 controlRef={searchInputRef}
                 value={displayValue}
                 onUpdate={onSearchUpdate}
