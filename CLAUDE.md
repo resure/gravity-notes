@@ -391,7 +391,10 @@ Key modules:
   rules still match once the overlay leaves the subtree. The only block furniture is the drag
   handle in the LEFT gutter (adding a block is "Add block below" in its menu) — `.editor-pane`
   widens the shared `--editor-gutter` to 28px to fit it, and the note TITLE reads it too, so title
-  and body keep one left edge; below 720px the gutter drops to 16px. `[[wiki links]]` are authored here: `wikiDecorate.ts`
+  and body keep one left edge at every width. The handle shows only while the pointer is in the
+  gutter beside its block (the slot spans the gutter and the block's height as the hover target),
+  while its menu is open, or on the first block of each run of selected blocks (a run's wash is
+  drawn as one shape). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
   the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per

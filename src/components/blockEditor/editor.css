@@ -40,6 +40,12 @@
 .gn-block-editor {
     position: relative;
     cursor: text;
+    /* Here, not with the palette on `:root`: the theme's background is only defined below `.g-root`. */
+    --n-selection-wash: color-mix(
+        in srgb,
+        rgb(var(--n-accent-rgb)) 14%,
+        var(--g-color-base-background, #fff)
+    );
 }
 
 /* Same gutter as the note title above (the host widens `--editor-gutter` while this editor is
@@ -57,12 +63,6 @@
        their own mono family, as they do in the other engine. */
     font-family: var(--gn-editor-font, inherit);
     font-size: var(--gn-editor-font-size, 16px);
-}
-
-@media (hover: none) {
-    .gn-block-editor .handles {
-        opacity: 1;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -338,8 +338,6 @@
 
 /* ---------- hover handles ---------- */
 
-/* Block furniture sits in the margins on BOTH sides: the drag handle on the left (so the left
-   gutter only has to be as wide as one 18px button) and the add button on the right. */
 /* Margin furniture (drag handle, add button) centres on the block's FIRST LINE, not on a guessed
    pixel height. It used to be `top: 3px` against an 18x24 button, i.e. a centre 15px down — which
    assumed a 24px line box. No editor font has one: sans/mono are 15px x 1.35 = 20.25px and serif is
@@ -352,11 +350,7 @@
 
 .gn-block-editor .handles {
     position: absolute;
-    /* `.content`'s padding-top — where the first line box actually starts. */
-    top: var(--gn-pad-y);
-    height: var(--gn-block-line);
     display: flex;
-    align-items: center;
     gap: 1px;
     opacity: 0;
     transition: opacity 100ms ease-in;
@@ -383,31 +377,55 @@
 }
 
 /* The drag handle lives in the LEFT gutter; adding a block is an item in its menu, so the gutter
-   only has to hold the one 18px button. The pane sizes `--editor-gutter` to fit it (EditorPane.css),
-   and the note title reads the same variable, so title and body keep one left edge. */
+   only has to hold the one 14px button. The pane sizes `--editor-gutter` to fit it (EditorPane.css),
+   and the note title reads the same variable, so title and body keep one left edge.
+
+   The slot is the hover target that reveals the handle, so it shows when the pointer comes near
+   it, not whenever it crosses the text: the whole gutter and past it, down the block's full height
+   and over the gap to the next one. The button stays on the first line. */
 .gn-block-editor .handle-slot_left {
-    left: -23px;
+    top: 0;
+    bottom: -8px;
+    left: calc(-1 * var(--editor-gutter, 16px) - 24px);
+    width: calc(var(--editor-gutter, 16px) + 24px);
+    height: auto;
+    box-sizing: border-box;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-right: 5px;
 }
 
-.gn-block-editor .block:hover .handles,
-.gn-block-editor .block:focus-within .handles {
+.gn-block-editor .handle-slot_left:hover,
+.gn-block-editor .handles:has(:focus-visible),
+.gn-block-editor .block.menu-open > .handles,
+.gn-block-editor .block.selected:not(.block.selected + .block.selected) > .handles {
     opacity: 1;
+}
+
+@media (hover: none) {
+    .gn-block-editor .handles {
+        opacity: 1;
+    }
 }
 
 /* A long note mounts the handle on hover, and a new element has no previous opacity to fade from. */
 @starting-style {
-    .gn-block-editor .block:hover .handles {
+    .gn-block-editor .handle-slot_left:hover {
         opacity: 0;
     }
 }
 
-/* While typing, only the block with the caret keeps its handle (see KEYBOARD_CLASS in Editor.tsx). */
-.gn-block-editor.gn-block-editor_keyboard .block:hover:not(:focus-within) .handles {
+/* While typing, a resting pointer doesn't keep a handle up (see KEYBOARD_CLASS in Editor.tsx). */
+.gn-block-editor.gn-block-editor_keyboard
+    .block:not(.selected, .menu-open)
+    > .handle-slot_left:hover {
     opacity: 0;
 }
 
 .gn-block-editor .handle-btn {
     display: flex;
+    /* A button's UA font-size would otherwise resolve the `em` in `--gn-block-line` below. */
+    font-size: inherit;
     align-items: center;
     justify-content: center;
     border: none;
@@ -429,8 +447,10 @@
 }
 
 .gn-block-editor .drag-btn {
-    width: 18px;
-    height: 24px;
+    width: 14px;
+    height: 20px;
+    /* Centred on the first line box, which starts at `.content`'s padding-top. */
+    margin-top: calc(var(--gn-handle-top, var(--gn-pad-y)) + (var(--gn-block-line) - 20px) / 2);
     cursor: grab;
 }
 
@@ -438,8 +458,8 @@
    were most of a long note's DOM. */
 .gn-block-editor .drag-btn::before {
     content: '';
-    width: 14px;
-    height: 18px;
+    width: 11px;
+    height: 15px;
     background: currentColor;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 14'%3E%3Ccircle cx='3' cy='2.2' r='1.3'/%3E%3Ccircle cx='7' cy='2.2' r='1.3'/%3E%3Ccircle cx='3' cy='7' r='1.3'/%3E%3Ccircle cx='7' cy='7' r='1.3'/%3E%3Ccircle cx='3' cy='11.8' r='1.3'/%3E%3Ccircle cx='7' cy='11.8' r='1.3'/%3E%3C/svg%3E")
         center / contain no-repeat;
@@ -449,24 +469,48 @@
     cursor: grabbing;
 }
 
-.gn-block-editor .block[data-type='callout'] .handles {
-    top: 16px;
+.gn-block-editor .block[data-type='callout'] {
+    --gn-handle-top: 16px;
 }
-.gn-block-editor .block[data-type='table'] .handles {
-    top: 8px;
+.gn-block-editor .block[data-type='table'] {
+    --gn-handle-top: 8px;
 }
-.gn-block-editor .block[data-type='code'] .handles {
-    top: 32px;
+.gn-block-editor .block[data-type='code'] {
+    --gn-handle-top: 32px;
 }
-.gn-block-editor .block[data-type='divider'] .handles {
-    top: -5px;
+.gn-block-editor .block[data-type='divider'] {
+    --gn-handle-top: -5px;
 }
 
 /* ---------- block selection / drag states ---------- */
 
 .gn-block-editor .block.selected .block-body {
-    background: var(--n-blue-overlay) !important;
+    background: var(--n-selection-wash) !important;
     border-radius: 4px;
+}
+
+/* A run of selected blocks reads as one wash: square inner corners, and a strip behind the gap
+   between them. The wash is opaque so the strip can overlap a neighbour's wash without a darker
+   seam, so it only has to be at least as tall as the gap, not exactly as tall: 20px covers every
+   gap but a heading's larger top margin (less the 2px each wash reaches past its block). */
+.gn-block-editor .block.selected:has(+ .block.selected) > .block-body {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.gn-block-editor .block.selected + .block.selected > .block-body {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.gn-block-editor .block.selected + .block.selected:not(.drop-before)::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset-inline: 0;
+    bottom: 100%;
+    height: max(20px, var(--gn-mt) - 2px);
+    background: var(--n-selection-wash);
 }
 
 .gn-block-editor .block.selected .content {
@@ -1200,18 +1244,6 @@
     height: 18px;
     margin: 0 2px;
     background: rgba(var(--n-ink), 0.12);
-}
-
-/* The narrow layout's 16px gutter is too tight for the 18px handle, which touch screens show
-   permanently: a slimmer one fits inside it instead of hanging off the pane edge. */
-@media (max-width: 720px) {
-    .gn-block-editor .handle-slot_left {
-        left: -16px;
-    }
-
-    .gn-block-editor .drag-btn {
-        width: 14px;
-    }
 }
 
 @media (max-width: 720px) {

@@ -680,7 +680,7 @@ describe('arrow keys while blocks are selected', () => {
     });
 });
 
-describe('⌘⌥↑ / ⌘⌥↓ reorder the selected block', () => {
+describe('⌘⌥↑ / ⌘⌥↓ reorder the selected blocks', () => {
     const LIST = ['- one', '- two', '- three'].join('\n');
 
     function selectBlock(text: string) {
@@ -716,6 +716,26 @@ describe('⌘⌥↑ / ⌘⌥↓ reorder the selected block', () => {
         moveSelected('ArrowUp');
         const texts = [...document.querySelectorAll('.block .content')].map((el) => el.textContent);
         expect(texts).toEqual(['three', 'one', 'two']);
+    });
+
+    it('moves several selected blocks together', () => {
+        const onChange = vi.fn();
+        renderEditor(['- one', '- two', '- three', '- four'].join('\n'), onChange);
+        selectBlock('two');
+        act(() => {
+            fireEvent.keyDown(document.body, {key: 'ArrowDown', shiftKey: true});
+        });
+
+        moveSelected('ArrowDown');
+        expect(onChange).toHaveBeenLastCalledWith(
+            ['- one', '- four', '- two', '- three'].join('\n'),
+        );
+
+        moveSelected('ArrowUp');
+        moveSelected('ArrowUp');
+        expect(onChange).toHaveBeenLastCalledWith(
+            ['- two', '- three', '- one', '- four'].join('\n'),
+        );
     });
 
     it('does nothing at the ends', () => {

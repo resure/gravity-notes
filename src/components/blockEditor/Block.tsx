@@ -87,6 +87,7 @@ interface BlockProps {
     /** The slash or `[[` menu this block is typing into, and its highlighted row, for assistive tech. */
     menu?: {listbox: string; option: string};
     handle: boolean;
+    menuOpen: boolean;
     handlers: BlockHandlers;
 }
 
@@ -99,6 +100,7 @@ function Block({
     placeholder,
     menu,
     handle,
+    menuOpen,
     handlers,
 }: BlockProps) {
     const contentRef = useRef<HTMLDivElement | null>(null);
@@ -383,6 +385,7 @@ function Block({
 
     const classes = ['block'];
     if (selected) classes.push('selected');
+    if (menuOpen) classes.push('menu-open');
     if (dragging) classes.push('dragging');
     if (dropEdge === 'before') classes.push('drop-before');
     if (dropEdge === 'after') classes.push('drop-after');

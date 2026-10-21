@@ -1077,36 +1077,40 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     /**
-     * Reorder the selected block by one position. Moves the whole SUBTREE (a collapsed toggle takes
-     * its children with it, as dragging does), and steps over the neighbour's subtree rather than
-     * into it — so one press swaps with the neighbour instead of burrowing through its children.
+     * Reorder the selection by one position. Moves whole SUBTREES (a collapsed toggle takes its
+     * children with it, as dragging does), and steps over the neighbour's subtree rather than into
+     * it — so one press swaps with the neighbour instead of burrowing through its children. Several
+     * selected blocks move as one group, landing together the way a drag of them does.
      */
-    const moveSelectedBlock = (direction: -1 | 1) => {
+    const moveSelectedBlocks = (direction: -1 | 1) => {
         const blocks = blocksRef.current;
-        const id = [...selectedIdsRef.current][0];
-        const index = blocks.findIndex((block) => block.id === id);
-        if (index < 0) return;
+        const roots = selectionRoots(blocks, selectedIdsRef.current);
+        if (roots.length === 0) return;
+        const first = blocks.findIndex((block) => block.id === roots[0]);
+        const last = blocks.findIndex((block) => block.id === roots[roots.length - 1]);
+        if (first < 0 || last < 0) return;
         const visible = visibleBlockIds(blocks);
-        const depth = blocks[index].depth ?? 0;
         // Move among SIBLINGS. Targeting the nearest visible block regardless of depth landed the
         // move inside somebody else's subtree: with `- A` / `  - B` / `C`, moving C up put it
         // between A and B, so B — still at depth 1 — became a child of C instead of A.
-        const isSibling = (at: number) =>
+        const isSibling = (at: number, depth: number) =>
             visible.has(blocks[at].id) && (blocks[at].depth ?? 0) <= depth;
         if (direction === -1) {
-            let target = index - 1;
-            while (target >= 0 && !isSibling(target)) target -= 1;
+            const depth = blocks[first].depth ?? 0;
+            let target = first - 1;
+            while (target >= 0 && !isSibling(target, depth)) target -= 1;
             if (target < 0) return;
-            moveBlock(id, blocks[target].id, 'before');
+            moveBlocks(roots, blocks[target].id, 'before');
         } else {
-            // Past the END of our own subtree first, or the target would be our own child.
-            let after = index + 1;
+            const depth = blocks[last].depth ?? 0;
+            // Past the END of the last subtree first, or the target would be its own child.
+            let after = last + 1;
             while (after < blocks.length && (blocks[after].depth ?? 0) > depth) after += 1;
-            while (after < blocks.length && !isSibling(after)) after += 1;
+            while (after < blocks.length && !isSibling(after, depth)) after += 1;
             if (after >= blocks.length) return;
-            moveBlock(id, blocks[after].id, 'after');
+            moveBlocks(roots, blocks[after].id, 'after');
         }
-        revealBlock(id);
+        revealBlock(roots[direction === -1 ? 0 : roots.length - 1]);
     };
 
     /** Keep the block the selection just moved to on screen (the pane scrolls, not the editor). */
@@ -1775,9 +1779,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const next = normalizeDepths(moveBlockSubtrees(blocksRef.current, srcIds, dstId, edge));
         if (next !== blocksRef.current) setBlocks(next);
     };
-
-    const moveBlock = (srcId: string, dstId: string, edge: 'before' | 'after') =>
-        moveBlocks([srcId], dstId, edge);
 
     const withDepthChanged = (blocks: BlockData[], id: string, direction: -1 | 1): BlockData[] => {
         let next = changeBlockDepth(blocks, id, direction);
@@ -3507,11 +3508,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
         if (mod && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-            // ⌘⌥↑/↓ reorders the selected block. Single selection only: moving a multi-block range
-            // as a unit is a different operation, and doing it one block at a time would shuffle
-            // them past each other rather than move them together.
             claimChord(e);
-            if (selected.size === 1) moveSelectedBlock(e.key === 'ArrowUp' ? -1 : 1);
+            moveSelectedBlocks(e.key === 'ArrowUp' ? -1 : 1);
         } else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
             claimChord(e);
             const direction = e.key === 'ArrowUp' ? -1 : 1;
@@ -4104,6 +4102,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                 )}
                                 menu={menuFor(b.id)}
                                 handle={showsHandle(b.id)}
+                                menuOpen={blockMenu?.id === b.id}
                                 handlers={handlers}
                             />
                         ))}

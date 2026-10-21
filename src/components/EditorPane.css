@@ -36,17 +36,9 @@
    variable, so title and body keep one shared left edge and the handle sits inside the gutter rather
    than pushing the text right. */
 .editor-pane {
-    /* Room for the block drag handle (18px) plus its clearance from the text — see the handle slot in
-       blockEditor/editor.css. */
+    /* Room for the block drag handle (14px), its clearance from the text, and some air from the pane
+       edge — see the handle slot in blockEditor/editor.css. */
     --editor-gutter: 28px;
-}
-
-/* On a phone the handle track isn't worth the width (the handles are hover furniture), so fall back
-   to the standard gutter — the block editor drops its own extra padding at the same breakpoint. */
-@media (max-width: 720px) {
-    .editor-pane {
-        --editor-gutter: 16px;
-    }
 }
 
 /* Raw-Markdown mode (⌘⇧;, and the forced surface for a note the block model can't hold) — a plain
