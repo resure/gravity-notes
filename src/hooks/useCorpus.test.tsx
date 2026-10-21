@@ -13,8 +13,8 @@ const NOTES: NoteMeta[] = [
 
 /** A corpus source (getAll + get) with spies, so we can assert how/when the corpus is read. */
 function makeStore(bodies: Record<string, string> = {}) {
-    const getAll = vi.fn(
-        async (): Promise<Note[]> => NOTES.map((n) => ({...n, content: bodies[n.id] ?? ''})),
+    const getAll = vi.fn(async (): Promise<Note[]> =>
+        NOTES.map((n) => ({...n, content: bodies[n.id] ?? ''})),
     );
     const get = vi.fn(async (id: string): Promise<Note> => {
         const meta = NOTES.find((n) => n.id === id);

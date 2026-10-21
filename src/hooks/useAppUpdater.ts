@@ -23,13 +23,7 @@ const CHECK_TIMEOUT_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export type UpdaterStatus =
-    | 'idle'
-    | 'checking'
-    | 'available'
-    | 'downloading'
-    | 'installed'
-    | 'restart-required'
-    | 'error';
+    'idle' | 'checking' | 'available' | 'downloading' | 'installed' | 'restart-required' | 'error';
 
 export interface UpdateInfo {
     /** The available version (from the release's `latest.json`). */

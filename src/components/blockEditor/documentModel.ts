@@ -154,7 +154,7 @@ export function duplicateBlockGroups(
     const output: Block[] = [];
     const copies: Block[] = [];
 
-    for (let index = 0; index < blocks.length; ) {
+    for (let index = 0; index < blocks.length;) {
         if (!expanded.has(blocks[index].id)) {
             output.push(blocks[index]);
             index += 1;
