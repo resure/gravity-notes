@@ -181,14 +181,16 @@ describe('FolderRail — folder actions', () => {
         expect(props.onTogglePin).toHaveBeenCalledWith('Work');
     });
 
-    it('Tab steps from a focused row into its ⋯, then on to New Folder', async () => {
+    it('Tab steps from a focused row into its ⋯, then on to Trash and New Folder', async () => {
         const user = userEvent.setup();
         setup({rows: [folder('Work')]});
         screen.getByRole('treeitem', {name: /Work/}).focus();
         await user.tab();
         expect(screen.getByRole('button', {name: 'Work actions'})).toHaveFocus();
         await user.tab();
-        expect(screen.getByRole('button', {name: 'New folder'})).toHaveFocus();
+        expect(screen.getByRole('button', {name: /Trash/})).toHaveFocus();
+        await user.tab();
+        expect(screen.getByRole('button', {name: 'New Folder'})).toHaveFocus();
     });
 
     it('marks the row while its menu is open, and unmarks it on close', async () => {
@@ -218,9 +220,11 @@ describe('FolderRail — folder actions', () => {
         await user.click(screen.getByRole('button', {name: 'Empty actions'}));
         await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
         expect(props.onRemoveFolder).not.toHaveBeenCalled();
-        expect(await screen.findByRole('dialog')).toHaveTextContent('Delete the folder “Empty”?');
+        expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+            'Delete the folder “Empty”?',
+        );
         await waitFor(() => expect(screen.getByRole('button', {name: 'Cancel'})).toHaveFocus());
-        await user.click(screen.getByRole('button', {name: 'Delete folder'}));
+        await user.click(screen.getByRole('button', {name: 'Delete Folder'}));
         expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
     });
 
@@ -231,12 +235,12 @@ describe('FolderRail — folder actions', () => {
             const {props} = setup({rows: [folder('Empty')]});
             fireEvent.contextMenu(screen.getByRole('treeitem', {name: /Empty/}));
             await user.click(await screen.findByRole('menuitem', {name: /Delete folder/}));
-            await screen.findByRole('dialog');
+            await screen.findByRole('alertdialog');
             if (dismiss === 'Cancel')
                 await user.click(screen.getByRole('button', {name: 'Cancel'}));
             else await user.keyboard('{Escape}');
             expect(props.onRemoveFolder).not.toHaveBeenCalled();
-            await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+            await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
             expect(screen.getByRole('treeitem', {name: /Empty/})).toBeInTheDocument();
         },
     );
@@ -270,7 +274,7 @@ describe('FolderRail — folder actions', () => {
     it('creates a folder at the root from the header button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.click(screen.getByRole('button', {name: 'New folder'}));
+        await user.click(screen.getByRole('button', {name: 'New Folder'}));
         await user.type(await screen.findByPlaceholderText('Folder name'), 'Projects{Enter}');
         expect(props.onCreateFolder).toHaveBeenCalledWith('', 'Projects');
     });
@@ -477,7 +481,7 @@ describe('FolderRail — in-rail keys', () => {
             screen.getByRole('treeitem', {name: /Empty/}).focus();
             await user.keyboard(`{${key}}`);
             expect(props.onRemoveFolder).not.toHaveBeenCalled();
-            await user.click(await screen.findByRole('button', {name: 'Delete folder'}));
+            await user.click(await screen.findByRole('button', {name: 'Delete Folder'}));
             expect(props.onRemoveFolder).toHaveBeenCalledWith('Empty');
         },
     );

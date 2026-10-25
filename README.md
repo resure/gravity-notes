@@ -1,6 +1,6 @@
 # Gravity Notes
 
-A simple note-taking app built on the [Gravity UI](https://gravity-ui.com/) ecosystem, with a
+A simple note-taking app built on [Base UI](https://base-ui.com/) and its own CSS, with a
 Notion-style block editor for the note body. Runs as a **web app** and a **macOS desktop app**
 (Tauri). On first run you choose where notes live: a **folder on your computer** (plain `.md`
 files), or **in-browser / in-app** — and you can **export/import** `.md` files either way.
@@ -52,7 +52,7 @@ Markdown files, and they are yours.
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; put the caret in a link
   for Open / Edit / Unlink
 - **Full-text search** across titles and bodies, ranked, with match snippets
-- **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**
+- **Nested folders, pins, sort modes**, time-grouped lists, and a recoverable **Trash**
 - **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;
   reveal them in Finder on desktop
 - **Images**: paste, drop or `/image` into a note — stored as files in `Attachments/`, click to zoom. Any

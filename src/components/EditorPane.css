@@ -41,6 +41,32 @@
     --editor-gutter: 28px;
 }
 
+/* One of the app's three signature moments (§03): a note switch crossfades the paper and rises 2px,
+   at --dur-2. Both halves of the surface are keyed on `sessionId` and so remount together — the
+   animation runs because they are NEW elements, which is also why nothing has to reset it. */
+@keyframes editor-pane-note-in {
+    from {
+        opacity: 0;
+        transform: translateY(2px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.editor-pane .note-title-row,
+.editor-pane .gn-block-editor {
+    animation: editor-pane-note-in var(--dur-2) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .editor-pane .note-title-row,
+    .editor-pane .gn-block-editor {
+        animation: none;
+    }
+}
+
 /* Raw-Markdown mode (⌘⇧;, and the forced surface for a note the block model can't hold) — a plain
    textarea over the note's source, sized and inset like the block surface it replaces so toggling
    doesn't shift the text. */
@@ -55,8 +81,8 @@
     padding: 4px var(--editor-gutter, 16px) 30vh;
     border: 0;
     background: none;
-    color: var(--g-color-text-primary);
-    font-family: var(--g-font-family-monospace);
+    color: var(--text-1);
+    font-family: var(--font-mono);
     font-size: 14px;
     line-height: 1.6;
     tab-size: 2;
@@ -70,7 +96,7 @@
 .block-editor-source__notice {
     margin: 0;
     padding: 8px var(--editor-gutter, 16px) 0;
-    color: var(--g-color-text-secondary);
-    font-size: 12px;
+    color: var(--text-3);
+    font-size: var(--fs-preview);
     line-height: 1.4;
 }

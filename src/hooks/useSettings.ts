@@ -3,67 +3,44 @@ import {useCallback, useEffect, useState} from 'react';
 import type {NoteAppearanceOverride} from '../storage/types';
 
 /**
- * Font family for note CONTENT — the WYSIWYG editor + read-only preview (both `.yfm`) and the note
- * title. Never the app chrome or the raw Markup editor. `sans` is the native system font.
+ * Font family for note CONTENT — the block editor's body and the read-only preview. Never the app
+ * chrome, and never the note title or the editor's H1/H2, which are PT Serif by design (§03 gives
+ * the serif exactly three jobs; this setting owns only the third one). `sans` is the system font.
  */
 export type EditorFont = 'sans' | 'serif' | 'mono';
-/** Accent hue for the app mark: the orb menu, the saving-status dot, and the list-selection wash. */
-export type AccentColor = 'amber' | 'blue' | 'gray';
 /** Max text measure of the editor/preview column. `unlimited` = no cap (fills the pane). */
 export type TextWidth = 'narrow' | 'normal' | 'wide' | 'unlimited';
 
-/** Override variants add `'default'` — inherit the wider scope's value instead of overriding it. */
+/** Override variants add `'default'` — inherit the app value instead of overriding it. */
 export type EditorFontPref = 'default' | EditorFont;
-export type AccentColorPref = 'default' | AccentColor;
 export type TextWidthPref = 'default' | TextWidth;
 
 export const EDITOR_FONTS: readonly EditorFont[] = ['sans', 'serif', 'mono'];
-export const ACCENT_COLORS: readonly AccentColor[] = ['amber', 'blue', 'gray'];
 export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'unlimited'];
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
 export interface Settings {
-    /** Show a per-note icon in the list + the note title (experimental; the IconPicker feature). */
-    showNoteIcons: boolean;
     /** Show the formatting toolbar above the note body. Off by default: the editor is keyboard-first. */
     showEditorToolbar: boolean;
     /** Enable native spellcheck in both note-body editor modes. Off by default. */
     spellcheck: boolean;
-    /** Font for the editor + preview + title (note content only). Default `sans` (the system font). */
+    /** Font for the editor body + preview (note content only). Default `sans` (the system font). */
     editorFont: EditorFont;
-    /** App accent hue. Default `amber` (the logo orange). */
-    accentColor: AccentColor;
     /** Editor/preview text column width. Default `normal` (a readable measure). */
     textWidth: TextWidth;
 }
 
 const DEFAULTS: Settings = {
-    showNoteIcons: false,
     showEditorToolbar: false,
     spellcheck: false,
     editorFont: 'sans',
-    accentColor: 'amber',
     textWidth: 'normal',
 };
 
-/** Per-workspace overrides of the appearance settings; `'default'` inherits the app-wide value. */
-export interface WorkspaceSettings {
-    editorFont: EditorFontPref;
-    accentColor: AccentColorPref;
-    textWidth: TextWidthPref;
-}
-
-const WORKSPACE_DEFAULTS: WorkspaceSettings = {
-    editorFont: 'default',
-    accentColor: 'default',
-    textWidth: 'default',
-};
-
 /**
- * Per-note overrides — the innermost layer; wins over both workspace and app. `'default'` inherits.
- * Accent is deliberately NOT overridable per-note (it's app/workspace only) — the app mark shouldn't
- * recolor as you browse notes. Persisted in the metadata sidecar (like icons), NOT in localStorage,
- * so it survives rename/move and travels with the folder; see {@link noteAppearanceOf}.
+ * Per-note overrides — the inner layer, which wins over the app value; `'default'` inherits.
+ * Persisted in the metadata sidecar, NOT in localStorage, so it survives rename/move and travels
+ * with the folder; see {@link noteAppearanceOf}.
  */
 export interface NoteAppearance {
     editorFont: EditorFontPref;
@@ -76,8 +53,6 @@ const NOTE_DEFAULTS: NoteAppearance = {
 };
 
 const SETTINGS_KEY = 'gravity-notes:settings';
-/** Namespaced like the other per-workspace layout keys in `Workspace` (`gravity-notes:<wsId>:*`). */
-const workspaceSettingsKey = (workspaceId: string) => `gravity-notes:${workspaceId}:settings`;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
     return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -89,38 +64,18 @@ function bool(value: unknown, fallback: boolean): boolean {
     return typeof value === 'boolean' ? value : fallback;
 }
 
-const FONT_PREFS: readonly EditorFontPref[] = ['default', ...EDITOR_FONTS];
-const ACCENT_PREFS: readonly AccentColorPref[] = ['default', ...ACCENT_COLORS];
-const WIDTH_PREFS: readonly TextWidthPref[] = ['default', ...TEXT_WIDTHS];
-
 /** Read persisted app settings, tolerating absent/corrupt storage and unknown keys (defaults fill gaps). */
 function loadSettings(key: string): Settings {
     try {
         const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings>;
         return {
-            showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
             showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             spellcheck: bool(raw.spellcheck, DEFAULTS.spellcheck),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
-            accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),
             textWidth: oneOf(raw.textWidth, TEXT_WIDTHS, DEFAULTS.textWidth),
         };
     } catch {
         return DEFAULTS;
-    }
-}
-
-/** Read the persisted per-workspace overrides: every field is a `'default'`-able pref. */
-function loadWorkspaceOverrides(key: string): WorkspaceSettings {
-    try {
-        const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<WorkspaceSettings>;
-        return {
-            editorFont: oneOf(raw.editorFont, FONT_PREFS, 'default'),
-            accentColor: oneOf(raw.accentColor, ACCENT_PREFS, 'default'),
-            textWidth: oneOf(raw.textWidth, WIDTH_PREFS, 'default'),
-        };
-    } catch {
-        return WORKSPACE_DEFAULTS;
     }
 }
 
@@ -130,9 +85,8 @@ function sameSettings<T extends object>(a: T, b: T): boolean {
 }
 
 /**
- * A localStorage-backed settings object — the shared machinery under {@link useSettings} and
- * {@link useWorkspaceSettings}. The desktop app opens one window per workspace and every window
- * shares one localStorage, so a naive "persist my whole in-memory object on change" turns
+ * A localStorage-backed settings object. The desktop app opens one window per workspace and every
+ * window shares one localStorage, so a naive "persist my whole in-memory object on change" turns
  * concurrent windows into lost updates (a stale window changing field A reverts another window's
  * field B). Instead:
  * - a set MERGES into the freshest STORED object (re-read at set time), so it can only change the
@@ -181,27 +135,6 @@ export interface UseSettings {
 export function useSettings(): UseSettings {
     const [settings, setSetting] = usePersistedSettings(SETTINGS_KEY, loadSettings);
     return {settings, setSetting};
-}
-
-export interface UseWorkspaceSettings {
-    workspaceSettings: WorkspaceSettings;
-    setWorkspaceSetting: <K extends keyof WorkspaceSettings>(
-        key: K,
-        value: WorkspaceSettings[K],
-    ) => void;
-}
-
-/**
- * Per-workspace appearance overrides, persisted under a workspace-namespaced key. `App` remounts
- * `Workspace` keyed by workspace, so this hook mounts fresh per workspace and `workspaceId` (hence
- * the storage key) is constant for its lifetime — no cross-workspace reconcile to worry about.
- */
-export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings {
-    const [workspaceSettings, setWorkspaceSetting] = usePersistedSettings(
-        workspaceSettingsKey(workspaceId),
-        loadWorkspaceOverrides,
-    );
-    return {workspaceSettings, setWorkspaceSetting};
 }
 
 /**
@@ -287,30 +220,19 @@ export function clearLegacyNoteAppearanceKeys(keys: readonly string[]): void {
 
 export interface EffectiveAppearance {
     editorFont: EditorFont;
-    accentColor: AccentColor;
     textWidth: TextWidth;
 }
 
-/** Resolve one field across the layers: note wins, then workspace, then app (skipping `'default'`). */
-function resolve<T extends string>(app: T, workspace: 'default' | T, note: 'default' | T): T {
-    if (note !== 'default') return note;
-    if (workspace !== 'default') return workspace;
-    return app;
-}
-
 /**
- * Resolve the appearance actually in effect across app → workspace → note. A note override wins over
- * a workspace override, which wins over the app value; `'default'` at any layer inherits outward.
- * Accent has no note layer (it's app/workspace only), so it resolves across the outer two.
+ * Resolve the appearance actually in effect: a note override wins over the app value, and
+ * `'default'` inherits outward. Two layers, not three — the per-workspace layer is cut.
  */
 export function effectiveAppearance(
     app: Settings,
-    workspace: WorkspaceSettings,
     note: NoteAppearance = NOTE_DEFAULTS,
 ): EffectiveAppearance {
     return {
-        editorFont: resolve(app.editorFont, workspace.editorFont, note.editorFont),
-        accentColor: resolve<AccentColor>(app.accentColor, workspace.accentColor, 'default'),
-        textWidth: resolve(app.textWidth, workspace.textWidth, note.textWidth),
+        editorFont: note.editorFont === 'default' ? app.editorFont : note.editorFont,
+        textWidth: note.textWidth === 'default' ? app.textWidth : note.textWidth,
     };
 }

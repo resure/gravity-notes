@@ -25,7 +25,6 @@ import * as notesExtension from '@diplodoc/transform/lib/plugins/notes';
 import * as tableExtension from '@diplodoc/transform/lib/plugins/table';
 import * as tabsExtension from '@diplodoc/transform/lib/plugins/tabs';
 import * as videoExtension from '@diplodoc/transform/lib/plugins/video';
-import {Text} from '@gravity-ui/uikit';
 
 import {type AttachmentUrlCache, useAttachmentCache} from '../attachments';
 import {blocksToMarkdown, isRoundTripStable, markdownToBlocks, takeParsedBlocks} from '../markdown';
@@ -412,10 +411,10 @@ export const NotePreview = forwardRef<HTMLDivElement, NotePreviewProps>(function
             {rendered.error ? (
                 // Surface a transform failure instead of a silent blank pane; the editor body keeps
                 // the actual content, so the user can switch back and keep working.
-                <Text color="danger" className="note-preview__error">
+                <p className="note-preview__error">
                     Couldn’t render a preview of this note. Switch back to the editor to keep
                     editing.
-                </Text>
+                </p>
             ) : (
                 <div
                     className="note-preview__body yfm"

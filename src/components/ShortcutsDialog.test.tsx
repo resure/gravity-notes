@@ -13,7 +13,7 @@ describe('ShortcutsDialog', () => {
         const visible = SHORTCUTS.filter((shortcut) => !shortcut.desktopOnly);
         expect(visible.length).toBeLessThan(SHORTCUTS.length); // the filter has something to do
         // One row per descriptor; descriptions can repeat (e.g. two chords both make a New note).
-        expect(document.querySelectorAll('.shortcuts-dialog__row')).toHaveLength(visible.length);
+        expect(document.querySelectorAll('.shortcuts__row')).toHaveLength(visible.length);
         for (const shortcut of visible) {
             expect(screen.getAllByText(shortcut.description).length).toBeGreaterThan(0);
         }
@@ -34,7 +34,7 @@ describe('ShortcutsDialog', () => {
         renderWithProviders(<ShortcutsDialog open onClose={vi.fn()} />);
         const filter = screen.getByRole('textbox', {name: 'Filter shortcuts'});
         const rows = () =>
-            [...document.querySelectorAll('.shortcuts-dialog__row')].map((row) => row.textContent);
+            [...document.querySelectorAll('.shortcuts__row')].map((row) => row.textContent);
 
         fireEvent.change(filter, {target: {value: 'cmd-k'}});
         expect(rows().some((row) => row?.startsWith('Link the selection'))).toBe(true);

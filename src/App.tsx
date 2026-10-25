@@ -1,21 +1,13 @@
 import {useEffect, useRef, useState} from 'react';
 
-import {
-    MobileProvider,
-    ThemeProvider,
-    Toaster,
-    ToasterComponent,
-    ToasterProvider,
-} from '@gravity-ui/uikit';
-
 import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
 import {Workspace} from './components/Workspace';
 import type {ThemePref} from './components/theme';
 import {useNotesStorage} from './hooks/useNotesStorage';
 import {isTauri} from './isTauri';
-
-const toaster = new Toaster();
+import {TooltipProvider} from './ui/Tooltip';
+import {ToastRegion} from './ui/toast';
 
 const THEME_KEY = 'gravity-notes:theme';
 
@@ -41,6 +33,23 @@ export function App() {
         } catch {
             // ignore — the theme just won't survive a reload
         }
+    }, [themePref]);
+
+    // Stamp the resolved theme onto `<html data-theme>`, which is what every Sol token reads
+    // (tokens.css). Resolving System here rather than in a CSS media query keeps ONE source of
+    // truth for "what theme is showing" — the attribute is always the answer, so a rule never has
+    // to be written twice. This IS the theme; there is no provider behind it.
+    useEffect(() => {
+        const root = document.documentElement;
+        if (themePref !== 'system') {
+            root.setAttribute('data-theme', themePref);
+            return undefined;
+        }
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+        const apply = () => root.setAttribute('data-theme', media.matches ? 'dark' : 'light');
+        apply();
+        media.addEventListener('change', apply);
+        return () => media.removeEventListener('change', apply);
     }, [themePref]);
 
     // Drive the NATIVE window's appearance to match the in-app theme on desktop. The Rust shell reads
@@ -99,47 +108,47 @@ export function App() {
     }, []);
 
     return (
-        <ThemeProvider theme={themePref}>
-            <MobileProvider>
-                <ToasterProvider toaster={toaster}>
-                    <ErrorBoundary>
-                        {storage.state === 'ready' && storage.store ? (
-                            <Workspace
-                                // Keyed by workspace: switching remounts the whole tree, so every
-                                // per-workspace piece (list cursor, rail state, editor session,
-                                // corpus) starts clean instead of reconciling across workspaces.
-                                key={storage.activeWorkspaceId ?? 'workspace'}
-                                store={storage.store}
-                                workspaceId={storage.activeWorkspaceId ?? 'workspace'}
-                                storageLabel={storage.storageLabel}
-                                workspaces={storage.workspaces}
-                                // A single-note window's assigned note — only while it still
-                                // shows the workspace it was created for (an in-place workspace
-                                // switch remounts Workspace without a note assignment).
-                                initialNoteId={
-                                    storage.windowNote &&
-                                    storage.windowNote.workspaceId === storage.activeWorkspaceId
-                                        ? storage.windowNote.noteId
-                                        : null
-                                }
-                                themePref={themePref}
-                                onChangeThemePref={setThemePref}
-                                onOpenWorkspace={storage.openWorkspace}
-                                onOpenWorkspaceInNewWindow={storage.openInNewWindow}
-                                onOpenNoteInNewWindow={storage.openNoteInNewWindow}
-                                onRemoveWorkspace={storage.removeWorkspace}
-                                onRefreshWorkspaces={storage.refreshWorkspaces}
-                                onOpenFolder={() => void storage.pickFolder()}
-                                onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
-                                supportsFolders={storage.supportsFolders}
-                            />
-                        ) : (
-                            <FolderGate storage={storage} />
-                        )}
-                    </ErrorBoundary>
-                    <ToasterComponent />
-                </ToasterProvider>
-            </MobileProvider>
-        </ThemeProvider>
+        // Two providers, and both are behaviour rather than looks: the toast region owns failures
+        // and the update prompt, the tooltip provider owns §07's shared 420ms/0ms delay. Theme is
+        // an attribute on <html>, not a provider — see the stamping effect above.
+        <ToastRegion>
+            <TooltipProvider>
+                <ErrorBoundary>
+                    {storage.state === 'ready' && storage.store ? (
+                        <Workspace
+                            // Keyed by workspace: switching remounts the whole tree, so every
+                            // per-workspace piece (list cursor, rail state, editor session, corpus)
+                            // starts clean instead of reconciling across workspaces.
+                            key={storage.activeWorkspaceId ?? 'workspace'}
+                            store={storage.store}
+                            workspaceId={storage.activeWorkspaceId ?? 'workspace'}
+                            storageLabel={storage.storageLabel}
+                            workspaces={storage.workspaces}
+                            // A single-note window's assigned note — only while it still shows the
+                            // workspace it was created for (an in-place workspace switch remounts
+                            // Workspace without a note assignment).
+                            initialNoteId={
+                                storage.windowNote &&
+                                storage.windowNote.workspaceId === storage.activeWorkspaceId
+                                    ? storage.windowNote.noteId
+                                    : null
+                            }
+                            themePref={themePref}
+                            onChangeThemePref={setThemePref}
+                            onOpenWorkspace={storage.openWorkspace}
+                            onOpenWorkspaceInNewWindow={storage.openInNewWindow}
+                            onOpenNoteInNewWindow={storage.openNoteInNewWindow}
+                            onRemoveWorkspace={storage.removeWorkspace}
+                            onRefreshWorkspaces={storage.refreshWorkspaces}
+                            onOpenFolder={() => void storage.pickFolder()}
+                            onOpenFolderInNewWindow={storage.pickFolderForNewWindow}
+                            supportsFolders={storage.supportsFolders}
+                        />
+                    ) : (
+                        <FolderGate storage={storage} />
+                    )}
+                </ErrorBoundary>
+            </TooltipProvider>
+        </ToastRegion>
     );
 }

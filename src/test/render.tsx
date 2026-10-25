@@ -1,17 +1,19 @@
 import type {ReactElement, ReactNode} from 'react';
 
-import {MobileProvider, ThemeProvider, Toaster, ToasterProvider} from '@gravity-ui/uikit';
 import {type RenderOptions, type RenderResult, render} from '@testing-library/react';
 
-const toaster = new Toaster();
+import {TooltipProvider} from '../ui/Tooltip';
+import {ToastRegion} from '../ui/toast';
 
+/**
+ * The same two providers `App` mounts, and for the same reason: `toast()` needs a region to render
+ * into, and tooltips need the shared delay. Theme is an attribute on `<html>`, so nothing wraps it.
+ */
 function Providers({children}: {children: ReactNode}) {
     return (
-        <ThemeProvider theme="light">
-            <MobileProvider>
-                <ToasterProvider toaster={toaster}>{children}</ToasterProvider>
-            </MobileProvider>
-        </ThemeProvider>
+        <ToastRegion>
+            <TooltipProvider>{children}</TooltipProvider>
+        </ToastRegion>
     );
 }
 

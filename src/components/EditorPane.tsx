@@ -14,6 +14,11 @@ export interface EditorPaneHandle {
     toggleMode(): void;
     /** Move keyboard focus into the editor body. */
     focus(): void;
+    /**
+     * Rename the OPEN note: focus its title field and select it. The note-list's inline rename can't
+     * serve this — the open note need not be in the (searched, folder-scoped) list at all.
+     */
+    renameTitle(): void;
 }
 
 interface EditorPaneProps {
@@ -48,12 +53,6 @@ interface EditorPaneProps {
     onOpenWikiLink: (target: string) => void;
     /** ⌘-click on a link to a stored file — the shell reveals it on disk (desktop only). */
     onOpenAttachment?: (ref: string) => void;
-    /** Gravity icon component name for the open note; absent = default File icon. */
-    icon?: string;
-    /** Called when the user picks or clears an icon from the title area. */
-    onSetIcon: (name: string) => void;
-    /** Show the note's title icon (Settings › Show note icons, experimental). */
-    showNoteIcons?: boolean;
     /** Enable native spellcheck in the note body (Settings › Check spelling; off by default). */
     spellcheck?: boolean;
     /** Show the formatting toolbar above the body (Settings › Show editor toolbar). */
@@ -80,9 +79,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         wikiNotes,
         onOpenWikiLink,
         onOpenAttachment,
-        icon,
-        onSetIcon,
-        showNoteIcons,
         spellcheck = false,
         showToolbar = false,
     },
@@ -126,6 +122,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             },
             focus() {
                 bodyRef.current?.focus();
+            },
+            renameTitle() {
+                // Focus AND select: `select()` alone highlights the text without claiming focus.
+                titleRef.current?.focus();
+                titleRef.current?.select();
             },
         }),
         [],
@@ -190,9 +191,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 ref={titleRef}
                 key={sessionId}
                 title={note.title}
-                icon={icon}
-                onSetIcon={onSetIcon}
-                showIcon={showNoteIcons}
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
                 onLeaveToBody={goToBody}

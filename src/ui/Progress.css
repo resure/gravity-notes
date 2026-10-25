@@ -1,0 +1,64 @@
+/* The progress bar. 4px, fully rounded, amber — one of the accent's permitted jobs, since a
+   download's progress is the one thing on screen while it runs. */
+
+.ui-progress {
+    display: block;
+    width: 100%;
+}
+
+.ui-progress__track {
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--bg-selected);
+}
+
+.ui-progress__bar {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width var(--dur-2) var(--ease);
+}
+
+/* Indeterminate: Base UI sets data-indeterminate and leaves the indicator unsized, so give it a
+   width of its own and sweep it. Under reduced motion it sits still at full width — a flat amber
+   bar still reads as "working", where a sweeping one would be the only thing moving on screen. */
+.ui-progress__bar[data-indeterminate] {
+    width: 40%;
+    animation: ui-progress-sweep 1.4s var(--ease) infinite;
+}
+
+@keyframes ui-progress-sweep {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(250%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-progress__bar {
+        transition: none;
+    }
+
+    .ui-progress__bar[data-indeterminate] {
+        width: 100%;
+        animation: none;
+        opacity: 0.5;
+    }
+}
+
+/* The label names the bar for assistive tech; the visible copy sits beside it in the dialog. */
+.ui-progress__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}

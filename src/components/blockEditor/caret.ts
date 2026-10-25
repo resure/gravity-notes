@@ -320,7 +320,7 @@ export function tryInlineMarkdown(el: HTMLElement): boolean {
         {re: /\*\*([^*\n]+)\*\*$/, tag: 'strong'},
         {re: /(?<!\*)\*([^*\s][^*\n]*?)\*$/, tag: 'em'},
         {re: /(?<!~)~~([^~\n]+)~~$/, tag: 's'},
-        {re: /==([^=\s][^=\n]*?)==$/, tag: 'mark'},
+        {re: /[=]=([^=\s][^=\n]*?)==$/, tag: 'mark'},
         {re: /\+\+([^+\s][^+\n]*?)\+\+$/, tag: 'ins'},
     ];
 

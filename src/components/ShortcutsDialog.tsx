@@ -1,9 +1,10 @@
-import {useRef, useState} from 'react';
-
-import {Dialog, Hotkey, Text, TextInput} from '@gravity-ui/uikit';
+import {useEffect, useRef, useState} from 'react';
 
 import {isTauri} from '../isTauri';
-import {SHORTCUTS, SHORTCUT_GROUPS, shortcutMatches} from '../shortcuts';
+import {SHORTCUTS, SHORTCUT_GROUPS, shortcutChords, shortcutMatches} from '../shortcuts';
+import {Dialog} from '../ui/Dialog';
+import {Input} from '../ui/Input';
+import {Kbd} from '../ui/bits';
 
 import './ShortcutsDialog.css';
 
@@ -12,10 +13,13 @@ interface ShortcutsDialogProps {
     onClose: () => void;
 }
 
-/** Read-only help sheet listing the app's keyboard shortcuts, derived from SHORTCUTS. */
+/** Read-only help sheet listing the app's keyboard shortcuts, derived from `SHORTCUTS` (⌘/). */
 export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
     const [query, setQuery] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+        if (open) setQuery('');
+    }, [open]);
     const groups = SHORTCUT_GROUPS.map((group) => ({
         group,
         // Desktop-shell-only rows (per-note windows, ⌘0) are noise in the browser.
@@ -28,46 +32,45 @@ export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
     })).filter(({rows}) => rows.length > 0);
 
     return (
-        // The app shell already locks scroll (index.css overflow:hidden), so the modal's own
-        // body-scroll-lock is redundant — and toggling it on open repaints the whole page (flicker).
         <Dialog
             open={open}
             onClose={onClose}
-            onTransitionOutComplete={() => setQuery('')}
+            title="Keyboard shortcuts"
+            width={460}
             initialFocus={inputRef}
-            size="s"
-            disableBodyScrollLock
-            contentOverflow="auto"
         >
-            <Dialog.Header caption="Keyboard shortcuts" />
-            <Dialog.Body>
-                <div className="shortcuts-dialog">
-                    <div className="shortcuts-dialog__filter">
-                        <TextInput
-                            controlRef={inputRef}
-                            hasClear
-                            placeholder="Filter by action or keys — “link”, “cmd+k”, “⌘⇧;”"
-                            controlProps={{'aria-label': 'Filter shortcuts'}}
-                            value={query}
-                            onUpdate={setQuery}
-                        />
-                    </div>
-                    {groups.length === 0 && <Text color="secondary">No shortcut matches.</Text>}
-                    {groups.map(({group, rows}) => (
-                        <div key={group} className="shortcuts-dialog__group">
-                            <Text variant="subheader-1" color="secondary">
-                                {group}
-                            </Text>
-                            {rows.map((shortcut) => (
-                                <div key={shortcut.keys} className="shortcuts-dialog__row">
-                                    <Text>{shortcut.description}</Text>
-                                    <Hotkey value={shortcut.keys} />
-                                </div>
-                            ))}
-                        </div>
-                    ))}
+            <div className="shortcuts">
+                <div className="shortcuts-dialog__filter">
+                    <Input
+                        ref={inputRef}
+                        placeholder="Filter by action or keys — “link”, “cmd+k”, “⌘⇧;”"
+                        aria-label="Filter shortcuts"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        onClear={() => setQuery('')}
+                    />
                 </div>
-            </Dialog.Body>
+                {groups.length === 0 ? (
+                    <p className="shortcuts__empty">No shortcut matches.</p>
+                ) : null}
+                {groups.map(({group, rows}) => (
+                    <section key={group} className="shortcuts__group">
+                        <h3 className="shortcuts__group-label">{group}</h3>
+                        {rows.map((shortcut) => (
+                            <div key={shortcut.keys} className="shortcuts__row">
+                                <span className="shortcuts__desc">{shortcut.description}</span>
+                                <span className="shortcuts__keys">
+                                    {/* A chord's position in this fixed, static list IS its
+                                        identity — 'esc esc' is two identical caps. */}
+                                    {shortcutChords(shortcut.keys).map((chord, i) => (
+                                        <Kbd key={i}>{chord.join('')}</Kbd>
+                                    ))}
+                                </span>
+                            </div>
+                        ))}
+                    </section>
+                ))}
+            </div>
         </Dialog>
     );
 }

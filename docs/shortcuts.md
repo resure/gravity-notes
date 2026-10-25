@@ -41,7 +41,7 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, with Markdown highlighting                                              |
 | `⌘F`             | In Markdown source: find and replace (`⌘G` / `⌘⇧G` next / previous); `⌥↑` / `⌥↓` move a line, `Enter` continues a list                    |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
-| `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
+| `⌘⇧I`            | This note’s menu — per-note font and text width, plus its file actions                                                                    |
 | `⌘K`             | Link the selected text, or edit the link the caret is in (clear the URL to unlink)                                                        |
 | `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |

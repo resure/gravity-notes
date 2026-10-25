@@ -1,19 +1,10 @@
 import {useCallback, useEffect, useState} from 'react';
-import type {RefObject} from 'react';
+import type {ReactNode, RefObject} from 'react';
 
-import {
-    ArrowUturnCcwLeft,
-    ArrowUturnCwRight,
-    Bold,
-    ChevronDown,
-    Code,
-    Italic,
-    LetterAUnderline,
-    Link,
-    Strikethrough,
-    Underline,
-} from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, Popup} from '@gravity-ui/uikit';
+import {Button} from '../ui/Button';
+import {Menu, MenuItem} from '../ui/Menu';
+import {Popover} from '../ui/Popover';
+import {ChevronDown, Link, Redo, Undo} from '../ui/icons';
 
 import type {EditorHandle, InlineMark} from './blockEditor/Editor';
 import {ColorPalette} from './blockEditor/blockColors';
@@ -23,12 +14,23 @@ import type {BlockType} from './blockEditor/types';
 
 import './EditorToolbar.css';
 
-const MARKS: {mark: InlineMark; label: string; icon: typeof Bold; command?: string}[] = [
-    {mark: 'bold', label: 'Bold (⌘B)', icon: Bold, command: 'bold'},
-    {mark: 'italic', label: 'Italic (⌘I)', icon: Italic, command: 'italic'},
-    {mark: 'underline', label: 'Underline (⌘U)', icon: Underline, command: 'underline'},
-    {mark: 'strike', label: 'Strikethrough (⌘⇧S)', icon: Strikethrough, command: 'strikeThrough'},
-    {mark: 'code', label: 'Code (⌘E)', icon: Code},
+// B / I / U / S / <> are type, not icons (§11): set as letterforms in the toolbar's own face.
+const MARKS: {
+    mark: InlineMark;
+    label: string;
+    glyph: ReactNode;
+    command?: string;
+}[] = [
+    {mark: 'bold', label: 'Bold (⌘B)', glyph: <b>B</b>, command: 'bold'},
+    {mark: 'italic', label: 'Italic (⌘I)', glyph: <i>I</i>, command: 'italic'},
+    {mark: 'underline', label: 'Underline (⌘U)', glyph: <u>U</u>, command: 'underline'},
+    {
+        mark: 'strike',
+        label: 'Strikethrough (⌘⇧S)',
+        glyph: <s>S</s>,
+        command: 'strikeThrough',
+    },
+    {mark: 'code', label: 'Code (⌘E)', glyph: <span>{'<>'}</span>},
 ];
 
 const TEXT_STYLES: BlockType[] = [
@@ -97,11 +99,13 @@ interface EditorToolbarProps {
 export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorToolbarProps) {
     const [state, setState] = useState<ToolbarState>(EMPTY);
     const [scrolled, setScrolled] = useState(false);
-    const [paletteAnchor, setPaletteAnchor] = useState<HTMLElement | null>(null);
+    const [paletteOpen, setPaletteOpen] = useState(false);
 
     const refresh = useCallback(
         () =>
             setState((current) => {
+                // While one of the toolbar's own popups has focus, keep showing the block it acts on.
+                if (document.activeElement?.closest('.ui-pop')) return current;
                 const next = readState(rootRef.current);
                 const same =
                     next.type === current.type &&
@@ -142,23 +146,21 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
     const button = (
         key: string,
         label: string,
-        icon: React.ReactNode,
+        content: ReactNode,
         action: (editor: EditorHandle) => void,
         selected = false,
         disabled = false,
     ) => (
         <Button
             key={key}
-            view="flat"
-            size="m"
-            selected={selected}
+            className="editor-toolbar__button"
+            pressed={selected}
             disabled={disabled}
             title={label}
             aria-label={label}
-            aria-pressed={selected}
             onClick={() => run(action)}
         >
-            {icon}
+            {content}
         </Button>
     );
 
@@ -176,66 +178,70 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                     if ((event.target as HTMLElement).closest('button')) event.preventDefault();
                 }}
             >
-                {button('undo', 'Undo (⌘Z)', <Icon data={ArrowUturnCcwLeft} />, (e) => e.undo())}
-                {button('redo', 'Redo (⌘⇧Z)', <Icon data={ArrowUturnCwRight} />, (e) => e.redo())}
+                {button('undo', 'Undo (⌘Z)', <Undo size={15} />, (e) => e.undo())}
+                {button('redo', 'Redo (⌘⇧Z)', <Redo size={15} />, (e) => e.redo())}
                 <span className="editor-toolbar__divider" />
-                <DropdownMenu
-                    size="m"
-                    renderSwitcher={(props) => (
-                        <Button
-                            {...props}
-                            view="flat"
-                            size="m"
-                            className="editor-toolbar__style"
-                            title="Text style"
-                        >
-                            {itemFor(state.type ?? 'text')?.label}
-                            <Icon data={ChevronDown} size={14} />
+                <Menu
+                    align="start"
+                    width={220}
+                    trigger={
+                        <Button className="editor-toolbar__style" title="Text style">
+                            <span>{itemFor(state.type ?? 'text')?.label}</span>
+                            <ChevronDown size={12} />
                         </Button>
-                    )}
-                    items={TEXT_STYLES.map((type) => ({
-                        text: itemFor(type)?.label,
-                        title: CHORDS[type],
-                        iconStart: (
-                            <span className="editor-toolbar__item-icon">{itemFor(type)?.icon}</span>
-                        ),
-                        selected: type === currentStyle,
-                        // After the menu has closed and handed focus back, so the caret lands in the
-                        // block and stays there.
-                        action: () => window.setTimeout(() => run((e) => e.setBlockType(type)), 0),
-                    }))}
-                />
+                    }
+                >
+                    {TEXT_STYLES.map((type) => (
+                        <MenuItem
+                            key={type}
+                            className={
+                                type === currentStyle ? 'editor-toolbar__item_current' : undefined
+                            }
+                            icon={
+                                <span className="editor-toolbar__item-icon">
+                                    {itemFor(type)?.icon}
+                                </span>
+                            }
+                            hint={CHORDS[type]}
+                            // After the menu has closed and handed focus back, so the caret lands
+                            // in the block and stays there.
+                            onClick={() =>
+                                window.setTimeout(() => run((e) => e.setBlockType(type)), 0)
+                            }
+                        >
+                            {itemFor(type)?.label}
+                        </MenuItem>
+                    ))}
+                </Menu>
                 <span className="editor-toolbar__divider" />
-                {MARKS.map(({mark, label, icon}) =>
+                {MARKS.map(({mark, label, glyph}) =>
                     button(
                         mark,
                         label,
-                        <Icon data={icon} />,
+                        <span className="editor-toolbar__letter">{glyph}</span>,
                         (e) => e.format(mark),
                         state.marks.has(mark),
                         !canFormat,
                     ),
                 )}
-                <Button
-                    view="flat"
-                    size="m"
-                    title="Color"
+                <Popover
+                    open={paletteOpen}
+                    onOpenChange={setPaletteOpen}
+                    align="start"
+                    initialFocus={false}
                     aria-label="Color"
-                    aria-expanded={Boolean(paletteAnchor)}
-                    disabled={!canFormat}
-                    onClick={(event) =>
-                        setPaletteAnchor(paletteAnchor ? null : event.currentTarget)
+                    trigger={
+                        <Button
+                            className="editor-toolbar__button"
+                            title="Color"
+                            aria-label="Color"
+                            disabled={!canFormat}
+                        >
+                            <span className="editor-toolbar__letter editor-toolbar__letter_color">
+                                A
+                            </span>
+                        </Button>
                     }
-                >
-                    <Icon data={LetterAUnderline} />
-                </Button>
-                <Popup
-                    open={Boolean(paletteAnchor)}
-                    anchorElement={paletteAnchor}
-                    placement="bottom-start"
-                    onOpenChange={(open) => {
-                        if (!open) setPaletteAnchor(null);
-                    }}
                 >
                     {/* The editor's own palette, so its scoped styles apply; a press must not
                         take focus from the text it colours. */}
@@ -246,16 +252,16 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                     >
                         <ColorPalette
                             onPick={(color) => {
-                                setPaletteAnchor(null);
+                                setPaletteOpen(false);
                                 run((e) => e.color(color));
                             }}
                         />
                     </div>
-                </Popup>
+                </Popover>
                 {button(
                     'link',
                     'Link (⌘K)',
-                    <Icon data={Link} />,
+                    <Link size={15} />,
                     (e) => e.link(),
                     false,
                     !canFormat || !state.linkable,

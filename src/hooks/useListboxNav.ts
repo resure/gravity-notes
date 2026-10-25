@@ -1,5 +1,17 @@
 import {type Dispatch, type SetStateAction, useEffect, useRef, useState} from 'react';
 
+/**
+ * A row key rendered safe to use as an HTML `id`, for `aria-activedescendant`.
+ *
+ * An IDREF cannot contain whitespace, and the keys these listboxes carry are raw workspace ids and
+ * folder paths (`tauri:/Users/me/Gravity Notes Demo`, `' root'`) — an id built straight from one
+ * never resolves, so a screen reader announces nothing for the highlighted row. Hex-escaping the
+ * unsafe characters keeps the mapping injective, so two different rows can't collide on one id.
+ */
+export function domIdPart(key: string): string {
+    return key.replace(/[^A-Za-z0-9-]/g, (ch) => `_${ch.charCodeAt(0).toString(16)}`);
+}
+
 export interface ListboxNav {
     /** The highlighted row index (`-1` = nothing highlighted). */
     activeIndex: number;
@@ -33,10 +45,15 @@ interface Options<T> {
  * list changes, and scroll-the-active-row-into-view. Callers own filtering, rendering, and the
  * pre-highlight/typeahead seeding (via `setActiveIndex`).
  *
- * The listener is on `document`, not the filter input, because Gravity's `Dialog` wraps its content
- * in a floating-ui FocusManager that can park focus on the dialog CONTAINER (or a row's ✕ button),
- * where an input-scoped `onKeyDown` goes silent — arrows/Enter dead. Pair with `initialFocus` on the
- * Dialog so type-to-filter still lands in the input.
+ * The listener is on `document`, not the filter input, because the dialog's focus manager can park
+ * focus on the popup CONTAINER (or a row's ✕ button), where an input-scoped `onKeyDown` goes silent
+ * — arrows/Enter dead. Pair with `initialFocus` on the Dialog so type-to-filter still lands in the
+ * input.
+ *
+ * It listens in the CAPTURE phase, which is not optional: Base UI's dialog popup stops keydown
+ * propagation at its own root (so a nested dialog's Escape can't also close its parent), and a
+ * bubble-phase document listener therefore never fires for a key pressed inside the dialog. Capture
+ * runs on the way DOWN, before the popup can swallow anything.
  */
 export function useListboxNav<T>({
     open,
@@ -98,6 +115,13 @@ export function useListboxNav<T>({
 
     // Rebound every render (via the ref) so the once-bound document listener reads fresh state.
     const handleKey = (event: KeyboardEvent) => {
+        // An IME owns the keyboard while a composition is open: its candidate list uses the same
+        // arrows and Enter this hook does. Skipping composition keystrokes matters MORE in the
+        // capture phase, where we would otherwise beat every handler that might have stopped us —
+        // typing kana into the filter would move the workspace highlight and commit a switch
+        // instead of choosing a candidate. `keyCode === 229` is the legacy signal some IMEs
+        // still send without `isComposing`.
+        if (event.isComposing || event.keyCode === 229) return;
         switch (event.key) {
             case 'ArrowDown':
                 event.preventDefault();
@@ -130,8 +154,8 @@ export function useListboxNav<T>({
     useEffect(() => {
         if (!open) return undefined;
         const listener = (event: KeyboardEvent) => handleKeyRef.current(event);
-        document.addEventListener('keydown', listener);
-        return () => document.removeEventListener('keydown', listener);
+        document.addEventListener('keydown', listener, true);
+        return () => document.removeEventListener('keydown', listener, true);
     }, [open]);
 
     return {activeIndex, setActiveIndex, registerRow};

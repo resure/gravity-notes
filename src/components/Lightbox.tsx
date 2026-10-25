@@ -7,9 +7,9 @@ import {
     useState,
 } from 'react';
 
-import {Xmark} from '@gravity-ui/icons';
-import {Icon} from '@gravity-ui/uikit';
 import {createPortal} from 'react-dom';
+
+import {Xmark} from '../ui/icons';
 
 import './Lightbox.css';
 
@@ -187,7 +187,7 @@ export function Lightbox({src, alt, onClose}: {src: string; alt: string; onClose
                 aria-label="Close"
                 onClick={onClose}
             >
-                <Icon data={Xmark} size={20} />
+                <Xmark size={19} />
             </button>
             <div className="lightbox__frame" ref={frameRef}>
                 {/* The gesture surface wraps the image (kept presentational so its `alt` survives). A

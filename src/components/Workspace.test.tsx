@@ -453,15 +453,11 @@ describe('Workspace — nvALT navigation', () => {
         );
     });
 
-    it('restores the collapsed sidebar from the pre-workspace key and adopts it', async () => {
-        // An upgrade scenario: only the legacy (un-namespaced) key exists. The first workspace
-        // opened inherits it — and consumes it, so "back to default" can't fall through later.
-        localStorage.setItem('gravity-notes:sidebar-collapsed', 'true');
+    it('restores the collapsed sidebar from its workspace-namespaced key', async () => {
+        localStorage.setItem('gravity-notes:test-ws:sidebar-collapsed', 'true');
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull();
-        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('true');
-        expect(localStorage.getItem('gravity-notes:sidebar-collapsed')).toBeNull();
     });
 
     it("⌘' peeks the collapsed sidebar", async () => {
@@ -617,32 +613,6 @@ describe('Workspace — nvALT navigation', () => {
         expect(within(list).queryByDisplayValue('Beta')).toBeNull();
     });
 
-    it('F2 does not start a list rename from the title icon picker (button or open popup)', async () => {
-        localStorage.setItem('gravity-notes:settings', JSON.stringify({showNoteIcons: true}));
-        const user = userEvent.setup();
-        renderWorkspace();
-        await screen.findByRole('option', {name: /Beta/});
-        await user.click(screen.getByRole('option', {name: /Beta/}));
-        const title = await screen.findByLabelText('Note title');
-        const row = title.closest('.note-title-row') as HTMLElement;
-        const iconButton = within(row).getByRole('button', {name: /note icon/i});
-        const list = screen.getByRole('listbox', {name: 'Notes'});
-
-        // The icon button is a sibling of the .note-title input — a `.note-title`-only
-        // guard misses it and F2 yanked focus to a sidebar rename.
-        iconButton.focus();
-        await user.keyboard('{F2}');
-        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
-
-        // …and the open picker popup is portaled out of the title row entirely (guarded as a
-        // floating layer via uikit's .g-popup).
-        await user.click(iconButton);
-        const search = await screen.findByPlaceholderText('Search icons…');
-        search.focus();
-        await user.keyboard('{F2}');
-        expect(within(list).queryByDisplayValue('Beta')).toBeNull();
-    });
-
     it('F2 while typing in a dialog does not start a list rename behind it', async () => {
         const user = userEvent.setup();
         renderWorkspace();
@@ -754,7 +724,42 @@ describe('Workspace — move picker', () => {
         await user.click(await screen.findByRole('option', {name: /Beta/}));
         fireEvent.keyDown(document, {key: 'Backspace', metaKey: true, shiftKey: true});
         // The confirm dialog appears, naming the selected note (it isn't trashed until confirmed).
-        expect(await screen.findByText(/Move "Beta" to the Trash\?/)).toBeInTheDocument();
+        expect(await screen.findByText(/Move “Beta” to the Trash\?/)).toBeInTheDocument();
+    });
+
+    it('deletes the OPEN note from its ⋯ menu even when the list is not showing it', async () => {
+        // The confirmation lives in Workspace precisely for this: a live search can filter the open
+        // note out of the list, and routing the request through the list's own lookup silently
+        // dropped it.
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await user.dblClick(await screen.findByRole('option', {name: /Beta/}));
+        // A query that matches neither note leaves the list empty while Beta stays open.
+        await user.type(screen.getByPlaceholderText('Search or create a note…'), 'zzzz');
+        await waitFor(() => expect(screen.queryByRole('option', {name: /Beta/})).toBeNull());
+
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Delete/}));
+        await user.click(await screen.findByRole('button', {name: 'Move to Trash'}));
+        await waitFor(async () => {
+            const ids = (await store.list()).map((n) => n.id);
+            expect(ids).not.toContain('Beta.md');
+        });
+    });
+
+    it('renames the OPEN note through its own title field, not the list', async () => {
+        const user = userEvent.setup();
+        renderWorkspace();
+        await user.dblClick(await screen.findByRole('option', {name: /Beta/}));
+        await user.type(screen.getByPlaceholderText('Search or create a note…'), 'zzzz');
+        await waitFor(() => expect(screen.queryByRole('option', {name: /Beta/})).toBeNull());
+
+        await user.click(screen.getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
+        // The title field takes focus with its text selected, ready to be typed over — a frame
+        // later, once the menu has finished closing over it.
+        const title = screen.getByDisplayValue('Beta');
+        await waitFor(() => expect(document.activeElement).toBe(title));
     });
 });
 
@@ -775,8 +780,14 @@ describe('Workspace — trash', () => {
 
         // The orb menu's Trash item now shows a count and opens the trash view holding Beta.
         await user.click(await screen.findByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Trash \(1\)/}));
-        const dialog = await screen.findByRole('dialog');
+        // The Trash item's count is now a right-aligned hint, not part of the label text.
+        const trashItem = await screen.findByRole('menuitem', {name: /Trash/});
+        expect(trashItem).toHaveTextContent('1');
+        await user.click(trashItem);
+        // An interactive toast ("Moved “Beta” to Trash") is a `role="dialog"` too — that is the
+        // ARIA pattern for one with buttons — so skip it and take the real modal.
+        const dialogs = await screen.findAllByRole('dialog');
+        const dialog = dialogs.find((el) => !el.classList.contains('ui-toast'))!;
         expect(await within(dialog).findByText('Beta')).toBeInTheDocument();
 
         // Restore it → it leaves the trash (now empty) and is written back to its folder.
@@ -847,7 +858,6 @@ describe('Workspace — storage menu', () => {
 
         const switchToOther = async () => {
             await user.click(screen.getByRole('button', {name: 'Menu'}));
-            fireEvent.mouseEnter(await screen.findByRole('menuitem', {name: /Open Recent/}));
             await user.click(await screen.findByRole('menuitem', {name: 'other'}));
         };
 
@@ -881,7 +891,8 @@ describe('Workspace — folder move', () => {
 
         // Rename Work → Archive: the store hard-fails (Archive exists). The optimistic re-prefix
         // briefly points selection at "Archive", but the failed move must revert it to "Work".
-        await user.dblClick(screen.getByText('Work'));
+        // The list's scope header names the folder too — rename the RAIL row.
+        await user.dblClick(within(work).getByText('Work'));
         const input = screen.getByDisplayValue('Work');
         await user.clear(input);
         await user.type(input, 'Archive{Enter}');
@@ -999,15 +1010,15 @@ describe('Workspace — resizable panels', () => {
         layOutBody(1200);
         const divider = screen.getByRole('separator', {name: 'Resize note list'});
 
-        fireEvent.pointerDown(divider, {button: 0, clientX: 280, pointerId: 1});
-        fireEvent.pointerMove(divider, {clientX: 340, pointerId: 1});
+        fireEvent.pointerDown(divider, {button: 0, clientX: 324, pointerId: 1});
+        fireEvent.pointerMove(divider, {clientX: 384, pointerId: 1});
         // Mid-drag: the live width is on the element, nothing persisted yet.
-        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('340px');
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('384px');
         expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBeNull();
 
         fireEvent.pointerUp(divider, {pointerId: 1});
-        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBe('340');
-        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('340px');
+        expect(localStorage.getItem('gravity-notes:test-ws:sidebar-width')).toBe('384');
+        expect(workspaceStyle().getPropertyValue('--sidebar-width')).toBe('384px');
     });
 
     it('restores a persisted width on mount and clamps garbage', async () => {

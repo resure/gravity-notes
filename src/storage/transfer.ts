@@ -91,6 +91,21 @@ export async function exportNotes(
     return count;
 }
 
+/**
+ * Export ONE note as a plain `.md` file. The note menu's "Export this note…" — the same
+ * `canonicalBody` normalisation the zip export applies, so a single file and a file pulled out of
+ * the archive are byte-identical.
+ *
+ * Deliberately just the note: attachments it references stay behind. Bundling them would mean
+ * emitting a zip for what reads like "save this file somewhere", and the whole-vault export already
+ * exists for the case where you want the bytes too.
+ */
+export async function exportNote(store: NoteStore, id: string): Promise<void> {
+    const note = await store.get(id);
+    const filename = baseName(id);
+    downloadBlob(strToU8(canonicalBody(note.content)), filename, 'text/markdown');
+}
+
 async function importOne(
     store: NoteStore,
     filename: string,
