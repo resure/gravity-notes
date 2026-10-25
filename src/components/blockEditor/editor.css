@@ -44,12 +44,8 @@
 .gn-block-editor {
     position: relative;
     cursor: text;
-    /* Here, not with the palette on `:root`: the theme's background is only defined below `.g-root`. */
-    --n-selection-wash: color-mix(
-        in srgb,
-        rgb(var(--n-accent-rgb)) 14%,
-        var(--g-color-base-background, #fff)
-    );
+    /* Mixed against the paper, so the wash follows the theme. */
+    --n-selection-wash: color-mix(in srgb, rgb(var(--n-accent-rgb)) 14%, var(--bg-paper, #fff));
 }
 
 /* Same gutter as the note title above (the host widens `--editor-gutter` while this editor is
@@ -268,8 +264,7 @@
 }
 
 /* The heading scale is shared with the read-only preview (NotePreview.css), so a heading is the same
-   size in both. H1 and H2 are PT Serif at 400 — the note title's voice, so a heading reads as a
-   smaller instance of the title rather than as bold body copy. */
+   size in both. Headings are set in the note's own font, like the title above them. */
 .gn-block-editor .block[data-type^='heading'] .content {
     font-weight: 600;
 }
@@ -281,11 +276,10 @@
     --gn-heading-size: var(--fs-h2);
     --gn-block-line: var(--lh-h2);
 }
-.gn-block-editor .block[data-type='heading1'] .content,
-.gn-block-editor .block[data-type='heading2'] .content {
-    font-family: var(--font-serif);
+/* A serif reads as a heading at its regular weight; bolding it only thickens it. */
+[data-editor-font='serif'] .gn-block-editor .block[data-type='heading1'] .content,
+[data-editor-font='serif'] .gn-block-editor .block[data-type='heading2'] .content {
     font-weight: 400;
-    letter-spacing: -0.005em;
 }
 .gn-block-editor .block[data-type='heading3'] {
     --gn-heading-size: 17px;
@@ -318,24 +312,24 @@
 .gn-block-editor .content code {
     font-family: var(--n-mono);
     font-size: 0.875em;
-    color: var(--g-color-text-misc);
-    background: var(--g-color-base-misc-light);
+    color: var(--text-2);
+    background: var(--bg-selected);
     border-radius: 4px;
     padding: 0.1em 0.4em 0.15em;
 }
 
 .gn-block-editor .content a,
 .gn-block-editor .url-link {
-    color: inherit;
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 3px;
-    text-decoration-color: rgba(var(--n-ink), 0.4);
+    text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
     transition: text-decoration-color 100ms ease-in;
 }
 
 .gn-block-editor .content a:hover,
 .gn-block-editor .url-link:hover {
-    text-decoration-color: rgba(var(--n-ink), 0.8);
+    text-decoration-color: var(--link);
 }
 
 /* A link inside the body is text you can edit; ⌘/Ctrl-click is what OPENS it (Editor.tsx toggles
@@ -916,7 +910,7 @@
     position: relative;
     /* On the text column's edge, like the preview's `<pre>`. */
     margin-left: 2px;
-    background: var(--g-color-base-misc-light);
+    background: var(--bg-selected);
     border-radius: 4px;
 }
 
@@ -1114,7 +1108,7 @@
 .gn-block-editor .simple-table {
     border-spacing: 0;
     border-collapse: separate;
-    border: 1px solid var(--g-color-line-generic);
+    border: 1px solid var(--line);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -1122,8 +1116,8 @@
 .gn-block-editor .simple-table td {
     min-width: 80px;
     padding: 0;
-    border-right: 1px solid var(--g-color-line-generic);
-    border-bottom: 1px solid var(--g-color-line-generic);
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     background: var(--n-surface);
     vertical-align: top;
 }
@@ -1137,7 +1131,7 @@
 }
 
 .gn-block-editor .simple-table .table-header-cell {
-    background: var(--g-color-base-generic);
+    background: var(--bg-hover);
     font-weight: 500;
     vertical-align: middle;
 }
@@ -1159,17 +1153,17 @@
 .gn-block-editor .table-cell-content code {
     font-family: var(--n-mono);
     font-size: 0.875em;
-    color: var(--g-color-text-misc);
-    background: var(--g-color-base-misc-light);
+    color: var(--text-2);
+    background: var(--bg-selected);
     border-radius: 4px;
     padding: 0.1em 0.4em 0.15em;
 }
 
 .gn-block-editor .table-cell-content a {
-    color: inherit;
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 3px;
-    text-decoration-color: rgba(var(--n-ink), 0.4);
+    text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
 }
 
 .gn-block-editor .table-add {
@@ -1750,13 +1744,24 @@
    (see wikiDecorate.ts). Coloured like a link, but with a text cursor — a plain click edits the
    title, ⌘/Ctrl-click follows it (`.gn-block-editor_mod-pressed` flips the cursor). */
 .gn-block-editor .wiki-link {
-    color: var(--n-blue);
+    color: var(--link);
     cursor: text;
 }
 
 .gn-block-editor_mod-pressed .wiki-link {
     cursor: pointer;
     text-decoration: underline;
+}
+
+/* The brackets stay in the text (and the file) but show only while the caret is in or against the
+   link — the editor marks that one link active. */
+.gn-block-editor .wiki-bracket {
+    display: none;
+}
+
+.gn-block-editor .wiki-link_active .wiki-bracket {
+    display: inline;
+    opacity: 0.55;
 }
 
 /* A link whose target doesn't exist yet — dimmed, with a dashed underline, so a typo or a
@@ -1808,9 +1813,9 @@
 
 .gn-block-editor .content mark {
     color: inherit;
-    background: var(--g-color-base-warning-light);
+    background: var(--accent-soft);
 }
 
 .gn-block-editor .content samp {
-    font-family: var(--g-font-family-monospace);
+    font-family: var(--font-mono);
 }

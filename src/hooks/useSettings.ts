@@ -20,6 +20,8 @@ export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'u
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
 export interface Settings {
+    /** Show each note's emoji in the list and beside its title (experimental). Off by default. */
+    showNoteIcons: boolean;
     /** Show the formatting toolbar above the note body. Off by default: the editor is keyboard-first. */
     showEditorToolbar: boolean;
     /** Enable native spellcheck in both note-body editor modes. Off by default. */
@@ -31,6 +33,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
+    showNoteIcons: false,
     showEditorToolbar: false,
     spellcheck: false,
     editorFont: 'sans',
@@ -69,6 +72,7 @@ function loadSettings(key: string): Settings {
     try {
         const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings>;
         return {
+            showNoteIcons: bool(raw.showNoteIcons, DEFAULTS.showNoteIcons),
             showEditorToolbar: bool(raw.showEditorToolbar, DEFAULTS.showEditorToolbar),
             spellcheck: bool(raw.spellcheck, DEFAULTS.spellcheck),
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),

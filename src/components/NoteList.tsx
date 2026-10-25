@@ -18,10 +18,10 @@ import type {
 
 import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
-import {buildListRows} from '../listGroups';
+import {emojiIcon} from '../emoji';
 import {escapeRegExp, tokenizeQuery} from '../search';
 import {isOpenInNewWindowChord} from '../shortcuts';
-import {basename, dirname} from '../storage/noteText';
+import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, OtherFile, SortMode} from '../storage/types';
 import {Button} from '../ui/Button';
 import {Menu, MenuItem, MenuSeparator} from '../ui/Menu';
@@ -37,10 +37,13 @@ import {
     NewWindow,
     Pencil,
     Pin,
+    PinFill,
     PinSlash,
     Plus,
     Trash,
 } from '../ui/icons';
+
+import {EmojiPickerPopup} from './EmojiPicker';
 
 import './NoteList.css';
 
@@ -52,8 +55,13 @@ const NOTE_MIME = 'application/x-gravity-note';
 
 /** §05's hard numbers: the virtualizer depends on both. */
 const NO_FILES: OtherFile[] = [];
-const ROW_HEIGHT = 52;
-const GROUP_HEIGHT = 24;
+const ROW_HEIGHT = 54;
+/** A row that also names its folder, on a third line (All Notes / search). */
+const ROW_WITH_FOLDER_HEIGHT = 72;
+
+function rowHeight(note: NoteMeta | null, showCrumbs: boolean): number {
+    return note && showCrumbs && dirname(note.id) ? ROW_WITH_FOLDER_HEIGHT : ROW_HEIGHT;
+}
 
 /** Widths for the loading ladder — irregular, because a column of identical bars reads as a table. */
 const SKELETON_ROWS = [186, 148, 210, 132, 172, 196, 140, 164];
@@ -139,8 +147,6 @@ export interface NoteListProps {
     onSortChange: (mode: SortMode) => void;
     pinnedIds: readonly string[];
     onTogglePin: (id: string) => void;
-    /** Creation stamps from the sidecar — the `created` sort's group boundaries. */
-    createdById?: Readonly<Record<string, number>>;
     /** Whether the folder rail is shown (drives the scope chip). */
     railOpen: boolean;
     /** Show / hide the folder rail. */
@@ -150,6 +156,11 @@ export interface NoteListProps {
      * selected while the rail is CLOSED — the only state where the scoping is otherwise invisible.
      */
     onClearScope?: () => void;
+    /** Note id → emoji icon, shown when {@link showIcons} (Settings › Show note icons). */
+    icons?: Readonly<Record<string, string>>;
+    showIcons?: boolean;
+    /** Set or clear (with '') a note's icon — adds "Set icon…" to the row menu. */
+    onSetIcon?: (id: string, icon: string) => void;
     /** Move focus into the folder rail (← on a row, when the rail is open). */
     onFocusRail: () => void;
 }
@@ -211,7 +222,13 @@ interface NoteRowProps {
     /** Full-text snippet or head-of-note preview, already resolved by the parent. */
     previewText: string;
     /** Leaf folder name (`''` when the list is already scoped to one folder). */
-    folderName: string;
+    pinned: boolean;
+    /** The note's emoji, when icons are shown (empty = none). */
+    icon: string;
+    /** This row's ⋯ menu is open — keeps the ⋯ shown however far the pointer wanders. */
+    menuOpen: boolean;
+    /** The note's folder path, on a line of its own (empty = not shown). */
+    folderPath: string;
     /** Query terms to highlight in the title/preview (stable identity per query). */
     terms: string[];
     /** Current rename-field value; meaningful only while `editing` ('' for every other row). */
@@ -247,7 +264,10 @@ const NoteRow = memo(function NoteRow({
     editing,
     tabbable,
     previewText,
-    folderName,
+    pinned,
+    icon,
+    menuOpen,
+    folderPath,
     terms,
     editValue,
     editInputRef,
@@ -265,7 +285,11 @@ const NoteRow = memo(function NoteRow({
     return (
         <div
             ref={(el) => registerRef(note.id, el)}
-            className={'note-list__item' + (selected ? ' note-list__item_selected' : '')}
+            className={
+                'note-list__item' +
+                (selected ? ' note-list__item_selected' : '') +
+                (menuOpen ? ' note-list__item_menu-open' : '')
+            }
             role="option"
             aria-selected={selected}
             tabIndex={tabbable ? 0 : -1}
@@ -314,21 +338,16 @@ const NoteRow = memo(function NoteRow({
                     />
                 ) : (
                     <>
+                        {pinned ? (
+                            <PinFill size={12} className="note-list__pin" title="Pinned" />
+                        ) : null}
+                        {icon ? <span className="note-list__icon">{icon}</span> : null}
                         <span className="note-list__title">
                             {highlightTerms(note.title, terms)}
                         </span>
-                        {folderName ? (
-                            <span className="note-list__folder">{folderName}</span>
-                        ) : null}
-                        {/* The ⋯ takes the TIME's place on hover — 24px, the same target as every
-                            other icon button in the chrome. Both live in one slot, and the time
-                            keeps its box (visibility, not display) while the button overlays it:
-                            the two are different widths, and letting the slot resize would re-flow
-                            the flex-1 title and visibly shift its text under the pointer. */}
+                        {/* The ⋯ keeps its box at rest (visibility, not display), so showing it on
+                            hover never re-flows the title beside it. */}
                         <span className="note-list__trailing">
-                            <span className="note-list__date">
-                                {formatNoteDate(note.updatedAt)}
-                            </span>
                             <button
                                 type="button"
                                 className="note-list__actions"
@@ -347,7 +366,16 @@ const NoteRow = memo(function NoteRow({
                     </>
                 )}
             </div>
-            <div className="note-list__preview">{highlightTerms(previewText, terms)}</div>
+            <div className="note-list__meta">
+                <span className="note-list__date">{formatNoteDate(note.updatedAt)}</span>
+                <span className="note-list__preview">{highlightTerms(previewText, terms)}</span>
+            </div>
+            {folderPath ? (
+                <div className="note-list__folder">
+                    <Folder size={12} className="note-list__folder-glyph" />
+                    <span className="note-list__folder-name">{folderPath}</span>
+                </div>
+            ) : null}
         </div>
     );
 });
@@ -378,11 +406,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSortChange,
         pinnedIds,
         onTogglePin,
-        createdById,
         railOpen,
         onToggleRail,
         onClearScope,
         onFocusRail,
+        icons,
+        showIcons = false,
+        onSetIcon,
     },
     ref,
 ) {
@@ -396,6 +426,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         note: NoteMeta;
         anchor: HTMLElement | {getBoundingClientRect: () => DOMRect};
     } | null>(null);
+    // The row whose icon the shared emoji picker is setting, and where it opened.
+    const [iconFor, setIconFor] = useState<{
+        id: string;
+        anchor: {getBoundingClientRect: () => DOMRect};
+    } | null>(null);
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -405,32 +440,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
     const searching = query.trim().length > 0;
 
-    // Today's local midnight, recomputed every render but only CHANGING once a day — the memo key
-    // that keeps "Today" from meaning yesterday. Without it a window left open across midnight kept
-    // its labels until something else happened to invalidate the list.
-    const dayStart = new Date().setHours(0, 0, 0, 0);
-
-    // Group labels interleaved into the ordered list (Pinned / Today / … , or A B C under a title
-    // sort). A live search is ranked rather than sorted, so it gets no labels — see listGroups.ts.
-    const rows = useMemo(
-        () =>
-            buildListRows(notes, {
-                sort: sortMode,
-                pinned: pinnedSet,
-                created: createdById,
-                grouped: !searching,
-            }),
-        // `dayStart` only invalidates the grouping; `buildListRows` reads the wall clock itself.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [notes, sortMode, pinnedSet, createdById, searching, dayStart],
-    );
     const rowIndexById = useMemo(() => {
         const map = new Map<string, number>();
-        rows.forEach((row, index) => {
-            if (row.kind === 'note') map.set(row.note.id, index);
-        });
+        notes.forEach((note, index) => map.set(note.id, index));
         return map;
-    }, [rows]);
+    }, [notes]);
 
     // The note row that is tabbable: the selected one if visible, else the first note.
     const focusableId =
@@ -483,13 +497,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     // honest at three thousand rows.
     const scrollRef = useRef<HTMLDivElement>(null);
     const rowVirtualizer = useVirtualizer({
-        count: rows.length + files.length,
+        count: notes.length + files.length,
         getScrollElement: () => scrollRef.current,
-        estimateSize: (index) =>
-            index < rows.length && rows[index].kind === 'group' ? GROUP_HEIGHT : ROW_HEIGHT,
+        estimateSize: (index) => rowHeight(notes[index] ?? null, showCrumbs),
         overscan: 8,
         getItemKey: (index) =>
-            index < rows.length ? rows[index].key : `file:${files[index - rows.length].id}`,
+            index < notes.length ? notes[index].id : `file:${files[index - notes.length].id}`,
         // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
         // so the list always has a keyboard-focusable element and focusing it never needs an async
         // scroll-then-mount — plus the open menu's anchor row, so scrolling can't unmount the popup's
@@ -503,6 +516,12 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             return indexes.sort((a, b) => a - b);
         },
     });
+
+    // Row heights are computed, not measured, so a change in which rows carry a folder line has to
+    // tell the virtualizer to recompute its offsets.
+    useLayoutEffect(() => {
+        rowVirtualizer.measure();
+    }, [rowVirtualizer, showCrumbs]);
 
     // A row to focus once it has been scrolled into the virtual window (set by focusRowById below).
     const pendingFocusRef = useRef<string | null>(null);
@@ -735,7 +754,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         Search covers titles and bodies across every folder.
                     </p>
                     <p className="note-list__empty-create">
-                        Create “{q}” <Kbd>↵</Kbd>
+                        Create “{q}” <Kbd keys="↵" />
                     </p>
                 </>
             );
@@ -755,22 +774,23 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     return (
         <div className="note-list">
-            {/* The 38px scope header (§04/§05): the folder's name and count — this is what replaced
-                the per-row breadcrumb — then the sort control and the app's ONE raised button. */}
+            {/* The toolbar: the folders toggle, sort, and the app's ONE raised button. */}
             <div className="note-list__header">
-                <span className="note-list__scope-name">{scopeLabel ?? 'All Notes'}</span>
-                <span className="note-list__scope-count">
-                    {files.length > 0
-                        ? `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} · ${files.length} ${files.length === 1 ? 'file' : 'files'}`
-                        : notes.length}
-                </span>
-                <div className="note-list__header-gap" />
+                <Button
+                    className="note-list__folders-toggle"
+                    icon={<Folder size={15} />}
+                    aria-label="Folders"
+                    title={railOpen ? 'Hide folders (⌘⇧\\)' : 'Show folders (⌘⇧\\)'}
+                    pressed={railOpen}
+                    onClick={onToggleRail}
+                />
                 <Select
                     aria-label="Sort notes"
                     options={SORT_OPTIONS}
                     value={sortMode}
                     onChange={onSortChange}
                 />
+                <div className="note-list__header-gap" />
                 <Button
                     size="s"
                     variant="raised"
@@ -780,6 +800,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     New
                 </Button>
             </div>
+
+            {files.length > 0 ? (
+                <div className="note-list__counts">
+                    {notes.length} {notes.length === 1 ? 'note' : 'notes'} · {files.length}{' '}
+                    {files.length === 1 ? 'file' : 'files'}
+                </div>
+            ) : null}
 
             {/* Scope chip: with the rail closed, a selected folder silently filters the list — name
                 the scope, click through to the folder tree, ✕ back to All Notes. Hidden while a
@@ -830,26 +857,13 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         <div role="listbox" aria-label="Notes">
                             {rowVirtualizer
                                 .getVirtualItems()
-                                .filter((virtualRow) => virtualRow.index < rows.length)
+                                .filter((virtualRow) => virtualRow.index < notes.length)
                                 .map((virtualRow) => {
-                                    const row = rows[virtualRow.index];
+                                    const note = notes[virtualRow.index];
                                     return (
                                         <div
                                             key={virtualRow.key}
                                             data-index={virtualRow.index}
-                                            // Two washed rows must never touch: if hover landed directly
-                                            // above or below the selection they would read as one four-line
-                                            // block. The flag lives on this POSITIONING wrapper, not on the
-                                            // memoized row — a selection change moves it across up to four
-                                            // neighbours, and passing it down would re-render all of them
-                                            // for a purely visual rule (the row itself must re-render only
-                                            // when it gains or loses selection).
-                                            data-no-hover={
-                                                focusableIndex >= 0 &&
-                                                Math.abs(virtualRow.index - focusableIndex) === 1
-                                                    ? ''
-                                                    : undefined
-                                            }
                                             style={{
                                                 position: 'absolute',
                                                 top: 0,
@@ -859,43 +873,39 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                                 transform: `translateY(${virtualRow.start}px)`,
                                             }}
                                         >
-                                            {row.kind === 'group' ? (
-                                                <div className="note-list__group">{row.label}</div>
-                                            ) : (
-                                                <NoteRow
-                                                    note={row.note}
-                                                    selected={row.note.id === selectedId}
-                                                    editing={row.note.id === editingId}
-                                                    tabbable={
-                                                        row.note.id !== editingId &&
-                                                        row.note.id === focusableId
-                                                    }
-                                                    previewText={
-                                                        snippetById?.get(row.note.id) ??
-                                                        row.note.preview ??
-                                                        ''
-                                                    }
-                                                    folderName={
-                                                        showCrumbs
-                                                            ? basename(dirname(row.note.id) || '')
-                                                            : ''
-                                                    }
-                                                    terms={terms}
-                                                    editValue={
-                                                        row.note.id === editingId ? editValue : ''
-                                                    }
-                                                    editInputRef={editInputRef}
-                                                    registerRef={registerRef}
-                                                    onClickRow={onClickRow}
-                                                    onDoubleClickRow={onDoubleClickRow}
-                                                    onContextMenuRow={onContextMenuRow}
-                                                    onKeyDownRow={onKeyDownRow}
-                                                    onOpenMenu={onOpenMenu}
-                                                    onEditChange={setEditValue}
-                                                    onEditCommit={onEditCommit}
-                                                    onEditCancel={onEditCancel}
-                                                />
-                                            )}
+                                            <NoteRow
+                                                note={note}
+                                                selected={note.id === selectedId}
+                                                editing={note.id === editingId}
+                                                tabbable={
+                                                    note.id !== editingId && note.id === focusableId
+                                                }
+                                                previewText={
+                                                    snippetById?.get(note.id) ?? note.preview ?? ''
+                                                }
+                                                pinned={pinnedSet.has(note.id)}
+                                                icon={
+                                                    showIcons
+                                                        ? (emojiIcon(icons?.[note.id]) ?? '')
+                                                        : ''
+                                                }
+                                                menuOpen={menu?.note.id === note.id}
+                                                folderPath={
+                                                    showCrumbs ? formatCrumb(dirname(note.id)) : ''
+                                                }
+                                                terms={terms}
+                                                editValue={note.id === editingId ? editValue : ''}
+                                                editInputRef={editInputRef}
+                                                registerRef={registerRef}
+                                                onClickRow={onClickRow}
+                                                onDoubleClickRow={onDoubleClickRow}
+                                                onContextMenuRow={onContextMenuRow}
+                                                onKeyDownRow={onKeyDownRow}
+                                                onOpenMenu={onOpenMenu}
+                                                onEditChange={setEditValue}
+                                                onEditCommit={onEditCommit}
+                                                onEditCancel={onEditCancel}
+                                            />
                                         </div>
                                     );
                                 })}
@@ -904,9 +914,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                             <div role="list" aria-label="Other files">
                                 {rowVirtualizer
                                     .getVirtualItems()
-                                    .filter((virtualRow) => virtualRow.index >= rows.length)
+                                    .filter((virtualRow) => virtualRow.index >= notes.length)
                                     .map((virtualRow) => {
-                                        const file = files[virtualRow.index - rows.length];
+                                        const file = files[virtualRow.index - notes.length];
                                         return (
                                             <div
                                                 key={virtualRow.key}
@@ -935,7 +945,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                                                         </span>
                                                         <span className="note-list__file-meta">
                                                             {showCrumbs && dirname(file.id)
-                                                                ? `${basename(dirname(file.id))} · `
+                                                                ? `${formatCrumb(dirname(file.id))} · `
                                                                 : ''}
                                                             Not editable
                                                         </span>
@@ -973,7 +983,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 }}
                 anchor={menu?.anchor}
                 align="start"
-                width={248}
+                width={224}
                 finalFocus={false}
             >
                 {menu ? (
@@ -999,6 +1009,27 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         >
                             {pinnedSet.has(menu.note.id) ? 'Unpin' : 'Pin to top'}
                         </MenuItem>
+                        {showIcons && onSetIcon ? (
+                            <MenuItem
+                                icon={<span className="note-list__menu-emoji">☺</span>}
+                                onClick={() => {
+                                    // Where the menu was, frozen: a row ⋯ hides once the menu
+                                    // closes, and the picker opens after it.
+                                    const rect = menu.anchor.getBoundingClientRect();
+                                    const id = menu.note.id;
+                                    // After this click has finished: opened during it, the picker
+                                    // read the same click as a press outside and closed again.
+                                    window.setTimeout(() =>
+                                        setIconFor({
+                                            id,
+                                            anchor: {getBoundingClientRect: () => rect},
+                                        }),
+                                    );
+                                }}
+                            >
+                                Set icon…
+                            </MenuItem>
+                        ) : null}
                         <MenuItem
                             icon={<Pencil size={16} />}
                             hint="F2"
@@ -1040,6 +1071,17 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     </>
                 ) : null}
             </Menu>
+
+            {onSetIcon ? (
+                <EmojiPickerPopup
+                    anchor={iconFor?.anchor ?? null}
+                    value={iconFor ? icons?.[iconFor.id] : undefined}
+                    onChange={(icon) => {
+                        if (iconFor) onSetIcon(iconFor.id, icon);
+                    }}
+                    onClose={() => setIconFor(null)}
+                />
+            ) : null}
         </div>
     );
 });

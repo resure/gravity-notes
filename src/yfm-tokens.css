@@ -17,8 +17,8 @@
 .yfm {
     --yfm-color-base: var(--bg-paper);
     --yfm-color-text: var(--text-1);
-    --yfm-color-link: var(--accent);
-    --yfm-color-link-hover: color-mix(in srgb, var(--accent), var(--text-1) 25%);
+    --yfm-color-link: var(--link);
+    --yfm-color-link-hover: var(--link-hover);
     --yfm-color-border: var(--line);
     --yfm-color-accent: var(--accent);
     --yfm-color-inline-code: var(--text-1);

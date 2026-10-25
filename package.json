@@ -37,6 +37,7 @@
     "@diplodoc/file-extension": "0.2.6",
     "@diplodoc/tabs-extension": "3.10.7",
     "@diplodoc/transform": "^4.78.9",
+    "@emoji-mart/data": "^1.2.1",
     "@fontsource/pt-serif": "^5.3.0",
     "@lezer/highlight": "^1.2.5",
     "@tanstack/react-virtual": "^3.14.21",

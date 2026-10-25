@@ -50,26 +50,28 @@ export function ShortcutsDialog({open, onClose}: ShortcutsDialogProps) {
                         onClear={() => setQuery('')}
                     />
                 </div>
-                {groups.length === 0 ? (
-                    <p className="shortcuts__empty">No shortcut matches.</p>
-                ) : null}
-                {groups.map(({group, rows}) => (
-                    <section key={group} className="shortcuts__group">
-                        <h3 className="shortcuts__group-label">{group}</h3>
-                        {rows.map((shortcut) => (
-                            <div key={shortcut.keys} className="shortcuts__row">
-                                <span className="shortcuts__desc">{shortcut.description}</span>
-                                <span className="shortcuts__keys">
-                                    {/* A chord's position in this fixed, static list IS its
+                <div className="shortcuts__list">
+                    {groups.length === 0 ? (
+                        <p className="shortcuts__empty">No shortcut matches.</p>
+                    ) : null}
+                    {groups.map(({group, rows}) => (
+                        <section key={group} className="shortcuts__group">
+                            <h3 className="shortcuts__group-label">{group}</h3>
+                            {rows.map((shortcut) => (
+                                <div key={shortcut.keys} className="shortcuts__row">
+                                    <span className="shortcuts__desc">{shortcut.description}</span>
+                                    <span className="shortcuts__keys">
+                                        {/* A chord's position in this fixed, static list IS its
                                         identity — 'esc esc' is two identical caps. */}
-                                    {shortcutChords(shortcut.keys).map((chord, i) => (
-                                        <Kbd key={i}>{chord.join('')}</Kbd>
-                                    ))}
-                                </span>
-                            </div>
-                        ))}
-                    </section>
-                ))}
+                                        {shortcutChords(shortcut.keys).map((chord, i) => (
+                                            <Kbd key={i} keys={chord} />
+                                        ))}
+                                    </span>
+                                </div>
+                            ))}
+                        </section>
+                    ))}
+                </div>
             </div>
         </Dialog>
     );

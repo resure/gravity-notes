@@ -17,17 +17,11 @@ export const ChevronRight = icon(<path d="M6.4 4l4 4-4 4" />);
 export const ChevronDown = icon(<path d="M4 6.4l4 4 4-4" />);
 export const ChevronLeft = icon(<path d="M9.6 4l-4 4 4 4" />);
 
-/** Pane toggles: a window with its left (or right) column ruled off. */
+/** The left panel: a window with its left column ruled off. */
 export const PaneLeft = icon(
     <>
         <rect x="1.9" y="3" width="12.2" height="10" rx="2.1" />
         <path d="M6.4 3v10" />
-    </>,
-);
-export const PaneRight = icon(
-    <>
-        <rect x="1.9" y="3" width="12.2" height="10" rx="2.1" />
-        <path d="M9.6 3v10" />
     </>,
 );
 

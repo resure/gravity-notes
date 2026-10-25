@@ -97,3 +97,32 @@
     gap: 8px;
     padding: 0 22px 18px;
 }
+
+/* Footer buttons share one size, whichever component built them. */
+.ui-dialog__footer .ui-button:not(.ui-button_icon) {
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 8px;
+    font-size: var(--fs-menu);
+}
+
+/* A dialog's secondary actions (Cancel, Close, Empty Trash…) are outlined rather than bare: in a
+   footer a quiet button reads as a label, so it gets the Claude-desktop secondary look — a
+   hairline, a touch of fill on hover, and full-strength ink. */
+.ui-dialog__footer .ui-button_quiet {
+    min-width: 76px;
+    border-color: color-mix(in srgb, var(--text-1) 16%, transparent);
+    color: var(--text-1);
+}
+
+@media (hover: hover) {
+    .ui-dialog__footer .ui-button_quiet:hover {
+        border-color: color-mix(in srgb, var(--text-1) 24%, transparent);
+        background: var(--bg-hover);
+    }
+}
+
+.ui-dialog__footer .ui-button_quiet.ui-button_danger {
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    color: var(--danger);
+}

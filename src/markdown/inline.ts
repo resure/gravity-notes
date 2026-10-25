@@ -215,6 +215,11 @@ export function inlineHtmlToMarkdown(html: string): string {
     }[] = [];
     // One entry per open `<span>`: its colour token, or null for a span that writes nothing.
     const openSpans: (string | null)[] = [];
+    // Parallel to `openSpans`: whether each is a `[[wiki link]]` wrapper. Text inside one is written
+    // verbatim — the editor splits the brackets into spans of their own, and escaping a lone `[[`
+    // would put `\[\[` on disk where Obsidian expects the literal link.
+    const wikiSpans: boolean[] = [];
+    let wikiDepth = 0;
     // The delimiter a closing tag just wrote, so an identical opener right after it can merge into
     // one span: `**a****b**` and `==a====b==` do not read back as two adjacent spans.
     let closed: {wrapper: string; end: number} | null = null;
@@ -235,6 +240,11 @@ export function inlineHtmlToMarkdown(html: string): string {
         }
         if (codeDepth > 0) {
             out += decoded;
+            return;
+        }
+        if (wikiDepth > 0) {
+            out += decoded;
+            textEnd = out.length;
             return;
         }
         const escaped = escapeMarkdownText(decoded);
@@ -308,9 +318,13 @@ export function inlineHtmlToMarkdown(html: string): string {
             // `[[wiki link]]` wrapper contributes no characters (its text is already the literal
             // brackets), a coloured one contributes the wrapper the reader above matches.
             if (tag.closing) {
+                if (wikiSpans.pop()) wikiDepth--;
                 if (openSpans.pop()) out += ')';
                 continue;
             }
+            const isWiki = (tag.attrs.class ?? '').split(/\s+/).includes(WIKI_LINK_CLASS);
+            wikiSpans.push(isWiki);
+            if (isWiki) wikiDepth++;
             const token = colorToken(colorFromClass(tag.attrs.class ?? '') ?? undefined);
             openSpans.push(token);
             if (token) out += `{${token}}(`;

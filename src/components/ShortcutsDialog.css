@@ -1,12 +1,25 @@
-/* The ⌘/ help sheet. Rows are description-left / caps-right, and the group label is the same mono
-   caps object the rail, the list and Settings use — one label style across the whole app. */
+/* The ⌘/ help sheet. Rows are description-left / caps-right, and the group label is the same
+   object the rail, the list and Settings use — one label style across the whole app. The filter
+   stays put and only the list below it scrolls. */
 
 .shortcuts {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 12px;
     /* Filtering shortens the list; a fixed height keeps the centred dialog from jumping as you type. */
     height: min(520px, 64vh);
+}
+
+.shortcuts__list {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Room for the scrollbar, so it never sits on the key caps. */
+    margin-right: -10px;
+    padding-right: 10px;
 }
 
 .shortcuts__group {
@@ -46,14 +59,8 @@
     gap: 4px;
 }
 
-/* Stays put above the groups while they scroll under it, covering the gap above it too. */
 .shortcuts-dialog__filter {
-    position: sticky;
-    top: -12px;
-    z-index: 1;
-    margin-top: -12px;
-    padding: 12px 0 4px;
-    background: var(--bg-paper);
+    flex: none;
 }
 
 .shortcuts__empty {

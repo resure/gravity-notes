@@ -52,7 +52,7 @@ Markdown files, and they are yours.
 - **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; put the caret in a link
   for Open / Edit / Unlink
 - **Full-text search** across titles and bodies, ranked, with match snippets
-- **Nested folders, pins, sort modes**, time-grouped lists, and a recoverable **Trash**
+- **Nested folders, pins, sort modes**, emoji note icons (experimental), and a recoverable **Trash**
 - **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;
   reveal them in Finder on desktop
 - **Images**: paste, drop or `/image` into a note — stored as files in `Attachments/`, click to zoom. Any

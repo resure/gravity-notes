@@ -12,6 +12,14 @@ body,
     overscroll-behavior: none;
 }
 
+/* The app's face for everything outside the note itself. On `body`, not only on the panes: every
+   menu, popover and editor overlay portals to <body>, and without this they fell back to the
+   browser's default serif. */
+body {
+    font-family: var(--font-ui);
+    color: var(--text-1);
+}
+
 /* Text selection is one of the accent's five permitted uses (§03), and it is app-wide: the note
    body, an inline rename, the search box. 35% is the weight §06 renders it at — enough to read as
    a highlight over paper without hiding the glyphs under it. */

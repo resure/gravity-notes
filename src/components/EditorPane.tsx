@@ -53,6 +53,12 @@ interface EditorPaneProps {
     onOpenWikiLink: (target: string) => void;
     /** ⌘-click on a link to a stored file — the shell reveals it on disk (desktop only). */
     onOpenAttachment?: (ref: string) => void;
+    /** The open note's emoji icon (empty = none). */
+    icon?: string;
+    /** Set or clear (with '') the note's icon. */
+    onSetIcon?: (icon: string) => void;
+    /** Show the icon beside the title (Settings › Show note icons, experimental). */
+    showNoteIcons?: boolean;
     /** Enable native spellcheck in the note body (Settings › Check spelling; off by default). */
     spellcheck?: boolean;
     /** Show the formatting toolbar above the body (Settings › Show editor toolbar). */
@@ -79,6 +85,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
         wikiNotes,
         onOpenWikiLink,
         onOpenAttachment,
+        icon,
+        onSetIcon,
+        showNoteIcons = false,
         spellcheck = false,
         showToolbar = false,
     },
@@ -191,6 +200,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 ref={titleRef}
                 key={sessionId}
                 title={note.title}
+                icon={icon}
+                onSetIcon={onSetIcon}
+                showIcon={showNoteIcons}
                 readOnly={preview}
                 onCommit={(nextTitle) => onRename(note.id, nextTitle)}
                 onLeaveToBody={goToBody}

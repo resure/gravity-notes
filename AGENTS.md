@@ -375,7 +375,9 @@ Key modules:
   (`.editor-pane` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
   too, so title and body keep one left edge). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
-  the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
+  the editor can re-decorate mid-keystroke and simply put the caret back); the brackets get spans of
+  their own, hidden by CSS except on the link the caret is in or against (`wiki-link_active`), and
+  the writer emits text inside a wiki-link span verbatim so split brackets are never escaped, the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
   autosave), and `[[` opens `WikiSuggestMenu` — same portal/positioning machinery as the slash menu,
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
@@ -394,7 +396,7 @@ Key modules:
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / text
-  width + the editor-toolbar / spellcheck toggles), `NoteAppearance` (per-note font + width, read
+  width + the note-icons / editor-toolbar / spellcheck toggles), `NoteAppearance` (per-note font + width, read
   from the metadata sidecar), and pure `effectiveAppearance` (note wins → app). There is no accent
   setting (amber is fixed, see `tokens.css`) and no per-workspace layer. Settings persist through
   `usePersistedSettings`, which MERGES into the freshest
@@ -469,7 +471,7 @@ Key modules:
   the two most recent workspaces; a pinned "Open Folder…" action row sits outside the filter; the
   in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
   strands), `FolderRail` (the 236px
-  nested-folder tree left of the list — select/scope, drag-and-drop, rename, pin; toggle ⌘⇧\. Rows
+  nested-folder tree left of the list — select/scope, drag-and-drop, rename, pin; toggle ⌘⇧\ or the list toolbar's folder button. Rows
   are the same 14/500 type as the note list so the two panes read as one app, grouped by two mono
   labels (Library / Folders) and indented by a 12px step with a hairline guide; **Trash sits at the
   foot** — a destination, not a folder, and so deliberately outside the tree's roving-tabindex ring —

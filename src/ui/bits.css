@@ -8,9 +8,12 @@
     border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
     border-radius: var(--r-xs);
     background: color-mix(in oklab, var(--bg-panel), var(--bg-paper) 50%);
+    gap: 1px;
     color: var(--text-4);
-    font-family: var(--font-mono);
-    font-size: 10.5px;
+    /* The system face, not mono: ⌘⇧⌥ come from a fallback inside SF Mono and land smaller than the
+       letter beside them. */
+    font-family: var(--font-ui);
+    font-size: 11px;
     line-height: 14px;
     white-space: nowrap;
 }

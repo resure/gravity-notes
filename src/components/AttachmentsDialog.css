@@ -87,7 +87,7 @@
 .attachments__thumb_missing {
     display: inline-block;
     background: transparent;
-    border: 1px dashed var(--g-color-line-generic-accent);
+    border: 1px dashed var(--text-4);
 }
 
 .attachments__meta {

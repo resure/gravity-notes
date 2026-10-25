@@ -61,18 +61,24 @@ import {
     caretOnFirstLine,
     caretOnLastLine,
     deleteTextRange,
+    edgePosition,
     escapeHtml,
     getCaretOffset,
     htmlToText,
     insertPlainTextAtCaret,
     isEmptyHtml,
     isSafeLinkHref,
+    lineIsFirst,
+    lineIsLast,
+    lineRectAt,
+    positionNearX,
     rangeTextWithin,
     selectionHtml,
     setCaret,
     setCaretAtPoint,
     splitHtmlAtCaret,
     stripZeroWidth,
+    textOffsetOf,
     toggleInlineCode,
     tryInlineMarkdown,
 } from './caret';
@@ -112,7 +118,12 @@ import {
 } from './types';
 import type {BlockColor, Block as BlockData, BlockType, ColumnAlign, TableData} from './types';
 import {URL_LINK_CLASS, decorateUrls} from './urlDecorate';
-import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
+import {
+    WIKI_BRACKET_CLASS,
+    WIKI_LINK_ACTIVE_CLASS,
+    WIKI_LINK_BROKEN_CLASS,
+    decorateWikiLinks,
+} from './wikiDecorate';
 
 import './editor.css';
 
@@ -317,6 +328,28 @@ function isYfmContainer(block: BlockData): boolean {
     );
 }
 
+/**
+ * The `[[wiki link]]` a caret position is inside of, or directly against on either side — the
+ * one whose brackets should show. Touching counts, so ⌫ after a link deletes a bracket the reader
+ * can see rather than a hidden one.
+ */
+function wikiLinkTouching(node: Node, offset: number): HTMLElement | null {
+    const selector = `.${WIKI_LINK_CLASS}`;
+    const element = node instanceof Element ? node : node.parentElement;
+    const inside = element?.closest<HTMLElement>(selector);
+    if (inside) return inside;
+    const asLink = (candidate: Node | null | undefined) =>
+        candidate instanceof HTMLElement && candidate.matches(selector) ? candidate : null;
+    if (node.nodeType === Node.TEXT_NODE) {
+        const length = (node as Text).length;
+        return (
+            (offset === 0 ? asLink(node.previousSibling) : null) ??
+            (offset === length ? asLink(node.nextSibling) : null)
+        );
+    }
+    return asLink(node.childNodes[offset - 1]) ?? asLink(node.childNodes[offset]);
+}
+
 /** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 function sameIds(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
@@ -332,11 +365,14 @@ function sameIds(a: Set<string>, b: Set<string>): boolean {
 const WIKI_SPAN_CLASSES = new Set([
     WIKI_LINK_CLASS,
     `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`,
+    WIKI_BRACKET_CLASS,
 ]);
 
 /** The class a span may keep, rebuilt from what it means — never the attribute as it arrived. */
 function keptSpanClass(className: string): string | null {
-    if (WIKI_SPAN_CLASSES.has(className)) return className;
+    // The caret's reveal-the-brackets mark is live DOM state, never block content.
+    const wiki = className.replace(` ${WIKI_LINK_ACTIVE_CLASS}`, '');
+    if (WIKI_SPAN_CLASSES.has(wiki)) return wiki;
     const color = colorFromClass(className);
     return color ? colorClassFor(color) : null;
 }
@@ -1213,6 +1249,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return null;
     };
 
+    /** The first (or last) block the caret can sit in — ⌘↑ / ⌘↓ jump there. */
+    const edgeEditableBlock = (edge: 'start' | 'end'): BlockData | null => {
+        const bs = blocksRef.current;
+        const visible = visibleBlockIds(bs);
+        const ordered = edge === 'start' ? bs : [...bs].reverse();
+        return (
+            ordered.find(
+                (b) => visible.has(b.id) && (isEditableType(b.type) || b.type === 'table'),
+            ) ?? null
+        );
+    };
+
     /** Where the caret goes to sit at one end of a block — a table's end is its last cell. */
     const caretTargetIn = (
         block: BlockData,
@@ -1223,6 +1271,87 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const row = edge === 'start' ? 0 : table.cells.length - 1;
         const column = edge === 'start' ? 0 : Math.max(0, (table.cells[row]?.length ?? 1) - 1);
         return {id: tableCellId(block.id, row, column), pos: edge};
+    };
+
+    /**
+     * ⇧ + an arrow, where the selection's FOCUS sits at the edge of its block: carry it into the
+     * neighbouring block, so a text selection grows across blocks from the keyboard the way a mouse
+     * drag already makes it. Each block is its own contentEditable, and the browser's own extension
+     * stops at the editing host. Inside a block the browser extends as usual; once the focus has
+     * left the block that has DOM focus, it is moved here, by line or by character.
+     */
+    /**
+     * Run a selection change that crosses blocks. WebKit clamps a selection to the editing host it
+     * started in, so `extend` into the next block's contentEditable lands at the END of the
+     * current one instead; with the editor's root editable for the duration of the call, both
+     * blocks share one host and the selection lands where asked. It survives the root going back
+     * (WebKit validates a selection when it is set, not afterwards). WebKit also hands keyboard
+     * focus to the root once it is editable, so the block gets it back — without that the next
+     * ⇧-arrow landed on the root and never reached the block's handler. Chromium needs none of
+     * this and is unaffected by it.
+     */
+    const acrossBlocks = (host: HTMLElement, change: () => void) => {
+        const root = rootRef.current;
+        if (!root || root.isContentEditable) {
+            change();
+            return;
+        }
+        root.contentEditable = 'true';
+        try {
+            change();
+        } finally {
+            root.removeAttribute('contenteditable');
+            if (document.activeElement !== host) host.focus({preventScroll: true});
+        }
+    };
+
+    const extendSelectionAcross = (key: string, host: HTMLElement): boolean => {
+        const sel = window.getSelection();
+        const node = sel?.focusNode;
+        if (!sel || !node) return false;
+        const start = node instanceof Element ? node : node.parentElement;
+        const el = start?.closest<HTMLElement>('[data-block-id]');
+        // Tables keep their own cell-to-cell keyboard model.
+        if (!el || el.dataset.tableBlockId || !el.dataset.blockId) return false;
+        const vertical = key === 'ArrowUp' || key === 'ArrowDown';
+        const forward = key === 'ArrowDown' || key === 'ArrowRight';
+        let atEdge: boolean;
+        let x = 0;
+        if (vertical) {
+            const line = lineRectAt(el, node, sel.focusOffset);
+            if (!line) return false;
+            x = line.left;
+            atEdge = forward ? lineIsLast(el, line) : lineIsFirst(el, line);
+        } else {
+            const offset = textOffsetOf(el, node, sel.focusOffset);
+            atEdge = forward ? offset >= (el.textContent ?? '').length : offset === 0;
+        }
+        if (!atEdge) {
+            if (el === host) return false;
+            acrossBlocks(host, () =>
+                sel.modify(
+                    'extend',
+                    forward ? 'forward' : 'backward',
+                    vertical ? 'line' : 'character',
+                ),
+            );
+            return true;
+        }
+        const next = findEditableSibling(el.dataset.blockId, forward ? 1 : -1);
+        const nextEl = next && next.type !== 'table' ? refs.current.get(next.id) : null;
+        if (!nextEl) {
+            if (!vertical) return false;
+            // No block beyond: run on to this block's own end, the way a last line does natively.
+            const [target, offset] = edgePosition(el, forward ? 'end' : 'start');
+            acrossBlocks(host, () => sel.extend(target, offset));
+            return true;
+        }
+        const [target, offset] = vertical
+            ? positionNearX(nextEl, x, forward ? 'top' : 'bottom')
+            : edgePosition(nextEl, forward ? 'start' : 'end');
+        acrossBlocks(host, () => sel.extend(target, offset));
+        nextEl.scrollIntoView({block: 'nearest'});
+        return true;
     };
 
     const focusNavigableBlock = (block: BlockData, edge: 'start' | 'end') => {
@@ -2670,6 +2799,31 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
+        // ⌘↑ / ⌘↓: the start / end of the whole note, as in any text editor. Each block is its own
+        // contentEditable, so the native chord only reached the ends of the current block.
+        if (mod && !e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            const edge = e.key === 'ArrowUp' ? 'start' : 'end';
+            const target = edgeEditableBlock(edge);
+            if (target) {
+                claimChord(e);
+                focusNavigableBlock(target, edge);
+            }
+            return;
+        }
+
+        if (
+            e.shiftKey &&
+            !mod &&
+            !e.altKey &&
+            (e.key === 'ArrowUp' ||
+                e.key === 'ArrowDown' ||
+                e.key === 'ArrowLeft' ||
+                e.key === 'ArrowRight')
+        ) {
+            if (extendSelectionAcross(e.key, el)) e.preventDefault();
+            return;
+        }
+
         if (e.key === 'ArrowUp' && !e.shiftKey && !mod) {
             if (caretOnFirstLine(el)) {
                 e.preventDefault();
@@ -2769,10 +2923,25 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * the DECORATION span (wikiDecorate.ts), which is the on-screen extent of the link.
      */
     useEffect(() => {
+        let revealed: HTMLElement | null = null;
         const update = () => {
             const selection = window.getSelection();
             const node = selection?.anchorNode;
             const element = node instanceof Element ? node : node?.parentElement;
+            // Show the `[[ ]]` of the link the caret is in or touching, hide every other link's.
+            const reveal = node ? wikiLinkTouching(node, selection.anchorOffset) : null;
+            if (
+                reveal !== revealed ||
+                (reveal && !reveal.classList.contains(WIKI_LINK_ACTIVE_CLASS))
+            ) {
+                revealed?.classList.remove(WIKI_LINK_ACTIVE_CLASS);
+                if (reveal && rootRef.current?.contains(reveal)) {
+                    reveal.classList.add(WIKI_LINK_ACTIVE_CLASS);
+                    revealed = reveal;
+                } else {
+                    revealed = null;
+                }
+            }
             const bareUrl = element?.closest<HTMLElement>(`.${URL_LINK_CLASS}`);
             const anchor = bareUrl ?? element?.closest('a');
             const href = bareUrl ? bareUrl.textContent : anchor?.getAttribute('href');
@@ -3507,7 +3676,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             applyBlockType(chordType);
             return;
         }
-        if (mod && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        // ⌘↑ / ⌘↓ move the selected blocks (⌘⌥ too, the chord this used to be).
+        if (mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
             claimChord(e);
             moveSelectedBlocks(e.key === 'ArrowUp' ? -1 : 1);
         } else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {

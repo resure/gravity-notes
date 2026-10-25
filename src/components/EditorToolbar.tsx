@@ -183,7 +183,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                 <span className="editor-toolbar__divider" />
                 <Menu
                     align="start"
-                    width={220}
+                    width={200}
                     trigger={
                         <Button className="editor-toolbar__style" title="Text style">
                             <span>{itemFor(state.type ?? 'text')?.label}</span>

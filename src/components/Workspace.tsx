@@ -414,7 +414,6 @@ export function Workspace({
         if (noteWindow) return;
         localStorage.setItem(nsKey(workspaceId, 'rail-open'), String(railOpen));
     }, [noteWindow, workspaceId, railOpen]);
-    const toggleRail = useCallback(() => setRailOpen((open) => !open), []);
 
     // The dividers' dragged widths (see usePanelWidth above).
     const rail = usePanelWidth(workspaceId, 'rail-width', RAIL_DEFAULT_WIDTH, noteWindow);
@@ -512,6 +511,13 @@ export function Workspace({
     // sidecar — keyed by note id, so a rename/move re-keys them and they travel with the folder.
     // With no note open the override is undefined, so the effective appearance is the app's.
     const openNoteId = notes.note?.id ?? null;
+    const setOpenNoteIcon = useCallback(
+        (icon: string) => {
+            if (openNoteId !== null) notes.setIcon(openNoteId, icon);
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- setIcon is stable
+        [openNoteId],
+    );
     const noteAppearance = useMemo(
         () =>
             noteAppearanceOf(
@@ -711,7 +717,19 @@ export function Workspace({
         if (noteWindow) return;
         localStorage.setItem(nsKey(workspaceId, 'sidebar-collapsed'), String(collapsed));
     }, [noteWindow, workspaceId, collapsed]);
+    // The left panel (⌘\, the title bar's button) is everything left of the note: the list, plus
+    // the folders when they are on. Hiding it keeps that choice, so it comes back as it went.
     const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
+    // The folders (⌘⇧\, the list toolbar's button) are a setting INSIDE the panel; with the panel
+    // hidden they can't show, so the press brings the panel back with them on.
+    const toggleRail = useCallback(() => {
+        if (collapsed) {
+            setCollapsed(false);
+            setRailOpen(true);
+        } else {
+            setRailOpen((open) => !open);
+        }
+    }, [collapsed]);
 
     // Transient overlay reveal of the collapsed sidebar (⌘⇧'); not persisted. Only meaningful
     // while collapsed — the invariant effect clears it whenever the sidebar is docked.
@@ -1468,17 +1486,15 @@ export function Workspace({
             const inRail =
                 document.activeElement instanceof HTMLElement &&
                 Boolean(document.activeElement.closest('.folder-rail'));
-            if (!railOpen) {
-                // Closed → open and move focus into it.
+            if (collapsed || !railOpen) {
+                // Closed (or hidden with the whole sidebar) → open and move focus into it.
+                if (collapsed) setCollapsed(false);
                 setRailOpen(true);
                 setPendingRailFocus(true);
-            } else if (inRail) {
-                // Open and focused → close, returning focus to the list.
-                setRailOpen(false);
-                listRef.current?.focusSelected();
             } else {
-                // Open but focus elsewhere → step into the rail.
-                railRef.current?.focusSelected();
+                // Open → close; if the rail had focus, hand it back to the list.
+                setRailOpen(false);
+                if (inRail) listRef.current?.focusSelected();
             }
         },
         peekSidebar: () => {
@@ -1601,7 +1617,6 @@ export function Workspace({
                     updateAvailable={updater.status === 'available'}
                     themePref={themePref}
                     onChangeThemePref={onChangeThemePref}
-                    railOpen={railOpen}
                     onToggleRail={toggleRail}
                     collapsed={collapsed}
                     onToggleCollapsed={toggleCollapsed}
@@ -1734,6 +1749,9 @@ export function Workspace({
                             />
                         ) : null}
                         <NoteList
+                            icons={notes.metadata.icons}
+                            showIcons={settings.showNoteIcons}
+                            onSetIcon={notes.setIcon}
                             files={listFiles}
                             ref={listRef}
                             notes={listNotes}
@@ -1770,7 +1788,6 @@ export function Workspace({
                             onSortChange={notes.setSortMode}
                             pinnedIds={notes.metadata.pinned}
                             onTogglePin={notes.togglePin}
-                            createdById={notes.metadata.created}
                             railOpen={railOpen}
                             onToggleRail={toggleRail}
                             // Straight setSelectedFolder — unlike rail selection this must NOT
@@ -1844,6 +1861,9 @@ export function Workspace({
                                         wikiNotes={notes.notes}
                                         onOpenWikiLink={handleOpenWikiLink}
                                         onOpenAttachment={handleOpenAttachment}
+                                        icon={notes.metadata.icons[notes.note.id]}
+                                        onSetIcon={setOpenNoteIcon}
+                                        showNoteIcons={settings.showNoteIcons}
                                         spellcheck={settings.spellcheck}
                                         showToolbar={settings.showEditorToolbar}
                                     />

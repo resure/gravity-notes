@@ -34,7 +34,6 @@ import {
     Link,
     NewWindow,
     PaneLeft,
-    PaneRight,
     Paperclip,
     Pencil,
     Pin,
@@ -136,12 +135,11 @@ export interface TopBarProps {
     updateAvailable?: boolean;
     themePref: ThemePref;
     onChangeThemePref: (pref: ThemePref) => void;
-    /** Folder rail shown / hidden (⌘⇧\), and the note list collapsed / docked (⌘\). */
-    railOpen: boolean;
+    /** Show / hide the folders (⌘⇧\), and the whole left panel (⌘\). */
     onToggleRail: () => void;
     collapsed: boolean;
     onToggleCollapsed: () => void;
-    /** Autosave status — the sync dot at the bar's right edge. */
+    /** Autosave status — shown on the orb. */
     saveState: SaveState;
     /** Search box (nvALT find-or-create) and its keyboard coordination with the list. */
     query: string;
@@ -202,7 +200,7 @@ export interface TopBarProps {
  * Its one structural rule is §07's — "what is this app doing" and "what is this note doing" are
  * never in the same list. The **Orb** on the left holds everything app-wide (workspaces, import and
  * export, trash, theme, settings); the **⋯** on the right is the open note's own menu, and nothing
- * else. The search field sits optically centred on the WINDOW, not on the editor, and the sync dot
+ * else. The search field sits optically centred on the WINDOW, not on the editor, and the orb
  * carries the save state that used to fire a toast on every keystroke.
  */
 export function TopBar({
@@ -232,7 +230,6 @@ export function TopBar({
     updateAvailable,
     themePref,
     onChangeThemePref,
-    railOpen,
     onToggleRail,
     collapsed,
     onToggleCollapsed,
@@ -440,13 +437,16 @@ export function TopBar({
             </MenuItem>
 
             <MenuSeparator />
-            {/* Sidebar collapse is a MULTI-PANE affordance: the mobile layout is a single pane that
-                pushes list↔editor, so there's no sidebar to collapse there (and no ⌘\ to press). */}
+            {/* Hiding the panel is a MULTI-PANE affordance: the mobile layout is a single pane that
+                pushes list↔editor, so there's no panel to hide there (and no ⌘\ to press). */}
             {mobile ? null : (
-                <MenuItem icon={<PaneRight size={16} />} hint={'⌘\\'} onClick={onToggleCollapsed}>
-                    Toggle sidebar
+                <MenuItem icon={<PaneLeft size={16} />} hint={'⌘\\'} onClick={onToggleCollapsed}>
+                    Show / hide left panel
                 </MenuItem>
             )}
+            <MenuItem icon={<Folder size={16} />} hint={'⌘⇧\\'} onClick={onToggleRail}>
+                Show / hide folders
+            </MenuItem>
             <MenuSub icon={<Contrast size={16} />} label="Theme" hint={themeLabel}>
                 {THEME_OPTIONS.map((option) => (
                     <MenuItem
@@ -590,35 +590,35 @@ export function TopBar({
                     tabIndex={mobilePane === 'editor' ? undefined : -1}
                 />
             ) : (
-                // Two 26px pane toggles, immediately after the traffic lights (§04).
+                // One button beside the traffic lights, for the whole left panel (the list, plus the
+                // folders when they are on). The folders' own toggle sits in the list toolbar.
                 <div className="topbar__panes">
                     <Button
                         icon={<PaneLeft size={15} />}
-                        aria-label="Folders"
-                        pressed={railOpen}
-                        onClick={onToggleRail}
-                    />
-                    <Button
-                        icon={<PaneRight size={15} />}
-                        aria-label="Notes list"
+                        aria-label="Left panel"
+                        title={collapsed ? 'Show left panel (⌘\\)' : 'Hide left panel (⌘\\)'}
                         pressed={!collapsed}
                         onClick={onToggleCollapsed}
                     />
                 </div>
             )}
 
-            {/* The Orb: the app's own amber disc, flat — no gradient, no bevel. It is the one
-                saturated thing in the chrome and it is the app MARK, not an accent, which is why it
-                doesn't recolour with the save state (the sync dot at the right does that). */}
+            {/* The Orb: the app's glowing amber mark, which also carries the save state (dimmed
+                while writing, red on a failure or conflict). */}
             <div className="topbar__orb-slot">
                 <Menu
                     onOpenChange={(open) => {
                         if (open) onMenuOpen?.();
                     }}
                     align="start"
-                    width={242}
+                    width={228}
                     trigger={
-                        <button type="button" className="topbar__orb" aria-label="Menu">
+                        <button
+                            type="button"
+                            className={`topbar__orb topbar__orb_${saveState}`}
+                            aria-label="Menu"
+                            title={SYNC_TEXT[saveState]}
+                        >
                             <span className="topbar__orb-disc" />
                         </button>
                     }
@@ -636,7 +636,7 @@ export function TopBar({
                 placeholder="Search or create a note…"
                 aria-label="Search or create a note"
                 icon={<Search size={12} />}
-                trailing={mobile ? undefined : <Kbd>⌘L</Kbd>}
+                trailing={mobile ? undefined : <Kbd keys="⌘L" />}
                 onClear={() => {
                     setCompleting(false);
                     onQueryChange('');
@@ -645,10 +645,8 @@ export function TopBar({
             />
 
             <div className="topbar__right">
-                {/* Sync dot + word — §04's replacement for the toast that used to fire on every
-                    save. The spec's grey "offline" state has no source in a local-first app with no
-                    server, so it is deliberately omitted. */}
-                {/* `aria-live="off"` on purpose: this is ambient state, not an event. The dot
+                {/* The save state's text, visually hidden — the orb shows it. `aria-live="off"` on
+                    purpose: this is ambient state, not an event. It
                     flips saving→saved on every debounced autosave, so a live region would read
                     "Writing", "Saved" over a screen-reader user twice a paragraph. It stays a
                     `status` so it can be read on demand, and the two states that DO need
@@ -658,8 +656,7 @@ export function TopBar({
                     role="status"
                     aria-live="off"
                 >
-                    <span className="topbar__sync-dot" />
-                    <span className="topbar__sync-word">{SYNC_TEXT[saveState]}</span>
+                    {SYNC_TEXT[saveState]}
                 </div>
 
                 {/* The open note's own menu. On mobile it keeps its slot even when inert, so the
@@ -669,7 +666,7 @@ export function TopBar({
                         open={noteMenuOpen && noteMenuActive}
                         onOpenChange={onNoteMenuOpenChange}
                         align="end"
-                        width={276}
+                        width={264}
                         // Every item returns focus to the ⋯ — except Rename, which has just put
                         // the caret in the note's title field. Restoring focus over that would
                         // take it straight back out again, so that one case opts out.

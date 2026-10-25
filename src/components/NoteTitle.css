@@ -28,18 +28,17 @@
        both up at gutter + 4px too — see NotePreview.css.) */
     padding: 0 0 0 4px;
     color: var(--text-1);
-    /* PT Serif 28/34 at 400 — §03's `--fs-h1`, and letter for letter what the editor renders an H1
-       BLOCK as (blockEditor/editor.css). The two sit directly on top of each other, so anything
-       else reads as two different documents; a note's title IS its heading.
-
-       Deliberately NOT `--gn-editor-font`: the editor-font setting picks the face for the note's
-       BODY. §03 gives the serif exactly three jobs — note titles, the editor's H1/H2, and the serif
-       body option — so a note set in mono still has a serif title. */
-    font-family: var(--font-serif);
+    /* The note's own font (the editor-font setting, per note) at the H1 size, so the title and an
+       H1 block below it read as one document. */
+    font-family: var(--gn-editor-font, var(--font-ui));
     font-size: var(--fs-h1);
     line-height: var(--lh-h1);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+[data-editor-font='serif'] .note-title {
     font-weight: 400;
-    letter-spacing: -0.005em;
 }
 
 .note-title::placeholder {
@@ -48,4 +47,26 @@
 
 .note-title[readonly] {
     cursor: default;
+}
+
+.note-title__icon {
+    width: 36px;
+    height: 36px;
+    margin-left: -2px;
+    font-size: 26px;
+}
+
+/* No icon yet: an "Add icon" button in the space above the title rather than a gap before it, so
+   the title keeps the body's left edge. */
+.note-title-row {
+    position: relative;
+}
+
+.note-title__icon.emoji-picker__button_empty {
+    position: absolute;
+    top: 4px;
+    left: var(--editor-gutter, 16px);
+    width: auto;
+    height: 22px;
+    font-size: var(--fs-ui-sm);
 }

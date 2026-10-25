@@ -46,7 +46,7 @@ function renderWorkspace() {
 // The sidebar toggle now lives in the orb menu: open it, then click the item.
 async function toggleSidebarViaMenu(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('button', {name: 'Menu'}));
-    await user.click(await screen.findByRole('menuitem', {name: /Toggle sidebar/}));
+    await user.click(await screen.findByRole('menuitem', {name: /Show \/ hide left panel/}));
 }
 
 describe('Workspace — nvALT navigation', () => {
@@ -443,7 +443,7 @@ describe('Workspace — nvALT navigation', () => {
         expect(localStorage.getItem('gravity-notes:test-ws:sidebar-collapsed')).toBe('false');
     });
 
-    it('toggles the sidebar with ⌘\\', async () => {
+    it('toggles the left panel with ⌘\\', async () => {
         renderWorkspace();
         await screen.findByRole('option', {name: /Alpha/});
         expect(document.querySelector('.workspace__body_collapsed')).toBeNull();
@@ -451,6 +451,35 @@ describe('Workspace — nvALT navigation', () => {
         await waitFor(() =>
             expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
         );
+    });
+
+    it('brings the left panel back as it went, and the folders button opens it with folders', async () => {
+        const user = userEvent.setup();
+        localStorage.clear();
+        renderWorkspace();
+        await screen.findByRole('option', {name: /Alpha/});
+        const panel = screen.getByRole('button', {name: 'Left panel'});
+
+        await user.click(screen.getByRole('button', {name: 'Folders'})); // folders on
+        expect(await screen.findByRole('tree', {name: 'Folders'})).toBeInTheDocument();
+        await user.click(panel); // the whole panel hides
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).not.toBeNull(),
+        );
+        await user.click(panel); // and comes back with its folders still on
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
+        );
+        expect(screen.getByRole('tree', {name: 'Folders'})).toBeInTheDocument();
+
+        // ⌘⇧\ with the panel hidden: the panel comes back, folders on.
+        await user.click(screen.getByRole('button', {name: 'Folders'})); // folders off
+        await user.click(panel);
+        fireEvent.keyDown(document, {key: '|', code: 'Backslash', metaKey: true, shiftKey: true});
+        await waitFor(() =>
+            expect(document.querySelector('.workspace__body_collapsed')).toBeNull(),
+        );
+        expect(await screen.findByRole('tree', {name: 'Folders'})).toBeInTheDocument();
     });
 
     it('restores the collapsed sidebar from its workspace-namespaced key', async () => {
@@ -876,6 +905,9 @@ describe('Workspace — storage menu', () => {
 });
 
 describe('Workspace — folder move', () => {
+    // The rail's open state persists per workspace; start closed so ⌘\ opens it.
+    beforeEach(() => localStorage.clear());
+
     it('reverts the rail selection when a folder rename collides', async () => {
         const user = userEvent.setup();
         const dir = new FakeDirectoryHandle();

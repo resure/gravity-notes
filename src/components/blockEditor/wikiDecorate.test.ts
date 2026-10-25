@@ -5,27 +5,26 @@ import {inlineHtmlToMarkdown} from '../../markdown';
 import {decorateWikiLinks, wikiTargetsIn} from './wikiDecorate';
 
 const none = () => false;
+/** The decorated form of `[[inner]]`: the brackets in spans of their own, the title between. */
+const link = (inner: string, broken = false) =>
+    `<span class="wiki-link${broken ? ' wiki-link_broken' : ''}"><span class="wiki-bracket">[[</span>${inner}<span class="wiki-bracket">]]</span></span>`;
 const all = () => true;
 
 describe('decorateWikiLinks', () => {
     it('wraps a link without touching its text', () => {
         expect(decorateWikiLinks('go to [[Other Note]] now', none)).toBe(
-            'go to <span class="wiki-link">[[Other Note]]</span> now',
+            `go to ${link('Other Note')} now`,
         );
     });
 
     it('marks unresolvable targets broken', () => {
-        expect(decorateWikiLinks('[[Ghost]]', all)).toBe(
-            '<span class="wiki-link wiki-link_broken">[[Ghost]]</span>',
-        );
+        expect(decorateWikiLinks('[[Ghost]]', all)).toBe(link('Ghost', true));
     });
 
     it('is idempotent, and re-runs the broken decision', () => {
         const once = decorateWikiLinks('[[Target]]', none);
         expect(decorateWikiLinks(once, none)).toBe(once);
-        expect(decorateWikiLinks(once, all)).toBe(
-            '<span class="wiki-link wiki-link_broken">[[Target]]</span>',
-        );
+        expect(decorateWikiLinks(once, all)).toBe(link('Target', true));
     });
 
     it('drops the wrapper once the user breaks the link up', () => {
@@ -45,7 +44,7 @@ describe('decorateWikiLinks', () => {
 
     it('decorates inside emphasis', () => {
         expect(decorateWikiLinks('<strong>a [[T]] b</strong>', none)).toBe(
-            '<strong>a <span class="wiki-link">[[T]]</span> b</strong>',
+            `<strong>a ${link('T')} b</strong>`,
         );
     });
 
@@ -54,6 +53,15 @@ describe('decorateWikiLinks', () => {
         expect(inlineHtmlToMarkdown(decorateWikiLinks(plain, none))).toBe(
             inlineHtmlToMarkdown(plain),
         );
+    });
+
+    it('undecorates the legacy one-span wrapper too', () => {
+        expect(decorateWikiLinks('<span class="wiki-link">[[T]]</span>', none)).toBe(link('T'));
+    });
+
+    it('keeps a colour span around a link when re-decorating', () => {
+        const coloured = `<span class="gn-color--red">${link('T')}</span>`;
+        expect(decorateWikiLinks(coloured, none)).toBe(coloured);
     });
 
     it('skips html with nothing to do', () => {
@@ -72,7 +80,7 @@ describe('decorateWikiLinks — HTML escaping', () => {
     it('resolves the DECODED target, so a title with an & is not styled broken', () => {
         // The decorator walks html, where `[[R&D notes]]` arrives as `[[R&amp;D notes]]`.
         const html = decorateWikiLinks('see [[R&amp;D notes]]', (target) => target !== 'R&D notes');
-        expect(html).toBe('see <span class="wiki-link">[[R&amp;D notes]]</span>');
+        expect(html).toBe(`see ${link('R&amp;D notes')}`);
     });
 
     it('reports targets decoded', () => {

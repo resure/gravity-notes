@@ -11,6 +11,7 @@
     width: var(--rail-width, 236px);
     height: 100%;
     flex: none;
+    border-right: 1px solid var(--line);
     background: var(--bg-panel);
     color: var(--text-2);
     font-family: var(--font-ui);

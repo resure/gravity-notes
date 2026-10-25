@@ -44,7 +44,6 @@ function setup(overrides: Record<string, unknown> = {}) {
         onOpenAbout: vi.fn(),
         themePref: 'light',
         onChangeThemePref: vi.fn(),
-        railOpen: false,
         onToggleRail: vi.fn(),
         collapsed: false,
         onToggleCollapsed: vi.fn(),
@@ -218,7 +217,6 @@ function StatefulTopBar({onCommit}: {onCommit: () => void}) {
             onOpenAbout={noop}
             themePref="light"
             onChangeThemePref={noop}
-            railOpen={false}
             onToggleRail={noop}
             collapsed={false}
             onToggleCollapsed={noop}
@@ -368,7 +366,7 @@ describe('TopBar — orb menu', () => {
         const user = userEvent.setup();
         const {props} = setup();
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Toggle sidebar/}));
+        await user.click(await screen.findByRole('menuitem', {name: /Show \/ hide left panel/}));
         expect(props.onToggleCollapsed).toHaveBeenCalledTimes(1);
     });
 
@@ -423,23 +421,17 @@ describe('TopBar — sync dot', () => {
     });
 });
 
-describe('TopBar — pane toggles', () => {
-    it('toggles the folder rail, reporting its state as aria-pressed', async () => {
-        const user = userEvent.setup();
-        const {props} = setup({railOpen: true});
-        const button = screen.getByRole('button', {name: 'Folders'});
-        expect(button).toHaveAttribute('aria-pressed', 'true');
-        await user.click(button);
-        expect(props.onToggleRail).toHaveBeenCalledTimes(1);
-    });
-
-    it('toggles the notes list, which reads pressed while it is docked', async () => {
+describe('TopBar — left panel button', () => {
+    it('shows and hides the whole left panel, reading pressed while it is shown', async () => {
         const user = userEvent.setup();
         const {props} = setup({collapsed: true});
-        const button = screen.getByRole('button', {name: 'Notes list'});
+        const button = screen.getByRole('button', {name: 'Left panel'});
         expect(button).toHaveAttribute('aria-pressed', 'false');
+        expect(button).toHaveAttribute('title', 'Show left panel (⌘\\)');
         await user.click(button);
         expect(props.onToggleCollapsed).toHaveBeenCalledTimes(1);
+        // One button only: the folders' toggle lives in the list toolbar.
+        expect(screen.queryByRole('button', {name: 'Folders'})).toBeNull();
     });
 });
 

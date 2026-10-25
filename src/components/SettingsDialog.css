@@ -1,8 +1,7 @@
 /* Settings — §08.
    ─────────────────────────────────────────────────────────────────────────────────────────────
-   620px, one section, a 150px label column. No cards, no dividers between rows: the section label
-   over a hairline is the only structure the dialog needs, and at two rows anything more would be
-   scaffolding around nothing. */
+   520px, label left and value right. No cards, no dividers between rows: the section label over a
+   hairline is the only structure the dialog needs. */
 
 .settings {
     display: flex;
@@ -23,10 +22,20 @@
 
 .settings__row {
     display: grid;
-    grid-template-columns: 150px 1fr;
+    /* Label left, value right — every control ends on one edge, whatever its width (the macOS
+       System Settings layout). */
+    grid-template-columns: 1fr auto;
     align-items: center;
     column-gap: 16px;
-    padding: 13px 0;
+    min-height: 40px;
+    padding: 4px 0;
+}
+
+/* Segmented strips size to their options here instead of stretching across the row. */
+.settings__row .ui-toggle-group__item {
+    flex: none;
+    min-width: 64px;
+    padding: 0 10px;
 }
 
 .settings__label {
@@ -43,15 +52,27 @@
     color: var(--text-3);
 }
 
-/* Below the dialog's own width the label column stops earning its 150px — stack instead, the way
-   the note menu's strips already do. */
-@media (max-width: 620px) {
+/* Below the dialog's own width a strip no longer fits beside its label — stack instead, the way the
+   note menu's strips already do. */
+@media (max-width: 520px) {
     .settings__row {
         grid-template-columns: 1fr;
         row-gap: 8px;
+        padding: 8px 0;
     }
 }
 
 .settings + .settings {
     margin-top: 18px;
+}
+
+.settings__tag {
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: var(--r-xs);
+    background: var(--bg-selected);
+    font-size: var(--fs-meta);
+    line-height: var(--lh-meta);
+    color: var(--text-3);
+    vertical-align: 1px;
 }

@@ -268,14 +268,14 @@ describe('useShortcuts', () => {
         expect(actions.renameSelected).toHaveBeenCalledTimes(1);
     });
 
-    it('toggles the sidebar on ctrl+backslash', () => {
+    it('toggles the left panel on ctrl+backslash', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         press({key: '\\', ctrlKey: true});
         expect(actions.toggleSidebar).toHaveBeenCalledTimes(1);
     });
 
-    it('still toggles the sidebar on ctrl+backslash while typing in an input', () => {
+    it('still toggles the left panel on ctrl+backslash while typing in an input', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         const input = document.createElement('input');
@@ -289,7 +289,7 @@ describe('useShortcuts', () => {
         const actions = makeActions();
         renderHook(() => useShortcuts(actions));
         // A real ⌘⇧\ keydown reports key '|' (Shift) but code 'Backslash'; the binding matches the
-        // physical key. The sidebar (⌘\) must not also fire.
+        // physical key. The left panel (⌘\) must not also fire.
         press({key: '|', code: 'Backslash', metaKey: true, shiftKey: true});
         expect(actions.toggleFolderRail).toHaveBeenCalledTimes(1);
         expect(actions.toggleSidebar).not.toHaveBeenCalled();

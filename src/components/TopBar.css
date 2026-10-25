@@ -8,7 +8,7 @@
 
    The search field is centred on the WINDOW, not on the editor, and the Orb rides beside it at a
    fixed offset — which is why both are absolutely positioned rather than sitting in the flex flow.
-   The flow itself only carries the pane toggles (left) and the sync dot + note ⋯ (right), so a long
+   The flow itself only carries the pane toggles (left) and the note ⋯ (right), so a long
    note title or a wide sidebar can never nudge the search off centre.
 
    Being centred is also why the field has to give way as the window narrows: the clusters in the
@@ -54,9 +54,8 @@
 }
 
 /* ── The Orb ───────────────────────────────────────────────────────────────────────────────────
-   A flat 19px amber disc in a 26px target. It is the app's mark — not an accent use — so it never
-   recolours with state; the sync dot at the right does that. Positioned relative to the centred
-   search field so the two read as one group at any window width. */
+   An 18px glowing amber disc in a 26px target — the app's mark, which also carries the save state.
+   Positioned relative to the centred search field so the two read as one group at any width. */
 
 /* 8px to the left of the field (§04), measured off the field's own edge so the pair stays together
    at any width: half the field, then the 26px target and the 8px gap. At the full 404 this is the
@@ -81,11 +80,29 @@
 }
 
 .topbar__orb-disc {
-    width: 19px;
-    height: 19px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: oklch(0.72 0.155 58);
-    transition: transform var(--dur-1) var(--ease);
+    /* The mark is a sun: a soft halo makes it read as a light source rather than a sticker. */
+    box-shadow: 0 0 12px -1px var(--gn-orb-halo);
+    transition:
+        transform var(--dur-1) var(--ease),
+        box-shadow var(--dur-2) var(--ease),
+        opacity var(--dur-2) var(--ease);
+}
+
+/* The orb also carries the save state, so the bar needs no indicator of its own: it dims a little
+   while a write is in flight and turns red when one failed or the note changed underneath. */
+.topbar__orb_saving .topbar__orb-disc {
+    opacity: 0.7;
+    box-shadow: 0 0 8px -2px var(--gn-orb-halo);
+}
+
+.topbar__orb_error .topbar__orb-disc,
+.topbar__orb_conflict .topbar__orb-disc {
+    background: var(--danger);
+    box-shadow: 0 0 12px -1px color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
 .topbar__orb:active .topbar__orb-disc {
@@ -101,7 +118,7 @@
     width: var(--topbar-search-width);
 }
 
-/* ── Right cluster: sync dot, then the note ⋯ ──────────────────────────────────────────────── */
+/* ── Right cluster: the note ⋯ ────────────────────────────────────────────────────────── */
 
 .topbar__right {
     display: flex;
@@ -110,48 +127,9 @@
     margin-left: auto;
 }
 
+/* The save state rides on the orb (see above); this is only its text, kept in the tree so a
+   screen reader can still ask for it. */
 .topbar__sync {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-right: 2px;
-    font-size: 11.5px;
-    color: var(--text-3);
-    white-space: nowrap;
-}
-
-.topbar__sync-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-    transition:
-        background var(--dur-2) var(--ease),
-        opacity var(--dur-2) var(--ease);
-}
-
-/* Writing: the same amber, dimmed — a state, not an alarm. */
-.topbar__sync_saving .topbar__sync-dot {
-    opacity: 0.55;
-}
-
-.topbar__sync_error .topbar__sync-dot,
-.topbar__sync_conflict .topbar__sync-dot {
-    background: var(--danger);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
-}
-
-.topbar__sync_error .topbar__sync-word,
-.topbar__sync_conflict .topbar__sync-word {
-    color: var(--danger);
-}
-
-/* "Saved" and "Saving" are ambient: the dot alone carries them, and the word steps in only when
-   something needs the reader — a failed write or a conflict. Still in the tree for a screen reader. */
-.topbar__sync_saved .topbar__sync-word,
-.topbar__sync_saving .topbar__sync-word,
-.topbar__sync_idle .topbar__sync-word {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -201,11 +179,6 @@
     gap: 6px;
 }
 
-/* The sync word is chrome the phone has no room for; the dot alone still carries the state. */
-.topbar_mobile .topbar__sync-word {
-    display: none;
-}
-
 .topbar__back {
     flex: none;
     /* Pull the chevron toward the window edge, past the button's own padding. */
@@ -232,12 +205,11 @@
    rest. §07 renders the list this way rather than with folder glyphs — the point of the row is
    "which vault", and one of them is lit. */
 .topbar__ws-dot {
-    /* Block, not the inline default: a span ignores width/height and auto margins, so the dot
-       would render as nothing at all. */
+    /* Block, not the inline default: a span ignores width/height, so the dot would render as
+       nothing at all. The icon column centres it. */
     display: block;
     width: 7px;
     height: 7px;
-    margin: 0 auto;
     border-radius: 50%;
     background: color-mix(in srgb, var(--text-1) 18%, transparent);
 }

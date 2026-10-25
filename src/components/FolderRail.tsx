@@ -722,7 +722,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 }}
                 anchor={contextMenu?.anchor}
                 align="start"
-                width={224}
+                width={208}
                 finalFocus={false}
             >
                 {menuRow ? (

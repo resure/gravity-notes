@@ -1520,7 +1520,8 @@ describe('the [[wiki link]] actions', () => {
     async function caretInLink() {
         const span = document.querySelector<HTMLElement>('.wiki-link')!;
         const range = document.createRange();
-        range.setStart(span.firstChild!, 2);
+        // The title's text node, between the two bracket spans.
+        range.setStart(span.childNodes[1], 1);
         range.collapse(true);
         const selection = window.getSelection()!;
         selection.removeAllRanges();

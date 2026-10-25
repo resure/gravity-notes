@@ -12,6 +12,7 @@ import {
 } from './useSettings';
 
 const APP: Settings = {
+    showNoteIcons: false,
     showEditorToolbar: false,
     spellcheck: false,
     editorFont: 'serif',

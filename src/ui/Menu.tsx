@@ -1,4 +1,4 @@
-import {forwardRef} from 'react';
+import {forwardRef, useMemo} from 'react';
 import type {
     HTMLAttributes,
     ReactElement,
@@ -56,6 +56,28 @@ export interface MenuProps {
     children: ReactNode;
 }
 
+type MenuAnchor = MenuProps['anchor'];
+
+/**
+ * An element anchor that survives its element being hidden. Row ⋯ buttons are shown only on hover,
+ * so moving the pointer into the menu hides its own anchor, which then measures as a zero rect at
+ * the origin and drags the popup into the window's top-left corner. Keep the last real rect instead.
+ */
+function useStableAnchor(anchor: MenuAnchor) {
+    return useMemo(() => {
+        if (!(anchor instanceof Element)) return anchor ?? undefined;
+        let last = anchor.getBoundingClientRect();
+        return {
+            contextElement: anchor,
+            getBoundingClientRect() {
+                const rect = anchor.getBoundingClientRect();
+                if (rect.width > 0 || rect.height > 0) last = rect;
+                return last;
+            },
+        };
+    }, [anchor]);
+}
+
 export function Menu({
     open,
     defaultOpen,
@@ -71,6 +93,7 @@ export function Menu({
     className,
     children,
 }: MenuProps) {
+    const stableAnchor = useStableAnchor(anchor);
     return (
         <BaseMenu.Root
             open={open}
@@ -84,7 +107,7 @@ export function Menu({
             <BaseMenu.Portal>
                 <BaseMenu.Positioner
                     className="ui-pop-positioner"
-                    anchor={anchor ?? undefined}
+                    anchor={stableAnchor}
                     side={side}
                     align={align}
                     sideOffset={sideOffset}

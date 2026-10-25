@@ -113,11 +113,12 @@
     margin-bottom: 4px;
 }
 
-/* The same voice the note title and the editor's heading blocks use (§03): PT Serif at 400. The
-   preview is the same document by another route, so a note must not change typeface when ⌘⇧P
-   turns the blocks into rendered markup. */
+/* The editor's heading weights, so a note doesn't change look when ⌘⇧P renders it: 600, and a
+   serif's H1/H2 at its regular weight. */
 .note-preview__body.yfm :where(h1, h2) {
-    font-family: var(--font-serif);
+    font-weight: 600;
+}
+[data-editor-font='serif'] .note-preview__body.yfm :where(h1, h2) {
     font-weight: 400;
 }
 .note-preview__body.yfm h1 {
@@ -302,12 +303,12 @@
     background: var(--gn-color-red-bg);
 }
 .note-preview .yfm-tab.active {
-    border-bottom-color: var(--g-color-line-brand);
+    border-bottom-color: var(--accent);
 }
 
 .note-preview .yfm-tab:hover,
 .note-preview .yfm-tab:active {
-    color: var(--g-color-text-link-hover);
+    color: var(--link-hover);
 }
 
 /* An Obsidian callout (see withCallouts), drawn like the editor's: the kind's icon beside the text
@@ -318,7 +319,7 @@
     margin: 12px 0 15px;
     padding: 16px 16px 16px 12px;
     border-radius: 6px;
-    background: var(--g-color-base-generic);
+    background: var(--bg-hover);
 }
 
 .note-preview__body.yfm .note-preview-callout__icon {

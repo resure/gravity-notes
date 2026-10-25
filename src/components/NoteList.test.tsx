@@ -1,6 +1,6 @@
 import {createRef} from 'react';
 
-import {act, fireEvent, screen, within} from '@testing-library/react';
+import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -46,9 +46,53 @@ function setup(overrides: Partial<NoteListProps> = {}) {
         ...overrides,
     };
     const ref = createRef<NoteListHandle>();
-    renderWithProviders(<NoteList ref={ref} {...(props as unknown as NoteListProps)} />);
-    return {props, ref};
+    const view = renderWithProviders(
+        <NoteList ref={ref} {...(props as unknown as NoteListProps)} />,
+    );
+    const rerender = (next: Partial<NoteListProps>) =>
+        view.rerender(
+            <NoteList ref={ref} {...({...props, ...next} as unknown as NoteListProps)} />,
+        );
+    return {props, ref, rerender};
 }
+
+describe('NoteList — toolbar folders button', () => {
+    it('toggles the folders, reporting the rail as aria-pressed', async () => {
+        const user = userEvent.setup();
+        const {props} = setup({railOpen: true});
+        const button = screen.getByRole('button', {name: 'Folders'});
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        await user.click(button);
+        expect(props.onToggleRail).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('NoteList — note icons', () => {
+    it('shows a note’s emoji only while icons are on', () => {
+        const {rerender} = setup({icons: {'Alpha.md': '🚀'}, showIcons: false});
+        expect(screen.queryByText('🚀')).toBeNull();
+        rerender({icons: {'Alpha.md': '🚀'}, showIcons: true});
+        expect(within(screen.getByRole('option', {name: /Alpha/})).getByText('🚀')).toBeTruthy();
+    });
+
+    it('sets an icon from the row menu through the emoji picker', async () => {
+        const user = userEvent.setup();
+        const onSetIcon = vi.fn();
+        setup({showIcons: true, onSetIcon});
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        await user.click(within(alpha).getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Set icon/}));
+        await user.type(await screen.findByRole('combobox', {name: 'Search emoji'}), 'rocket');
+        // The catalog is a lazy import and the filter is debounced: wait for the FILTERED grid, or
+        // the click lands on a cell the next render replaces.
+        const grid = await screen.findByRole('listbox', {name: 'Emoji'});
+        await waitFor(() => expect(within(grid).getAllByRole('option').length).toBeLessThan(40), {
+            timeout: 5000,
+        });
+        await user.click(within(grid).getByRole('option', {name: '🚀'}));
+        expect(onSetIcon).toHaveBeenCalledWith('Alpha.md', '🚀');
+    });
+});
 
 describe('NoteList — other files', () => {
     it('shows full filenames separately and never opens them as notes', async () => {
@@ -365,14 +409,12 @@ describe('NoteList — search display', () => {
         expect(mark).toBeTruthy();
     });
 
-    it("names a nested note's folder — the leaf only — outside a scoped folder", () => {
+    it("names a nested note's folder path on its own line outside a scoped folder", () => {
         setup({
             showCrumbs: true,
             notes: [{id: 'Work/Sub/Plan.md', title: 'Plan', updatedAt: 1}],
         });
-        // Only the leaf: the full path was the breadcrumb the scope header replaced.
-        expect(screen.getByText('Sub')).toBeInTheDocument();
-        expect(screen.queryByText(/Work \/ Sub/)).toBeNull();
+        expect(document.querySelector('.note-list__folder')).toHaveTextContent('Work / Sub');
     });
 
     it('hints note creation when filtered to empty with a query', () => {
@@ -381,7 +423,7 @@ describe('NoteList — search display', () => {
     });
 });
 
-describe('NoteList — scope header', () => {
+describe('NoteList — toolbar', () => {
     it('creates an untitled note from the New button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
@@ -397,20 +439,6 @@ describe('NoteList — scope header', () => {
         expect(props.onSortChange).toHaveBeenCalledWith('title');
     });
 
-    it('names the scope and its count in the header', () => {
-        setup({scopeLabel: 'Work'});
-        const header = document.querySelector('.note-list__header') as HTMLElement;
-        expect(header).toHaveTextContent('Work');
-        expect(header).toHaveTextContent('2');
-    });
-
-    it('falls back to All Notes in the header with no folder scope', () => {
-        setup({scopeLabel: null});
-        expect(document.querySelector('.note-list__header')).toHaveTextContent('All Notes');
-    });
-});
-
-describe('NoteList — rail focus handoff', () => {
     it('moves focus to the rail on ArrowLeft when the rail is open', async () => {
         const user = userEvent.setup();
         const {props} = setup({railOpen: true, selectedId: 'Alpha.md'});
@@ -429,14 +457,10 @@ describe('NoteList — rail focus handoff', () => {
 });
 
 describe('NoteList — pinning', () => {
-    it('files pinned notes under their own group instead of badging the row', () => {
+    it('marks pinned notes with a glyph on the row', () => {
         setup({pinnedIds: ['Alpha.md']});
-        const groups = [...document.querySelectorAll('.note-list__group')].map(
-            (g) => g.textContent,
-        );
-        expect(groups[0]).toBe('Pinned');
-        // The pin is the group, not a mark on the row.
-        expect(document.querySelector('.note-list__pin')).toBeNull();
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        expect(alpha.querySelector('.note-list__pin')).not.toBeNull();
     });
 
     it('pins an unpinned note from the menu', async () => {

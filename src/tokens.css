@@ -49,6 +49,11 @@
     /* ── Accent + danger ───────────────────────────────────────────────────────────────────── */
     --accent: oklch(0.7 0.14 62);
     --accent-soft: oklch(0.7 0.14 62 / 0.14);
+    --accent-selection: oklch(0.7 0.14 62 / 0.3);
+    --accent-strong-wash: oklch(0.7 0.14 62 / 0.5);
+    /* Hyperlinks: the accent pulled toward the ink, so link text keeps reading contrast on paper. */
+    --link: oklch(0.58 0.14 58);
+    --link-hover: oklch(0.5 0.13 55);
     --danger: oklch(0.58 0.2 26);
 
     /* ── Radii ─────────────────────────────────────────────────────────────────────────────── */
@@ -136,6 +141,10 @@
 
     --accent: oklch(0.78 0.13 68);
     --accent-soft: oklch(0.78 0.13 68 / 0.14);
+    --accent-selection: oklch(0.78 0.13 68 / 0.3);
+    --accent-strong-wash: oklch(0.78 0.13 68 / 0.5);
+    --link: oklch(0.8 0.12 68);
+    --link-hover: oklch(0.88 0.1 72);
 
     /* The alphas deepen and the inset highlight drops to 6% — a bright hairline on a dark card
        reads as a scratch, not as a lit edge. */

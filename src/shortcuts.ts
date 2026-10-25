@@ -175,16 +175,17 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+\\',
-        description: 'Toggle the sidebar',
+        description:
+            'Show / hide the left panel (the notes list, and the folders when they are on)',
         group: 'Navigation',
         global: {trigger: 'mod', key: '\\', action: 'toggleSidebar'},
     },
     {
         keys: 'mod+shift+\\',
-        description: 'Toggle the folder rail',
+        description: 'Show / hide the folders in the left panel',
         group: 'Navigation',
         // Match the physical Backslash key: with Shift held, event.key is '|' on US/UK layouts,
-        // so a key-based match would never fire. Sibling of ⌘\ (which toggles the whole sidebar).
+        // so a key-based match would never fire. Sibling of ⌘\ (which toggles the whole panel).
         global: {
             trigger: 'mod',
             key: '\\',
@@ -372,8 +373,9 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
     },
     {
-        keys: 'mod+alt+up',
-        description: 'Move the selected block(s) up (⌘⌥↓ moves them down)',
+        keys: 'mod+up',
+        description:
+            'Jump to the start of the note (⌘↓ to its end); with blocks selected, move them up (⌘↓ down)',
         group: 'Editing',
     },
     {

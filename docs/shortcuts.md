@@ -28,8 +28,8 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `Esc`                               | Editor → list → search (then close / clear)                                           |
 | `Esc` `Esc`                         | Focus the search box                                                                  |
 | `⌘L`                                | Jump to the search box (desktop app; browsers reserve it for the address bar)         |
-| `⌘\`                                | Toggle the sidebar                                                                    |
-| `⌘⇧\`                               | Toggle the folder rail                                                                |
+| `⌘\`                                | Show / hide the left panel — the notes list, and the folders when they are on         |
+| `⌘⇧\`                               | Show / hide the folders (the list toolbar's folder button)                            |
 | `⌘'`                                | Peek the collapsed sidebar / focus the list (again to close)                          |
 | `⌃R`                                | Switch workspace — the recent-folders dialog (`↵` open, `⌘↵` new window, `⌘⌫` remove) |
 
@@ -40,6 +40,7 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
 | `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, with Markdown highlighting                                              |
 | `⌘F`             | In Markdown source: find and replace (`⌘G` / `⌘⇧G` next / previous); `⌥↑` / `⌥↓` move a line, `Enter` continues a list                    |
+| `⌘↑` / `⌘↓`      | Jump to the start / end of the note                                                                                                       |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | This note’s menu — per-note font and text width, plus its file actions                                                                    |
 | `⌘K`             | Link the selected text, or edit the link the caret is in (clear the URL to unlink)                                                        |
@@ -97,7 +98,7 @@ With a block selected (after `Esc`):
 | -------------- | ------------------------------------------------------- |
 | `↑` / `↓`      | Move the selection to the previous / next block         |
 | `⇧↑` / `⇧↓`    | Extend the selection                                    |
-| `⌘⌥↑` / `⌘⌥↓`  | Move the selected block(s) up / down, children included |
+| `⌘↑` / `⌘↓`    | Move the selected block(s) up / down, children included |
 | `Tab` / `⇧Tab` | Indent / outdent the selected block(s)                  |
 | `↵`            | Edit the block again, caret at its end                  |
 | `⌘D`           | Duplicate the selected block(s)                         |

@@ -1,0 +1,104 @@
+/* The note-icon emoji picker: a search field over an 8-column virtualized grid. */
+
+.emoji-picker__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: calc(8 * 30px + 7 * 2px);
+}
+
+.emoji-picker__grid {
+    max-height: 256px; /* 8 rows; a short result list shrinks the popup */
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.emoji-picker__grid-inner {
+    position: relative;
+    width: 100%;
+}
+
+.emoji-picker__row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(8, 30px);
+    gap: 2px;
+}
+
+.emoji-picker__cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    font-size: 18px;
+    line-height: 1;
+}
+
+@media (hover: hover) {
+    .emoji-picker__cell:hover {
+        background: var(--bg-hover);
+    }
+}
+
+.emoji-picker__cell_current {
+    background: var(--bg-selected);
+}
+
+/* The keyboard's cell: the focus ring, distinct from the current icon's wash. */
+.emoji-picker__cell_active {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.emoji-picker__empty {
+    margin: 8px 0;
+    text-align: center;
+    font-size: var(--fs-menu);
+    color: var(--text-3);
+}
+
+.emoji-picker__remove {
+    justify-content: center;
+}
+
+/* The glyph that opens the picker: the emoji itself, or a faint placeholder until one is set. */
+.emoji-picker__button {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    line-height: 1;
+}
+
+@media (hover: hover) {
+    .emoji-picker__button:not(:disabled):hover {
+        background: var(--bg-hover);
+    }
+}
+
+.emoji-picker__button_empty {
+    gap: 5px;
+    padding: 0 6px;
+    color: var(--text-3);
+    font-family: var(--font-ui);
+    font-size: var(--fs-ui-sm);
+    opacity: 0;
+    transition: opacity var(--dur-1) var(--ease);
+}
+
+/* Shown only when the pointer is near, so a note without an icon stays bare. */
+.note-title-row:hover .emoji-picker__button_empty,
+.emoji-picker__button_empty:focus-visible {
+    opacity: 1;
+}

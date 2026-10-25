@@ -1,7 +1,7 @@
 /* The one floating material.
    ─────────────────────────────────────────────────────────────────────────────────────────────
    Every menu, select, and popover in the app is this card: 12px radius, one hairline, shadow-3
-   (whose inset top highlight is most of what reads as "raised"), 6px of padding, and 30px rows with
+   (whose inset top highlight is most of what reads as "raised"), 4px of padding, and 28px rows with
    a 16px icon column. §07's rule is that a menu is deliberately roomier than the panes around it —
    a menu you are aiming at is not a list you are scanning.
 
@@ -22,9 +22,9 @@
     box-sizing: border-box;
     background: var(--bg-paper);
     border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    border-radius: 10px;
     box-shadow: var(--shadow-3);
-    padding: 6px;
+    padding: 4px;
     color: var(--text-1);
     font-family: var(--font-ui);
     font-size: var(--fs-menu);
@@ -72,11 +72,11 @@
 .ui-pop__item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     box-sizing: border-box;
     width: 100%;
-    height: 30px;
-    padding: 0 9px;
+    height: 28px;
+    padding: 0 8px;
     border: 0;
     border-radius: var(--r-sm);
     background: none;
@@ -112,6 +112,9 @@
 
 .ui-pop__icon {
     flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 16px;
     height: 16px;
     color: var(--pop-icon);
@@ -119,7 +122,7 @@
 
 /* Rows with no glyph still reserve the column, so nothing shifts when a checkmark appears. */
 .ui-pop__icon_empty {
-    display: block;
+    display: flex;
 }
 
 .ui-pop__label {
@@ -136,7 +139,7 @@
        Latin around them, so a chord reads as a smudge. The system font draws them at full size —
        which is also where macOS's own menus get them from. */
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: 12px;
     letter-spacing: 0.02em;
     color: var(--text-3);
 }
@@ -153,7 +156,7 @@
 /* One hairline, only where a group ends — never between rows. */
 .ui-pop__separator {
     height: 1px;
-    margin: 5px 10px;
+    margin: 4px 8px;
     background: var(--line);
 }
 

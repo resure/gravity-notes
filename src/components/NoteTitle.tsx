@@ -1,6 +1,8 @@
 import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import type {KeyboardEvent as ReactKeyboardEvent} from 'react';
 
+import {EmojiPicker} from './EmojiPicker';
+
 import './NoteTitle.css';
 
 export interface NoteTitleHandle {
@@ -15,6 +17,12 @@ export interface NoteTitleHandle {
 interface NoteTitleProps {
     /** The committed title (file name without `.md`). */
     title: string;
+    /** The note's emoji icon (empty = none). */
+    icon?: string;
+    /** Set or clear (with '') the note's icon. */
+    onSetIcon?: (icon: string) => void;
+    /** Show the icon picker beside the title (Settings › Show note icons). */
+    showIcon?: boolean;
     /** Read-only in preview mode. */
     readOnly?: boolean;
     /**
@@ -39,7 +47,17 @@ interface NoteTitleProps {
  * dirty draft is also committed on unmount.
  */
 export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function NoteTitle(
-    {title, readOnly = false, onCommit, onLeaveToBody, onEnter, onEscape},
+    {
+        title,
+        icon,
+        onSetIcon,
+        showIcon = false,
+        readOnly = false,
+        onCommit,
+        onLeaveToBody,
+        onEnter,
+        onEscape,
+    },
     ref,
 ) {
     const [draft, setDraft] = useState(title);
@@ -117,14 +135,22 @@ export const NoteTitle = forwardRef<NoteTitleHandle, NoteTitleProps>(function No
             onMouseDown={(event) => {
                 // The row carries the padding that used to sit on the input itself, so a click in
                 // that padding would land on this bare div and no longer focus the title. Restore
-                // the old behavior: a click on the row's own area (not the input) focuses the
-                // title. preventDefault keeps focus from bouncing off the div first.
+                // the old behavior: a click on the row's own area (not the icon or the input)
+                // focuses the title. preventDefault keeps focus from bouncing off the div first.
                 if (event.target === event.currentTarget && !readOnly) {
                     event.preventDefault();
                     inputRef.current?.focus();
                 }
             }}
         >
+            {showIcon && onSetIcon ? (
+                <EmojiPicker
+                    className="note-title__icon"
+                    value={icon}
+                    disabled={readOnly}
+                    onChange={onSetIcon}
+                />
+            ) : null}
             <input
                 ref={inputRef}
                 className="note-title"

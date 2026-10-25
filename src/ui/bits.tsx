@@ -12,8 +12,18 @@ import './bits.css';
  * A keycap. The platform substitution that decides whether this says ⌘ or Ctrl lives in
  *  `src/shortcuts.ts` — that logic is the only part of GravityUI's Hotkey worth porting.
  */
-export function Kbd({children}: {children: ReactNode}) {
-    return <kbd className="ui-kbd">{children}</kbd>;
+export function Kbd({keys}: {keys: string | readonly string[]}) {
+    // Each key in its own box, so the cap sets the gap between a modifier glyph and its letter. A
+    // string is split per character (`⌘L`); a multi-letter key (`Esc`, `F2`) comes in as one item.
+    const parts = typeof keys === 'string' ? Array.from(keys) : keys;
+    return (
+        <kbd className="ui-kbd">
+            {/* A static key list: a key's position IS its identity. */}
+            {parts.map((key, i) => (
+                <span key={i}>{key}</span>
+            ))}
+        </kbd>
+    );
 }
 
 export interface ChipProps {

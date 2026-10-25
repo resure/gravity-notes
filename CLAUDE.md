@@ -398,7 +398,9 @@ Key modules:
   while its menu is open, or on the first block of each run of selected blocks (a run's wash is
   drawn as one shape). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
-  the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
+  the editor can re-decorate mid-keystroke and simply put the caret back); the brackets get spans of
+  their own, hidden by CSS except on the link the caret is in or against (`wiki-link_active`), and
+  the writer emits text inside a wiki-link span verbatim so split brackets are never escaped, the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
   autosave), and `[[` opens `WikiSuggestMenu` — same portal/positioning machinery as the slash menu,
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
@@ -429,7 +431,7 @@ Key modules:
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / text
-  width + the editor-toolbar / spellcheck toggles), `NoteAppearance` (per-note font + width, read
+  width + the note-icons / editor-toolbar / spellcheck toggles), `NoteAppearance` (per-note font + width, read
   from the metadata sidecar), and pure `effectiveAppearance` (note wins → app). There is no accent
   setting (amber is fixed, see `tokens.css`) and no per-workspace layer. Settings persist through
   `usePersistedSettings`, which MERGES into the freshest
@@ -505,7 +507,7 @@ Key modules:
   in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
   strands), `FolderRail` (collapsible
   nested-folder tree left of the list — select/scope,
-  drag-and-drop, rename, pin; toggle ⌘⇧\), `PanelResizer` (the WAI-ARIA window-splitter divider on
+  drag-and-drop, rename, pin; toggle ⌘⇧\ or the list toolbar's folder button), `PanelResizer` (the WAI-ARIA window-splitter divider on
   the rail's and the list's right edge — gesture state in a ref so pointer moves write the width
   CSS var straight to the DOM instead of re-rendering the editor, state committing only on release;
   rendered only in the desktop column layout, since mobile makes the rail a drawer and stretches

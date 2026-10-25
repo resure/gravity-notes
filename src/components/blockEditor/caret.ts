@@ -116,6 +116,41 @@ function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void
     setCaretAtPoint(el, x, y, edge === 'top' ? 'start' : 'end');
 }
 
+/**
+ * The text position on `el`'s first/last line nearest viewport x, as [node, offset] — where a
+ * selection EXTENDED into `el` from a neighbouring block should land.
+ */
+export function positionNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): [Node, number] {
+    const rect = el.getBoundingClientRect();
+    const lh = lineHeightOf(el);
+    const inset = Math.min(lh / 2, rect.height / 2);
+    const y = edge === 'top' ? rect.top + inset : rect.bottom - inset;
+    const range = caretRangeFromPoint(
+        Math.min(Math.max(x, rect.left + 2), Math.max(rect.left + 2, rect.right - 2)),
+        y,
+    );
+    if (range && el.contains(range.startContainer))
+        return [range.startContainer, range.startOffset];
+    return edgePosition(el, edge === 'top' ? 'start' : 'end');
+}
+
+/** The first or last text position inside `el`. */
+export function edgePosition(el: HTMLElement, edge: 'start' | 'end'): [Node, number] {
+    return edge === 'start' ? findTextPos(el, 0) : findTextPos(el, (el.textContent ?? '').length);
+}
+
+/** Character offset of an arbitrary DOM position within `el` (the selection's FOCUS, say). */
+export function textOffsetOf(el: HTMLElement, node: Node, offset: number): number {
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    try {
+        pre.setEnd(node, offset);
+    } catch {
+        return 0;
+    }
+    return pre.toString().length;
+}
+
 /** The caret at the character under a viewport point, pulled inside `el`'s box first. */
 export function setCaretAtPoint(
     el: HTMLElement,
@@ -146,16 +181,36 @@ export function setCaretAtPoint(
 export function caretLineRect(el: HTMLElement): LineRect {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).startContainer)) {
-        const r = sel.getRangeAt(0).cloneRange();
-        r.collapse(true);
-        const rects = r.getClientRects();
-        if (rects.length > 0) {
-            const rect = rects[0];
-            return {left: rect.left, top: rect.top, bottom: rect.bottom};
-        }
-        const br = r.getBoundingClientRect();
-        if (br.height > 0 || br.top !== 0) return {left: br.left, top: br.top, bottom: br.bottom};
+        const range = sel.getRangeAt(0);
+        const rect = lineRectAt(el, range.startContainer, range.startOffset);
+        if (rect) return rect;
     }
+    return firstLineRect(el);
+}
+
+/** Viewport rect of the line a DOM position inside `el` sits on, or null when it has no box. */
+export function lineRectAt(el: HTMLElement, node: Node, offset: number): LineRect | null {
+    const r = document.createRange();
+    try {
+        r.setStart(node, offset);
+    } catch {
+        return null;
+    }
+    r.collapse(true);
+    const rects = r.getClientRects();
+    if (rects.length > 0) {
+        const rect = rects[0];
+        return {left: rect.left, top: rect.top, bottom: rect.bottom};
+    }
+    const br = r.getBoundingClientRect();
+    if (br.height > 0 || br.top !== 0) return {left: br.left, top: br.top, bottom: br.bottom};
+    // A position parked on an ELEMENT boundary (`setCaret(el, 'end')` collapses onto the block
+    // itself) has no box of its own, and falling back to the first line made ↑ from the end of a
+    // long paragraph leave the block. Measure the character before it instead.
+    return characterBeforeRect(el, textOffsetOf(el, node, offset));
+}
+
+function firstLineRect(el: HTMLElement): LineRect {
     const er = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
     const pt = parseFloat(cs.paddingTop) || 0;
@@ -164,15 +219,38 @@ export function caretLineRect(el: HTMLElement): LineRect {
     return {left: er.left + pl, top: er.top + pt, bottom: er.top + pt + lh};
 }
 
+function characterBeforeRect(el: HTMLElement, offset: number): LineRect | null {
+    if (offset === 0) return null;
+    const [startNode, startOffset] = findTextPos(el, offset - 1);
+    const [endNode, endOffset] = findTextPos(el, offset);
+    const range = document.createRange();
+    try {
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+    } catch {
+        return null;
+    }
+    const rects = range.getClientRects();
+    const rect = rects[rects.length - 1];
+    if (!rect || (rect.height === 0 && rect.top === 0)) return null;
+    return {left: rect.right, top: rect.top, bottom: rect.bottom};
+}
+
 export function caretOnFirstLine(el: HTMLElement): boolean {
-    const line = caretLineRect(el);
+    return lineIsFirst(el, caretLineRect(el));
+}
+
+export function lineIsFirst(el: HTMLElement, line: LineRect): boolean {
     const er = el.getBoundingClientRect();
     const pt = parseFloat(getComputedStyle(el).paddingTop) || 0;
     return line.top - (er.top + pt) < lineHeightOf(el) / 2;
 }
 
 export function caretOnLastLine(el: HTMLElement): boolean {
-    const line = caretLineRect(el);
+    return lineIsLast(el, caretLineRect(el));
+}
+
+export function lineIsLast(el: HTMLElement, line: LineRect): boolean {
     const er = el.getBoundingClientRect();
     const pb = parseFloat(getComputedStyle(el).paddingBottom) || 0;
     return er.bottom - pb - line.bottom < lineHeightOf(el) / 2;

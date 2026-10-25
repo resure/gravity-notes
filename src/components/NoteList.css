@@ -1,8 +1,8 @@
 /* The note list — §04/§05.
    ─────────────────────────────────────────────────────────────────────────────────────────────
-   324px on `--bg-panel-2`, a 38px scope header, time-group labels, and 52px fixed rows. The row is
-   the single most repeated object in the app; at three thousand notes it IS the app, which is why
-   its height is a contract rather than a measurement. */
+   324px on `--bg-panel-2`: a toolbar, then rows of title / date + preview / folder. The row is the
+   single most repeated object in the app; at three thousand notes it IS the app, which is why its
+   height is computed rather than measured. */
 
 .note-list {
     display: flex;
@@ -11,14 +11,15 @@
     width: var(--sidebar-width, 324px);
     height: 100%;
     flex: none;
+    border-right: 1px solid var(--line);
     background: var(--bg-panel-2);
     color: var(--text-1);
     font-family: var(--font-ui);
 }
 
-/* ── Scope header ─────────────────────────────────────────────────────────────────────────────
-   The folder's name and count — this is what replaced the per-row breadcrumb, and the reason the
-   rows below can stay two lines. */
+/* ── Toolbar ─────────────────────────────────────────────────────────────────────────────
+   The folders toggle (⌘⇧\), sort and New. The folder scope is named by the rail, or by the chip
+   below when the rail is closed. */
 
 .note-list__header {
     display: flex;
@@ -26,24 +27,14 @@
     gap: 6px;
     box-sizing: border-box;
     flex: none;
-    height: 36px;
-    padding: 0 10px 0 14px;
+    height: 40px;
+    padding: 0 10px 0 6px;
+    border-bottom: 1px solid var(--line);
 }
 
-.note-list__scope-name {
-    padding-left: 2px;
-    font-size: var(--fs-ui);
-    font-weight: 600;
-    letter-spacing: -0.003em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.note-list__scope-count {
-    font-size: var(--fs-ui-sm);
+.note-list__folders-toggle {
+    flex: none;
     color: var(--text-3);
-    font-variant-numeric: tabular-nums;
 }
 
 .note-list__header-gap {
@@ -53,28 +44,22 @@
 
 .note-list__scope {
     flex: none;
-    padding: 0 14px 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line);
 }
 
-/* ── Group labels ─────────────────────────────────────────────────────────────────────────── */
-
-.note-list__group {
-    display: flex;
-    align-items: flex-end;
-    box-sizing: border-box;
-    height: 100%;
-    margin: 0 8px;
-    padding: 0 12px 4px;
-    font-size: var(--fs-label);
-    line-height: var(--lh-label);
-    letter-spacing: 0.005em;
+/* Only when the folder also holds non-note files: how many of each. */
+.note-list__counts {
+    flex: none;
+    padding: 6px 16px;
+    font-size: var(--fs-meta);
+    line-height: var(--lh-meta);
     color: var(--text-3);
-    font-weight: 600;
+    border-bottom: 1px solid var(--line);
 }
 
 /* ── Rows ─────────────────────────────────────────────────────────────────────────────────────
-   52px fixed. The hit area is inset 8px and rounded to 8, matching the folder rows exactly, so
-   selection reads identically in both panes. */
+   54px, or 72px with the folder line. */
 
 .note-list__items {
     flex: 1;
@@ -86,12 +71,12 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 1px;
+    gap: 2px;
     box-sizing: border-box;
     height: 100%;
-    margin: 0 8px;
-    padding: 0 12px;
-    border-radius: var(--r-md);
+    padding: 0 12px 0 16px;
+    /* Full-bleed rows over a faint hairline: a quiet ledger rather than a stack of cards. */
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
     cursor: default;
     user-select: none;
 }
@@ -99,13 +84,6 @@
 @media (hover: hover) {
     .note-list__item:hover {
         background: var(--bg-hover);
-    }
-
-    /* Hover and selection are the same neutral family, so adjacent washes would read as one
-       four-line block. The flag sits on the row's positioning wrapper (see NoteList.tsx) — the row
-       still works, the wash just doesn't draw. */
-    [data-no-hover] .note-list__item:hover {
-        background: none;
     }
 }
 
@@ -128,10 +106,11 @@
     background: var(--bg-selected-strong);
 }
 
+/* Line one: pin, title, and the ⋯ on hover. */
 .note-list__line {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
     min-width: 0;
 }
 
@@ -140,22 +119,35 @@
     min-width: 0;
     font-size: var(--fs-ui);
     line-height: var(--lh-ui);
-    font-weight: 600;
+    font-weight: 560;
     letter-spacing: -0.003em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* Outside a scoped folder, and only the leaf name — the full path would be the breadcrumb again. */
-.note-list__folder {
+.note-list__pin {
     flex: none;
-    max-width: 78px;
-    font-size: var(--fs-ui-sm);
-    color: var(--text-4);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: var(--accent);
+}
+
+.note-list__icon {
+    flex: none;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.note-list__menu-emoji {
+    font-size: 14px;
+    line-height: 1;
+}
+
+/* Line two: the date, then the note's own first words. */
+.note-list__meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
 }
 
 .note-list__date {
@@ -166,8 +158,9 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* The preview is BODY TEXT, not metadata: the note's own first words, one line, ellipsis. */
+/* The preview is BODY TEXT, not metadata: one line, ellipsis. */
 .note-list__preview {
+    min-width: 0;
     font-size: var(--fs-preview);
     line-height: var(--lh-preview);
     color: var(--text-3);
@@ -176,31 +169,47 @@
     text-overflow: ellipsis;
 }
 
-/* One trailing slot holds the time AND the ⋯, stacked. The slot's width comes from the time, and
-   the time keeps its box on hover (`visibility`, not `display`) while the button overlays it — the
-   two are different widths, so letting the slot resize would re-flow the flex-1 title and visibly
-   shift its text under the pointer. */
+/* Line three, outside a scoped folder (All Notes / search): the note's folder path. */
+.note-list__folder {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: var(--fs-ui-sm);
+    line-height: var(--lh-ui-sm);
+    color: var(--text-4);
+}
+
+.note-list__folder-glyph {
+    flex: none;
+}
+
+.note-list__folder-name {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The ⋯ keeps its box at rest (`visibility`, not `display`), so showing it never re-flows the
+   title beside it. */
 .note-list__trailing {
-    position: relative;
     flex: none;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    min-width: 24px;
+    height: var(--lh-ui);
 }
 
-/* 24px, like every other icon button in the chrome, with two steps of its own so it reads as a
-   target before you click. */
+/* 24px, like every other icon button in the chrome, with a step of its own on hover so it reads as
+   a target before you click. */
 .note-list__actions {
-    display: none;
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
+    visibility: hidden;
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 24px;
     height: 24px;
+    margin: -3px -4px -3px 0;
     padding: 0;
     border: 0;
     border-radius: var(--r-sm);
@@ -208,15 +217,13 @@
     color: var(--text-2);
 }
 
+.note-list__item_menu-open .note-list__actions {
+    visibility: visible;
+}
+
 @media (hover: hover) {
     .note-list__item:hover .note-list__actions {
-        display: flex;
-    }
-
-    /* The time gives way; the FOLDER stays. Hiding it too was a second source of re-flow, and it
-       is the one piece of context an All-Notes row has. */
-    .note-list__item:hover .note-list__date {
-        visibility: hidden;
+        visibility: visible;
     }
 
     .note-list__actions:hover {
@@ -228,11 +235,7 @@
 /* Touch has no hover: show the ⋯ on the selected row so the menu is still reachable. */
 @media (hover: none) {
     .note-list__item_selected .note-list__actions {
-        display: flex;
-    }
-
-    .note-list__item_selected .note-list__date {
-        visibility: hidden;
+        visibility: visible;
     }
 }
 

@@ -36,13 +36,13 @@ interface SettingsDialogProps {
 }
 
 /**
- * App preferences (⌘, / the orb menu) — §08. 620px with a 150px label column, and NO Save button:
+ * App preferences (⌘, / the orb menu) — §08. Label left, value right, and NO Save button:
  * every control commits on change and the app repaints live behind the scrim. Per-note overrides
  * live in the note's own ⋯ menu, beside the note.
  */
 export function SettingsDialog({open, onClose, settings, setSetting}: SettingsDialogProps) {
     return (
-        <Dialog open={open} onClose={onClose} title="Settings" width={620}>
+        <Dialog open={open} onClose={onClose} title="Settings" width={520}>
             <section className="settings">
                 <h3 className="settings__section-label">Editor</h3>
                 <div className="settings__row">
@@ -51,6 +51,16 @@ export function SettingsDialog({open, onClose, settings, setSetting}: SettingsDi
                         aria-label="Show editor toolbar"
                         checked={settings.showEditorToolbar}
                         onChange={(value) => setSetting('showEditorToolbar', value)}
+                    />
+                </div>
+                <div className="settings__row">
+                    <span className="settings__label">
+                        Show note icons <span className="settings__tag">Experimental</span>
+                    </span>
+                    <Switch
+                        aria-label="Show note icons"
+                        checked={settings.showNoteIcons}
+                        onChange={(value) => setSetting('showNoteIcons', value)}
                     />
                 </div>
                 <div className="settings__row">

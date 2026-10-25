@@ -1,7 +1,6 @@
 /* The three-pane shell — §04.
-   Panes at 236 / 324 / fill, separated by the TINT STEP and nothing else: desk → panel → panel-2 →
-   paper, with no rule between them. The editor is the only pure-white surface, and it earns that by
-   being the only one you write on. */
+   Panes at 236 / 324 / fill: desk → panel → panel-2 → paper, each edge marked by the tint step and
+   one hairline (the panels' own border-right, which the PanelResizer dividers straddle). */
 
 .workspace {
     /* Default widths of the notes list column and the folder rail beside it. The dividers
