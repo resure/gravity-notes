@@ -42,7 +42,7 @@ import {AlertDialog} from '../ui/Dialog';
 import {Chip} from '../ui/bits';
 import {Eye} from '../ui/icons';
 import {toast} from '../ui/toast';
-import {resolveWikiLink} from '../wikiLinks';
+import {resolveWikiLink, wikiLinkTargetFor} from '../wikiLinks';
 
 import {AboutDialog} from './AboutDialog';
 import {AttachmentsDialog} from './AttachmentsDialog';
@@ -1159,7 +1159,12 @@ export function Workspace({
         if (!id) return;
         void (async () => {
             try {
-                await notes.flushPending();
+                if (await notes.flushPending()) {
+                    onError(
+                        'This note has an unresolved conflict — resolve it before exporting, or the file would miss your edit.',
+                    );
+                    return;
+                }
                 await exportNote(store, id);
             } catch (err) {
                 onError(err instanceof Error ? err.message : 'Failed to export the note');
@@ -1170,16 +1175,16 @@ export function Workspace({
     /**
      * "Copy link to note" copies the note's `[[Title]]` wiki link — the app's only link format, and
      * the one Obsidian understands. There is no URL scheme to copy instead; a `sol://` deep link is
-     * backlog.
+     * backlog. A title another note shares needs the `Folder/Note` form to resolve to THIS note.
      */
     const handleCopyNoteLink = useCallback(() => {
-        const title = notes.note?.title;
-        if (!title) return;
+        const open = notes.note;
+        if (!open) return;
         void navigator.clipboard
-            ?.writeText(`[[${title}]]`)
+            ?.writeText(`[[${wikiLinkTargetFor(open, notes.notes)}]]`)
             .then(() => notify('Link copied'))
             .catch(() => onError('Could not copy to the clipboard'));
-    }, [notes.note, notify, onError]);
+    }, [notes.note, notes.notes, notify, onError]);
 
     // Flush any pending edit before opening the attachments manager, so a just-pasted image's
     // reference is already on disk — otherwise it reads as "Unused" and is bulk-deletable.

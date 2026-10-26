@@ -1,6 +1,6 @@
 import {
     EDITOR_FONTS,
-    type EditorFont,
+    EDITOR_FONT_LABELS,
     type Settings,
     TEXT_WIDTHS,
     type TextWidth,
@@ -17,7 +17,6 @@ import './SettingsDialog.css';
  * fails typecheck here until it's labeled, and then appears in the strip automatically; the strip
  * can never silently offer less than storage accepts.
  */
-const FONT_LABELS: Record<EditorFont, string> = {sans: 'Sans', serif: 'Serif', mono: 'Mono'};
 const WIDTH_LABELS: Record<TextWidth, string> = {
     narrow: 'Narrow',
     normal: 'Default',
@@ -25,7 +24,7 @@ const WIDTH_LABELS: Record<TextWidth, string> = {
     unlimited: 'Unlimited',
 };
 
-const FONT_OPTIONS = EDITOR_FONTS.map((value) => ({value, content: FONT_LABELS[value]}));
+const FONT_OPTIONS = EDITOR_FONTS.map((value) => ({value, content: EDITOR_FONT_LABELS[value]}));
 const WIDTH_OPTIONS = TEXT_WIDTHS.map((value) => ({value, content: WIDTH_LABELS[value]}));
 
 interface SettingsDialogProps {

@@ -20,7 +20,7 @@ import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
 
 import {emojiIcon} from '../emoji';
 import {escapeRegExp, tokenizeQuery} from '../search';
-import {isOpenInNewWindowChord} from '../shortcuts';
+import {isOpenInNewWindowChord, shortcutHint} from '../shortcuts';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, OtherFile, SortMode} from '../storage/types';
 import {Button} from '../ui/Button';
@@ -53,8 +53,8 @@ import './NoteList.css';
  */
 const NOTE_MIME = 'application/x-gravity-note';
 
-/** §05's hard numbers: the virtualizer depends on both. */
 const NO_FILES: OtherFile[] = [];
+/** Fixed row heights: the virtualizer depends on them. */
 const ROW_HEIGHT = 54;
 /** A row that also names its folder, on a third line (All Notes / search). */
 const ROW_WITH_FOLDER_HEIGHT = 72;
@@ -221,7 +221,6 @@ interface NoteRowProps {
     tabbable: boolean;
     /** Full-text snippet or head-of-note preview, already resolved by the parent. */
     previewText: string;
-    /** Leaf folder name (`''` when the list is already scoped to one folder). */
     pinned: boolean;
     /** The note's emoji, when icons are shown (empty = none). */
     icon: string;
@@ -248,8 +247,8 @@ interface NoteRowProps {
 }
 
 /**
- * One note row — 52px fixed, per §05: a title with the time right-aligned beside it, then one line
- * of the note's own first words. The preview is what tells "Sync conflicts — Q1" from
+ * One note row, at a fixed height: a title with the time right-aligned beside it, then one line
+ * of the note's own first words, and the note's folder on a third line where it is shown. The preview is what tells "Sync conflicts — Q1" from
  * "Sync conflicts — Q2" without opening either; it never wraps to a second line, because a row that
  * changes height while scrolling is the fastest way to make an app feel cheap.
  *
@@ -352,7 +351,9 @@ const NoteRow = memo(function NoteRow({
                                 type="button"
                                 className="note-list__actions"
                                 aria-label="Note actions"
-                                tabIndex={-1}
+                                // Reachable by Tab from the row, as the one keyboard way to the menu
+                                // without a right-click.
+                                tabIndex={tabbable ? 0 : -1}
                                 onClick={(e) => {
                                     // Don't browse the row; open the one shared menu anchored to
                                     // this button (the parent toggles it off if it's this row's).
@@ -431,6 +432,15 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         id: string;
         anchor: {getBoundingClientRect: () => DOMRect};
     } | null>(null);
+    const iconForRef = useRef(iconFor);
+    iconForRef.current = iconFor;
+    const onSetIconRef = useRef(onSetIcon);
+    onSetIconRef.current = onSetIcon;
+    const setPickedIcon = useCallback((icon: string) => {
+        const target = iconForRef.current;
+        if (target) onSetIconRef.current?.(target.id, icon);
+    }, []);
+    const closeIconPicker = useCallback(() => setIconFor(null), []);
     // Tokenized here (not threaded as a prop) so highlighting stays self-contained.
     const terms = useMemo(() => tokenizeQuery(query), [query]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -448,7 +458,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     // The note row that is tabbable: the selected one if visible, else the first note.
     const focusableId =
-        selectedId && noteIds.includes(selectedId) ? selectedId : (noteIds[0] ?? null);
+        selectedId && rowIndexById.has(selectedId) ? selectedId : (noteIds[0] ?? null);
     const focusableIndex = focusableId ? (rowIndexById.get(focusableId) ?? -1) : -1;
     // The open row menu's anchor row (kept mounted below, so a scroll can't tear the anchor out from
     // under its popup); -1 = closed, or the note has left the list.
@@ -492,17 +502,26 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
     };
 
     // Virtualize: a folder can hold thousands of notes, and mounting every row blows out first paint,
-    // memory, and scroll. Heights are FIXED by §05 (52px rows, 24px group labels) rather than
+    // memory, and scroll. Heights are FIXED (`ROW_HEIGHT`, `ROW_WITH_FOLDER_HEIGHT`) rather than
     // measured — that is exactly what makes the virtualizer's arithmetic exact and the scrollbar
     // honest at three thousand rows.
     const scrollRef = useRef<HTMLDivElement>(null);
+    const rowHeights = useMemo(
+        () => notes.map((note) => rowHeight(note, showCrumbs)),
+        [notes, showCrumbs],
+    );
+    // Stable, so the virtualizer's measurement pass re-runs only when the rows really change.
+    const getItemKey = useCallback(
+        (index: number) =>
+            index < notes.length ? notes[index].id : `file:${files[index - notes.length].id}`,
+        [notes, files],
+    );
     const rowVirtualizer = useVirtualizer({
         count: notes.length + files.length,
         getScrollElement: () => scrollRef.current,
-        estimateSize: (index) => rowHeight(notes[index] ?? null, showCrumbs),
+        estimateSize: (index) => rowHeights[index] ?? ROW_HEIGHT,
         overscan: 8,
-        getItemKey: (index) =>
-            index < notes.length ? notes[index].id : `file:${files[index - notes.length].id}`,
+        getItemKey,
         // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
         // so the list always has a keyboard-focusable element and focusing it never needs an async
         // scroll-then-mount — plus the open menu's anchor row, so scrolling can't unmount the popup's
@@ -828,7 +847,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             <div ref={scrollRef} className="note-list__items virtual-scroll">
                 {loading && notes.length === 0 ? (
                     // §09's loading state: rows in the shape of the rows that are coming, at the
-                    // list's own 52px pitch. No spinner — and no empty state, which would be a
+                    // list's own row pitch. No spinner — and no empty state, which would be a
                     // claim about a vault that hasn't been read yet.
                     <div
                         className="note-list__skeletons"
@@ -991,7 +1010,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         {onOpenInNewWindow ? (
                             <MenuItem
                                 icon={<NewWindow size={16} />}
-                                hint="⌘↵"
+                                hint={shortcutHint('mod+enter')}
                                 onClick={() => onOpenInNewWindow(menu.note.id)}
                             >
                                 Open in New Window
@@ -1039,14 +1058,14 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         </MenuItem>
                         <MenuItem
                             icon={<ArrowRight size={16} />}
-                            hint="⌘⇧M"
+                            hint={shortcutHint('mod+shift+m')}
                             onClick={() => onRequestMove(menu.note.id)}
                         >
                             Move to…
                         </MenuItem>
                         <MenuItem
                             icon={<Copy size={16} />}
-                            hint="⌘D"
+                            hint={shortcutHint('mod+d')}
                             onClick={() => onDuplicate(menu.note.id)}
                         >
                             Duplicate
@@ -1062,7 +1081,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                         <MenuSeparator />
                         <MenuItem
                             icon={<Trash size={16} />}
-                            hint="⌘⇧⌫"
+                            hint={shortcutHint('mod+shift+backspace')}
                             danger
                             onClick={() => onDelete(menu.note.id)}
                         >
@@ -1076,10 +1095,8 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 <EmojiPickerPopup
                     anchor={iconFor?.anchor ?? null}
                     value={iconFor ? icons?.[iconFor.id] : undefined}
-                    onChange={(icon) => {
-                        if (iconFor) onSetIcon(iconFor.id, icon);
-                    }}
-                    onClose={() => setIconFor(null)}
+                    onChange={setPickedIcon}
+                    onClose={closeIconPicker}
                 />
             ) : null}
         </div>

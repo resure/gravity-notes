@@ -5,10 +5,10 @@ import {inlineHtmlToMarkdown} from '../../markdown';
 import {decorateWikiLinks, wikiTargetsIn} from './wikiDecorate';
 
 const none = () => false;
-/** The decorated form of `[[inner]]`: the brackets in spans of their own, the title between. */
-const link = (inner: string, broken = false) =>
-    `<span class="wiki-link${broken ? ' wiki-link_broken' : ''}"><span class="wiki-bracket">[[</span>${inner}<span class="wiki-bracket">]]</span></span>`;
 const all = () => true;
+/** The decorated form of `[[inner]]`: an atomic chip, the brackets in hidden spans of their own. */
+const link = (inner: string, broken = false) =>
+    `<span class="wiki-link${broken ? ' wiki-link_broken' : ''}" contenteditable="false"><span class="wiki-hidden">[[</span>${inner}<span class="wiki-hidden">]]</span></span>`;
 
 describe('decorateWikiLinks', () => {
     it('wraps a link without touching its text', () => {
@@ -62,6 +62,20 @@ describe('decorateWikiLinks', () => {
     it('keeps a colour span around a link when re-decorating', () => {
         const coloured = `<span class="gn-color--red">${link('T')}</span>`;
         expect(decorateWikiLinks(coloured, none)).toBe(coloured);
+    });
+
+    it('shows the display text of `[[Note|text]]`, hiding the note name with the brackets', () => {
+        expect(decorateWikiLinks('[[Daily log|today]]', none)).toBe(
+            '<span class="wiki-link" contenteditable="false"><span class="wiki-hidden">[[Daily log|</span>today<span class="wiki-hidden">]]</span></span>',
+        );
+        // Nothing after the bar is no display text: the name shows.
+        expect(decorateWikiLinks('[[Daily log|]]', none)).toBe(link('Daily log|'));
+    });
+
+    it('re-decorates an alias chip to itself, and writes it back byte for byte', () => {
+        const once = decorateWikiLinks('see [[A Note|alias]] now', none);
+        expect(decorateWikiLinks(once, none)).toBe(once);
+        expect(inlineHtmlToMarkdown(once)).toBe('see [[A Note|alias]] now');
     });
 
     it('skips html with nothing to do', () => {

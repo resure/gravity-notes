@@ -217,7 +217,8 @@
     color: var(--text-2);
 }
 
-.note-list__item_menu-open .note-list__actions {
+.note-list__item_menu-open .note-list__actions,
+.note-list__actions:focus-visible {
     visibility: visible;
 }
 

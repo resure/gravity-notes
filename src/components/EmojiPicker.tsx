@@ -21,6 +21,7 @@ export interface EmojiPickerButtonProps {
     value?: string;
     disabled?: boolean;
     className?: string;
+    onPointerDown?: () => void;
     onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }
 
@@ -28,7 +29,13 @@ export interface EmojiPickerButtonProps {
  * The note's emoji, as a button that opens the picker. With no emoji set it is an "Add icon"
  * placeholder that the host shows only on hover, so a note without one stays bare.
  */
-export function EmojiPickerButton({value, disabled, className, onClick}: EmojiPickerButtonProps) {
+export function EmojiPickerButton({
+    value,
+    disabled,
+    className,
+    onPointerDown,
+    onClick,
+}: EmojiPickerButtonProps) {
     const emoji = emojiIcon(value);
     return (
         <button
@@ -38,6 +45,7 @@ export function EmojiPickerButton({value, disabled, className, onClick}: EmojiPi
             }`}
             disabled={disabled}
             aria-label={emoji ? 'Change note icon' : 'Set note icon'}
+            onPointerDown={onPointerDown}
             onClick={onClick}
         >
             {emoji ?? (
@@ -93,10 +101,7 @@ export const EmojiPickerPopup = memo(function EmojiPickerPopup({
     // One instance serves every row, so a closed picker must not carry one note's search into the
     // next note's.
     useEffect(() => {
-        if (!open) {
-            setQuery('');
-            setActiveIndex(-1);
-        }
+        if (!open) setQuery('');
     }, [open]);
 
     const entries = useMemo(
@@ -255,6 +260,9 @@ export function EmojiPicker({
     className?: string;
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    // Whether the picker was open when the button was pressed. The press already counts as one
+    // outside the popup and closes it, so the click that follows must not open it again.
+    const openAtPress = useRef(false);
     // Read-only preview disables the button; an already-open picker must close with it.
     useEffect(() => {
         if (disabled) setAnchor(null);
@@ -265,9 +273,14 @@ export function EmojiPicker({
                 value={value}
                 disabled={disabled}
                 className={className}
+                onPointerDown={() => {
+                    openAtPress.current = anchor !== null;
+                }}
                 onClick={(event) => {
                     const button = event.currentTarget;
-                    setAnchor((current) => (current ? null : button));
+                    const wasOpen = openAtPress.current || anchor !== null;
+                    openAtPress.current = false;
+                    setAnchor(wasOpen ? null : button);
                 }}
             />
             <EmojiPickerPopup

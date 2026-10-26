@@ -398,9 +398,13 @@ Key modules:
   while its menu is open, or on the first block of each run of selected blocks (a run's wash is
   drawn as one shape). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
-  the editor can re-decorate mid-keystroke and simply put the caret back); the brackets get spans of
-  their own, hidden by CSS except on the link the caret is in or against (`wiki-link_active`), and
-  the writer emits text inside a wiki-link span verbatim so split brackets are never escaped, the broken class is
+  the editor can re-decorate mid-keystroke and simply put the caret back); a link is an ATOMIC chip
+  (`contenteditable="false"`) whose brackets — and the `Note|` of a `[[Note|text]]` — sit in
+  `wiki-hidden` spans, so the reader sees only the title or the text while the DOM text keeps every
+  byte (`moveCaretOutOfAtom`/`keepOutOfAtoms` keep the caret beside a chip, never in it); the writer
+  emits text inside a wiki-link span verbatim so brackets are never escaped; the caret against a chip
+  opens its popup (Open / Change note — a note search in the popup itself, which re-points the link
+  and keeps its text / Edit text / Unlink), the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
   autosave), and `[[` opens `WikiSuggestMenu` — same portal/positioning machinery as the slash menu,
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
@@ -414,8 +418,14 @@ Key modules:
   block dropped between a parent and its children joins them instead of adopting them; and
   **what the reader can see is what an edit may touch** (`visibleBlockIds`), so focus requests,
   selection extension and merges all skip blocks hidden inside a collapsed toggle, which render no
-  element at all. A TEXT selection across blocks acts on exactly the blocks it covers (`'exact'` in
-  `removeBlocks`), where a BLOCK selection acts on whole subtrees.
+  element at all. A TEXT selection across blocks acts on exactly the text it covers: Backspace/Delete, typing
+  (keydown, plus a `beforeinput` guard for dictation/autocorrect), Enter, cut and paste go through
+  `textSelectionAcross` → `deleteAcross` / `splitAcross`, which keep the first block's head and the
+  last's tail; where an end isn't a text block (image, table, collapsed toggle) they fall back to
+  whole blocks (`'exact'` in `removeBlocks`). A BLOCK selection acts on whole subtrees. Keyboard
+  selection crosses blocks via `extendSelectionAcross` (WebKit clamps `extend` to the editing host,
+  so `acrossBlocks` makes the root editable for the call), and is painted per block with the
+  `gn-cross-blocks` Custom Highlight, since WebKit paints only inside the host the range starts in.
   ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
   and IS a textbox; the rules can't tell, and the editor drives focus itself).
 - `src/components/BlockEditorBody.tsx` — the **adapter** between `EditorPane` and the block editor:
@@ -543,14 +553,13 @@ Key modules:
   understands — plus alt/caption editing and explicit loading/broken states),
   `BacklinksPanel` (the "linked references" list
   under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons, editor-toolbar and
-  spellcheck toggles + Appearance for the app and workspace layers), `EditorToolbar` (the optional
+  spellcheck toggles + app-wide Appearance), `EditorToolbar` (the optional
   sticky formatting bar above the blocks — each button runs the editor's own chord/slash path through
   `EditorHandle.format` / `setBlockType` / `link` / `color` / `undo` / `redo`; buttons never take
   focus, and the pane's empty-area click handler skips it so a press doesn't move the caret first;
-  while it is shown the floating selection bar keeps only its ⌘K link box (`linkOnly`)), `NoteAppearancePopover` (the per-note font/width
-  popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
-  `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
-  derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
+  while it is shown the floating selection bar keeps only its ⌘K link box (`linkOnly`)), the open note's ⋯ menu in `TopBar` (⌘⇧I — inline per-note font/width strips plus the note's file
+  actions; its open state lives in `Workspace` and closes on a `sessionId` change, not a note-id one,
+  so a rename/move doesn't dismiss it), `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
   clickable links), and `ErrorBoundary` (root render-crash net).

@@ -13,9 +13,9 @@
 /* Every floating part portals to <body> — a sibling of #root, which carries `isolation: isolate`
    (index.css). That is the whole stacking contract: the app can never mint a z-index that reaches
    above a menu, and in particular a menu opens ABOVE the Tauri title bar's drag region rather than
-   under it. */
+   under it. Above dialogs (1000/1001) too: a select inside a dialog opens over it. Below toasts. */
 .ui-pop-positioner {
-    z-index: 900;
+    z-index: 1050;
 }
 
 .ui-pop {
@@ -118,11 +118,6 @@
     width: 16px;
     height: 16px;
     color: var(--pop-icon);
-}
-
-/* Rows with no glyph still reserve the column, so nothing shifts when a checkmark appears. */
-.ui-pop__icon_empty {
-    display: flex;
 }
 
 .ui-pop__label {

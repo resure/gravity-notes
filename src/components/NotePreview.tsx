@@ -31,6 +31,7 @@ import {blocksToMarkdown, isRoundTripStable, markdownToBlocks, takeParsedBlocks}
 import {previewInline} from '../markdown/previewInline';
 import {openExternalUrl} from '../openExternal';
 import {attachmentImageRefsIn, isAttachmentRef} from '../storage/noteText';
+import {splitWikiTarget} from '../wikiLinks';
 
 import {calloutIcon} from './blockEditor/callouts';
 import {newBlock} from './blockEditor/types';
@@ -208,7 +209,8 @@ export function withWikiLinks(html: string): string {
             if (match.index > last) frag.append(text.slice(last, match.index));
             const span = doc.createElement('span');
             span.className = 'wiki-link';
-            span.textContent = match[1];
+            // `[[Note|text]]` reads as its text, like the editor's chip.
+            span.textContent = splitWikiTarget(match[1]).alias ?? match[1];
             frag.append(span);
             last = match.index + match[0].length;
         }

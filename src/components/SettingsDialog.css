@@ -76,3 +76,16 @@
     color: var(--text-3);
     vertical-align: 1px;
 }
+
+/* A phone-width dialog has no room for a label beside a four-way strip: stack them. */
+@media (max-width: 420px) {
+    .settings__row {
+        grid-template-columns: 1fr;
+        row-gap: 6px;
+    }
+
+    .settings__row .ui-toggle-group__item {
+        flex: 1;
+        min-width: 0;
+    }
+}

@@ -4,9 +4,15 @@ import type {KeyboardEvent as ReactKeyboardEvent, RefObject} from 'react';
 import {useHasHover} from '../hooks/useIsNarrow';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
-import type {EditorFontPref, NoteAppearance, TextWidthPref} from '../hooks/useSettings';
+import {
+    EDITOR_FONTS,
+    EDITOR_FONT_LABELS,
+    type EditorFontPref,
+    type NoteAppearance,
+    type TextWidthPref,
+} from '../hooks/useSettings';
 import {isDesktopTauri} from '../isTauri';
-import {isOpenInNewWindowChord} from '../shortcuts';
+import {isOpenInNewWindowChord, shortcutChords, shortcutHint} from '../shortcuts';
 import type {NoteMeta} from '../storage/types';
 import {Button} from '../ui/Button';
 import {Input} from '../ui/Input';
@@ -53,9 +59,7 @@ const MAX_RECENT_MENU = 6;
 /** The per-note appearance strips (§07). "Default" means inherit the app setting. */
 const NOTE_FONT_OPTIONS: {value: EditorFontPref; content: string}[] = [
     {value: 'default', content: 'Default'},
-    {value: 'sans', content: 'Sans'},
-    {value: 'serif', content: 'Serif'},
-    {value: 'mono', content: 'Mono'},
+    ...EDITOR_FONTS.map((value) => ({value, content: EDITOR_FONT_LABELS[value]})),
 ];
 
 /**
@@ -411,7 +415,11 @@ export function TopBar({
                     Open Folder…
                 </MenuItem>
             ) : null}
-            <MenuItem icon={<NewWindow size={16} />} hint="⌃R" onClick={onOpenSwitcher}>
+            <MenuItem
+                icon={<NewWindow size={16} />}
+                hint={shortcutHint('ctrl+r')}
+                onClick={onOpenSwitcher}
+            >
                 Workspaces…
             </MenuItem>
 
@@ -440,13 +448,25 @@ export function TopBar({
             {/* Hiding the panel is a MULTI-PANE affordance: the mobile layout is a single pane that
                 pushes list↔editor, so there's no panel to hide there (and no ⌘\ to press). */}
             {mobile ? null : (
-                <MenuItem icon={<PaneLeft size={16} />} hint={'⌘\\'} onClick={onToggleCollapsed}>
+                <MenuItem
+                    icon={<PaneLeft size={16} />}
+                    hint={shortcutHint('mod+\\')}
+                    onClick={onToggleCollapsed}
+                >
                     Show / hide left panel
                 </MenuItem>
             )}
-            <MenuItem icon={<Folder size={16} />} hint={'⌘⇧\\'} onClick={onToggleRail}>
-                Show / hide folders
-            </MenuItem>
+            {/* On a phone the folders are the list pane's drawer: from the editor there is no
+                list to show them in. */}
+            {mobile && mobilePane === 'editor' ? null : (
+                <MenuItem
+                    icon={<Folder size={16} />}
+                    hint={shortcutHint('mod+shift+\\')}
+                    onClick={onToggleRail}
+                >
+                    Show / hide folders
+                </MenuItem>
+            )}
             <MenuSub icon={<Contrast size={16} />} label="Theme" hint={themeLabel}>
                 {THEME_OPTIONS.map((option) => (
                     <MenuItem
@@ -458,14 +478,22 @@ export function TopBar({
                     </MenuItem>
                 ))}
             </MenuSub>
-            <MenuItem icon={<Gear size={16} />} hint="⌘," onClick={onOpenSettings}>
+            <MenuItem
+                icon={<Gear size={16} />}
+                hint={shortcutHint('mod+,')}
+                onClick={onOpenSettings}
+            >
                 Settings…
             </MenuItem>
             {/* A sheet of keyboard chords is dead weight with no keyboard to press them on. Gated on
                 the POINTER, not the width: a narrow desktop window still has a keyboard and would
                 lose its only entry point to this dialog, whereas a full-screen phone has neither. */}
             {hasHover ? (
-                <MenuItem icon={<Keyboard size={16} />} hint="⌘/" onClick={onOpenHelp}>
+                <MenuItem
+                    icon={<Keyboard size={16} />}
+                    hint={shortcutHint('mod+/')}
+                    onClick={onOpenHelp}
+                >
                     Keyboard shortcuts
                 </MenuItem>
             ) : null}
@@ -508,12 +536,16 @@ export function TopBar({
             <MenuSeparator />
             <MenuItem
                 icon={previewMode ? <Check size={16} /> : <Eye size={16} />}
-                hint="⌘⇧P"
+                hint={shortcutHint('mod+shift+p')}
                 onClick={onTogglePreview}
             >
                 Read-only preview
             </MenuItem>
-            <MenuItem icon={<Code size={16} />} hint="⌘⇧;" onClick={onToggleSource}>
+            <MenuItem
+                icon={<Code size={16} />}
+                hint={shortcutHint('mod+shift+;')}
+                onClick={onToggleSource}
+            >
                 Markup instead of blocks
             </MenuItem>
 
@@ -535,10 +567,18 @@ export function TopBar({
             >
                 Rename
             </MenuItem>
-            <MenuItem icon={<ArrowRight size={16} />} hint="⌘⇧M" onClick={onMoveNote}>
+            <MenuItem
+                icon={<ArrowRight size={16} />}
+                hint={shortcutHint('mod+shift+m')}
+                onClick={onMoveNote}
+            >
                 Move to…
             </MenuItem>
-            <MenuItem icon={<Copy size={16} />} hint="⌘D" onClick={onDuplicateNote}>
+            <MenuItem
+                icon={<Copy size={16} />}
+                hint={shortcutHint('mod+d')}
+                onClick={onDuplicateNote}
+            >
                 Duplicate
             </MenuItem>
             {onRevealNote ? (
@@ -556,7 +596,12 @@ export function TopBar({
             </MenuItem>
 
             <MenuSeparator />
-            <MenuItem icon={<Trash size={16} />} hint="⌘⇧⌫" danger onClick={onDeleteNote}>
+            <MenuItem
+                icon={<Trash size={16} />}
+                hint={shortcutHint('mod+shift+backspace')}
+                danger
+                onClick={onDeleteNote}
+            >
                 Delete
             </MenuItem>
         </>
@@ -636,7 +681,7 @@ export function TopBar({
                 placeholder="Search or create a note…"
                 aria-label="Search or create a note"
                 icon={<Search size={12} />}
-                trailing={mobile ? undefined : <Kbd keys="⌘L" />}
+                trailing={mobile ? undefined : <Kbd keys={shortcutChords('mod+l')[0]} />}
                 onClear={() => {
                     setCompleting(false);
                     onQueryChange('');

@@ -179,13 +179,6 @@ export const Eye = icon(
 /** "Markup instead of blocks" — the angle brackets. */
 export const Code = icon(<path d="M5.8 4.6L2.4 8l3.4 3.4M10.2 4.6L13.6 8l-3.4 3.4" />);
 
-export const Clock = icon(
-    <>
-        <circle cx="8" cy="8" r="5.4" />
-        <path d="M8 4.8V8l2.3 1.5" />
-    </>,
-);
-
 export const Database = icon(
     <>
         <ellipse cx="8" cy="4.2" rx="4.9" ry="1.9" />
@@ -193,15 +186,6 @@ export const Database = icon(
         <path d="M3.1 8c0 1.05 2.2 1.9 4.9 1.9s4.9-.85 4.9-1.9" />
     </>,
 );
-
-export const Sun = icon(
-    <>
-        <circle cx="8" cy="8" r="2.9" />
-        <path d="M8 1.6v1.5M8 12.9v1.5M14.4 8h-1.5M3.1 8H1.6M12.5 3.5l-1 1M4.5 11.5l-1 1M12.5 12.5l-1-1M4.5 4.5l-1-1" />
-    </>,
-);
-
-export const Moon = icon(<path d="M13 9.4A5.6 5.6 0 016.6 3a5.6 5.6 0 106.4 6.4z" />);
 
 /** System theme — a display. */
 export const Display = icon(
@@ -219,26 +203,10 @@ export const Contrast = icon(
     </>,
 );
 
-export const CircleQuestion = icon(
-    <>
-        <circle cx="8" cy="8" r="5.6" />
-        <path d="M6.4 6.3a1.7 1.7 0 113 1.2c-.6.5-1.4.8-1.4 1.7" />
-        <circle cx="8" cy="11.4" r="0.55" fill="currentColor" stroke="none" />
-    </>,
-);
-
 export const CircleArrowUp = icon(
     <>
         <circle cx="8" cy="8" r="5.6" />
         <path d="M8 11V5.4M5.8 7.6L8 5.4l2.2 2.2" />
-    </>,
-);
-
-export const Picture = icon(
-    <>
-        <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.8" />
-        <path d="M2.4 10.9l3.1-2.7 2.6 2.2 2.3-2 3.4 3" />
-        <circle cx="6" cy="6.2" r="0.9" />
     </>,
 );
 

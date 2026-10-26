@@ -38,7 +38,7 @@ export interface ChipProps {
     className?: string;
 }
 
-/** 18px tall, 4px radius, `--text-3` — the folder-scope chip, and nothing else so far. */
+/** 18px tall, 4px radius, `--text-3` — a small label: the folder scope, the preview badge. */
 export function Chip({
     icon,
     children,

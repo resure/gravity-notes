@@ -1753,15 +1753,61 @@
     text-decoration: underline;
 }
 
-/* The brackets stay in the text (and the file) but show only while the caret is in or against the
-   link — the editor marks that one link active. */
-.gn-block-editor .wiki-bracket {
+/* The brackets — and the note name, when the link has display text — stay in the text (and the
+   file) but are never drawn: the link is an atomic chip, changed through its popup. */
+.gn-block-editor .wiki-hidden {
     display: none;
 }
 
-.gn-block-editor .wiki-link_active .wiki-bracket {
-    display: inline;
-    opacity: 0.55;
+/* "Change note": the popup turns into a small note search — a field over the matching notes. */
+.gn-block-editor .wiki-tip-search {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 280px;
+}
+
+.gn-block-editor .wiki-tip-search .wiki-tip-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.gn-block-editor .wiki-tip-option {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--text-1);
+    cursor: pointer;
+}
+
+.gn-block-editor .wiki-tip-option_active,
+.gn-block-editor .wiki-tip-option:hover {
+    background: var(--bg-hover);
+}
+
+.gn-block-editor .wiki-tip-option-path {
+    flex: none;
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+/* The popup's display-text field, in the popup's own row. */
+.gn-block-editor .wiki-tip-input {
+    width: 220px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--r-sm);
+    background: var(--bg-paper);
+    color: var(--text-1);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    outline: none;
 }
 
 /* A link whose target doesn't exist yet — dimmed, with a dashed underline, so a typo or a
@@ -1781,11 +1827,6 @@
 
 .gn-block-editor .wiki-suggest-menu .menu-item {
     height: 44px;
-}
-
-/* …except the trailing "Create …" row, which is a plain 32px action like any other. */
-.gn-block-editor .wiki-suggest-menu .menu-item_create {
-    height: 32px;
 }
 
 .gn-block-editor .wiki-suggest-menu .menu-item-description {

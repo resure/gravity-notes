@@ -4,10 +4,12 @@ import {beforeEach, describe, expect, it} from 'vitest';
 import {
     type NoteAppearance,
     type Settings,
+    clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
     isNoteAppearanceOverridden,
     noteAppearanceOf,
     noteAppearanceToOverride,
+    readLegacyNoteAppearances,
     useSettings,
 } from './useSettings';
 
@@ -122,5 +124,49 @@ describe('noteAppearanceOf / noteAppearanceToOverride', () => {
         expect(noteAppearanceToOverride(NOTE_DEFAULT)).toEqual({});
         const full: NoteAppearance = {editorFont: 'serif', textWidth: 'narrow'};
         expect(noteAppearanceOf(noteAppearanceToOverride(full))).toEqual(full);
+    });
+});
+
+describe('legacy per-note appearance migration', () => {
+    const key = (id: string) => `gravity-notes:ws-1:note:${id}:appearance`;
+
+    it('reads legacy keys as overrides, skipping all-default and corrupt values — but lists every key', () => {
+        localStorage.setItem(
+            key('Work/Plan.md'),
+            JSON.stringify({editorFont: 'serif', accentColor: 'default', textWidth: 'default'}),
+        );
+        localStorage.setItem(
+            key('Idle.md'),
+            JSON.stringify({editorFont: 'default', accentColor: 'default', textWidth: 'default'}),
+        );
+        localStorage.setItem(key('Broken.md'), 'not json{');
+        localStorage.setItem('gravity-notes:ws-2:note:Other.md:appearance', '{}'); // other workspace
+        const legacy = readLegacyNoteAppearances('ws-1');
+        expect(legacy.overrides).toEqual({
+            'Work/Plan.md': {editorFont: 'serif'},
+        });
+        // All-default and corrupt entries carry nothing to migrate, but their keys still get cleared.
+        expect([...legacy.keys].sort()).toEqual(
+            [key('Work/Plan.md'), key('Idle.md'), key('Broken.md')].sort(),
+        );
+    });
+
+    it('handles a note title containing the key separator', () => {
+        localStorage.setItem(key('Meeting: notes.md'), JSON.stringify({textWidth: 'wide'}));
+        expect(readLegacyNoteAppearances('ws-1').overrides).toEqual({
+            'Meeting: notes.md': {textWidth: 'wide'},
+        });
+    });
+
+    it('clearLegacyNoteAppearanceKeys removes exactly the keys the read pass found', () => {
+        localStorage.setItem(key('A.md'), JSON.stringify({editorFont: 'mono'}));
+        localStorage.setItem(key('B.md'), 'junk');
+        localStorage.setItem('gravity-notes:ws-2:note:C.md:appearance', '{}');
+        localStorage.setItem('gravity-notes:ws-1:settings', '{}');
+        clearLegacyNoteAppearanceKeys(readLegacyNoteAppearances('ws-1').keys);
+        expect(localStorage.getItem(key('A.md'))).toBeNull();
+        expect(localStorage.getItem(key('B.md'))).toBeNull();
+        expect(localStorage.getItem('gravity-notes:ws-2:note:C.md:appearance')).not.toBeNull();
+        expect(localStorage.getItem('gravity-notes:ws-1:settings')).not.toBeNull();
     });
 });

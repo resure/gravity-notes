@@ -49,8 +49,8 @@ Markdown files, and they are yours.
 - **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add
   `Shift` to copy or paste plain text with the Markdown stripped
 - **Optional spellcheck** — toggle “Check spelling” in Settings (off by default)
-- **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; put the caret in a link
-  for Open / Edit / Unlink
+- **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; a link can show its own
+  text (`[[Note|text]]`); put the caret beside a link to open, re-point, retitle or unlink it
 - **Full-text search** across titles and bodies, ranked, with match snippets
 - **Nested folders, pins, sort modes**, emoji note icons (experimental), and a recoverable **Trash**
 - **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;
@@ -63,8 +63,7 @@ Markdown files, and they are yours.
   single note — in its own window
 - **Resizable side panels**: drag the divider beside the folder rail or the notes list
   (double-click resets, arrow keys nudge) — widths remembered per workspace
-- **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
-  per workspace, or per note
+- **Make it yours**: light/dark/system theme, editor font, text width — app-wide or per note
 - **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
   desktop window); an **iOS app** opens an iCloud Drive (or on-device) folder of `.md` files through
   the native Files picker

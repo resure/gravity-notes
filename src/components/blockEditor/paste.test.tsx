@@ -15,23 +15,45 @@ function paste(content: HTMLElement, text: string) {
 }
 
 describe('Markdown paste boundaries', () => {
-    it('replaces a cross-block selection without mutating React-owned DOM', () => {
+    it('replaces exactly the selected text when a selection crosses blocks', () => {
+        withInsertHtml(() => {
+            const onChange = vi.fn();
+            render(<Editor value={'First\n\nSecond\n\nThird'} onChange={onChange} />);
+            const contents = document.querySelectorAll<HTMLElement>('.content');
+            contents[0].focus();
+            const range = document.createRange();
+            range.setStart(contents[0].firstChild!, 1);
+            range.setEnd(contents[1].firstChild!, 3);
+            window.getSelection()!.removeAllRanges();
+            window.getSelection()!.addRange(range);
+            fireEvent.paste(contents[0], {
+                clipboardData: {
+                    files: [],
+                    getData: (type: string) => (type === 'text/plain' ? 'Replacement' : ''),
+                },
+            });
+            expect(onChange.mock.calls.at(-1)?.[0]).toBe('FReplacementond\n\nThird');
+        });
+    });
+
+    it('refuses unsupported Markdown over a cross-block selection without deleting it', () => {
         const onChange = vi.fn();
-        render(<Editor value={'First\n\nSecond\n\nThird'} onChange={onChange} />);
+        render(<Editor value={'alpha ONE\n\nTWO omega'} onChange={onChange} />);
         const contents = document.querySelectorAll<HTMLElement>('.content');
         contents[0].focus();
         const range = document.createRange();
-        range.setStart(contents[0].firstChild!, 1);
+        range.setStart(contents[0].firstChild!, 6);
         range.setEnd(contents[1].firstChild!, 3);
         window.getSelection()!.removeAllRanges();
         window.getSelection()!.addRange(range);
         fireEvent.paste(contents[0], {
             clipboardData: {
                 files: [],
-                getData: (type: string) => (type === 'text/plain' ? 'Replacement' : ''),
+                getData: (type: string) =>
+                    type === 'text/plain' ? '{% list tabs %}\n\n- Tab\n\n{% endlist %}' : '',
             },
         });
-        expect(onChange.mock.calls.at(-1)?.[0]).toBe('Replacement\n\nThird');
+        expect(onChange).not.toHaveBeenCalled();
     });
 
     it('refuses unsupported multiline syntax without changing the note', () => {

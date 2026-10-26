@@ -71,7 +71,7 @@ export function Select<T extends string>({
                                 value={option.value}
                                 className="ui-pop__item"
                             >
-                                <span className="ui-pop__icon ui-pop__icon_empty">
+                                <span className="ui-pop__icon">
                                     <BaseSelect.ItemIndicator>
                                         <Check size={16} />
                                     </BaseSelect.ItemIndicator>

@@ -3,9 +3,8 @@ import {useCallback, useEffect, useState} from 'react';
 import type {NoteAppearanceOverride} from '../storage/types';
 
 /**
- * Font family for note CONTENT — the block editor's body and the read-only preview. Never the app
- * chrome, and never the note title or the editor's H1/H2, which are PT Serif by design (§03 gives
- * the serif exactly three jobs; this setting owns only the third one). `sans` is the system font.
+ * Font family for note CONTENT — the note title, the block editor's body and the read-only preview.
+ * Never the app chrome. `sans` is the system font.
  */
 export type EditorFont = 'sans' | 'serif' | 'mono';
 /** Max text measure of the editor/preview column. `unlimited` = no cap (fills the pane). */
@@ -17,6 +16,13 @@ export type TextWidthPref = 'default' | TextWidth;
 
 export const EDITOR_FONTS: readonly EditorFont[] = ['sans', 'serif', 'mono'];
 export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'unlimited'];
+
+/** Keyed by the full union, so a new font fails typecheck until it has a label everywhere. */
+export const EDITOR_FONT_LABELS: Record<EditorFont, string> = {
+    sans: 'Sans',
+    serif: 'Serif',
+    mono: 'Mono',
+};
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
 export interface Settings {

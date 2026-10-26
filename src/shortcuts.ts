@@ -458,7 +458,9 @@ export function shortcutMatches(shortcut: ShortcutDescriptor, query: string): bo
     });
 }
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const IS_MAC = /Mac|iPhone|iPad|iPod/i.test(
+    typeof navigator === 'undefined' ? '' : navigator.platform || navigator.userAgent,
+);
 
 /** A chord as one comparable string, however its keys are spelled or ordered. */
 export function normalizeChord(keys: string[]): string {
@@ -480,19 +482,12 @@ export const GLOBAL_CHORDS = new Set(
     }),
 );
 
-/**
- * Platform substitution: `mod` is ⌘ on a Mac and Ctrl everywhere else. The only part of GravityUI's
- * `Hotkey` worth keeping — the rest of it was chrome the keycap in `ui/bits` already draws.
- */
-const IS_APPLE = /Mac|iPhone|iPad|iPod/i.test(
-    typeof navigator === 'undefined' ? '' : navigator.platform || navigator.userAgent,
-);
-
+/** Platform substitution: `mod` is ⌘ on a Mac and Ctrl everywhere else. */
 const KEY_GLYPHS: Record<string, string> = {
-    mod: IS_APPLE ? '⌘' : 'Ctrl',
-    ctrl: IS_APPLE ? '⌃' : 'Ctrl',
+    mod: IS_MAC ? '⌘' : 'Ctrl',
+    ctrl: IS_MAC ? '⌃' : 'Ctrl',
     shift: '⇧',
-    alt: IS_APPLE ? '⌥' : 'Alt',
+    alt: IS_MAC ? '⌥' : 'Alt',
     enter: '↵',
     backspace: '⌫',
     esc: 'Esc',
@@ -516,4 +511,11 @@ export function shortcutChords(keys: string): string[][] {
             return part.length === 1 ? part.toUpperCase() : part;
         }),
     );
+}
+
+/** A descriptor's `keys` as one menu hint: `mod+shift+m` → `⌘⇧M` (`Ctrl+⇧+M` off a Mac). */
+export function shortcutHint(keys: string): string {
+    return shortcutChords(keys)
+        .map((chord) => chord.join(IS_MAC ? '' : '+'))
+        .join(' ');
 }

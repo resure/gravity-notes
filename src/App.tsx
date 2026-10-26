@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {ErrorBoundary} from './components/ErrorBoundary';
 import {FolderGate} from './components/FolderGate';
@@ -39,7 +39,7 @@ export function App() {
     // (tokens.css). Resolving System here rather than in a CSS media query keeps ONE source of
     // truth for "what theme is showing" — the attribute is always the answer, so a rule never has
     // to be written twice. This IS the theme; there is no provider behind it.
-    useEffect(() => {
+    useLayoutEffect(() => {
         const root = document.documentElement;
         if (themePref !== 'system') {
             root.setAttribute('data-theme', themePref);

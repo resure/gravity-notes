@@ -27,6 +27,16 @@ body {
     background: rgba(var(--gn-accent-rgb), 0.35);
 }
 
+/* A text selection across editor blocks is painted by the editor (Custom Highlight API), so the
+   browser's own — which WebKit clips to one block — steps aside while it is up. */
+::highlight(gn-cross-blocks) {
+    background-color: rgba(var(--gn-accent-rgb), 0.35);
+}
+
+.gn-block-editor_cross-selection ::selection {
+    background: transparent;
+}
+
 /* Anything that is a button acts like one under the pointer. A type selector (specificity 0,0,1)
    so any component with a reason to differ — the block editor's drag handle wants `grab`, a
    read-only field wants `default` — still wins with a single class. Disabled buttons are excluded:
@@ -123,8 +133,8 @@ button:not(:disabled) {
    these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
    <html> as `data-editor-font` (by `Workspace`), and serif/mono override on the same element.
    These feed the note CONTENT only — the block editor's document column and the read-only preview
-   (`.yfm`) — never the app chrome (`--font-ui`), the raw Markdown source view, or the note TITLE,
-   which is PT Serif by design (§03; see NoteTitle.css). */
+   (`.yfm`), plus the note TITLE (NoteTitle.css) — never the app chrome (`--font-ui`) or the raw
+   Markdown source view. */
 :root {
     /* Sans — the native system font (default). 15/24, §03's `--fs-body` / `--lh-body`: the body
        copy of the note is the one text in the app the type scale is really about. */

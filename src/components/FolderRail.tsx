@@ -479,6 +479,8 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
         onChange: (value: string) => void,
         onSubmit: () => void,
         onCancel: () => void,
+        // A rename commits when focus leaves; a new folder half-typed is abandoned instead.
+        onBlur: () => void,
         inputRef: typeof renameInputRef,
         placeholder?: string,
     ) => (
@@ -500,7 +502,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                 placeholder={placeholder}
                 aria-label={placeholder ?? 'Folder name'}
                 onChange={(e) => onChange(e.target.value)}
-                onBlur={onSubmit}
+                onBlur={onBlur}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -524,6 +526,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
                         (value) => setRenaming((r) => (r ? {...r, value} : r)),
                         submitRename,
                         () => setRenaming(null),
+                        submitRename,
                         renameInputRef,
                     )}
                 </Fragment>
@@ -637,6 +640,7 @@ export const FolderRail = forwardRef<FolderRailHandle, FolderRailProps>(function
             newFolderName,
             setNewFolderName,
             submitNewFolder,
+            cancelNewFolder,
             cancelNewFolder,
             newFolderInputRef,
             'Folder name',

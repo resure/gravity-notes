@@ -92,6 +92,33 @@ describe('NoteList — note icons', () => {
         await user.click(within(grid).getByRole('option', {name: '🚀'}));
         expect(onSetIcon).toHaveBeenCalledWith('Alpha.md', '🚀');
     });
+    it('picks by keyboard, and a narrowed search never points at a cell that is gone', async () => {
+        const user = userEvent.setup();
+        const onSetIcon = vi.fn();
+        setup({showIcons: true, onSetIcon});
+        const alpha = screen.getByRole('option', {name: /Alpha/});
+        await user.click(within(alpha).getByRole('button', {name: 'Note actions'}));
+        await user.click(await screen.findByRole('menuitem', {name: /Set icon/}));
+        const search = await screen.findByRole('combobox', {name: 'Search emoji'});
+        const grid = await screen.findByRole('listbox', {name: 'Emoji'});
+        await waitFor(() => expect(within(grid).getAllByRole('option').length).toBeGreaterThan(8), {
+            timeout: 5000,
+        });
+        // ↓ to the first cell, → to the next: the active cell is always one that is mounted.
+        await user.keyboard('{ArrowDown}{ArrowRight}');
+        const active = search.getAttribute('aria-activedescendant');
+        expect(active && document.getElementById(active)).toBeTruthy();
+
+        await user.type(search, 'rocket');
+        await waitFor(() => expect(within(grid).getAllByRole('option').length).toBeLessThan(40), {
+            timeout: 5000,
+        });
+        // The narrowed grid starts unhighlighted rather than naming a cell from the old one.
+        expect(search.getAttribute('aria-activedescendant')).toBeNull();
+        await user.keyboard('{ArrowDown}{Enter}');
+        expect(onSetIcon).toHaveBeenCalledTimes(1);
+        expect(onSetIcon.mock.calls[0][0]).toBe('Alpha.md');
+    });
 });
 
 describe('NoteList — other files', () => {

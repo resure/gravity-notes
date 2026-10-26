@@ -168,7 +168,7 @@ export const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(function MenuI
             label={label}
             onClick={onClick}
         >
-            <span className="ui-pop__icon ui-pop__icon_empty">{icon}</span>
+            <span className="ui-pop__icon">{icon}</span>
             <span className="ui-pop__label">{children}</span>
             {hint ? <span className="ui-pop__hint">{hint}</span> : null}
         </BaseMenu.Item>
@@ -208,7 +208,7 @@ export function MenuSub({icon, label, hint, children, width}: MenuSubProps) {
     return (
         <BaseMenu.SubmenuRoot>
             <BaseMenu.SubmenuTrigger className="ui-pop__item">
-                <span className="ui-pop__icon ui-pop__icon_empty">{icon}</span>
+                <span className="ui-pop__icon">{icon}</span>
                 <span className="ui-pop__label">{label}</span>
                 {hint ? <span className="ui-pop__hint">{hint}</span> : null}
                 <ChevronRight size={12} className="ui-pop__chevron" />

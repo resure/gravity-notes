@@ -43,6 +43,12 @@
                 } catch (e) {
                     /* private mode: localStorage may throw — fall back to the media query */
                 }
+                // The tokens read `data-theme`; stamped here, the first render is already in the
+                // right theme rather than waiting for App's effect.
+                var dark =
+                    t === 'dark' ||
+                    (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
             })();
         </script>
     </head>
