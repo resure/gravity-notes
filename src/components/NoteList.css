@@ -15,6 +15,9 @@
     background: var(--bg-panel-2);
     color: var(--text-1);
     font-family: var(--font-ui);
+    /* Tighter than the app's UI leading: the row is repeated thousands of times. */
+    --row-title-lh: 17px;
+    --row-line-lh: 15px;
 }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@
 }
 
 /* ── Rows ─────────────────────────────────────────────────────────────────────────────────────
-   54px, or 72px with the folder line. */
+   48px, or 64px with the folder line. */
 
 .note-list__items {
     flex: 1;
@@ -71,7 +74,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 2px;
+    gap: 1px;
     box-sizing: border-box;
     height: 100%;
     padding: 0 12px 0 16px;
@@ -87,23 +90,23 @@
     }
 }
 
-/* Selection NEVER animates: picking a row must feel like it was already selected. */
+/* Selection NEVER animates: picking a row must feel like it was already selected. The open note is
+   persistent state, so it takes the accent, softly. */
 .note-list__item_selected,
 .note-list__item_selected:hover {
-    background: var(--bg-selected);
+    background: var(--accent-soft);
 }
 
-.note-list__item_selected .note-list__preview,
-.note-list__item_selected .note-list__date {
-    color: var(--text-2);
-}
-
-/* Selected AND the list has the keyboard: a darker step. `:focus`, NOT `:focus-visible` — rows are
-   focused programmatically (arrow keys, ↓ from the search box), and WebKit does not set
-   :focus-visible for a scripted focus. Deliberate; don't "modernise" it. */
+/* The list has the keyboard: a stronger step. `:focus`, NOT `:focus-visible` — rows are focused
+   programmatically (arrow keys, ↓ from the search box), and WebKit does not set :focus-visible for
+   a scripted focus. Deliberate; don't "modernise" it. */
 .note-list__item:focus {
     outline: none;
     background: var(--bg-selected-strong);
+}
+
+.note-list__item_selected:focus {
+    background: var(--accent-soft-strong);
 }
 
 /* Line one: pin, title, and the ⋯ on hover. */
@@ -118,7 +121,7 @@
     flex: 1;
     min-width: 0;
     font-size: var(--fs-ui);
-    line-height: var(--lh-ui);
+    line-height: var(--row-title-lh);
     font-weight: 560;
     letter-spacing: -0.003em;
     white-space: nowrap;
@@ -153,7 +156,7 @@
 .note-list__date {
     flex: none;
     font-size: var(--fs-time);
-    line-height: var(--lh-time);
+    line-height: var(--row-line-lh);
     color: var(--text-3);
     font-variant-numeric: tabular-nums;
 }
@@ -162,8 +165,8 @@
 .note-list__preview {
     min-width: 0;
     font-size: var(--fs-preview);
-    line-height: var(--lh-preview);
-    color: var(--text-3);
+    line-height: var(--row-line-lh);
+    color: var(--text-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -176,8 +179,8 @@
     gap: 4px;
     min-width: 0;
     font-size: var(--fs-ui-sm);
-    line-height: var(--lh-ui-sm);
-    color: var(--text-4);
+    line-height: var(--row-line-lh);
+    color: var(--text-3);
 }
 
 .note-list__folder-glyph {
@@ -197,7 +200,7 @@
     flex: none;
     display: flex;
     align-items: center;
-    height: var(--lh-ui);
+    height: var(--row-title-lh);
 }
 
 /* 24px, like every other icon button in the chrome, with a step of its own on hover so it reads as
@@ -251,7 +254,7 @@
     color: var(--text-1);
     font-family: inherit;
     font-size: var(--fs-ui);
-    line-height: var(--lh-ui);
+    line-height: var(--row-title-lh);
     font-weight: 500;
     letter-spacing: -0.003em;
     outline: none;

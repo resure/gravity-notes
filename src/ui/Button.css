@@ -91,8 +91,10 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+/* Lighter than its pane, lit along the top edge — the dark inversion of "paper + highlight". No
+   hairline: one 1px inside the highlight drew a second edge, which read as an outline. */
 [data-theme='dark'] .ui-button_raised {
-    /* Lighter than its pane, lit along the top edge — the dark inversion of "paper + highlight". */
+    border-color: transparent;
     background: color-mix(in oklab, var(--bg-paper), white 4%);
     box-shadow:
         0 1px 2px rgba(0, 0, 0, 0.3),
@@ -102,6 +104,10 @@
 @media (hover: hover) {
     .ui-button_raised:hover {
         background: color-mix(in oklab, var(--bg-paper), var(--text-1) 4%);
+    }
+
+    [data-theme='dark'] .ui-button_raised:hover {
+        background: color-mix(in oklab, var(--bg-paper), white 8%);
     }
 }
 

@@ -12,8 +12,8 @@
      separated from paper by the tint step plus one hairline, never by a border.
 
    • **The accent is amber and it is fixed** — not a setting; there is no picker. Its permitted uses
-     on desktop are exactly five: the focus ring, the active segment of a toggle group, a hyperlink,
-     the sync dot, and the text selection. Menu and popover highlights are deliberately NEUTRAL:
+     on desktop are exactly six: the focus ring, the active segment of a toggle group, a hyperlink,
+     the sync dot, the text selection, and the open note's row in the list. Menu and popover highlights are deliberately NEUTRAL:
      accent marks persistent state, and a menu highlight is only where the keyboard happens to be.
      Destructive red is not an accent — it is `--danger`, and it never stands in for one.
 
@@ -49,6 +49,7 @@
     /* ── Accent + danger ───────────────────────────────────────────────────────────────────── */
     --accent: oklch(0.7 0.14 62);
     --accent-soft: oklch(0.7 0.14 62 / 0.14);
+    --accent-soft-strong: oklch(0.7 0.14 62 / 0.22);
     --accent-selection: oklch(0.7 0.14 62 / 0.3);
     --accent-strong-wash: oklch(0.7 0.14 62 / 0.5);
     /* Hyperlinks: the accent pulled toward the ink, so link text keeps reading contrast on paper. */
@@ -141,6 +142,7 @@
 
     --accent: oklch(0.78 0.13 68);
     --accent-soft: oklch(0.78 0.13 68 / 0.14);
+    --accent-soft-strong: oklch(0.78 0.13 68 / 0.2);
     --accent-selection: oklch(0.78 0.13 68 / 0.3);
     --accent-strong-wash: oklch(0.78 0.13 68 / 0.5);
     --link: oklch(0.8 0.12 68);

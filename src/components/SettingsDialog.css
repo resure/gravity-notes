@@ -31,9 +31,8 @@
     padding: 4px 0;
 }
 
-/* Segmented strips size to their options here instead of stretching across the row. */
+/* Segmented strips size to their widest option here instead of stretching across the row. */
 .settings__row .ui-toggle-group__item {
-    flex: none;
     min-width: 64px;
     padding: 0 10px;
 }
@@ -85,7 +84,6 @@
     }
 
     .settings__row .ui-toggle-group__item {
-        flex: 1;
         min-width: 0;
     }
 }

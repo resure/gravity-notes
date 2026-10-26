@@ -55,9 +55,9 @@ const NOTE_MIME = 'application/x-gravity-note';
 
 const NO_FILES: OtherFile[] = [];
 /** Fixed row heights: the virtualizer depends on them. */
-const ROW_HEIGHT = 54;
+const ROW_HEIGHT = 48;
 /** A row that also names its folder, on a third line (All Notes / search). */
-const ROW_WITH_FOLDER_HEIGHT = 72;
+const ROW_WITH_FOLDER_HEIGHT = 64;
 
 function rowHeight(note: NoteMeta | null, showCrumbs: boolean): number {
     return note && showCrumbs && dirname(note.id) ? ROW_WITH_FOLDER_HEIGHT : ROW_HEIGHT;
