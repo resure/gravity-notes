@@ -1,21 +1,24 @@
 # Gravity Notes
 
-A simple note-taking app built on the [Gravity UI](https://gravity-ui.com/) ecosystem, with a
-Notion-style block editor for the note body. Runs as a **web app** and a **macOS desktop app**
-(Tauri). On first run you choose where notes live: a **folder on your computer** (plain `.md`
-files), or **in-browser / in-app** — and you can **export/import** `.md` files either way.
+A local-first note-taking app with the **Sol** look on [Gravity UI](https://gravity-ui.com/),
+and a Notion-style block editor for the note body. Runs as a **web app** and a **macOS desktop app**
+(Tauri). The desktop app opens a **folder on your computer** (plain `.md` files); the web app also
+offers **in-browser** storage. You can **export/import** `.md` files either way.
 
 ## Philosophy
 
 The app does little, on purpose. There is one box — type, and you are reading the nearest note or
 writing a new one, as in nvALT. The design takes after [Things](https://culturedcode.com/things/):
-plain, quiet, out of the way. Every action has a key. The type is set to be read; the notes are plain
-Markdown files, and they are yours.
+compact, warm, quiet, out of the way. The orb menu holds app-wide actions; the note’s `⋯` menu
+holds its font, text width and file actions. Every action has a key. The type is set to be read;
+the notes are plain Markdown files, and they are yours.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="assets/gravity-notes-light.png">
   <img alt="Gravity Notes" src="assets/gravity-notes-dark.png">
 </picture>
+
+Screenshot of the earlier interface; this branch uses the Sol design described above.
 
 ## Features
 
@@ -63,8 +66,8 @@ Markdown files, and they are yours.
   single note — in its own window
 - **Resizable side panels**: drag the divider beside the folder rail or the notes list
   (double-click resets, arrow keys nudge) — widths remembered per workspace
-- **Make it yours**: light/dark/system theme, editor font, accent color, text width — app-wide,
-  per workspace, or per note
+- **Make it yours**: light/dark/system theme; editor font, text width and amber/blue/gray accent
+  app-wide or per workspace; font and width overrides per note (`⋯` or `⌘⇧I`)
 - **Mobile-ready**: a single-pane list↔editor layout kicks in at ≤700px (phone, or a narrow
   desktop window); an **iOS app** opens an iCloud Drive (or on-device) folder of `.md` files through
   the native Files picker
@@ -76,14 +79,14 @@ Markdown files, and they are yours.
 
 Grab the latest `.dmg` from the
 [releases page](https://github.com/resure/gravity-notes/releases/latest) (Apple silicon). The app
-updates itself in place from there. On first run, pick **Open a folder** (plain `.md` files you
-own) or **Store inside the app** — you can switch later, or export/import, from the storage menu
-in the top bar.
+updates itself in place from there. On first run, choose **Open Folder…** for plain `.md` files you
+own. Use the orb menu in the top bar to switch workspaces or export/import notes; `⌃R` opens the
+workspace switcher.
 
 ### Run from source
 
-You'll need Node.js. The desktop app additionally needs a Rust toolchain (**rustc ≥ 1.88**;
-[rustup](https://rustup.rs) is recommended) and the Xcode Command Line Tools.
+You'll need Node.js **22 or newer**. The desktop app additionally needs a Rust toolchain
+(**rustc ≥ 1.88**; [rustup](https://rustup.rs) is recommended) and the Xcode Command Line Tools.
 
 ```bash
 npm install
@@ -106,6 +109,7 @@ in-browser storage. The desktop app reads the folder natively, with no re-prompt
 - [docs/shortcuts.md](docs/shortcuts.md) — every keyboard shortcut (also `⌘/` in the app)
 - [docs/architecture.md](docs/architecture.md) — how it's built, what's written to your disk,
   and known limitations
+- [docs/sol-look-handoff.md](docs/sol-look-handoff.md) — Sol port decisions, verification and desktop acceptance
 
 ## Backlog
 

@@ -1,15 +1,31 @@
 # Proposal: Preserve undo/redo across note switches
 
-Status: **proposed** (not yet implemented) · Backlog item: "Preserve cmd+z between notes"
+Status: **partially superseded** (2026-10-28). Block-editor history across note switches is
+implemented; source history across note switches and blocks ↔ source history transfer remain open.
 
-## Context
+## Current implementation
 
-Today, switching notes **hard-resets** both undo histories (ProseMirror + CodeMirror) so `⌘Z`
+The app now uses the vendored block editor plus a separate CodeMirror source surface. In
+[`BlockEditorBody.tsx`](../../src/components/BlockEditorBody.tsx), the ten most recently left notes
+retain eligible block-editor snapshots while the workspace stays mounted. A snapshot is retained
+only when its current Markdown is at most 256,000 characters, and resumes only if it matches the
+incoming note content after trimming outer whitespace. Changed content starts a fresh history.
+Rename/move re-keys the saved view state. Source mode does not save its CodeMirror state across
+note switches, and changing between blocks and source does not transfer undo history.
+
+[`BlockEditorBody.test.tsx`](../../src/components/BlockEditorBody.test.tsx) covers undo after
+switching away and back, and rejection when the note changed elsewhere. The proposal below is
+historical: its ProseMirror APIs, two caches and 25-note cap describe the former editor, not the
+current implementation. Its verification list is a proposed checklist, not a record of checks run.
+
+## Historical context and proposal
+
+At the time of this proposal, switching notes **hard-reset** both undo histories (ProseMirror + CodeMirror) so `⌘Z`
 can't walk into the previous note's content. The cost: edit note A, switch to B, come back to A —
 `⌘Z` does nothing, A's edit history is gone. This proposal makes per-note undo/redo **survive**
 switching away and back, within a session.
 
-The editor (`@gravity-ui/markdown-editor`) is a single reused instance; content is swapped in place
+That editor (`@gravity-ui/markdown-editor`) was a single reused instance; content is swapped in place
 per note. There is **no** public API to serialize/restore history (the `history` plugin instance is
 private, so `EditorState.toJSON`/`fromJSON` with plugin fields is a dead end). The workable approach:
 **hold each note's live `EditorState` object in memory and restore it wholesale** — history travels

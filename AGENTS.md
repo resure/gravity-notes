@@ -5,9 +5,10 @@ Guidance for working in this repository.
 ## What this is
 
 **Gravity Notes** — a local-first Markdown note-taking app, shipping as both a **web app** and a
-**macOS desktop app** (Tauri 2). On first run the user chooses where notes live: a **folder** of
-plain `.md` files or **in-browser** (IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/)
-ecosystem, with a vendored Notion-style **block editor** as the note body.
+**macOS desktop app** (Tauri 2). Desktop opens a **folder** of plain `.md` files; the web app
+also offers **in-browser** storage (IndexedDB). Built on the [Gravity UI](https://gravity-ui.com/)
+ecosystem, restyled with the **Sol** tokens and component recipes, with a vendored Notion-style
+**block editor** as the note body.
 
 **Targets / folder backends.** The folder-of-`.md` backend is served two ways behind one `NoteStore`
 seam:
@@ -24,21 +25,26 @@ root `Attachments/` folder, referenced root-relatively, resolved to `blob:` URLs
 time). Both work across all three backends.
 
 Every opened folder/store is a **workspace**: an IndexedDB registry (`src/storage/workspaceRegistry.ts`)
-remembers them all with recency, feeding the orb menu's "Open Recent" submenu, the **⌃R switcher
+remembers them all with recency, feeding the orb menu's workspace rows, the **⌃R switcher
 dialog**, and — desktop only — **one native window per workspace** (several at once; ⌘-click a recent
 or ⌘↵ in the switcher — the modifier also works on "Open Folder…", picking a folder straight into a
 new window). Desktop also has **per-note windows** (Apple-Notes-style): ⌘↵ / ⌘-click a list row or
 its ⋯ menu opens that note in its own `note-N` window — both side panels closed, focus in the editor
 body, native title = the note title, per-note focus-if-open — and **⌘0** (Window ▸ Main Window, a
 native accelerator) surfaces the full workspace window for THAT window's workspace, un-hiding or
-creating one as needed. Per-workspace UI layout (sidebar/rail/selected folder) lives under
+creating one as needed. Per-workspace UI layout (sidebar/rail/selected folder, plus the two
+divider-dragged panel widths `rail-width`/`sidebar-width` — see `PanelResizer`) lives under
 workspace-namespaced localStorage keys — note windows neither read nor write those (their transient
 layout must not clobber the full views', and reading would eat the legacy-key migration); the sidecar
 metadata is per-folder anyway.
 
 Notes also move between backends via `.md` export/import (`src/storage/transfer.ts`). The Rust shell
 lives in `src-tauri/` (only `src-tauri/src/lib.rs` carries app code: `notes_*` + `attachment_*` fs
-commands (the bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
+commands (`notes_list`/`notes_read_all`/`notes_list_folders`/`notes_list_files`/`notes_snapshot` are
+`#[tauri::command(async)]` — a sync command runs inline on the IPC/main thread, so a big walk used to
+stall other commands; `notes_snapshot` is the one-walk feed for a workspace's first paint,
+`notes_heads` the watcher's targeted few-notes read, and
+`notes_probe` the O(1) bootstrap check. The bulk walks skip iCloud **dataless** files' content — `SF_DATALESS` in `st_flags` —
 because reading one blocks on download; they list by name/mtime with empty previews, and an explicit
 single-note open still materializes), the folder ops, `reveal_path`, the **live folder watcher**
 (`notes_watch`/`notes_unwatch` + the `Watchers` state: ONE debounced `notify`/FSEvents stream per
@@ -46,7 +52,8 @@ open folder, with per-window-label REFCOUNTED subscriptions — StrictMode makes
 unwatch` a legal wire order, so a set would break — emitting `notes:changed` `{dir, paths}` to each
 subscriber via `emit_to`; `dir` is the RAW path the frontend passed (strict-equals
 `TauriNoteStore.dir`) while `strip_prefix` runs against the canonicalized root — FSEvents resolves
-`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes visible files (Markdown notes AND other files), existing DIRS
+`/var`→`/private/var` and symlinks; the `watch_rel_path` filter passes visible Markdown notes,
+other regular files, existing DIRS
 (a Finder folder rename reports ONLY the dir paths), and vanished paths (unclassifiable → include),
 dropping dotfiles/dot dirs/`node_modules`/root-`Attachments/`/write temps (the `WRITE_TMP_SUFFIX`/
 `RENAME_TMP_SUFFIX` consts — the TS stores mint `.rename-tmp`, mirror-commented there); >64 paths,
@@ -89,7 +96,7 @@ window stays open with its conflict banner); the JS wrapper's `destroy()` needs 
 in sync.
 
 The desktop app ships **in-app auto-update** via the official Tauri 2 updater, delivered through GitHub
-Releases (`src/hooks/useAppUpdater.ts`; cut a release with the `/release` runbook in `.Codex/skills/release`).
+Releases (`src/hooks/useAppUpdater.ts`; cut a release with the `/release` runbook in `.agents/skills/release`).
 
 ## Commands
 
@@ -144,9 +151,12 @@ Key modules:
   Includes `getAll()` (every note with its body, one pass) that feeds the full-text search corpus. The
   seam also covers nested folders (`create(title, parentPath)`, `move`, `createFolder`/`removeFolder`/
   `moveFolder`/`listFolders`, and `listsRecursively` so metadata reconcile never prunes ids a backend
-  can't yet enumerate), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
+  can't yet enumerate), an optional `snapshot()` (notes + folders + files from ONE traversal — both
+  folder stores implement it so a workspace load doesn't walk the tree three times) and an
+  optional `probe()` (O(1) folder liveness for the bootstrap, instead of a discarded full `list()`), media attachments (`writeAttachment`/`writeAttachmentAt`/`readAttachment`/
   `listAttachments`/`removeAttachment`), an optional desktop-only `reveal(relPath)`, and an optional
-  desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; resolves
+  desktop-only `watch(onChange)` (external-change push: rel-paths, EMPTY = "many/unknown"; small
+  note-only batches are patched by the watcher pipeline instead of re-walking; resolves
   to a SYNC disposer; `TauriNoteStore.watch` listens window-scoped for `notes:changed` filtered by
   `payload.dir === this.dir`, subscribes the listener BEFORE invoking `notes_watch` so no event can
   slip the gap, and unlistens+rethrows if the invoke fails).
@@ -211,7 +221,7 @@ Key modules:
   `gravity-notes:<wsId>:note:<id>:appearance` keys into the sidecar on first ready load.
 - `src/attachments.ts` — `AttachmentUrlCache` (one per store) lazily resolving `Attachments/…` refs to
   `blob:` object URLs at display time, provided through `AttachmentsContext`; revoked on store
-  change/unmount. LRU **byte-budget eviction** (256 MB cap): callers `subscribe(ref, …)` to pin a
+  change/unmount. LRU **byte-budget eviction** (96 MiB cap): callers `subscribe(ref, …)` to pin a
   visible image's URL (subscribed entries are never evicted) and get notified when it's FORGOTTEN —
   `notify` fires only from `forget()`, so a listener must re-run its whole load rather than `peek`
   (which returns undefined there, and renders as "still loading" instead of broken); `peek`
@@ -262,13 +272,21 @@ Key modules:
   every later metadata write from that hook (pin, appearance, wiki-link navigation, close) substitutes
   the LIVE on-disk `active` at the write boundary (`writeMetadataNow` re-reads the sidecar; in-memory
   `active` keeps tracking the window's own note for the conflict checks). Re-lists on window focus
-  (2 s throttle, `ready`-gated) — main + note windows
-  routinely show the same folder now, so a returning window picks up notes created/edited elsewhere.
+  (2 s throttle, `ready`-gated) — but ONLY while no live watcher is subscribed (`watchActiveRef`):
+  main + note windows routinely show the same folder now, and on desktop the watcher already
+  delivers (and replays latched) external changes, so the focus path only re-checks the open note's
+  conflict. The full focus re-list remains for web/iOS and a failed subscription.
   On desktop it also subscribes to `store.watch` (`ready`-gated): external changes push a
-  300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN `refresh()`
-  (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow the
-  deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
-  reason; the corpus follows the list signature for free). `checkOpenNoteConflict` RE-VALIDATES
+  300 ms-debounced, in-flight-coalesced pipeline that runs `checkOpenNoteConflict` THEN a list
+  update (that order matters — `reconcile` nulls a vanished `active`, so refresh-first would swallow
+  the deleted-conflict banner; the focus re-list runs the same check-then-refresh order for the same
+  reason; the corpus follows the list signature for free). The update is **path-targeted**: a batch
+  naming only note ids is patched by `store.heads`-ing just those files (head slice only, iCloud-
+  dataless content skipped like the walks — a full `get` would force the download; newest-wins
+  merge), while a
+  directory/other-file path, a vanished known note (metadata must reconcile), more than
+  `MAX_TARGETED_PATHS` (12 — a bulk write is cheaper as one `snapshot()` walk), or an EMPTY batch
+  falls back to the full re-list. `checkOpenNoteConflict` RE-VALIDATES
   after its `store.stat` await (same id, no conflict/pending/save, baseline unchanged) — a note
   switch mid-stat would otherwise raise a phantom conflict for the WRONG note, whose banner
   actions key off `conflict.id` and would cross-contaminate the two notes — and mirrors a raised
@@ -284,8 +302,9 @@ Key modules:
   the 300 ms cadence but are NEVER dropped — they defer ONE trailing verify run
   (`WATCH_SUPPRESSED_VERIFY_MS`, past the stamp window, superseded by any sooner real run), so a
   stamp false-positive (an external dir-only event under an ancestor stamp, an external rewrite
-  of a just-saved note) delays a refresh instead of losing it; correctness additionally never
-  rests on suppression because a save advances `baselineRef` before its echo lands.
+  of a just-saved note) delays a refresh instead of losing it, and the deferred verify re-reads
+  just the echoed paths (falling back to a full list for a dir path); correctness additionally
+  never rests on suppression because a save advances `baselineRef` before its echo lands.
   `saveInFlightRef` gates the conflict check (mid-save, `pendingRef` is already null and
   `baselineRef` stale → phantom conflict). Events while `hidden` latch and replay on
   `visibilitychange` (visible ≠ focused, so the focus re-list wouldn't cover it; `run()` re-checks
@@ -298,8 +317,10 @@ Key modules:
 - `src/hooks/useCorpus.ts` — the **shared body corpus**, loaded once (lazily, while a query is live or a
   note is open) and shared by full-text search AND backlinks, so `getAll()` runs once (one big IPC on
   desktop) and every body is held once. Derives `contentById` (raw, for snippets), `lowerById`
-  (pre-lowercased), and `linksById` (`[[…]]` pre-extracted). Refreshes **incrementally** (re-reads only
-  notes whose `updatedAt` changed — plus any cached with an EMPTY body whose list preview turned
+  (pre-lowercased), and `linksById` (`[[…]]` pre-extracted), and reports `bytes` (total body text —
+  `Workspace` uses it to debounce search by corpus WEIGHT, not just note count). Refreshes
+  **incrementally** (re-reads only notes whose `updatedAt` changed, and seeds the just-saved OPEN
+  note from the in-memory copy instead of reading it back — plus any cached with an EMPTY body whose list preview turned
   non-empty: an iCloud-dataless file materializes without an mtime bump, so the preview flip is the
   only signal its content became readable; the signature includes that bit) and keeps `linksById`'s
   identity stable across a non-link edit, so a
@@ -311,8 +332,8 @@ Key modules:
   which the help dialog also renders from). Punctuation chords match by `event.code` (e.g. `⌘⇧;` →
   `Semicolon`), since the shifted `event.key` differs. `useShortcuts` skips ALL global chords while a
   `[role="dialog"]` modal is open (the dialog owns the keyboard — so ⌘N can't create a note behind the
-  ⌃R switcher). `useDebouncedValue` debounces the query (120 ms) only above a 500-note vault (wired in
-  `Workspace`).
+  ⌃R switcher). `useDebouncedValue` debounces the query (120 ms) only above a 500-note OR 4 MB corpus (wired in
+  `Workspace`, which reads `Corpus.bytes`).
 - `src/hooks/useListboxNav.ts` — the shared filter-over-listbox keyboard model for the ⌃R workspace
   switcher AND the ⌘⇧M move-to picker: a DOCUMENT-level keydown listener while open (↑/↓ skip-disabled,
   ↵ commit, ⌘⌫ remove, Esc close), a range/disabled clamp on list change, and scroll-into-view. It's
@@ -324,7 +345,14 @@ Key modules:
   DOM-free, node-testable. `toMarkdown` favours what other tools understand (headings, lists, task
   lists, GFM tables, fenced code) and gives the three types with no Markdown spelling a portable
   encoding — toggle → `<details>` (the collapsed state rides on the `open` attribute), callout →
-  an Obsidian `> [!note]`, image → `![](Attachments/…)`. `fromMarkdown` is a small LINE-ORIENTED
+  an Obsidian `> [!note]`, image → `![](Attachments/…)`. **Colour** (`color.ts`) is the one thing
+  written here that no other tool reads: the YFM colour extension's `{red}(text)` / `{bg:yellow}(text)`,
+  which read-only preview renders and the app's PREVIOUS editor already wrote. A BLOCK colour is that
+  wrapper covering the block's whole content, written one wrapper per LINE (the parser reads inline
+  markup a line at a time, so a wrapper spanning a newline would come back as literal braces) and
+  lifted back to `Block.color` by a post-pass in `fromMarkdown` — only when every line is wrapped in
+  the same colour, so a span covering half a block stays inline. Parens are COUNTED, not escaped,
+  mirroring the extension's own reader. `fromMarkdown` is a small LINE-ORIENTED
   parser, not CommonMark: it must recognise exactly what the writer emits (the round trip is the
   design intent — a load/save cycle must not rewrite a file) and degrade everything else to
   paragraphs. Degrading is only SAFE because the fixed point is **verified, not assumed**:
@@ -368,10 +396,13 @@ Key modules:
   AND portaled to `<body>` via `OverlayPortal` — the host pane scrolls, clips its overflow, and
   carries a `transform`, which both re-anchors `fixed` to the pane and cuts the overlay off. The
   portal host re-applies the `.gn-block-editor` scope class (with `display: contents`) so the scoped
-  rules still match once the overlay leaves the subtree. Block furniture is SPLIT across both
-  margins — drag handle left, add button right — so the left gutter only has to fit one 18px button
-  (`.editor-pane` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
-  too, so title and body keep one left edge). `[[wiki links]]` are authored here: `wikiDecorate.ts`
+  rules still match once the overlay leaves the subtree. The only block furniture is the drag
+  handle in the LEFT gutter (adding a block is "Add block below" in its menu) — `.editor-pane`
+  widens the shared `--editor-gutter` to 28px to fit it, and the note TITLE reads it too, so title
+  and body keep one left edge at every width. The handle shows only while the pointer is in the
+  gutter beside its block (the slot spans the gutter and the block's height as the hover target),
+  while its menu is open, or on the first block of each run of selected blocks (a run's wash is
+  drawn as one shape). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
   the editor can re-decorate mid-keystroke and simply put the caret back); a link is an ATOMIC chip
   (`contenteditable="false"`) whose brackets — and the `Note|` of a `[[Note|text]]` — sit in
@@ -385,12 +416,32 @@ Key modules:
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).
   Every floating surface's fill is `--n-surface`, remapped in the dark block: the overlays portal to
   `<body>`, so a hard-coded white there painted white text on a white card.
+  Two invariants the structural code keeps, both because the whole document is re-serialized on every
+  keystroke: **nesting is a flat `depth` field**, so no block may sit more than one level deeper than
+  the one before it (Markdown cannot write an orphaned level, and the file would come back flatter
+  than the screen) — every op that moves a subtree verbatim therefore ends in `normalizeDepths`, and a
+  DROP re-levels the subtree's root to the target block's depth (where the indicator is drawn), so a
+  block dropped between a parent and its children joins them instead of adopting them; and
+  **what the reader can see is what an edit may touch** (`visibleBlockIds`), so focus requests,
+  selection extension and merges all skip blocks hidden inside a collapsed toggle, which render no
+  element at all. A TEXT selection across blocks acts on exactly the text it covers: Backspace/Delete,
+  typing (keydown, plus a `beforeinput` guard for dictation/autocorrect), Enter, cut and paste go
+  through `textSelectionAcross` → `deleteAcross` / `splitAcross`, which keep the first block's head
+  and the last's tail. An image/table endpoint, mixed code/text endpoints, or an ending toggle
+  hiding children falls back to whole blocks (`'exact'` in `removeBlocks`); a selection starting
+  in a collapsed toggle's summary keeps its hidden children. A BLOCK selection acts on whole subtrees.
+  Keyboard selection crosses blocks via `extendSelectionAcross` (WebKit clamps `extend` to the
+  editing host, so `acrossBlocks` makes the root editable for the call — WebKit only, gated by
+  `CLAMPS_SELECTION_TO_HOST`, since in Chromium it drops focus), and is painted per block with the
+  `gn-cross-blocks` Custom Highlight, since WebKit paints only inside the host the range starts in.
   ESLint's jsx-a11y rules are relaxed for this directory only (a `contentEditable` div IS focusable
   and IS a textbox; the rules can't tell, and the editor drives focus itself).
 - `src/components/BlockEditorBody.tsx` — the **adapter** between `EditorPane` and the block editor:
-  it owns the ⌘⇧; blocks↔source flip (a plain textarea; `forceSource` pins it there for a note that
-  fails the round-trip guard, and `toggleMode` is then a no-op) and the per-note scroll + caret
-  restore. The editor is keyed on `sessionId`, so a note switch REMOUNTS it — the outgoing note's
+  it owns the ⌘⇧; blocks↔source flip (CodeMirror in `SourceEditor.tsx`, lazily loaded, with the
+  `SourceSurface.tsx` textarea as its loading fallback and the surface tests drive; `forceSource`
+  pins it there for a note that fails the round-trip guard, and `toggleMode` is then a no-op) and
+  the per-note scroll + caret + undo-history restore (an `EditorSnapshot` resumes only while the
+  file still matches its Markdown after trimming outer whitespace). The editor is keyed on `sessionId`, so a note switch REMOUNTS it — the outgoing note's
   scroll and caret are therefore captured in RENDER, before the keyed child unmounts, which is the
   last moment `editorRef` still points at the old instance. Block ids are minted per parse, so the
   caret is saved as a block INDEX (`EditorCaret`), not an id. `focus()` is deliberately
@@ -398,17 +449,22 @@ Key modules:
   every click-to-focus path, and a naive "focus the first block" pinned the caret to block 1 and
   made the surface unusable with a mouse.
 - `src/hooks/useSettings.ts` — the **appearance model**: `Settings` (app-wide editor font / accent /
-  text width + the note-icons toggle), `WorkspaceSettings` (per-workspace `'default'`-able
+  text width + the note-icons / editor-toolbar / spellcheck toggles), `WorkspaceSettings` (per-workspace `'default'`-able
   overrides), `NoteAppearance` (per-note font + width, read from the metadata sidecar — accent is
   deliberately NOT per-note), and pure `effectiveAppearance` (note wins → workspace → app). The app
   and workspace layers persist through a shared `usePersistedSettings` that MERGES into the freshest
   stored object at write time and adopts other windows' writes via `storage` events — the desktop
   runs one window per workspace over one localStorage, so a naive whole-object persist was a
   multi-window lost update. `Workspace` stamps the resolved values on `<html>` as
-  `data-editor-font` / `data-accent` / `data-text-width`; `index.css` consumes them (per-font
+  `data-editor-font` / `data-accent` / `data-text-width` (amber uses the default, absent attribute);
+  `tokens.css` consumes the accent and `index.css` the font/width (per-font
   `--gn-editor-*` metrics; serif = self-hosted PT Serif, woff2-only rules in `src/fonts/pt-serif.css`).
   Also owns the one-shot legacy-localStorage → sidecar migration helpers (keys are cleared only after
   the adoption verifiably lands on disk; trashed notes' overrides attach to their `TrashEntry`).
+- Note icons remain optional and off by default (`Settings` → "Show note icons", Experimental).
+  `IconPicker` keeps both Gravity icons and emoji, including existing sidecar values. With icons
+  enabled, an unset note shows a file-icon picker in the title and list; the hover-only "Add icon"
+  placeholder from `sol-design` was not ported.
 - `src/hooks/useAppUpdater.ts` — in-app auto-update (macOS desktop) over the Tauri updater/process
   plugins: a small state machine (check → available → downloading → installed / restart-required /
   error, with retry). `isTauri`-guarded, all Tauri APIs via dynamic `import()`, so it no-ops and stays
@@ -416,8 +472,8 @@ Key modules:
   adds a manual "Check for Updates…" item; `UpdateDialog` renders the flow.
 - `src/components/` — `FolderGate` (first-run storage choice + folder re-permission gate + a recents
   list so a failed probe is never a dead end; **desktop is folder-first** — in-browser storage is
-  offered on the web only; the transient `loading` state renders NO gate UI — just a 300 ms-delayed
-  spinner — so fresh windows don't flash the welcome card), `Workspace` (top bar + layout + nav
+  offered on the web and iOS; the transient `loading` state renders NO gate UI — just a
+  300 ms-delayed indeterminate bar — so fresh windows don't flash the welcome card), `Workspace` (top bar + layout + nav
   wiring; takes the
   `NoteStore` and a `workspaceId` — App remounts it `key`ed per workspace, so switches start clean;
   owns export/import and the flush-then-confirm guard before any workspace switch; per-workspace UI
@@ -431,10 +487,16 @@ Key modules:
   floating **Preview badge** (read-only preview is otherwise invisible; hover swaps it to "Exit
   preview", click or ⌘⇧P leaves) and the **search auto-peek** — typing a query while the sidebar is
   collapsed peeks the list WITHOUT stealing focus from the box, and clearing the query or committing a
-  match tucks it away), `TopBar` (nvALT search box + orb menu [export / import / manage attachments /
-  trash / **Open Recent submenu** (click = switch in place, ⌘-click = new window on desktop;
-  "Workspaces…" opens the ⌃R switcher) / **Open Folder…** (⌘-click = new window)] + theme/help
-  controls + save-status dot),
+  match tucks it away), `TopBar` (the 40px title bar: the left-panel toggle, the **orb** — a glowing
+  disc in the accent colour that also carries the save state, holding everything app-wide [recent
+  workspaces inline (click = switch in place, ⌘-click = new window on desktop) / **Open Folder…**
+  (⌘-click = new window) / Workspaces… (⌃R) / export / import / attachments / trash / reload /
+  panel and folder toggles / theme / settings / shortcuts / updates / about] — a **window-centred**
+  nvALT search field, and at the right the open note's **⋯ menu**: a Popup with the per-note font
+  and width strips (`appearanceControls`' `_WS` options, so "Default" inherits) above the note's
+  own actions (preview / markup, pin, rename, move, duplicate, reveal, copy link, delete); ⌘⇧I
+  toggles it, and its Delete confirms in `Workspace` so it works while the open note is filtered
+  out of the list),
   `WorkspaceSwitcherDialog` (the ⌃R recents switcher; shares the keyboard model with MoveToDialog via
   `useListboxNav`: filter + ↑/↓ + ↵ open / ⌘↵ new window / ⌘⌫ remove; OTHER workspaces lead by recency
   with the current one parked last, and the top row is pre-highlighted, so ⌃R↵ ⌃R↵ ping-pongs between
@@ -442,7 +504,11 @@ Key modules:
   in-browser row is offered on the web only — an existing in-app registry entry still lists so no data
   strands), `FolderRail` (collapsible
   nested-folder tree left of the list — select/scope,
-  drag-and-drop, rename, pin; toggle ⌘⇧\), `NoteList` (sidebar with create/rename/delete/move, pin,
+  drag-and-drop, rename, pin; toggle ⌘⇧\), `PanelResizer` (the WAI-ARIA window-splitter divider on
+  the rail's and the list's right edge — gesture state in a ref so pointer moves write the width
+  CSS var straight to the DOM instead of re-rendering the editor, state committing only on release;
+  rendered only in the desktop column layout, since mobile makes the rail a drawer and stretches
+  the list to full width), `NoteList` (sidebar with create/rename/delete/move, pin,
   sort, **Open in New Window** (row ⋯/context menu, ⌘↵, ⌘-click — desktop only, gated by the optional
   `onOpenInNewWindow` prop); right-click and ⌘-click deliberately NEVER move the selection (the menu
   acts via its own payload, and a row `onMouseDown` blocks the focus grab); a **folder-scope chip**
@@ -460,9 +526,11 @@ Key modules:
   and passes `forceSource` down; it is also the scroll container the body saves/restores per note.
   `.editor-pane` carries `transform: translateZ(0)` — its own compositing layer — because WKWebView
   otherwise occasionally leaves a stale paint of the caret line behind after a swap/resize (a ghost
-  "doubled" line) — and widens `--editor-gutter` to 36px for the block editor's drag handles) with
+  "doubled" line) — and widens `--editor-gutter` to 28px for the block editor's drag handle) with
   `NoteTitle` and
-  `NotePreview` (read-only render via `@diplodoc/transform` — deliberately a WIDER grammar than the
+  `NotePreview` (read-only render via `@diplodoc/transform`, loaded as a LAZY chunk with
+  `UpdateDialog` so that renderer stack (cheerio/parse5/postcss/markdown-it) never enters the
+  startup bundle — deliberately a WIDER grammar than the
   block editor's own parser, since the notes blocks can't hold are exactly the ones a preview must
   get right; linkify with fuzzy matching OFF (`.md` is a real TLD, so fuzzy would turn a `Notes.md`
   mention into a link); every link click routes through `openExternalUrl` instead of navigating the
@@ -472,14 +540,17 @@ Key modules:
   carries drag-resize — persisted as the YFM ` =600x` suffix, which `NotePreview`'s `imsize` plugin
   understands — plus alt/caption editing and explicit loading/broken states),
   `BacklinksPanel` (the "linked references" list
-  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons toggle +
-  Appearance for the app and workspace layers), `NoteAppearancePopover` (the per-note font/width
-  popover off the TopBar's ⋯ button or ⌘⇧I; survives rename/move — its close effect keys on
-  `sessionId`, not note id; shared segmented pickers + option arrays live in `appearanceControls.tsx`,
-  derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
+  under the open note), `ConflictBanner`, `ShortcutsDialog`, `SettingsDialog` (⌘, — the note-icons, editor-toolbar and
+  spellcheck toggles + Appearance for the app and workspace layers), `EditorToolbar` (the optional
+  sticky formatting bar above the blocks — each button runs the editor's own chord/slash path through
+  `EditorHandle.format` / `setBlockType` / `link` / `color` / `undo` / `redo`; buttons never take
+  focus, and the pane's empty-area click handler skips it so a press doesn't move the caret first;
+  while it is shown the floating selection bar keeps only its ⌘K link box (`linkOnly`)),
+  `appearanceControls` (the segmented font/accent/width pickers + option arrays shared by Settings
+  and the note ⋯ menu, derived from the canonical value arrays in `useSettings`), `UpdateDialog` (the software-update sheet;
   release notes rendered as Markdown via `@diplodoc/transform`), `AboutDialog` (the app's own About box
   with clickable links, opened from the native menu's `menu:about` event — the OS panel can't show
-  clickable links), `ThemeSwitcher`, and `ErrorBoundary` (root render-crash net).
+  clickable links), and `ErrorBoundary` (root render-crash net).
 - `src/App.tsx` — Gravity providers (theme, mobile, toaster) + theme persistence; wraps the app in
   `ErrorBoundary`. The theme key (`gravity-notes:theme`) is also read by an inline anti-flash
   script in `index.html` that paints the document background in the resolved theme before the bundle
@@ -491,14 +562,25 @@ Key modules:
   `openInNewWindow(activeWorkspaceId)` (fallback `focus_main_window` when no workspace is mounted —
   bootstrapping, or parked on the gate).
 - `src/main.tsx` — app-shell stylesheet imports, in cascade order (the one file where `import/order`
-  is off). The YFM content styles come straight from `@diplodoc/transform`; the small `--yfm-*`
-  variable maps that used to arrive with `@gravity-ui/markdown-editor` are vendored in
+  is off). The YFM content styles come straight from `@diplodoc/transform` via
+  `components/yfmStyles.ts`, imported by the LAZY `NotePreview`/`UpdateDialog` chunks rather than
+  here — they're `.yfm`-scoped, so loading them on demand changes no cascade outcome. The small
+  `--yfm-*` variable maps that used to arrive with `@gravity-ui/markdown-editor` are vendored in
   `src/yfm-tokens.css`.
 
 ## Conventions
 
 - React 18 function components + hooks; TypeScript `strict` (plus `noUnusedLocals`/`noUnusedParameters`).
-- UI is **Gravity UI** (`@gravity-ui/uikit`, `@gravity-ui/icons`) — prefer its components over hand-rolled ones.
+- UI is **Gravity UI** (`@gravity-ui/uikit`) dressed in the **Sol** look — prefer its components over
+  hand-rolled ones. Colours, type sizes, radii, shadows and durations come only from
+  `src/tokens.css` (theme = `data-theme` on `<html>`, stamped by App beside Gravity's own classes;
+  the accent is the `data-accent` setting, so never hard-code amber). `src/gravity.css` points
+  Gravity's theme variables at the tokens and restyles its components (Button views: `flat` quiet,
+  `raised` the one action a pane exists for, `action` filled ink, `normal`/`outlined` hairline
+  secondary). Its recipes are prefixed `.g-root` ON PURPOSE: Gravity's per-component stylesheets
+  load with their components, after it, so a same-specificity rule loses on order. Icons are the
+  app's own set in `src/icons/` (one stroke, weight set by size); theme choices and the optional
+  note-icon catalog still use `@gravity-ui/icons`. A menu shortcut hint is a `gn-menu-hint` span.
 - Code style follows the Gravity ecosystem (single quotes, sorted imports), enforced via
   `@gravity-ui/eslint-config` + `@gravity-ui/prettier-config`.
 - Errors surface to the user via the toaster (`onError` in `Workspace`); storage methods throw and
@@ -518,6 +600,9 @@ backlog. Keep these in sync with code changes: a new/changed shortcut updates `d
 alongside the `SHORTCUTS` descriptor in `src/shortcuts.ts` (the in-app `⌘/` dialog renders from the
 descriptor, the doc is by hand); a new limitation, storage-format change, or architectural shift
 updates `docs/architecture.md`; a new user-facing feature gets a README feature bullet.
+`docs/sol-look-handoff.md` records the port decisions, verification evidence and remaining desktop
+acceptance checks; `sol-design` is a visual reference, while the implementation keeps Gravity UI,
+workspace appearance overrides and the accent setting.
 
 ## Roadmap
 
