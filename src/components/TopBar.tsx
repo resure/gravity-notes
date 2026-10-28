@@ -181,7 +181,7 @@ function workspaceIcon(ws: WorkspaceInfo, active: boolean): ReactNode {
 }
 
 function MenuHint({children}: {children: ReactNode}) {
-    return <span className="topbar__menu-hint">{children}</span>;
+    return <span className="gn-menu-hint">{children}</span>;
 }
 
 /**

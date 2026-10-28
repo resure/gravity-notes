@@ -1711,6 +1711,8 @@ export function Workspace({
                                     onRemoveFolder={(path) => void notes.removeFolder(path)}
                                     onMoveFolder={handleMoveFolder}
                                     onTogglePin={notes.togglePin}
+                                    onOpenTrash={() => setTrashOpen(true)}
+                                    trashCount={notes.trashCount}
                                     onMoveTo={(id, dest) => void notes.move(id, dest)}
                                     onReveal={handleReveal}
                                     onFocusList={() => listRef.current?.focusSelected()}

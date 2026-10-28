@@ -262,19 +262,6 @@
     gap: 8px;
 }
 
-.topbar__menu-hint {
-    flex: none;
-    font-family: var(--font-ui);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    color: var(--text-3);
-}
-
-.g-menu__item_theme_danger .topbar__menu-hint {
-    color: inherit;
-    opacity: 0.75;
-}
-
 .topbar__menu-workspace .g-menu__item-content {
     overflow: hidden;
     text-overflow: ellipsis;
