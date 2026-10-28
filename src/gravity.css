@@ -304,6 +304,17 @@
     color: inherit;
 }
 
+/* DropdownMenu draws a group break as an empty item; keep it a hairline, not a blank row. */
+.g-root .g-dropdown-menu__menu-item_separator {
+    min-height: 0;
+    height: 0;
+    margin: 4px 8px;
+    padding: 0;
+    border-block-start: 1px solid var(--line);
+    border-radius: 0;
+    line-height: 0;
+}
+
 /* One hairline, inset, only where a group ends. */
 .g-root .g-menu__list-group-item + .g-menu__list-group-item,
 .g-root .g-menu__list-item + .g-menu__list-group-item,
