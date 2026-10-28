@@ -1,7 +1,7 @@
 /* The note title: a borderless, heading-styled input sitting between an h1 and an h2.
    Left/right padding uses the shared --editor-gutter (set on .workspace__editor, the same
    value the editor body uses) so the title and the first body line share a left edge. The
-   top gap gives it breathing room under the top bar; the body adds its own gap below. */
+   30px top gap keeps it off the flush, hairlined title bar; the body adds its own gap below. */
 
 /* Row wrapping the icon button + title input. The gutter lives here so the icon button
    and input share the same left edge as the body text. */
@@ -9,7 +9,7 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 12px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
+    padding: 30px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
 }
 
 .note-title {
@@ -25,17 +25,21 @@
        title-row already applies --editor-gutter, so the input adds the same 4px. (Preview mode lines
        both up at gutter + 4px too — see NotePreview.css.) */
     padding: 0 0 0 4px;
-    color: var(--g-color-text-primary);
-    /* Follow the editor-font setting (like the .yfm body), falling back to the inherited app font. */
-    font-family: var(--gn-editor-font, inherit);
-    font-size: 1.6rem;
-    font-weight: 500;
-    line-height: 1.25;
+    color: var(--text-1);
+    /* The note's own font at the H1 size, so the title and an H1 block below it read as one. */
+    font-family: var(--gn-editor-font, var(--font-ui));
+    font-size: var(--fs-h1);
+    line-height: var(--lh-h1);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+[data-editor-font='serif'] .note-title {
+    font-weight: 400;
 }
 
 .note-title::placeholder {
-    color: var(--g-color-text-secondary);
-    font-weight: 500;
+    color: var(--text-4);
 }
 
 .note-title[readonly] {

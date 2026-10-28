@@ -1,8 +1,6 @@
 import {useEffect, useState} from 'react';
 
-import {ChevronDown, ChevronRight} from '@gravity-ui/icons';
-import {Icon, Text} from '@gravity-ui/uikit';
-
+import {ChevronRight} from '../icons/icons';
 import type {BacklinkSource} from '../wikiLinks';
 
 import './BacklinksPanel.css';
@@ -18,8 +16,9 @@ interface BacklinksPanelProps {
 
 /**
  * "Linked references" under the editor: the notes that point at the open note via a `[[wiki link]]`,
- * each with the context around the link. Collapsible (persisted); hidden entirely when there are
- * none. Clicking a source opens it. Backlink data + the corpus live in Workspace (see useBacklinks).
+ * each with the context around the link. A 40px bar at the foot of the pane that opens to at most
+ * 300px of its own scroll; collapsible (persisted) and hidden entirely when there are none.
+ * Clicking a source opens it. Backlink data + the corpus live in Workspace (see useBacklinks).
  */
 export function BacklinksPanel({backlinks, onOpen}: BacklinksPanelProps) {
     const [collapsed, setCollapsed] = useState(
@@ -43,10 +42,11 @@ export function BacklinksPanel({backlinks, onOpen}: BacklinksPanelProps) {
                 onClick={toggle}
                 aria-expanded={!collapsed}
             >
-                <Icon data={collapsed ? ChevronRight : ChevronDown} size={16} />
-                <Text variant="subheader-2">
-                    {count} linked {count === 1 ? 'reference' : 'references'}
-                </Text>
+                <ChevronRight size={12} className="backlinks__caret" />
+                <span>
+                    <strong className="backlinks__count">{count}</strong> linked{' '}
+                    {count === 1 ? 'reference' : 'references'}
+                </span>
             </button>
             {collapsed ? null : (
                 <ul className="backlinks__list">
@@ -57,15 +57,11 @@ export function BacklinksPanel({backlinks, onOpen}: BacklinksPanelProps) {
                                 className="backlinks__source"
                                 onClick={() => onOpen(source.note.id)}
                             >
-                                <Text variant="body-2" className="backlinks__title">
-                                    {source.note.title}
-                                </Text>
+                                {source.note.title}
                             </button>
                             {source.contexts.map((context, i) => (
                                 <div key={`${source.note.id}:${i}`} className="backlinks__context">
-                                    <Text variant="body-1" color="secondary">
-                                        {context}
-                                    </Text>
+                                    {context}
                                 </div>
                             ))}
                         </li>
