@@ -2,15 +2,6 @@
     --g-dialog-width: min(480px, calc(100vw - 40px));
 }
 
-/* Gravity's 128px footer slot would make Close the widest thing in the dialog. */
-.update-dialog-modal .g-dialog-footer__button {
-    min-width: 76px;
-}
-
-.update-dialog-modal .g-dialog-footer__bts-wrapper {
-    gap: 8px;
-}
-
 .update-dialog {
     display: flex;
     flex-direction: column;

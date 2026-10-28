@@ -5,11 +5,6 @@
     --g-dialog-width: min(420px, calc(100vw - 40px));
 }
 
-/* Gravity's 128px footer slot would make Cancel the widest thing in the dialog. */
-.move-to .g-dialog-footer__button {
-    min-width: 76px;
-}
-
 .move-to__list {
     margin-top: 10px;
     max-height: 320px;

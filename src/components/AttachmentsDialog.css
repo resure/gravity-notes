@@ -9,23 +9,6 @@
     --g-dialog-width: min(400px, calc(100vw - 40px));
 }
 
-/* Gravity's 128px footer slot would make Close the widest thing in the dialog. */
-.attachments-dialog .g-dialog-footer__button {
-    min-width: 76px;
-}
-
-.attachments-dialog .g-dialog-footer__bts-wrapper {
-    gap: 8px;
-}
-
-/* The confirm's answer is the one place danger is a surface rather than a word. */
-.attachments-dialog .g-dialog-footer__button-apply_preset_danger {
-    --g-button-background-color: var(--danger);
-    --g-button-background-color-hover: color-mix(in oklab, var(--danger), black 12%);
-    --g-button-text-color: white;
-    --g-button-text-color-hover: white;
-}
-
 .attachments__confirm {
     margin: 0;
     color: var(--text-2);
