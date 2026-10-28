@@ -1,32 +1,83 @@
 .shortcuts-dialog {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    /* The dialog has no footer, so give the last group a little breathing room from the edge. */
-    padding-bottom: 16px;
-    /* Filtering shortens the list; a fixed height keeps the centred dialog from jumping as you type. */
-    height: min(560px, 70vh);
+    --g-dialog-width: min(460px, calc(100vw - 40px));
 }
 
-.shortcuts-dialog__group {
+/* Only the list scrolls; a fixed height keeps the centred dialog from jumping as you filter. */
+.shortcuts {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 12px;
+    height: min(520px, 64vh);
 }
 
-.shortcuts-dialog__row {
+.shortcuts__list {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Room for the scrollbar, so it never sits on the key caps. */
+    margin-right: -10px;
+    padding-right: 10px;
+}
+
+.shortcuts__group {
+    display: flex;
+    flex-direction: column;
+}
+
+.shortcuts__group-label {
+    margin: 0 0 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-label);
+    line-height: var(--lh-label);
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    color: var(--text-3);
+}
+
+.shortcuts__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 24px;
+    min-height: 28px;
 }
 
-/* Stays put above the groups while they scroll under it, covering the gap above it too. */
-.shortcuts-dialog__filter {
-    position: sticky;
-    top: -12px;
-    z-index: 1;
-    margin-top: -12px;
-    padding: 12px 0 4px;
-    background: var(--g-color-base-modal);
+.shortcuts__desc {
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    color: var(--text-1);
+}
+
+.shortcuts__keys {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.shortcuts__kbd {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    box-sizing: border-box;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
+    border-radius: var(--r-xs);
+    background: color-mix(in oklab, var(--bg-panel), var(--bg-paper) 50%);
+    color: var(--text-4);
+    /* Not mono: SF Mono draws ⌘⇧⌥ from a fallback, smaller than the letter beside them. */
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 14px;
+    white-space: nowrap;
+}
+
+.shortcuts__empty {
+    margin: 0;
+    font-size: var(--fs-menu);
+    color: var(--text-3);
 }

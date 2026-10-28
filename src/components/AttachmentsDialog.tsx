@@ -1,10 +1,10 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
-import {FolderOpen, TrashBin} from '@gravity-ui/icons';
-import {Button, Dialog, Icon, Label, Select, Spin, Text} from '@gravity-ui/uikit';
+import {Button, Dialog, Select, Skeleton} from '@gravity-ui/uikit';
 import {useVirtualizer} from '@tanstack/react-virtual';
 
 import {type AttachmentUrlCache, useAttachmentUrl} from '../attachments';
+import {FolderOpen, Paperclip, Trash} from '../icons/icons';
 import {attachmentRefsIn} from '../storage/noteText';
 import type {AttachmentMeta, NoteStore} from '../storage/types';
 
@@ -229,27 +229,47 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
 
     return (
         <>
-            <Dialog open={open} onClose={onClose} size="m" disableBodyScrollLock>
+            <Dialog
+                open={open}
+                onClose={onClose}
+                className="attachments-dialog"
+                hasCloseButton={false}
+                disableBodyScrollLock
+            >
                 <Dialog.Header caption="Attachments" />
                 <Dialog.Body>
                     {loading ? (
-                        <div className="attachments__center">
-                            <Spin />
+                        <div className="attachments__skeletons">
+                            {[0, 1, 2, 3].map((i) => (
+                                <div className="attachments__row" key={i}>
+                                    <span className="attachments__thumb attachments__thumb_loading" />
+                                    <div className="attachments__meta">
+                                        <Skeleton className="attachments__skeleton" width={180} />
+                                        <Skeleton
+                                            className="attachments__skeleton attachments__skeleton_sub"
+                                            width={110}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     ) : items.length === 0 ? (
-                        <div className="attachments__center">
-                            <Text color="secondary">
-                                No attachments yet. Drop or paste an image into a note to add one.
-                            </Text>
+                        <div className="attachments__empty">
+                            <Paperclip size={26} className="attachments__empty-glyph" />
+                            <p className="attachments__empty-line">No attachments yet</p>
+                            <p className="attachments__empty-hint">
+                                Drop or paste an image into a note to add one.
+                            </p>
                         </div>
                     ) : (
                         <>
                             <div className="attachments__toolbar">
-                                <Text color="secondary" variant="caption-2">
+                                <span className="attachments__count">
                                     {items.length} file{items.length === 1 ? '' : 's'}
-                                </Text>
+                                </span>
                                 <Select
                                     className="attachments__sort"
+                                    view="clear"
                                     size="s"
                                     aria-label="Sort attachments"
                                     value={[sort]}
@@ -300,48 +320,39 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                                                         />
                                                     </button>
                                                     <div className="attachments__meta">
-                                                        <Text
+                                                        <span
                                                             className="attachments__name"
-                                                            ellipsis
                                                             title={item.name}
                                                         >
                                                             {item.name}
-                                                        </Text>
-                                                        <div className="attachments__sub">
-                                                            <Text
-                                                                color="secondary"
-                                                                variant="caption-2"
-                                                            >
-                                                                {formatBytes(item.size)}
-                                                            </Text>
+                                                        </span>
+                                                        <span className="attachments__sub">
+                                                            {formatBytes(item.size)}
                                                             {item.usedBy === 0 ? (
-                                                                <Label theme="warning" size="xs">
+                                                                <span className="attachments__unused">
                                                                     Unused
-                                                                </Label>
+                                                                </span>
                                                             ) : (
-                                                                <Text
-                                                                    color="secondary"
-                                                                    variant="caption-2"
-                                                                >
+                                                                <span>
                                                                     · Used by {item.usedBy} note
                                                                     {item.usedBy === 1 ? '' : 's'}
-                                                                </Text>
+                                                                </span>
                                                             )}
-                                                        </div>
+                                                        </span>
                                                     </div>
                                                     {reveal ? (
                                                         <Button
                                                             view="flat"
-                                                            size="m"
                                                             aria-label={`Reveal ${item.name} in Finder`}
                                                             onClick={() => onReveal(item.ref)}
                                                         >
-                                                            <Icon data={FolderOpen} />
+                                                            <Button.Icon>
+                                                                <FolderOpen size={15} />
+                                                            </Button.Icon>
                                                         </Button>
                                                     ) : null}
                                                     <Button
                                                         view="flat"
-                                                        size="m"
                                                         aria-label={`Delete ${item.name}`}
                                                         onClick={() =>
                                                             setPending({
@@ -352,7 +363,9 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                                                             })
                                                         }
                                                     >
-                                                        <Icon data={TrashBin} />
+                                                        <Button.Icon>
+                                                            <Trash size={15} />
+                                                        </Button.Icon>
                                                     </Button>
                                                 </div>
                                             </div>
@@ -366,6 +379,7 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                 <Dialog.Footer
                     textButtonCancel="Close"
                     onClickButtonCancel={onClose}
+                    propsButtonCancel={{view: 'outlined'}}
                     textButtonApply={
                         orphans.length > 0 ? `Delete unused (${orphans.length})` : undefined
                     }
@@ -381,6 +395,12 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                                   })
                             : undefined
                     }
+                    renderButtons={(apply, cancel) => (
+                        <>
+                            {orphans.length > 0 ? apply : null}
+                            {cancel}
+                        </>
+                    )}
                 />
             </Dialog>
 
@@ -388,17 +408,20 @@ export function AttachmentsDialog({open, store, cache, onClose, onError}: Attach
                 open={pending !== null}
                 onClose={() => !busy && setPending(null)}
                 onEnterKeyDown={runDelete}
-                size="s"
+                className="attachments-dialog attachments-dialog_confirm"
+                hasCloseButton={false}
                 disableBodyScrollLock
             >
                 <Dialog.Header caption="Delete attachment" />
                 <Dialog.Body>
-                    <Text>{confirmMessage()}</Text>
+                    <p className="attachments__confirm">{confirmMessage()}</p>
                 </Dialog.Body>
                 <Dialog.Footer
+                    preset="danger"
                     textButtonApply="Delete"
                     textButtonCancel="Cancel"
-                    propsButtonApply={{view: 'outlined-danger', loading: busy}}
+                    propsButtonCancel={{view: 'outlined'}}
+                    loading={busy}
                     onClickButtonApply={runDelete}
                     onClickButtonCancel={() => setPending(null)}
                 />

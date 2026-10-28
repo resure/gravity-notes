@@ -1,25 +1,67 @@
 /* The shared picker row (AppearanceChoiceRow), in its two layouts. `row`: the Settings dialog's
-   fixed label column with the control pulled left beside it (matches its other rows' rhythm).
-   `stack`: the note-appearance popover's small label above a full-width control. */
+   label left, value right. `stack`: the note-appearance popover's small label above a full-width
+   control. */
 .appearance-choice_row {
     display: grid;
-    grid-template-columns: 150px 1fr;
-    column-gap: 20px;
+    /* Every control ends on one edge, whatever its width (the macOS System Settings layout). */
+    grid-template-columns: 1fr auto;
     align-items: center;
-    padding: 11px 0;
+    column-gap: 16px;
+    min-height: 40px;
+    padding: 4px 0;
 }
 
-.appearance-choice_row .appearance-choice__picker {
-    justify-self: start;
+.appearance-choice_row .appearance-choice__label {
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    letter-spacing: -0.003em;
+    color: var(--text-1);
 }
 
-/* The label column can carry an "Experimental" chip beside its text (mirrors the toggle rows), so
-   let the two sit on one line with a gap and wrap only if the column truly runs out. */
+/* Strips size to their widest option here instead of stretching across the row. */
+.appearance-choice_row .g-segmented-radio-group__option {
+    min-width: 64px;
+}
+
+.appearance-choice_row .g-segmented-radio-group .g-segmented-radio-group__option-text {
+    margin: 0 10px;
+}
+
+/* A phone-width dialog has no room for a label beside a four-way strip: stack them. */
+@media (max-width: 560px) {
+    .appearance-choice_row {
+        grid-template-columns: 1fr;
+        row-gap: 8px;
+        padding: 8px 0;
+    }
+
+    .appearance-choice_row .g-segmented-radio-group {
+        display: grid;
+    }
+
+    .appearance-choice_row .g-segmented-radio-group__option {
+        min-width: 0;
+    }
+
+    .appearance-choice_row .g-segmented-radio-group .g-segmented-radio-group__option-text {
+        margin: 0 6px;
+    }
+}
+
 .appearance-choice__label {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.appearance-choice__tag {
+    padding: 1px 5px;
+    border-radius: var(--r-xs);
+    background: var(--bg-selected);
+    font-size: var(--fs-meta);
+    line-height: var(--lh-meta);
+    color: var(--text-3);
 }
 
 .appearance-choice_stack {
@@ -29,13 +71,15 @@
 }
 
 .appearance-choice_stack .appearance-choice__label {
-    font-size: 12px;
+    font-size: var(--fs-ui-sm);
+    line-height: var(--lh-ui-sm);
     font-weight: 500;
+    color: var(--text-2);
 }
 
-/* Accent-color option: a colored dot beside the label, so the picker reads as a color picker. Shared
-   by the Settings dialog and the per-note appearance popover. The dots read the `--gn-accent-*`
-   constants from index.css — each accent's hue lives in exactly one place. */
+/* Accent-color option: a coloured dot beside the label, so the picker reads as a colour picker.
+   The dots read the `--gn-accent-*` constants from index.css — each accent's hue lives in exactly
+   one place. */
 .appearance-accent {
     display: inline-flex;
     align-items: center;

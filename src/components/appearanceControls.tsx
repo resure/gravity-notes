@@ -1,6 +1,6 @@
 import type {ReactNode} from 'react';
 
-import {Label, SegmentedRadioGroup, Text} from '@gravity-ui/uikit';
+import {SegmentedRadioGroup} from '@gravity-ui/uikit';
 
 import {
     ACCENT_COLORS,
@@ -28,11 +28,11 @@ export interface AppearanceChoiceRowProps<T extends string> {
     value: T;
     onUpdate: (value: T) => void;
     /**
-     * `row` — a fixed label column with the control beside it (Settings dialog);
+     * `row` — label left, control on the right edge (Settings dialog);
      *  `stack` — a small label above a full-width control (note-appearance popover).
      */
     layout: 'row' | 'stack';
-    /** Tag the row as experimental, like `ToggleRow` in the Settings dialog. */
+    /** Tag the row as experimental, like the Settings dialog's toggle rows. */
     experimental?: boolean;
 }
 
@@ -47,17 +47,10 @@ export function AppearanceChoiceRow<T extends string>({
 }: AppearanceChoiceRowProps<T>) {
     return (
         <div className={`appearance-choice appearance-choice_${layout}`}>
-            <Text
-                color={layout === 'stack' ? 'secondary' : undefined}
-                className="appearance-choice__label"
-            >
+            <span className="appearance-choice__label">
                 {label}
-                {experimental ? (
-                    <Label theme="info" size="xs">
-                        Experimental
-                    </Label>
-                ) : null}
-            </Text>
+                {experimental ? <span className="appearance-choice__tag">Experimental</span> : null}
+            </span>
             <SegmentedRadioGroup
                 className="appearance-choice__picker"
                 size="s"
