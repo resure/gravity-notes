@@ -143,15 +143,15 @@ Native verification used a separate `CARGO_TARGET_DIR=/private/tmp/sol-look-desk
   without developer signing, notarization or updater artifacts. The app is at
   `/private/tmp/sol-look-desktop-target/debug/bundle/macos/Gravity Notes Dev.app`.
 
-The native app has not been launched or visually accepted. The available computer-use surfaces
-provide the in-app browser, with native app automation disabled. Native traffic lights, launch and
-resize backgrounds, window routing and the app's WKWebView repaint behaviour still need the
-desktop observations below. Browser tests used one workspace, so switching between distinct
-workspaces also remains unverified at runtime.
+Native app automation was unavailable to the agent. After receiving the debug bundle and the
+desktop checklist below, the user reported “вроде бы норм” on 2026-10-28. This closes manual desktop
+acceptance based on the user's confirmation. The agent did not independently observe the native
+checks or obtain a separate result for every checklist item. Browser tests used one workspace.
 
-## Remaining desktop acceptance
+## Desktop acceptance checklist
 
-Run these in the macOS app built from `sol-look`, using a disposable notes folder:
+Accepted by the user on 2026-10-28. Retain these checks for future desktop regressions, using a
+disposable notes folder:
 
 1. In light and dark themes, inspect the 48/64px note rows, preview and folder contrast, accented
    open-note row, centred switch thumb, equal picker segments, lighter dark selected segment,
@@ -171,5 +171,6 @@ Run these in the macOS app built from `sol-look`, using a disposable notes folde
 5. Confirm native traffic-light alignment, matching launch/resize backgrounds, note/workspace
    windows and `⌘0`. DOM tests and the browser build do not exercise these native surfaces.
 
-Visual/desktop acceptance remains open until these observations are recorded. The reference
-branch's old scroll measurements and WebKit geometry checks are not fresh `sol-look` results.
+The user's acceptance is manual evidence. The reference branch's old scroll measurements and
+WebKit geometry checks are not fresh `sol-look` measurements. Final branch review and PR preparation
+follow this acceptance; merging and publication remain separate actions.
