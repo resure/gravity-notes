@@ -344,19 +344,41 @@
     letter-spacing: -0.008em;
 }
 
+/* Gravity's caption is `subheader-3`, whose own 24px line-height outranks the header's. */
+.g-dialog-header__caption {
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+}
+
 .g-dialog-body {
     padding-block: 14px 18px;
     padding-inline: 22px;
     font-size: var(--fs-menu);
     line-height: 19px;
+    color: var(--text-2);
 }
 
 .g-dialog-footer {
     padding: 0 22px 18px;
 }
 
-.g-dialog-footer .g-button:not(.g-button_view_flat) {
+.g-dialog-footer__bts-wrapper {
+    gap: 8px;
+}
+
+.g-dialog-footer .g-button:not(.g-button_view_flat),
+.g-dialog-footer__button {
     min-width: 76px;
+}
+
+/* A destructive confirm (`preset="danger"`) is the one place danger is a surface, not a word. */
+.g-dialog-footer__button-apply_preset_danger {
+    --g-button-background-color: var(--danger);
+    --g-button-background-color-hover: color-mix(in oklab, var(--danger), black 12%);
+    --g-button-text-color: white;
+    --g-button-text-color-hover: white;
 }
 
 /* ── Switch ────────────────────────────────────────────────────────────────────────────────────
