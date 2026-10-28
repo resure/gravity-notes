@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import {inlineHtmlToMarkdown} from '../../markdown';
+import {blocksToMarkdown, inlineHtmlToMarkdown, markdownToBlocks} from '../../markdown';
 
 import {decorateWikiLinks, wikiTargetsIn} from './wikiDecorate';
 
@@ -77,6 +77,18 @@ describe('decorateWikiLinks', () => {
         expect(decorateWikiLinks(once, none)).toBe(once);
         expect(inlineHtmlToMarkdown(once)).toBe('see [[A Note|alias]] now');
     });
+
+    it.each(['/Shared', '/shared.md#Heading|root', '/Work/Shared#Heading|nested'])(
+        'keeps the vault-root link %s literal through parsing and decoration',
+        (target) => {
+            const source = `see [[${target}]] now`;
+            const blocks = markdownToBlocks(source);
+            expect(blocksToMarkdown(blocks)).toBe(source);
+            const decorated = decorateWikiLinks(blocks[0].html, none);
+            expect(inlineHtmlToMarkdown(decorated)).toBe(source);
+            expect(decorateWikiLinks(decorated, none)).toBe(decorated);
+        },
+    );
 
     it('skips html with nothing to do', () => {
         const html = 'plain <strong>text</strong>';

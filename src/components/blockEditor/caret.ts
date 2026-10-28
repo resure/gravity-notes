@@ -151,34 +151,95 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
     return null;
 }
 
+const graphemes = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+
+function textRuns(el: HTMLElement): Text[][] {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT + NodeFilter.SHOW_ELEMENT);
+    const runs: Text[][] = [[]];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeName === 'BR') runs.push([]);
+        else if (node.nodeType === Node.TEXT_NODE) runs[runs.length - 1].push(node as Text);
+    }
+    return runs;
+}
+
+function graphemePositions(el: HTMLElement): {start: [Node, number]; end: [Node, number]}[] {
+    const positions: {start: [Node, number]; end: [Node, number]}[] = [];
+    for (const nodes of textRuns(el)) {
+        let nodeIndex = 0;
+        let nodeStart = 0;
+        for (const {index, segment} of graphemes.segment(nodes.map((node) => node.data).join(''))) {
+            while (nodeIndex < nodes.length - 1 && index >= nodeStart + nodes[nodeIndex].length) {
+                nodeStart += nodes[nodeIndex++].length;
+            }
+            const start: [Node, number] = [nodes[nodeIndex], index - nodeStart];
+            const end = index + segment.length;
+            while (nodeIndex < nodes.length - 1 && end > nodeStart + nodes[nodeIndex].length) {
+                nodeStart += nodes[nodeIndex++].length;
+            }
+            positions.push({start, end: [nodes[nodeIndex], end - nodeStart]});
+        }
+    }
+    return positions;
+}
+
+function distanceToRect(rect: DOMRect, x: number, y: number): {dy: number; dx: number} {
+    return {
+        dy: Math.max(rect.top - y, y - rect.bottom, 0),
+        dx: Math.max(rect.left - x, x - rect.right, 0),
+    };
+}
+
+function compareDistance(a: {dy: number; dx: number}, b: {dy: number; dx: number}): number {
+    return a.dy - b.dy || a.dx - b.dx;
+}
+
 // A hit test lands on whatever is on top, and a popup (the wiki-link tip below a chip, say) can
 // cover the very line asked for. Then the nearest character is found by measuring instead.
 function caretRangeIn(el: HTMLElement, x: number, y: number): Range | null {
     const hit = caretRangeFromPoint(x, y);
     if (hit && el.contains(hit.startContainer)) return hit;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    const char = document.createRange();
-    let best: {node: Node; offset: number; dy: number; dx: number} | null = null;
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const length = node.textContent?.length ?? 0;
-        for (let i = 0; i < length; i++) {
-            char.setStart(node, i);
-            char.setEnd(node, i + 1);
-            const rect = char.getClientRects()[0];
+    const positions = graphemePositions(el);
+    const chunks: {start: number; end: number; dy: number; dx: number}[] = [];
+    const chunk = document.createRange();
+    for (let start = 0; start < positions.length; start += 128) {
+        const end = Math.min(start + 128, positions.length);
+        chunk.setStart(...positions[start].start);
+        chunk.setEnd(...positions[end - 1].end);
+        let nearest: {dy: number; dx: number} | null = null;
+        for (const rect of chunk.getClientRects()) {
+            const distance = distanceToRect(rect, x, y);
+            if (!nearest || compareDistance(distance, nearest) < 0) nearest = distance;
+        }
+        if (nearest) chunks.push({start, end, ...nearest});
+    }
+    // Chunk boxes bound their graphemes, so distant text needs no individual geometry reads.
+    chunks.sort(compareDistance);
+    const character = document.createRange();
+    let best: {position: [Node, number]; index: number; dy: number; dx: number} | null = null;
+    for (const bounds of chunks) {
+        if (best && compareDistance(bounds, best) > 0) break;
+        for (let i = bounds.start; i < bounds.end; i++) {
+            const position = positions[i];
+            character.setStart(...position.start);
+            character.setEnd(...position.end);
+            const rect = character.getClientRects()[0];
             if (!rect) continue;
-            const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
-            const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
-            if (!best || dy < best.dy || (dy === best.dy && dx < best.dx)) {
+            const distance = distanceToRect(rect, x, y);
+            if (
+                !best ||
+                compareDistance(distance, best) < 0 ||
+                (compareDistance(distance, best) === 0 && i < best.index)
+            ) {
                 const after = x > rect.left + rect.width / 2;
-                best = {node, offset: after ? i + 1 : i, dy, dx};
+                best = {position: after ? position.end : position.start, index: i, ...distance};
             }
         }
     }
     if (!best) return null;
-    const range = document.createRange();
-    range.setStart(best.node, best.offset);
-    range.collapse(true);
-    return range;
+    character.setStart(...best.position);
+    character.collapse(true);
+    return character;
 }
 
 /** Place caret on the first/last line of `el`, as close to viewport x as possible. */
@@ -345,12 +406,41 @@ export function splitHtmlAtCaret(el: HTMLElement): [string, string] {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return [el.innerHTML, ''];
     const range = sel.getRangeAt(0);
+    const runs = textRuns(el).map((nodes) => ({
+        nodes,
+        text: nodes.map((node) => node.data).join(''),
+    }));
+    // Programmatic selections can bisect a grapheme even though native typing usually repairs it.
+    const boundary = (node: Node, offset: number, edge: 'start' | 'end'): [Node, number] => {
+        const position = textOffsetOf(el, node, offset);
+        let remaining = position;
+        for (const {nodes, text} of runs) {
+            if (remaining >= text.length) {
+                remaining -= text.length;
+                continue;
+            }
+            const segment = graphemes.segment(text).containing(remaining);
+            if (!segment || segment.index === remaining) break;
+            const end = segment.index + segment.segment.length;
+            const after = range.collapsed
+                ? remaining - segment.index >= end - remaining
+                : edge === 'end';
+            let local = after ? end : segment.index;
+            for (const textNode of nodes) {
+                if (local <= textNode.length) return [textNode, local];
+                local -= textNode.length;
+            }
+        }
+        return [node, offset];
+    };
+    const [startNode, startOffset] = boundary(range.startContainer, range.startOffset, 'start');
+    const [endNode, endOffset] = boundary(range.endContainer, range.endOffset, 'end');
     const before = document.createRange();
     before.selectNodeContents(el);
-    before.setEnd(range.startContainer, range.startOffset);
+    before.setEnd(startNode, startOffset);
     const after = document.createRange();
     after.selectNodeContents(el);
-    after.setStart(range.endContainer, range.endOffset);
+    after.setStart(endNode, endOffset);
     const toHtml = (fragment: DocumentFragment) => {
         const div = document.createElement('div');
         div.appendChild(fragment);

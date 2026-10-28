@@ -1,6 +1,6 @@
 # Handoff: Sol on Gravity UI
 
-State as of 2026-10-28, in the `sol-look` worktree and branch. This continues the Claude session
+State as of 2026-10-29, in the `sol-look` worktree and branch. This continues the Claude session
 `604520af-a6e7-4d29-8a72-444a8054de6a` and the reference branch's
 `sol-design:docs/sol-design-handoff.md`. The editor port and the three restyling branches are already
 combined in `sol-look`; integration into `main`, a pull request and publication are outside this
@@ -28,7 +28,7 @@ handoff. The main checkout was not changed during this continuation.
 - Cross-block typing, Backspace/Delete, Enter, copy/cut/paste and Shift-arrow extension keep the
   unselected text. An image/table endpoint, mixed code/text endpoints, or an ending toggle hiding
   children uses whole-block handling. Starting in a collapsed toggle's summary keeps its hidden
-  children. Multiline or rich paste still takes two undo steps; single-line paste takes one.
+  children. Accepted plain, rich and internal-block pastes now take one undo step.
 - WebKit uses the temporary editable-root workaround for selection extension, restores focus to
   the start host, and paints with the `gn-cross-blocks` Custom Highlight and clearing repaint nudge.
 - `b9ece72` establishes Sol tokens, Gravity recipes, theme attributes, stroke icons and matching
@@ -147,6 +147,80 @@ Native app automation was unavailable to the agent. After receiving the debug bu
 desktop checklist below, the user reported “вроде бы норм” on 2026-10-28. This closes manual desktop
 acceptance based on the user's confirmation. The agent did not independently observe the native
 checks or obtain a separate result for every checklist item. Browser tests used one workspace.
+
+## Repairs after final review
+
+The user approved fixing the confirmed review findings on 2026-10-29. This pass starts from
+`11b2fdf`; the original manual acceptance above covers the earlier debug bundle.
+
+- Cross-block paste decodes and validates the effective clipboard content before changing the
+  note. Accepted plain, rich and internal blocks replace the range in one Undo/Redo transaction,
+  preserving unselected head/tail text, inline formatting and hidden toggle children. Deferred
+  clipboard or attachment failures do not delete the range.
+- Internal text-block clipboard HTML is redecorated after sanitation, preserving atomic wiki
+  chips and their hidden literal Markdown delimiters. Table cells keep their previous directly
+  editable Wiki text; the repair does not extend atomic chips into that separate editing surface.
+- Fallback caret measurement uses whole graphemes across inline nodes, with `<br>` separating
+  text runs. HTML splitting also snaps invalid programmatic ranges within their original run.
+  Chunk pruning avoids measuring every character in ordinary fallback geometry.
+- The wiki-link tip remeasures when Change note expands or its results change, flips above the
+  chip as needed, caps its height and keeps the keyboard-highlighted result visible.
+- Copy link uses the shared native/browser clipboard adapter and reports a failed copy. Rename
+  from the open-note menu leaves preview before focusing its editable title.
+- Ambiguous root notes emit `[[/Shared]]`; the explicit root form resolves exactly. Following
+  a missing explicit root link creates the addressed note, including a valid nested parent path.
+  Unsafe, reserved or name-changing paths report an error before any note or folder is created.
+  A fresh preflight opens an exact note that appeared since the last refresh and rejects a folder
+  occupying the target `.md` path. If creation still returns a different filename, an error names
+  the retained file instead of reporting that the exact target was created.
+  Bare-title and ordinary `Folder/Note` behaviour stays unchanged.
+- Picker option IDs use fixed-width UTF-16 escapes, so distinct Unicode paths cannot share an
+  `aria-activedescendant` target. Keyboard actions continue to use the raw keys.
+
+Independent targeted checks caught and repaired a missing root-qualified link still using
+same-folder creation, grapheme normalization moving across a preceding `<br>`, and a popup cap
+lost when filtering produced the same height. The final native review additionally caught exact
+root creation accepting a uniquified collision and an unrequested expansion of table chip behaviour.
+The latter expansion was removed, retaining existing direct table editing; the table popup's old
+Unlink/edit no-op is inherited from `main` and remains outside these repairs.
+Fresh Chromium probes exercise ArrowDown → Enter with emoji, ZWJ and combining marks, including
+the `<br>` cases. These are browser observations, not a fresh WKWebView acceptance run.
+
+Exact-path creation remains subject to external filesystem races: the existing `NoteStore.create`
+API uniquifies filenames and does not atomically reserve a requested name. A collision after the
+preflight can still create and open a suffixed note before the error is reported; that note is kept
+to avoid deleting possible concurrent edits. The preflight does not exclude a later external write
+between the filesystem backends' own filename probe and write. Resolving that boundary requires a
+separate storage contract change.
+
+The earlier review's optional cleanup concerns remain separate: duplicated Trash confirmation,
+an unused appearance layout variant and literal Gravity shadow/veil values outside `tokens.css`.
+Selection painting still scans the unselected document prefix; its application latency remains
+unmeasured. No storage file, sidecar field, dependency or app identity was added by this repair.
+
+Final verification after the collision fix and table-scope correction:
+
+| Check                          | Result                               |
+| ------------------------------ | ------------------------------------ |
+| `npm test`                     | 67 files, 1596 tests passed          |
+| `npm run typecheck`            | Passed                               |
+| `npm run lint`                 | 0 errors, 518 warnings               |
+| `npm run format:check`         | Passed                               |
+| `npm run build:single`         | Passed                               |
+| `npm run build`                | Passed; normal bundle used for Tauri |
+| Tauri arm64 debug `.app` build | Passed, offline and locked           |
+| `git diff --check`             | Passed                               |
+
+The same dependency/chunk warnings and existing React `act` warnings remain. Independent closing
+checks passed for paste, popup geometry, graphemes and Workspace actions, including a fresh
+Chromium table-editing probe and exact-path collision probes. They cover the repaired paths rather
+than a new review of the entire application. Logs, the final source manifest and local PR draft are
+under `/private/tmp/sol-look-repairs-20261029/`; no PR was published.
+
+The rebuilt app is `/private/tmp/sol-look-repairs-20261029/Gravity Notes Dev.app`, using the same
+dev bundle identity, without developer signing, notarization or updater artifacts. Restart this
+bundle for the follow-up manual pass. The agent did not run the repaired app through WKWebView;
+the earlier manual acceptance does not verify these later editor changes.
 
 ## Desktop acceptance checklist
 

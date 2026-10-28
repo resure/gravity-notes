@@ -1,11 +1,10 @@
 import {type Dispatch, type SetStateAction, useEffect, useRef, useState} from 'react';
 
-/**
- * A row key made safe for an HTML `id` (`aria-activedescendant`): an IDREF can't hold whitespace,
- * and keys are raw workspace ids and folder paths. Hex-escaping keeps the mapping injective.
- */
 export function domIdPart(key: string): string {
-    return key.replace(/[^A-Za-z0-9-]/g, (ch) => `_${ch.charCodeAt(0).toString(16)}`);
+    return key.replace(
+        /[^A-Za-z0-9-]/g,
+        (ch) => `_${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
 }
 
 export interface ListboxNav {

@@ -51,6 +51,7 @@ import SelectionToolbar from './SelectionToolbar';
 import SlashMenu, {SLASH_MENU_ID} from './SlashMenu';
 import type {MenuAnchor} from './SlashMenu';
 import {tableCellId} from './TableBlock';
+import WikiLinkTip from './WikiLinkTip';
 import type {WikiSuggestItem} from './WikiSuggestMenu';
 import WikiSuggestMenu, {WIKI_MENU_ID, wikiOptionId} from './WikiSuggestMenu';
 import {createEdgeScroller} from './autoScroll';
@@ -790,6 +791,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         target: string;
         x: number;
         y: number;
+        top: number;
     } | null>(null);
     // The link popup's field, while one is open: Edit text (`[[Note|text]]`), or Change note's
     // search with its highlighted row.
@@ -2836,7 +2838,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                     const target = refs.current.get(id);
                     if (!target || !target.contains(window.getSelection()?.anchorNode ?? null))
                         return;
-                    insertPlainTextAtCaret(plain.replace(/\r\n?/g, '\n'));
+                    const normalized = plain.replace(/\r\n?/g, '\n');
+                    const ends = crossesBlocks() ? textSelectionAcross(selectionBlockIds()) : null;
+                    if (ends) {
+                        pasteInlineAcross(ends, escapeHtml(normalized));
+                        return;
+                    }
+                    insertPlainTextAtCaret(normalized);
                     commitHtml(id, target);
                 })
                 .catch(() => {
@@ -3127,7 +3135,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             setLinkTip((current) =>
                 current?.blockId === blockId && current.start === range.start
                     ? current
-                    : {blockId, ...range, x: rect.left, y: rect.bottom + 6},
+                    : {blockId, ...range, x: rect.left, y: rect.bottom + 6, top: rect.top},
             );
         };
         return subscribeSelectionFrame(update);
@@ -3404,8 +3412,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         });
     };
 
-    const insertAttachmentFiles = async (afterId: string, files: File[]) => {
-        if (!onAttachFile) return;
+    const insertAttachmentFiles = async (afterId: string, files: File[], apply = true) => {
+        if (!onAttachFile) return [];
         const inserted: BlockData[] = [];
         for (const file of files) {
             const ref = await onAttachFile(file);
@@ -3419,11 +3427,12 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             block.depth = findBlock(afterId)?.depth ?? 0;
             inserted.push(block);
         }
-        insertBlocksAfter(afterId, inserted);
+        if (apply) insertBlocksAfter(afterId, inserted);
+        return inserted;
     };
 
-    const insertImageFiles = async (afterId: string, files: File[]) => {
-        if (!onAttachFile) return;
+    const insertImageFiles = async (afterId: string, files: File[], apply = true) => {
+        if (!onAttachFile) return [];
         const inserted: BlockData[] = [];
         for (const file of files) {
             const ref = await onAttachFile(file);
@@ -3433,7 +3442,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             image.depth = findBlock(afterId)?.depth ?? 0;
             inserted.push(image);
         }
-        insertBlocksAfter(afterId, inserted);
+        if (apply) insertBlocksAfter(afterId, inserted);
+        return inserted;
     };
 
     const imageFilesFrom = (list: FileList | null | undefined): File[] =>
@@ -3707,36 +3717,184 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         else selectSingleBlock(pasted[pasted.length - 1].id);
     };
 
+    const commitAcrossPaste = (
+        ends: NonNullable<ReturnType<typeof textSelectionAcross>>,
+        first: BlockData,
+        rest: BlockData[],
+        caret: {id: string; pos: CaretPos},
+    ) => {
+        const removed = blocksInScope([...ends.middle, ends.last.id], 'exact');
+        const hiddenChildren = new Set(
+            ends.first.collapsed
+                ? blocksRef.current
+                      .slice(
+                          indexOf(ends.first.id) + 1,
+                          afterSubtree(blocksRef.current, indexOf(ends.first.id)),
+                      )
+                      .map((block) => block.id)
+                : [],
+        );
+        setBlocks((current) => {
+            const next = current
+                .filter((block) => !removed.has(block.id))
+                .map((block) => (block.id === first.id ? first : block));
+            let at = next.findIndex((block) => block.id === first.id) + 1;
+            while (at < next.length && hiddenChildren.has(next[at].id)) at++;
+            next.splice(at, 0, ...rest);
+            return normalizeDepths(next);
+        });
+        window.getSelection()?.removeAllRanges();
+        focusReq.current = caret;
+    };
+
+    const pasteInlineAcross = (
+        ends: NonNullable<ReturnType<typeof textSelectionAcross>>,
+        html: string,
+    ) => {
+        const first = {
+            ...ends.first,
+            html: decorateRef.current(
+                oneLineIfHeading(ends.first.type, ends.head.html + html + ends.tail.html),
+                ends.first.type,
+            ),
+        };
+        commitAcrossPaste(ends, first, [], {
+            id: first.id,
+            pos: ends.head.length + htmlToText(html).length,
+        });
+    };
+
+    const pasteBlocksAcross = (
+        ends: NonNullable<ReturnType<typeof textSelectionAcross>>,
+        incoming: BlockData[],
+        text: string,
+        kind: 'internal' | 'rich' | 'markdown',
+    ) => {
+        const depth = ends.first.depth ?? 0;
+        const pasted: BlockData[] = incoming.map((block) => ({
+            ...decorateBlock(block, decorateRef.current),
+            depth: depth + (block.depth ?? 0),
+        }));
+        if (pasted.some((block) => (block.depth ?? 0) > MAX_BLOCK_DEPTH)) {
+            showToast('This paste is too deeply nested. Use source mode to keep its structure.');
+            return;
+        }
+        let first = {...ends.first, html: ends.head.html};
+        let rest = pasted;
+        let caret: {id: string; pos: CaretPos};
+        if (kind === 'internal') {
+            if (isEmptyHtml(first.html) && !first.collapsed) {
+                first = {...pasted[0], id: first.id, depth};
+                rest = pasted.slice(1);
+            } else if (
+                first.type === 'text' &&
+                pasted[0].type === 'text' &&
+                pasted[0].depth === depth
+            ) {
+                first.html += pasted[0].html;
+                rest = pasted.slice(1);
+            }
+            const visible = visibleBlockIds([first, ...rest]);
+            const last = [first, ...rest]
+                .reverse()
+                .find(
+                    (block) =>
+                        visible.has(block.id) &&
+                        (isEditableType(block.type) || block.type === 'table'),
+                );
+            caret = last ? caretTargetIn(last, 'end') : {id: first.id, pos: 'end'};
+            if (ends.tail.html) {
+                const tailHost = rest[rest.length - 1] ?? first;
+                if (
+                    visible.has(tailHost.id) &&
+                    tailHost.depth === depth &&
+                    tailHost.type === 'text' &&
+                    ends.last.type === 'text'
+                ) {
+                    caret = {id: tailHost.id, pos: htmlToText(tailHost.html).length};
+                    if (tailHost === first) first.html += ends.tail.html;
+                    else
+                        rest = [
+                            ...rest.slice(0, -1),
+                            {...tailHost, html: tailHost.html + ends.tail.html},
+                        ];
+                } else rest = [...rest, {...ends.last, html: ends.tail.html, depth}];
+            }
+        } else if (first.type === 'text' && isEmptyHtml(ends.head.html + ends.tail.html)) {
+            first = {...pasted[0], id: first.id};
+            rest = pasted.slice(1);
+            const visible = visibleBlockIds([first, ...rest]);
+            const last = [first, ...rest]
+                .reverse()
+                .find(
+                    (block) =>
+                        visible.has(block.id) &&
+                        (isEditableType(block.type) || block.type === 'table'),
+                );
+            caret = last ? caretTargetIn(last, 'end') : {id: first.id, pos: 'end'};
+        } else {
+            const lead = kind === 'rich' && /^\s/.test(text) && ends.head.html ? ' ' : '';
+            const trail = kind === 'rich' && /\s$/.test(text) && ends.tail.html ? ' ' : '';
+            if (kind === 'markdown') {
+                const lines = text.split('\n');
+                first.html += oneLineIfHeading(first.type, escapeHtml(lines.shift() ?? ''));
+                rest = normalizeParsedBlocks(markdownToBlocks(lines.join('\n'))).map((block) => ({
+                    ...decorateBlock(block, decorateRef.current),
+                    depth: depth + (block.depth ?? 0),
+                }));
+            } else if (pasted[0].type === 'text' && pasted[0].depth === depth) {
+                first.html += lead + oneLineIfHeading(first.type, pasted[0].html);
+                rest = pasted.slice(1);
+            }
+            const last = rest[rest.length - 1];
+            const visible = visibleBlockIds([first, ...rest]);
+            caret = {id: first.id, pos: htmlToText(first.html).length};
+            if (!last) first.html += trail + ends.tail.html;
+            else if (visible.has(last.id) && isEditableType(last.type)) {
+                caret = {id: last.id, pos: htmlToText(last.html).length};
+                rest = [...rest.slice(0, -1), {...last, html: last.html + trail + ends.tail.html}];
+            } else if (ends.tail.html) {
+                const suffix = {...newBlock('text', ends.tail.html), depth};
+                rest = [...rest, suffix];
+                caret = {id: suffix.id, pos: 'start'};
+            } else if (last.type === 'table') caret = caretTargetIn(last, 'end');
+        }
+        first = decorateBlock(first, decorateRef.current);
+        commitAcrossPaste(ends, first, rest, caret);
+    };
+
     const onPaste = (e: ClipboardEvent<HTMLDivElement>, id: string): void => {
         e.preventDefault();
-        // Over a cross-block selection the paste lands where the selection was, once it's gone.
-        if (crossesBlocks()) {
-            const ends = textSelectionAcross(selectionBlockIds());
-            if (ends) {
-                const plain = e.clipboardData.getData('text/plain');
-                // Refused before anything is deleted, or the selection would go for nothing.
-                if (
-                    plain.includes('\n') &&
-                    !e.clipboardData.getData('text/html') &&
-                    hasUnsupportedMarkdown(plain)
-                ) {
-                    showToast(
-                        'This Markdown needs source mode. Switch to source to paste it safely.',
-                    );
-                    return;
-                }
-                // As typing, so a one-line paste joins it in one undo step.
-                deleteAcross(ends, '', 'input');
-                onPaste(e, ends.first.id);
-                return;
-            }
-        }
+        const replaced = crossesBlocks() ? selectionBlockIds() : [];
+        const ends = textSelectionAcross(replaced);
+        if (ends) id = ends.first.id;
         const el = refs.current.get(id);
         const block = findBlock(id);
         if (!el || !block) return;
         const images = imageFilesFrom(e.clipboardData.files);
         const others = otherFilesFrom(e.clipboardData.files);
         if ((images.length || others.length) && onAttachFile) {
+            if (ends) {
+                const before = blocksRef.current;
+                void Promise.all([
+                    insertImageFiles(id, images, false),
+                    insertAttachmentFiles(id, others, false),
+                ])
+                    .then((groups) => {
+                        const inserted = groups.flat();
+                        if (!inserted.length || hiddenRef.current) return;
+                        if (blocksRef.current !== before) insertBlocksAfter(id, inserted);
+                        else
+                            pasteBlocksAcross(
+                                ends,
+                                inserted.map((item) => ({...item, depth: 0})),
+                                '',
+                                'internal',
+                            );
+                    })
+                    .catch(() => showToast('Could not attach file'));
+                return;
+            }
             if (images.length) void insertImageFiles(id, images);
             if (others.length) void insertAttachmentFiles(id, others);
             return;
@@ -3746,24 +3904,38 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             try {
                 const parsed = JSON.parse(serializedBlocks) as BlockData[];
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    const valid = parsed.filter(
-                        (item) =>
-                            item && BLOCK_TYPE_SET.has(item.type) && typeof item.html === 'string',
+                    const valid = normalizeParsedBlocks(
+                        parsed.filter(
+                            (item) =>
+                                item &&
+                                BLOCK_TYPE_SET.has(item.type) &&
+                                typeof item.html === 'string',
+                        ),
                     );
                     // The copied blocks carry the depths they had where they were copied from;
                     // they land relative to the host instead.
                     const shallowest = Math.min(...valid.map((item) => item.depth ?? 0));
-                    const pasted = valid.map((item) => ({
-                        ...item,
-                        id: uid(),
-                        html: sanitizeInlineHtml(item.html),
-                        depth: Math.max(
-                            0,
-                            Math.min(6, (block.depth ?? 0) + (item.depth ?? 0) - shallowest),
+                    const pasted = valid.map((item) =>
+                        decorateBlock(
+                            {
+                                ...item,
+                                id: uid(),
+                                depth: (item.depth ?? 0) - shallowest,
+                            },
+                            decorateRef.current,
                         ),
-                        table: item.type === 'table' ? normalizeTableData(item.table) : undefined,
-                    }));
+                    );
                     if (pasted.length) {
+                        if (ends) {
+                            pasteBlocksAcross(ends, pasted, '', 'internal');
+                            return;
+                        }
+                        for (const item of pasted) {
+                            item.depth = Math.min(
+                                MAX_BLOCK_DEPTH,
+                                (block.depth ?? 0) + (item.depth ?? 0),
+                            );
+                        }
                         const idx = indexOf(id);
                         let lastInserted = pasted[pasted.length - 1];
                         if (isEmptyHtml(el.innerHTML)) {
@@ -3800,10 +3972,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             }
         }
         const text = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n');
-        const replaced = crossesBlocks() ? selectionBlockIds() : [];
         // Code takes the plain text whatever the HTML holds, so there is nothing to import.
-        if (block.type === 'code' && replaced.length <= 1) {
+        if (block.type === 'code' && (ends || replaced.length <= 1)) {
             if (!text) return;
+            if (ends) {
+                pasteInlineAcross(ends, escapeHtml(text));
+                return;
+            }
             insertPlainTextAtCaret(text);
             commitHtml(id, el);
             return;
@@ -3812,6 +3987,23 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const imported = html ? htmlToBlocks(html) : null;
         const rich = imported && normalizeParsedBlocks(imported);
         if (!text && !rich) return;
+
+        if (!rich && text.includes('\n') && hasUnsupportedMarkdown(text)) {
+            showToast('This Markdown needs source mode. Switch to source to paste it safely.');
+            return;
+        }
+        if (ends) {
+            if (rich) pasteBlocksAcross(ends, rich, text, 'rich');
+            else if (text.includes('\n')) {
+                pasteBlocksAcross(
+                    ends,
+                    normalizeParsedBlocks(markdownToBlocks(text)),
+                    text,
+                    'markdown',
+                );
+            } else pasteInlineAcross(ends, sanitizeInlineHtml(inlineMarkdownToHtml(text)));
+            return;
+        }
 
         if (replaced.length > 1) {
             if (rich) replaceWithBlocks(replaced, rich);
@@ -4780,17 +4972,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             )}
             {linkTip && (
                 <OverlayPortal>
-                    <div
-                        className="overlay-menu wiki-tip"
-                        style={{left: linkTip.x, top: linkTip.y}}
-                        role="toolbar"
-                        aria-label={`Link to ${linkTip.target}`}
-                        // Every button keeps the caret where it is: these act on the link the caret
-                        // is against, and a focus grab would take away the very thing they act on.
-                        // The display-text field is the exception — it has to take focus.
-                        onMouseDown={(event) => {
-                            if (!(event.target instanceof HTMLInputElement)) event.preventDefault();
-                        }}
+                    <WikiLinkTip
+                        x={linkTip.x}
+                        y={linkTip.y}
+                        anchorTop={linkTip.top}
+                        label={`Link to ${linkTip.target}`}
+                        layoutKey={`${tipEdit?.kind}:${noteQuery}:${noteChangeItems.length}`}
+                        activeIndex={tipEdit?.kind === 'note' ? tipEdit.index : undefined}
                     >
                         {tipEdit?.kind === 'note' ? (
                             // The popup's own note search: picking a row re-points the link and
@@ -4968,7 +5156,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                                 </button>
                             </>
                         )}
-                    </div>
+                    </WikiLinkTip>
                 </OverlayPortal>
             )}
             {anchorTip && !hidden && (

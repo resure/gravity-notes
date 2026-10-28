@@ -61,6 +61,12 @@ format, in full:
   deletion. Both filesystem backends inspect contents before cleanup and delete non-recursively;
   an entry arriving during deletion is preserved. A failed deletion attempts to restore `.gnkeep`.
 - **`[[Wiki links]]`** are stored verbatim — `[[Title]]` on disk, Obsidian-compatible round-trip.
+  A leading slash makes the target exact from the notes root: `[[/Shared]]` names `Shared.md`,
+  even when another folder contains a note with that title. An unresolved root path stays broken
+  instead of falling back to a same-title note. Copied links use this spelling for ambiguous root
+  notes; ordinary titles and `Folder/Note` targets retain their existing resolution rules.
+  Following a missing `/path` creates the addressed note from the root. Paths that would be
+  sanitized into a different name or enter a reserved directory report an error without writing.
 - **Bare URLs** are written exactly as you type them. A CommonMark autolink (`<https://example.com>`)
   and `[text](url)` retain their spelling too. Bare `http(s)://` URLs are decorated as links in the
   editor without changing the stored text.
@@ -290,6 +296,10 @@ inline formatting chords are ignored while the selection spans blocks. A `before
 covers insertion or deletion that arrives without a keydown, such as dictation or autocorrect.
 An image/table endpoint, mixed code/text endpoints, or an ending toggle with hidden children uses
 whole-block handling. A selection starting in a collapsed toggle’s summary keeps its hidden children.
+Accepted plain, rich and internal-block pastes replace a text selection in one undo transaction,
+keeping the retained head before the payload and the retained tail after it. Rejected or empty
+clipboard content leaves the note unchanged. Internal text-block wiki chips are redecorated after
+sanitizing; table cells retain their existing direct text editing.
 
 WebKit clamps native selections to the host where they started. During cross-block extension the
 editor temporarily makes its root editable, then restores focus to the block containing the
@@ -393,8 +403,6 @@ Markdown over anything clever.
   ENTIRE content is that one row reads back as an empty note, which is a different file, so the
   check above diverts it rather than rewrite it. Blank rows inside a note are unaffected.
 - **Undo does not cross the blocks ↔ source switch.** Each surface keeps its own history.
-- **Multiline or rich paste over a cross-block text selection takes two undo steps:** removal,
-  then paste. Single-line paste takes one.
 - **A text selection with an image/table endpoint, mixed code/text endpoints, or an ending toggle
   hiding children acts on whole blocks.** Every block is its own `contentEditable`, but one browser selection extends right
   across them — and letting the browser delete half of one block and half of the next would edit DOM

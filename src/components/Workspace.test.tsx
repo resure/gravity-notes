@@ -1,9 +1,11 @@
 import {StrictMode} from 'react';
 
+import {ToasterComponent} from '@gravity-ui/uikit';
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
+import * as clipboard from '../clipboard';
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {renderWithProviders} from '../test/render';
@@ -753,6 +755,8 @@ describe('Workspace — nvALT navigation', () => {
 });
 
 describe('Workspace — move picker', () => {
+    afterEach(() => vi.restoreAllMocks());
+
     function renderWithFolder() {
         const dir = new FakeDirectoryHandle();
         dir.seedFile('Beta.md', 'b', 200);
@@ -818,6 +822,63 @@ describe('Workspace — move picker', () => {
         await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
         const title = screen.getByDisplayValue('Beta');
         await waitFor(() => expect(document.activeElement).toBe(title));
+    });
+
+    it('leaves preview to rename the open note', async () => {
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await user.click(await screen.findByRole('option', {name: /Beta/}));
+        await user.keyboard('{Meta>}{Shift>}p{/Shift}{/Meta}');
+        await waitFor(() => expect(document.querySelector('.note-preview')).toBeInTheDocument());
+
+        await openNoteMenu(user);
+        await user.click(await screen.findByRole('menuitem', {name: /Rename/}));
+        const title = screen.getByRole('textbox', {name: 'Note title'});
+        await waitFor(() => {
+            expect(title).toHaveFocus();
+            expect(title).not.toHaveAttribute('readonly');
+        });
+        await user.clear(title);
+        await user.type(title, 'Renamed from preview');
+        await user.tab();
+        await waitFor(async () => {
+            const ids = (await store.list()).map((note) => note.id);
+            expect(ids).toContain('Renamed from preview.md');
+            expect(ids).not.toContain('Beta.md');
+        });
+    });
+
+    it('copies a note link through the platform clipboard without a browser API', async () => {
+        const user = userEvent.setup();
+        vi.spyOn(navigator as Partial<Navigator>, 'clipboard', 'get').mockReturnValue(undefined);
+        const write = vi.spyOn(clipboard, 'writeClipboardText').mockResolvedValue(undefined);
+        renderWorkspace();
+        await user.click(await screen.findByRole('option', {name: /Beta/}));
+
+        await openNoteMenu(user);
+        await user.click(await screen.findByRole('menuitem', {name: 'Copy link to note'}));
+        await waitFor(() => expect(write).toHaveBeenCalledWith('[[Beta]]'));
+    });
+
+    it('reports a failed note-link copy when the browser clipboard is unavailable', async () => {
+        const user = userEvent.setup();
+        vi.spyOn(navigator as Partial<Navigator>, 'clipboard', 'get').mockReturnValue(undefined);
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Beta.md', 'body', 100);
+        renderWithProviders(
+            <>
+                <Workspace
+                    store={new FileSystemNoteStore(asDirectoryHandle(dir))}
+                    {...workspaceProps()}
+                />
+                <ToasterComponent />
+            </>,
+        );
+        await user.click(await screen.findByRole('option', {name: /Beta/}));
+
+        await openNoteMenu(user);
+        await user.click(await screen.findByRole('menuitem', {name: 'Copy link to note'}));
+        expect(await screen.findByText('Could not copy to the clipboard')).toBeInTheDocument();
     });
 
     it('⌘⇧I toggles the open note’s ⋯ menu', async () => {

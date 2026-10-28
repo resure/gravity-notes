@@ -5,8 +5,8 @@
  * backend-agnostic.
  *
  * A link's target is matched to a note by *title* (the file-name leaf without `.md`),
- * case-insensitively. A target that carries a slash is also tried as an explicit relative path
- * (`Folder/Note` → `Folder/Note.md`). An `|alias` (Obsidian-style display text) and a `#heading`
+ * case-insensitively. `Folder/Note` also tries an explicit path, while `/Note` resolves only from
+ * the vault root. An `|alias` (Obsidian-style display text) and a `#heading`
  * anchor are accepted and ignored for resolution. On disk the note keeps the literal `[[target]]`,
  * so it round-trips through any Markdown tool.
  */
@@ -55,14 +55,12 @@ export function splitWikiTarget(inner: string): {name: string; alias: string | n
     return {name: inner.slice(0, bar), alias: alias.trim() ? alias : null};
 }
 
-/**
- * What a link to `note` writes between the brackets: its title, or `Folder/Note` when another
- * note shares the title — the resolver's same-folder/shallowest tiebreak would pick by itself.
- */
 export function wikiLinkTargetFor(note: NoteMeta, notes: readonly NoteMeta[]): string {
     const lower = note.title.toLowerCase();
     const shared = notes.filter((other) => other.title.toLowerCase() === lower).length > 1;
-    return shared ? note.id.replace(/\.md$/i, '') : note.title;
+    if (!shared) return note.title;
+    const path = note.id.replace(/\.md$/i, '');
+    return path.includes('/') ? path : `/${path}`;
 }
 
 /**
@@ -95,19 +93,20 @@ function buildResolveIndex(notes: NoteMeta[]): ResolveIndex {
 
 /**
  * Map-based core of {@link resolveWikiLink}: resolve a `[[target]]` against a prebuilt index. Same
- * rules — explicit relative path first, else by title with the same-folder/shallowest/lexicographic
+ * rules — explicit path first, else by title with the same-folder/shallowest/lexicographic
  * tiebreak — but lookups are O(1), so a whole backlink scan avoids the O(N²) re-filter.
  */
 function resolveWith(target: string, fromId: string, index: ResolveIndex): string | null {
     const ref = normalizeTarget(target);
     if (!ref) return null;
 
-    // Explicit relative-path form: "Folder/Note" (or "Folder/Note.md") → that exact id.
     if (ref.includes('/')) {
-        const wantId = (ref.toLowerCase().endsWith(MD_EXT) ? ref : ref + MD_EXT).toLowerCase();
+        const fromRoot = ref.startsWith('/');
+        const path = fromRoot ? ref.slice(1) : ref;
+        const wantId = (path.toLowerCase().endsWith(MD_EXT) ? path : path + MD_EXT).toLowerCase();
         const exact = index.byId.get(wantId);
         if (exact) return exact.id;
-        // No exact path hit — fall through and try matching the leaf as a bare title.
+        if (fromRoot) return null;
     }
 
     const wantTitle = titleFromFileName(ref).toLowerCase();
@@ -129,8 +128,8 @@ function resolveWith(target: string, fromId: string, index: ResolveIndex): strin
 
 /**
  * Resolve a `[[target]]` to a note id, relative to the note it was written in (`fromId`). Returns
- * `null` when nothing matches. A target with a slash is first tried as an explicit relative path;
- * otherwise it's matched by title. When several notes share a title, prefer one in the same folder as
+ * `null` when nothing matches. A leading slash resolves only from the vault root; other paths are
+ * tried explicitly, then by title. When several notes share a title, prefer one in the same folder as
  * `fromId`, then the shallowest path, then the lexicographically-first id (so it's stable).
  */
 export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[]): string | null {

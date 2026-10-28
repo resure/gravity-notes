@@ -13,6 +13,7 @@ import type {CSSProperties} from 'react';
 import {Dialog, Label, Text, useToaster} from '@gravity-ui/uikit';
 
 import {AttachmentUrlCache, AttachmentsContext} from '../attachments';
+import {writeClipboardText} from '../clipboard';
 import {useAppUpdater} from '../hooks/useAppUpdater';
 import {useBacklinks} from '../hooks/useBacklinks';
 import {useCorpus} from '../hooks/useCorpus';
@@ -38,11 +39,19 @@ import {useSwipeBack} from '../hooks/useSwipeBack';
 import {Eye} from '../icons/icons';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
-import {dirname, sanitizeTitle, titleFromFileName} from '../storage/noteText';
+import {
+    MD_EXT,
+    dirname,
+    isReservedSegment,
+    joinPath,
+    sanitizeSegment,
+    sanitizeTitle,
+    titleFromFileName,
+} from '../storage/noteText';
 import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
-import {resolveWikiLink, wikiLinkTargetFor} from '../wikiLinks';
+import {normalizeTarget, resolveWikiLink, wikiLinkTargetFor} from '../wikiLinks';
 
 import {AboutDialog} from './AboutDialog';
 import {AttachmentsDialog} from './AttachmentsDialog';
@@ -1244,9 +1253,7 @@ export function Workspace({
         [notes, nav, revealNote],
     );
 
-    // Follow a [[wiki link]] (⌘/Ctrl-click in the editor): resolve the title to a note and open it.
-    // If nothing matches, create the note (Obsidian-style) in the current note's folder and open it
-    // with the caret in the body. The title is the link's leaf, stripped of any |alias / #heading.
+    // A missing vault-root link must create at that exact path so it resolves after creation.
     const handleOpenWikiLink = useCallback(
         (target: string) => {
             const fromId = notes.activeId ?? '';
@@ -1257,20 +1264,69 @@ export function Workspace({
                 revealNote(existing);
                 return;
             }
-            const ref = target.split('|', 1)[0].split('#', 1)[0].trim();
-            const title = sanitizeTitle(titleFromFileName(ref));
-            if (!ref || title === 'Untitled') return; // nothing meaningful to create
+            const ref = normalizeTarget(target);
+            const leafTitle = titleFromFileName(ref);
+            const title = sanitizeTitle(leafTitle);
+            const fromRoot = ref.startsWith('/');
+            let parentPath = dirname(fromId);
+            if (fromRoot) {
+                const segments = ref.slice(1).split('/');
+                const parentSegments = segments.slice(0, -1);
+                const validPath =
+                    segments.every((segment) => segment === sanitizeSegment(segment)) &&
+                    parentSegments.every((segment) => !isReservedSegment(segment));
+                if (!validPath || title !== leafTitle) {
+                    onError('Cannot create a note from an invalid vault-root path');
+                    return;
+                }
+                parentPath = parentSegments.join('/');
+            } else if (!ref || title === 'Untitled') return;
+            const exactId = fromRoot ? joinPath(parentPath, title + MD_EXT) : null;
             void (async () => {
-                const newId = await notes.create(title, dirname(fromId));
-                if (newId) {
-                    nav.setSelected(newId);
-                    setPendingEditorFocus(true);
-                    setPeeked(false);
-                    revealNote(newId);
+                try {
+                    if (exactId) {
+                        const [freshNotes, freshFolders] = await Promise.all([
+                            store.list(),
+                            store.listFolders(),
+                        ]);
+                        const appeared = resolveWikiLink(ref, fromId, freshNotes);
+                        if (appeared) {
+                            await notes.reload();
+                            nav.commit(appeared);
+                            setPeeked(false);
+                            revealNote(appeared);
+                            return;
+                        }
+                        if (
+                            freshFolders.some(
+                                (folder) => folder.toLowerCase() === exactId.toLowerCase(),
+                            )
+                        ) {
+                            onError(
+                                'Cannot create this note because a folder already occupies its path',
+                            );
+                            return;
+                        }
+                    }
+                    const newId = await notes.create(title, parentPath);
+                    if (newId) {
+                        if (exactId && newId.toLowerCase() !== exactId.toLowerCase()) {
+                            onError(
+                                `Could not create the exact link target; the created note was kept at "${newId}"`,
+                            );
+                            return;
+                        }
+                        nav.setSelected(newId);
+                        setPendingEditorFocus(true);
+                        setPeeked(false);
+                        revealNote(newId);
+                    }
+                } catch (err) {
+                    onError(err instanceof Error ? err.message : 'Could not follow this wiki link');
                 }
             })();
         },
-        [notes, nav, revealNote],
+        [notes, nav, revealNote, onError, store],
     );
 
     // Land focus in the editor body after a wiki link created + opened a new note (its session bumped).
@@ -1375,8 +1431,7 @@ export function Workspace({
     const handleCopyNoteLink = useCallback(() => {
         const open = notes.note;
         if (!open) return;
-        void navigator.clipboard
-            ?.writeText(`[[${wikiLinkTargetFor(open, notes.notes)}]]`)
+        void writeClipboardText(`[[${wikiLinkTargetFor(open, notes.notes)}]]`)
             .then(() => notify('Link copied'))
             .catch(() => onError('Could not copy to the clipboard'));
     }, [notes.note, notes.notes, notify, onError]);
@@ -1660,6 +1715,7 @@ export function Workspace({
                     // The open note's own title field, not the list's inline rename: the list may
                     // not be showing this note. A frame later, once the menu has let go of focus.
                     onRenameNote={() => {
+                        setPreviewMode(false);
                         requestAnimationFrame(() => editorRef.current?.renameTitle());
                     }}
                     onMoveNote={() => {

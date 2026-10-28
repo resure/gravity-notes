@@ -94,6 +94,22 @@ describe('MoveToDialog', () => {
         expect(onMove).toHaveBeenCalledWith('');
     });
 
+    it.each([
+        ['!a', '\u021a'],
+        ['A/a', 'A\u02fa'],
+    ])('points aria-activedescendant at each distinct folder in %j and %j', (first, second) => {
+        setup({folders: [first, second]});
+        const firstRow = screen.getByRole('option', {name: first.split('/').at(-1)});
+        const secondRow = screen.getByRole('option', {name: second.split('/').at(-1)});
+        expect(firstRow.id).not.toBe(secondRow.id);
+        for (const row of screen.getAllByRole('option')) {
+            press('ArrowDown');
+            const activeId = filter().getAttribute('aria-activedescendant');
+            expect(document.getElementById(activeId ?? '')).toBe(row);
+            expect(row).toHaveAttribute('aria-selected', 'true');
+        }
+    });
+
     it('shows an empty hint when nothing matches', () => {
         setup();
         type('zzz');

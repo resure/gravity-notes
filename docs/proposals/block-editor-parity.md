@@ -184,7 +184,8 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
   typing, Enter, paste and Shift-arrows preserve the unselected text at either end. `beforeinput`
   also handles edits without keydown. Non-text ends use whole-block fallbacks; inline formatting
   chords are ignored across blocks. `Editor.test.tsx` covers partial deletion, typing, Enter and
-  undo. Multiline/rich paste still takes two undo steps; single-line paste takes one.
+  undo. Accepted plain, rich and internal-block pastes now replace the range in one undo step;
+  rejected payloads leave the selected text unchanged.
 - **D14 — native/hardware interaction qualification.** Chromium interactions and synthetic IME
   tests ran; real OS composition, WKWebView caret/drag, native file dialogs and image resizing need
   hands-on qualification. Rust `cargo check` passed; no signed/notarized app or full DMG build ran.

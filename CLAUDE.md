@@ -166,7 +166,8 @@ Key modules:
   every keystroke) is loaded above it by `useCorpus` and passed in, so it stays trivially unit-testable.
 - `src/wikiLinks.ts` — pure `[[wiki link]]` + backlink helpers (no I/O, no React; sibling to
   `search.ts`): `extractWikiLinks`, `resolveWikiLink` (match by title case-insensitively, or an explicit
-  `Folder/Note` path; `|alias`/`#heading` ignored; same-folder ≫ shallowest ≫ lexicographic tiebreak),
+  `Folder/Note` path; a leading `/` resolves exactly from the vault root without title fallback;
+  `|alias`/`#heading` ignored; same-folder ≫ shallowest ≫ lexicographic tiebreak for bare titles),
   `suggestWikiTargets` (the `[[`-autocomplete ranking). Backlinks invert in **two stages** so a corpus
   change stays cheap: `buildBacklinkInversion` (resolve + group, NO snippets, once per graph change)
   then `materializeBacklinks` (slice context snippets + sort for ONE bucket, lazily — only the open
@@ -426,8 +427,10 @@ Key modules:
   selection extension and merges all skip blocks hidden inside a collapsed toggle, which render no
   element at all. A TEXT selection across blocks acts on exactly the text it covers: Backspace/Delete,
   typing (keydown, plus a `beforeinput` guard for dictation/autocorrect), Enter, cut and paste go
-  through `textSelectionAcross` → `deleteAcross` / `splitAcross`, which keep the first block's head
-  and the last's tail. An image/table endpoint, mixed code/text endpoints, or an ending toggle
+  through the cross-block text helpers, which keep the first block's head and the last's tail.
+  Paste validates its effective payload before mutation and commits accepted plain, rich and
+  internal blocks in one undo transaction; text-block wiki chips are redecorated after sanitation.
+  An image/table endpoint, mixed code/text endpoints, or an ending toggle
   hiding children falls back to whole blocks (`'exact'` in `removeBlocks`); a selection starting
   in a collapsed toggle's summary keeps its hidden children. A BLOCK selection acts on whole subtrees.
   Keyboard selection crosses blocks via `extendSelectionAcross` (WebKit clamps `extend` to the
