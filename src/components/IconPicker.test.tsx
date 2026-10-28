@@ -82,7 +82,8 @@ describe('IconPicker', () => {
         act(() => {
             vi.advanceTimersByTime(150);
         });
-        // Now the filter has run against the settled query → no matches left.
+        // Now the filter has run against the settled query → no matches left, and it says so.
         expect(screen.queryAllByRole('option')).toHaveLength(0);
+        expect(screen.getByText('No icons match.')).toBeInTheDocument();
     });
 });
