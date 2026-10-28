@@ -381,7 +381,6 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
             // source mode would leave the PREVIOUS note's text on screen under the new title — and
             // the next keystroke would save it into the newly opened note.
             const surface = {
-                key: sessionId,
                 ref: sourceRef,
                 readValue: () => bufferRef.current,
                 onChange: handleChange,
@@ -407,11 +406,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                             </p>
                         ) : null}
                         {CODEMIRROR ? (
-                            <Suspense fallback={<TextareaSource {...surface} />}>
-                                <SourceEditor {...surface} />
+                            <Suspense fallback={<TextareaSource key={sessionId} {...surface} />}>
+                                <SourceEditor key={sessionId} {...surface} />
                             </Suspense>
                         ) : (
-                            <TextareaSource {...surface} />
+                            <TextareaSource key={sessionId} {...surface} />
                         )}
                     </div>
                 </>

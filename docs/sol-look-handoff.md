@@ -60,7 +60,7 @@ proposals now distinguish resolved work from their historical plans: partial cro
 and CodeMirror source tooling have landed; block-editor undo resumes for eligible notes, while
 source-note history and history transfer between modes remain open.
 
-## Verification on this continuation
+## Documentation verification
 
 These checks ran in the `sol-look` worktree against implementation commit `162c5e1` plus the
 documentation changes:
@@ -78,8 +78,8 @@ documentation changes:
 
 Builds retain dependency warnings about browser-externalized Node modules and `eval` in the YFM
 cut extension; the regular build also reports large chunks. Lint warnings are still present; this
-documentation continuation does not change implementation code. No fresh scroll-performance
-benchmark, Rust build, or signed desktop build was run.
+documentation continuation did not change implementation code. It did not run a fresh
+scroll-performance benchmark, Rust build, or signed desktop build.
 
 The existing tests cover chip serialization and actions, cross-block editing and undo, appearance
 inheritance and persistence, the orb/note menus, actions on a filtered-out open note, switcher IDs
@@ -88,9 +88,66 @@ geometry: there are no direct runtime regression tests for the highlight/repaint
 `beforeinput` fallback.
 
 The source Claude session records Chromium checks of both themes, blue accent, dialogs and menus.
-Those are prior-session evidence. This continuation could not refresh visual evidence: the in-app
-browser was unavailable and the computer-use inventory returned no browsers or apps. A local Vite
-server was started successfully, but no UI was reachable through the available automation surface.
+Those are prior-session evidence. The documentation-only continuation at `c560374` could not refresh
+visual evidence: the in-app browser was unavailable and the computer-use inventory returned no
+browsers or apps. A local Vite server started successfully, but no UI was reachable through the
+available automation surface.
+
+## Browser and native-build continuation
+
+The next continuation on 2026-10-28 opened the in-app browser against this worktree's Vite server at
+`http://127.0.0.1:5175/`. Testing used a fresh origin's in-browser workspace and disposable notes,
+with a 1280 × 900 desktop viewport. It did not open a real notes folder or exercise the Tauri shell.
+
+Fresh browser observations:
+
+- Light and dark themes render, and the theme submenu works with keyboard activation. Amber and
+  blue app accents and a gray workspace override apply. Workspace Serif/Wide/Gray and the separate
+  app Sans/Normal/Blue settings survive a reload; selecting Default restores inheritance.
+- Settings segments have equal widths within each picker. The top bar measures 40px, the search
+  control is centred at x=640 in the 1280px viewport, and root/folder note rows measure 48/64px.
+  The long Settings descriptions fit, and menu groups use thin separators.
+- The open note's actions remain available with no matching search results. Mono/Narrow note
+  overrides survive rename, move into a new folder, and Trash → Restore. The move picker disables
+  the current folder and accepts a folder name containing spaces.
+- Wiki-link Change note selects an existing target and retains its alias. Edit text changes the
+  displayed alias; Unlink retains the displayed words, and Undo restores the chip. The source
+  surface retains literal `[[Target|linked note]]` Markdown. `[[Not a chip]]` in a code block stays
+  undecorated.
+- Forward Shift-Down selection spans two text blocks. Replacing the suffix of `Alpha text` and the
+  prefix of `Beta text…` produces `Alpha Xext…`, retaining the unselected text and wiki chip. Undo
+  restores both original blocks. Deleting a whole cross-block range and undoing also restores it.
+  The selection paint was inspected in this browser; the full desktop matrix below remains open.
+
+The source-mode transition exposed a React development warning: the shared `surface` props spread
+included `key`. `BlockEditorBody` now passes `key={sessionId}` explicitly to both source surfaces
+and the Suspense fallback, retaining the per-session remount contract. After a fresh reload,
+blocks → source → another note → the original note → blocks restores the correct content, with
+no new console warnings or errors during that sequence.
+
+After the fix, all 1471 tests in 63 files pass. The 53 focused body/source/pane tests, typecheck,
+the normal and single-file frontend builds and file-scoped lint also pass; lint retains three existing warnings.
+The full suite still emits existing React `act` warnings. The native app below was rebuilt from
+the fresh normal frontend bundle after the fix.
+
+Local screenshots are `/private/tmp/sol-look-light-note-menu.jpg`,
+`/private/tmp/sol-look-dark-settings.jpg` and `/private/tmp/sol-look-dark-workspace.jpg`. They are
+temporary evidence, not replacement README screenshots.
+
+Native verification used a separate `CARGO_TARGET_DIR=/private/tmp/sol-look-desktop-target`:
+
+- `cargo fmt --check` passed.
+- `cargo test --locked --offline --lib` passed all 30 tests, including filesystem confinement,
+  snapshots/heads, window assignments and watcher subscriptions.
+- The Tauri debug bundle built for arm64 with the dev identity `com.gravitynotes.desktop.dev`,
+  without developer signing, notarization or updater artifacts. The app is at
+  `/private/tmp/sol-look-desktop-target/debug/bundle/macos/Gravity Notes Dev.app`.
+
+The native app has not been launched or visually accepted. The available computer-use surfaces
+provide the in-app browser, with native app automation disabled. Native traffic lights, launch and
+resize backgrounds, window routing and the app's WKWebView repaint behaviour still need the
+desktop observations below. Browser tests used one workspace, so switching between distinct
+workspaces also remains unverified at runtime.
 
 ## Remaining desktop acceptance
 
