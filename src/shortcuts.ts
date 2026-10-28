@@ -175,16 +175,17 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+\\',
-        description: 'Toggle the sidebar',
+        description:
+            'Show / hide the left panel (the notes list, and the folders when they are on)',
         group: 'Navigation',
         global: {trigger: 'mod', key: '\\', action: 'toggleSidebar'},
     },
     {
         keys: 'mod+shift+\\',
-        description: 'Toggle the folder rail',
+        description: 'Show / hide the folders in the left panel',
         group: 'Navigation',
         // Match the physical Backslash key: with Shift held, event.key is '|' on US/UK layouts,
-        // so a key-based match would never fire. Sibling of ⌘\ (which toggles the whole sidebar).
+        // so a key-based match would never fire. Sibling of ⌘\ (which toggles the whole panel).
         global: {
             trigger: 'mod',
             key: '\\',
@@ -249,7 +250,7 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
     },
     {
         keys: 'mod+shift+i',
-        description: 'Note appearance (font, width)',
+        description: 'This note’s menu (appearance, file actions)',
         group: 'Editing',
         // 'i' is a letter, so the shifted event.key ('I') matches case-insensitively — no code needed.
         global: {trigger: 'mod', key: 'i', action: 'openNoteAppearance', shift: true},
@@ -457,7 +458,9 @@ export function shortcutMatches(shortcut: ShortcutDescriptor, query: string): bo
     });
 }
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const IS_MAC = /Mac|iPhone|iPad|iPod/i.test(
+    typeof navigator === 'undefined' ? '' : navigator.platform || navigator.userAgent,
+);
 
 /** A chord as one comparable string, however its keys are spelled or ordered. */
 export function normalizeChord(keys: string[]): string {
@@ -478,3 +481,41 @@ export const GLOBAL_CHORDS = new Set(
         return [normalizeChord(keys)];
     }),
 );
+
+/** Platform substitution: `mod` is ⌘ on a Mac and Ctrl everywhere else. */
+const KEY_GLYPHS: Record<string, string> = {
+    mod: IS_MAC ? '⌘' : 'Ctrl',
+    ctrl: IS_MAC ? '⌃' : 'Ctrl',
+    shift: '⇧',
+    alt: IS_MAC ? '⌥' : 'Alt',
+    enter: '↵',
+    backspace: '⌫',
+    esc: 'Esc',
+    up: '↑',
+    down: '↓',
+    left: '←',
+    right: '→',
+    f2: 'F2',
+};
+
+/**
+ * Split a descriptor's `keys` into the caps the help sheet renders: space separates CHORDS
+ * (`'esc esc'` = press it twice), `+` separates keys within one chord. Unknown tokens render
+ * as-is, upper-cased for single letters — so a new binding needs no table entry to look right.
+ */
+export function shortcutChords(keys: string): string[][] {
+    return keys.split(' ').map((chord) =>
+        chord.split('+').map((part) => {
+            const glyph = KEY_GLYPHS[part];
+            if (glyph) return glyph;
+            return part.length === 1 ? part.toUpperCase() : part;
+        }),
+    );
+}
+
+/** A descriptor's `keys` as one menu hint: `mod+shift+m` → `⌘⇧M` (`Ctrl+⇧+M` off a Mac). */
+export function shortcutHint(keys: string): string {
+    return shortcutChords(keys)
+        .map((chord) => chord.join(IS_MAC ? '' : '+'))
+        .join(' ');
+}

@@ -12,23 +12,67 @@ body,
     overscroll-behavior: none;
 }
 
-/* The app icon's orange (mid-tone of the disc gradient). Single source of truth for the menu orb
-   and the saving status dot; theme-independent, so it lives on :root. The orb's luminous halo is
-   derived from the same hue. */
+/* The app's face for everything outside the note itself. On `body`, not only on the panes: every
+   menu, popover and editor overlay portals to <body>, and without this they fell back to the
+   browser's default serif. */
+body {
+    font-family: var(--font-ui);
+    color: var(--text-1);
+}
+
+/* Text selection is one of the accent's five permitted uses (§03), and it is app-wide: the note
+   body, an inline rename, the search box. 35% is the weight §06 renders it at — enough to read as
+   a highlight over paper without hiding the glyphs under it. */
+::selection {
+    background: rgba(var(--gn-accent-rgb), 0.35);
+}
+
+/* A text selection across editor blocks is painted by the editor (Custom Highlight API), so the
+   browser's own — which WebKit clips to one block — steps aside while it is up. */
+::highlight(gn-cross-blocks) {
+    background-color: rgba(var(--gn-accent-rgb), 0.35);
+}
+
+.gn-block-editor_cross-selection ::selection {
+    background: transparent;
+}
+
+/* Anything that is a button acts like one under the pointer. A type selector (specificity 0,0,1)
+   so any component with a reason to differ — the block editor's drag handle wants `grab`, a
+   read-only field wants `default` — still wins with a single class. Disabled buttons are excluded:
+   a hand over a control that won't respond is a lie. */
+button:not(:disabled) {
+    cursor: pointer;
+}
+
+/* The app root is its own stacking context, so nothing inside it can out-stack a portalled menu,
+   dialog or tooltip — those render as siblings of #root, directly on <body>. Without this the
+   Tauri title bar's drag region wins over an open menu. */
+#root {
+    isolation: isolate;
+}
+
+/* The accent's legacy names and its channel triple. `--gn-accent-rgb` has to stay channels: several
+   washes build their own alpha with `rgba(var(--gn-accent-rgb), α)`, which no `color-mix` on an
+   oklch value can replace — so it restates each accent's sRGB by hand (tokens.css owns the oklch).
+   The three hex constants are the Settings swatch dots (appearanceControls.css). */
 :root {
-    /* One hex per accent — the single source for each hue, consumed by the [data-accent] blocks
-       below AND the picker swatch dots (appearanceControls.css). The halo/rgb variants restate a
-       hue numerically (rgba/channel forms CSS can't derive from a hex) — keep those in sync by
-       hand when tuning one of these. */
-    --gn-accent-amber: #ea892b;
+    --gn-accent-amber: #db8833;
     --gn-accent-blue: #1f81ff;
-    --gn-accent-gray: #8a8a8a;
-    --gn-orange: var(--gn-accent-amber);
-    --gn-orb-halo: rgba(238, 152, 46, 0.55);
-    /* RGB channels of the warmer accent the list-selection wash shares with the orb halo. Exposed as
-       channels (not a color) so the wash can keep its own per-theme alpha via rgba(var(--gn-accent-rgb), α),
-       and so the accent-color setting can recolor the wash too (it overrides these below). */
-    --gn-accent-rgb: 238, 152, 46;
+    --gn-accent-gray: #8a8781;
+    --gn-orange: var(--accent);
+    --gn-orb-halo: rgba(219, 136, 51, 0.55);
+    --gn-accent-rgb: 219, 136, 51;
+}
+
+:root[data-accent='blue'] {
+    --gn-orb-halo: rgba(31, 129, 255, 0.55);
+    --gn-accent-rgb: 31, 129, 255;
+}
+
+:root[data-accent='gray'] {
+    --gn-orb-halo: rgba(138, 135, 129, 0.5);
+    --gn-accent-rgb: 138, 135, 129;
 }
 
 /* The note colour palette — Notion's, and the one source for every surface that paints it: a block's
@@ -58,53 +102,7 @@ body,
     --gn-color-red-bg: #fdebec;
 }
 
-/* Accent: monochrome — black in light, white in dark. Unlike a single hue, the brand
-   must flip with the theme, so it's set per theme root (matching Gravity's own selectors,
-   and loaded after uikit so it wins). text-brand-contrast keeps button labels readable on
-   the inverted fill. --note-list-selected-bg / --note-list-focus-bg give the active note in the
-   list a faint warm amber wash (close to the logo orange; the keyboard-focused row a clear step
-   stronger so focus reads distinctly from mere selection), kept list-local so Gravity's
-   other selection surfaces stay monochrome. (Visual — smoke-tested.) */
-.g-root_theme_light {
-    --g-color-base-brand: var(--g-color-private-black-600-solid);
-    --g-color-base-brand-hover: var(--g-color-private-black-700-solid);
-    --g-color-base-selection: var(--g-color-private-black-150);
-    --g-color-base-selection-hover: var(--g-color-private-black-200);
-    --g-color-line-brand: var(--g-color-private-black-900-solid);
-    --g-color-text-brand: var(--g-color-private-black-900-solid);
-    --g-color-text-brand-heavy: var(--g-color-private-black-1000-solid);
-    --g-color-text-brand-contrast: var(--g-color-private-white-1000-solid);
-    /* Links follow the accent (--gn-orange, swapped by data-accent): darkened off the accent hue for
-       contrast on the light surface. color-mix keeps one source of truth, so a new accent needs no
-       link tuning. Amber (the default) lands close to the previous hand-picked #c2650f. */
-    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #000 20%);
-    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #000 38%);
-    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 48%);
-    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.1);
-    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.22);
-}
-
-.g-root_theme_dark {
-    --g-color-base-brand: var(--g-color-private-white-1000-solid);
-    --g-color-base-brand-hover: var(--g-color-private-white-850-solid);
-    --g-color-base-selection: var(--g-color-private-white-150);
-    --g-color-base-selection-hover: var(--g-color-private-white-200);
-    --g-color-line-brand: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand-heavy: var(--g-color-private-white-1000-solid);
-    --g-color-text-brand-contrast: var(--g-color-private-black-1000-solid);
-    /* Links follow the accent (--gn-orange): lifted off the accent hue for legibility on the dark
-       surface, hover brighter, visited slightly dimmed. See the light block for the rationale. */
-    --g-color-text-link: color-mix(in srgb, var(--gn-orange), #fff 12%);
-    --g-color-text-link-hover: color-mix(in srgb, var(--gn-orange), #fff 30%);
-    --g-color-text-link-visited: color-mix(in srgb, var(--gn-orange), #000 12%);
-    --note-list-selected-bg: rgba(var(--gn-accent-rgb), 0.13);
-    --note-list-focus-bg: rgba(var(--gn-accent-rgb), 0.26);
-    /* A very subtle warm/orange cast on the dark base surfaces (a hint, not a tint you'd name).
-       Tuned live. */
-    --g-color-base-background: #211e1a;
-    --g-color-base-generic: #2a2723;
-    --g-color-base-generic-hover: #332f29;
+[data-theme='dark'] {
     /* Notion's own dark values for the note palette above. */
     --gn-color-gray: #9b9b9b;
     --gn-color-brown: #ba856f;
@@ -128,19 +126,11 @@ body,
 }
 
 /* Code text was washing out in dark mode; force a readable foreground on inline + fenced code in
-   the read-only .yfm preview. Background left as-is. Tuned live. (The block editor carries its own
-   code palette — see blockEditor/editor.css.) */
-.g-root_theme_dark .note-preview .yfm code,
-.g-root_theme_dark .note-preview .yfm pre {
-    color: var(--g-color-text-primary);
-}
-
-/* Use the native system font (San Francisco on macOS) rather than Gravity's Inter default: nothing to
-   bundle or fetch from Google, works offline, feels native. Set on `.g-root` to out-specify Gravity's
-   own `--g-font-family-sans` declaration on that element. */
-.g-root {
-    --g-font-family-sans:
-        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+   the read-only .yfm preview. Background left as-is. (The block editor carries its own code
+   palette — see blockEditor/editor.css.) */
+[data-theme='dark'] .note-preview .yfm code,
+[data-theme='dark'] .note-preview .yfm pre {
+    color: var(--text-1);
 }
 
 /* ── Editor-font setting + per-font typography ──────────────────────────────────────────────────
@@ -151,23 +141,23 @@ body,
    NotePreview.css). Keeping them separate per font is deliberate — tuning sans's leading must not
    move serif's — so put any further per-font metric (letter-spacing, paragraph spacing…) inside
    these blocks, never in a shared rule. `sans` is the default; the active choice is stamped on
-   <html> as `data-editor-font` (by `Workspace`), and serif/mono override for the whole `.g-root`
-   subtree (specificity out-ranks the base). These feed the note CONTENT only — the block editor's
-   document column, the read-only preview (`.yfm`), and the note title (NoteTitle.css) — never the
-   app chrome (`--g-font-family-sans`) or the raw Markdown source view.
-   Set on `.g-root` so the family can reference `--g-font-family-sans`, which lives there. */
-.g-root {
-    /* Sans — the native system font (default). 15px matches YFM's own base size. */
-    --gn-editor-font: var(--g-font-family-sans);
+   <html> as `data-editor-font` (by `Workspace`), and serif/mono override on the same element.
+   These feed the note CONTENT only — the block editor's document column and the read-only preview
+   (`.yfm`), plus the note TITLE (NoteTitle.css) — never the app chrome (`--font-ui`) or the raw
+   Markdown source view. */
+:root {
+    /* Sans — the native system font (default). 15/24, §03's `--fs-body` / `--lh-body`: the body
+       copy of the note is the one text in the app the type scale is really about. */
+    --gn-editor-font: var(--font-ui);
     --gn-editor-font-size: 15px;
-    --gn-editor-line-height: 1.35;
+    --gn-editor-line-height: 1.6;
     /* Lists get a little more air than body copy — sans's tight default made bullet/numbered lists
        feel cramped. serif/mono keep their body rhythm (set in their own blocks below). */
     --gn-editor-list-line-height: 1.45;
     --gn-editor-list-gap: 4px;
 }
 
-:root[data-editor-font='serif'] .g-root {
+:root[data-editor-font='serif'] {
     /* PT Serif is bundled (self-hosted @fontsource files via src/fonts/pt-serif.css); the rest is a graceful
        fallback if it ever fails to load, and covers scripts we don't ship a PT Serif subset for. Its
        smaller x-height reads small at 15px, so bump the size up and give it a touch more leading
@@ -180,7 +170,7 @@ body,
     --gn-editor-list-gap: 1px;
 }
 
-:root[data-editor-font='mono'] .g-root {
+:root[data-editor-font='mono'] {
     --gn-editor-font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --gn-editor-font-size: 15px;
     --gn-editor-line-height: 1.35;
@@ -196,7 +186,7 @@ body,
    the reading-rhythm rules (EditorPane.css / NotePreview.css), not here. Headings keep their own
    absolute `--yfm-font-size-h*` vars, so `--yfm-font-size` grows only the body copy. Code blocks keep
    `--yfm-font-family-monospace`, so they stay mono in every mode. */
-.g-root .yfm {
+.yfm {
     --yfm-font-family-sans: var(--gn-editor-font);
     --yfm-font-size: var(--gn-editor-font-size);
 }
@@ -209,14 +199,14 @@ body,
    rule reads `var(--yfm-color-hljs-X, …-private)`, so setting the public var wins) to a readable dark
    palette, for the editor + preview `.yfm` alike. Strings/numbers stay in the red family (just made
    legible); the rest lift to conventional, cohesive hues. Light theme is untouched — its private
-   defaults still apply. (Targets `g-root_theme_dark`; the app doesn't expose the high-contrast dark.) */
-.g-root_theme_dark .yfm,
-.g-root_theme_dark .gn-block-editor,
-.g-root_theme_dark .block-editor-codemirror {
+   defaults still apply. */
+[data-theme='dark'] .yfm,
+[data-theme='dark'] .gn-block-editor,
+[data-theme='dark'] .block-editor-codemirror {
     /* `.hljs-subst` spans (e.g. template-literal substitutions) otherwise fall back to #444 here: the
        existing dark code-foreground rule near the top of this file colors only the code/pre element,
        not these child spans. Point them at the theme text color so they stay readable. */
-    --yfm-color-hljs-subst: var(--g-color-text-primary);
+    --yfm-color-hljs-subst: var(--text-1);
     --yfm-color-hljs-deletion: #e06c75; /* strings, numbers, types — the red, now readable */
     --yfm-color-hljs-section: #e5c07b; /* titles: function / class names */
     --yfm-color-hljs-pseudo: #56b6c2; /* variables, symbols, regexp, links */
@@ -225,42 +215,30 @@ body,
     --yfm-color-hljs-meta: #c678dd; /* decorators / meta */
 }
 
-/* ── Accent-color setting ───────────────────────────────────────────────────────────────────────
-   Swaps the accent trio the orb / saving dot / list-selection wash read (see `--gn-orange` etc.
-   above). `amber` is the `:root` default, so `Workspace` stamps `data-accent` on <html> only for
-   blue/gray — leaving amber off falls through to that default. `:root[data-accent]` out-ranks the
-   base `:root` on specificity, so an explicit choice always wins. Hues come from the `--gn-accent-*`
-   constants on `:root` above (shared with the picker swatch dots in appearanceControls.css); only
-   the halo/rgb restatements live here. */
-:root[data-accent='blue'] {
-    --gn-orange: var(--gn-accent-blue);
-    --gn-orb-halo: rgba(31, 129, 255, 0.55);
-    --gn-accent-rgb: 31, 129, 255;
-}
-
-:root[data-accent='gray'] {
-    --gn-orange: var(--gn-accent-gray);
-    --gn-orb-halo: rgba(138, 138, 138, 0.5);
-    --gn-accent-rgb: 138, 138, 138;
-}
-
 /* ── Text-width setting ─────────────────────────────────────────────────────────────────────────
-   `--gn-text-width` caps the measure of the note-content column and centers it in the pane. Stamped
-   on <html> as `data-text-width` by `Workspace` (effective across app → workspace → note). Applied to
-   the WYSIWYG editor content, the read-only preview body, and the note title — all inset by the same
-   `--editor-gutter`, so their left edges stay aligned when centered. `unlimited` = no cap (fills the
-   pane, today's behavior). NOT applied to the raw Markup editor (parity with the editor-font scoping).
-   Values are first guesses — tune later. */
+   §06 puts the MEASURE — the width of the text itself — at 680px. What the centering rule below
+   caps is the whole column, text plus the 36px gutter on either side, so each value here is the
+   measure plus 72.
+
+   Not written as `calc(measure + 2 * var(--editor-gutter))`: a custom property is substituted where
+   it is DECLARED, not where it is used, so a `var(--editor-gutter)` in a `:root` declaration
+   resolves against `:root` — which has no gutter — and silently takes the fallback. (Outside the
+   editor pane the gutter is 16px rather than 36, so the measure there runs 40px wider; those
+   surfaces are narrower than the cap anyway, so it never binds.)
+
+   Stamped on <html> as `data-text-width` by `Workspace` (effective across app → note).
+   `unlimited` = no cap (fills the pane). NOT applied to the raw Markup editor (parity with the
+   editor-font scoping). */
 :root {
-    --gn-text-width: 52rem;
+    --gn-text-width: 752px; /* 680 measure */
 }
 :root[data-text-width='narrow'] {
-    --gn-text-width: 42rem;
+    --gn-text-width: 632px; /* 560 measure */
 }
 /* No 'normal' block — it IS the :root default above (mirrors data-editor-font, which has no 'sans'
    rule); the stamped attribute simply matches no override and falls through. */
 :root[data-text-width='wide'] {
-    --gn-text-width: 72rem;
+    --gn-text-width: 952px; /* 880 measure */
 }
 :root[data-text-width='unlimited'] {
     --gn-text-width: none;
@@ -292,28 +270,4 @@ button,
 .note-list__item,
 .folder-rail__row {
     touch-action: manipulation;
-}
-
-/* ── Dialogs on narrow screens ──────────────────────────────────────────────────────────────────
-   Gravity sizes a Dialog with a FIXED width (`.g-dialog { width: var(--g-dialog-width, …) }`, where
-   size s/m/l = 480/720/900px) and sets no max-width, so on a phone every dialog — the Trash confirm,
-   Move to…, Settings — ran off the screen edge, clipping its text and its primary button.
-
-   Cap it by SIZE rather than by a breakpoint: this is inert whenever the dialog already fits, so it
-   needs no MOBILE_MAX_WIDTH duplicate and covers every size preset at once. (A media query would
-   also be the wrong tool here — dialogs render in a portal outside the workspace tree, so the
-   `workspace__body_mobile` class the rest of the mobile layout keys off can't reach them.)
-
-   Subtract Gravity's OWN `--g-modal-margin` (which `.g-modal__content` already reserves on each
-   side) rather than an invented inset: a dialog even slightly wider than that box makes
-   `.g-modal__content` (overflow-x: auto) show a horizontal scrollbar. Not `100%` either — the
-   content box shrink-wraps its child, so a percentage cap feeds back on itself and collapses the
-   dialog far narrower than the screen allows. The safe-area terms keep it clear of the notch in
-   landscape, where the inset can exceed that margin. */
-.g-dialog {
-    box-sizing: border-box;
-    max-width: calc(
-        100vw - 2 * var(--g-modal-margin, 20px) - env(safe-area-inset-left, 0px) -
-            env(safe-area-inset-right, 0px)
-    );
 }

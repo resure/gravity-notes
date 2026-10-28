@@ -2,10 +2,14 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 
 // No web font for the UI: the app chrome uses the native system font (San Francisco on macOS), set
-// via `--g-font-family-sans` in index.css. Gravity's `fonts.css` (a Google-Fonts Inter `@import`) is
+// via `--font-ui` in tokens.css. Gravity's `fonts.css` (a Google-Fonts Inter `@import`) is
 // intentionally NOT imported — nothing to fetch or bundle, works offline, feels native. (The one
 // bundled font is the opt-in serif note-content face imported below — self-hosted, not a CDN fetch.)
 import '@gravity-ui/uikit/styles/styles.css';
+
+// Sol's foundations, then Gravity restyled onto them — both after uikit, so they win on order.
+import './tokens.css';
+import './gravity.css';
 
 // PT Serif — the face behind Settings › Editor font › Serif. Self-hosted (woff2-only @font-face
 // rules over @fontsource's font files — see the rationale in fonts/pt-serif.css), so unlike a
