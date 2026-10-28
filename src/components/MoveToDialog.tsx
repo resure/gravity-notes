@@ -1,10 +1,10 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import {ChevronDown, ChevronRight, Folder, House} from '@gravity-ui/icons';
-import {Dialog, Icon, Text, TextInput} from '@gravity-ui/uikit';
+import {Dialog, TextInput} from '@gravity-ui/uikit';
 
 import {useHeldValue} from '../hooks/useHeldValue';
-import {useListboxNav} from '../hooks/useListboxNav';
+import {domIdPart, useListboxNav} from '../hooks/useListboxNav';
+import {ChevronDown, ChevronRight, Folder, House} from '../icons/icons';
 import {dirname} from '../storage/noteText';
 import type {NoteMeta, NotesMetadata} from '../storage/types';
 import {type MoveTargetRow, buildMoveTargets} from '../tree';
@@ -150,7 +150,7 @@ export function MoveToDialog({
             // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus
             <div
                 key={entry.key}
-                id={`move-to-opt-${entry.key}`}
+                id={`move-to-opt-${domIdPart(entry.key)}`}
                 ref={(el) => registerRow(entry.key, el)}
                 className={
                     'move-to__row' +
@@ -177,20 +177,19 @@ export function MoveToDialog({
                             toggleCollapse(entry.path);
                         }}
                     >
-                        <Icon data={entry.collapsed ? ChevronRight : ChevronDown} size={14} />
+                        {entry.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                     </button>
                 ) : (
                     <span className="move-to__caret" />
                 )}
-                <Icon
-                    className="move-to__icon"
-                    data={entry.isRoot ? House : Folder}
-                    size={16}
-                    aria-hidden
-                />
-                <Text className="move-to__name" ellipsis>
+                {entry.isRoot ? (
+                    <House size={15} className="move-to__icon" />
+                ) : (
+                    <Folder size={15} className="move-to__icon" />
+                )}
+                <span className="move-to__name">
                     {highlightMatch(entry.name, ql, 'move-to__match')}
-                </Text>
+                </span>
                 {entry.disabled ? <span className="move-to__hint">current</span> : null}
             </div>
         );
@@ -203,7 +202,8 @@ export function MoveToDialog({
         <Dialog
             open={open}
             onClose={onClose}
-            size="s"
+            className="move-to"
+            hasCloseButton={false}
             disableBodyScrollLock
             initialFocus={inputRef}
         >
@@ -219,15 +219,15 @@ export function MoveToDialog({
                         role: 'combobox',
                         'aria-expanded': true,
                         'aria-controls': 'move-to-listbox',
-                        'aria-activedescendant': activeKey ? `move-to-opt-${activeKey}` : undefined,
+                        'aria-activedescendant': activeKey
+                            ? `move-to-opt-${domIdPart(activeKey)}`
+                            : undefined,
                         'aria-label': 'Filter folders',
                     }}
                 />
                 <div className="move-to__list" id="move-to-listbox" role="listbox">
                     {entries.length === 0 ? (
-                        <div className="move-to__empty">
-                            <Text color="secondary">No folders match “{q}”</Text>
-                        </div>
+                        <div className="move-to__empty">No folders match “{q}”</div>
                     ) : (
                         entries.map(renderEntry)
                     )}

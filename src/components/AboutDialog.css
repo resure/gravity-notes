@@ -1,28 +1,59 @@
+/* A small centred card with no title row: the orb IS the heading, and an "About" line above the
+   app's name would say the same thing twice. */
 .about-dialog {
+    --g-dialog-width: min(340px, calc(100vw - 40px));
+}
+
+.about {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    /* Generous top padding so the orb clears the dialog's ✕ close button (top-right) and doesn't look
-       cramped against the top edge; balanced bottom padding since there's no footer. */
-    padding: 32px 0 20px;
+    gap: 4px;
+    padding: 14px 0 6px;
     text-align: center;
 }
 
-/* The app mark — the same orb (and luminous halo) as the top bar, so the About box wears the app's
-   identity; it reads --gn-orange, so it follows the accent-color setting like the rest of the mark. */
-.about-dialog__orb {
+/* The app mark: the same disc the title bar wears, at 4× the size. */
+.about__orb {
     width: 56px;
     height: 56px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     border-radius: 50%;
-    background-color: var(--gn-orange);
-    box-shadow: 0 0 24px -4px var(--gn-orb-halo);
+    background-color: var(--accent);
 }
 
-.about-dialog__links {
+.about__name {
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+    color: var(--text-1);
+}
+
+.about__version {
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.about__links {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin-top: 12px;
+}
+
+.about__link {
+    color: var(--link);
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    text-decoration: none;
+}
+
+@media (hover: hover) {
+    .about__link:hover {
+        color: var(--link-hover);
+        text-decoration: underline;
+    }
 }

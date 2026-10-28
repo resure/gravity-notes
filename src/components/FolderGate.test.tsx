@@ -42,9 +42,9 @@ describe('FolderGate', () => {
         const user = userEvent.setup();
         const storage = makeStorage({supportsFileSystem: true});
         renderWithProviders(<FolderGate storage={storage} />);
-        expect(screen.getByText('Welcome to Gravity Notes')).toBeInTheDocument();
+        expect(screen.getByText('Choose a notes folder')).toBeInTheDocument();
 
-        await user.click(screen.getByRole('button', {name: /Open a folder/}));
+        await user.click(screen.getByRole('button', {name: /Open Folder/}));
         expect(storage.pickFolder).toHaveBeenCalledTimes(1);
         await user.click(screen.getByRole('button', {name: 'Store in this browser'}));
         expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe('FolderGate', () => {
         const storage = makeStorage({supportsFileSystem: false});
         renderWithProviders(<FolderGate storage={storage} />);
 
-        expect(screen.queryByRole('button', {name: /Open a folder/})).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Open Folder/})).not.toBeInTheDocument();
         expect(screen.getByText(/needs a Chromium browser/)).toBeInTheDocument();
         await user.click(screen.getByRole('button', {name: 'Store in this browser'}));
         expect(storage.useBrowserStorage).toHaveBeenCalledTimes(1);
@@ -68,10 +68,10 @@ describe('FolderGate', () => {
         const storage = makeStorage({isTauri: true, supportsFileSystem: false});
         renderWithProviders(<FolderGate storage={storage} />);
 
-        expect(screen.getByRole('button', {name: /Open a folder/})).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: /Open Folder/})).toBeInTheDocument();
         expect(screen.queryByRole('button', {name: /Store in/})).not.toBeInTheDocument();
         expect(screen.queryByText(/needs a Chromium browser/)).not.toBeInTheDocument();
-        await user.click(screen.getByRole('button', {name: /Open a folder/}));
+        await user.click(screen.getByRole('button', {name: /Open Folder/}));
         expect(storage.pickFolder).toHaveBeenCalledTimes(1);
     });
 
@@ -88,20 +88,20 @@ describe('FolderGate', () => {
 
     it('renders no gate UI while loading (no welcome-card flash in fresh windows)', () => {
         renderWithProviders(<FolderGate storage={makeStorage({state: 'loading'})} />);
-        expect(screen.queryByText('Welcome to Gravity Notes')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', {name: /Open a folder/})).not.toBeInTheDocument();
+        expect(screen.queryByText('Choose a notes folder')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: /Open Folder/})).not.toBeInTheDocument();
     });
 
-    it('shows the bootstrap spinner only once the restore proves slow', () => {
+    it('shows the bootstrap wait only once the restore proves slow', () => {
         vi.useFakeTimers();
         try {
             renderWithProviders(<FolderGate storage={makeStorage({state: 'loading'})} />);
-            // Immediately: just the themed background, not even a spinner (the common fast case).
-            expect(document.querySelector('.g-loader')).toBeNull();
+            // Immediately: just the themed background, nothing at all (the common fast case).
+            expect(document.querySelector('.folder-gate__wait')).toBeNull();
             act(() => {
                 vi.advanceTimersByTime(400);
             });
-            expect(document.querySelector('.g-loader')).not.toBeNull();
+            expect(document.querySelector('.folder-gate__wait')).not.toBeNull();
         } finally {
             vi.useRealTimers();
         }
