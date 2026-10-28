@@ -315,7 +315,7 @@ describe('NoteList — delete', () => {
         const beta = screen.getByRole('option', {name: /Beta/});
         await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
         const item = await screen.findByRole('menuitem', {name: /Delete/});
-        expect(item.querySelector('.note-list__menu-hint')?.textContent).toMatch(/⌫/);
+        expect(item.querySelector('.gn-menu-hint')?.textContent).toMatch(/⌫/);
     });
 
     it('deletes a note after confirming', async () => {

@@ -332,15 +332,3 @@
 .folder-rail__menu .g-menu {
     min-width: 208px;
 }
-
-.folder-rail__menu-hint {
-    font-family: var(--font-ui);
-    font-size: 12px;
-    letter-spacing: 0.02em;
-    color: var(--text-3);
-}
-
-.g-menu__item_theme_danger .folder-rail__menu-hint {
-    color: inherit;
-    opacity: 0.75;
-}

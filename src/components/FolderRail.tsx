@@ -90,7 +90,7 @@ export interface FolderRailProps {
 }
 
 function menuHint(keys: string) {
-    return <span className="folder-rail__menu-hint">{keys}</span>;
+    return <span className="gn-menu-hint">{keys}</span>;
 }
 
 /** Whether dropping the dragged folder onto `target` (`''` = root) is forbidden (self / descendant). */

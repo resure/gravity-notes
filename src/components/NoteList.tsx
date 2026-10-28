@@ -68,7 +68,7 @@ const SORT_OPTIONS: {value: SortMode; content: string}[] = [
 ];
 
 function menuHint(keys: string) {
-    return <span className="note-list__menu-hint">{keys}</span>;
+    return <span className="gn-menu-hint">{keys}</span>;
 }
 
 /**

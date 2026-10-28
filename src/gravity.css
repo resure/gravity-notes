@@ -247,6 +247,12 @@
     font-size: 12.5px;
 }
 
+/* Gravity sizes the control itself (28px less the border), which would outgrow the 27px field. */
+.g-text-input_size_m .g-text-input__control,
+.g-text-input_size_m .g-text-input__additional-content {
+    height: calc(var(--g-text-input-height) - 2px);
+}
+
 .g-select-control__button {
     --g-button-border-radius: 7px;
 }
@@ -306,6 +312,20 @@
     padding-top: 4px;
     border-block-start: 0;
     background: linear-gradient(var(--line), var(--line)) no-repeat 8px 0 / calc(100% - 16px) 1px;
+}
+
+/* A chord beside a menu label. Not the mono face: ⌘⇧⌫↵ come from a fallback there and land
+   visibly smaller than the Latin around them. */
+.gn-menu-hint {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--text-3);
+}
+
+.g-menu__item_theme_danger .gn-menu-hint {
+    color: inherit;
+    opacity: 0.75;
 }
 
 .g-menu__group-label {
