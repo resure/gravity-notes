@@ -309,6 +309,15 @@ describe('NoteList — inline rename', () => {
 });
 
 describe('NoteList — delete', () => {
+    it('shows the Delete chord beside the danger item', async () => {
+        const user = userEvent.setup();
+        setup();
+        const beta = screen.getByRole('option', {name: /Beta/});
+        await user.click(within(beta).getByRole('button', {name: 'Note actions'}));
+        const item = await screen.findByRole('menuitem', {name: /Delete/});
+        expect(item.querySelector('.note-list__menu-hint')?.textContent).toMatch(/⌫/);
+    });
+
     it('deletes a note after confirming', async () => {
         const user = userEvent.setup();
         const {props} = setup();
@@ -377,6 +386,20 @@ describe('NoteList — search display', () => {
             notes: [{id: 'Work/Sub/Plan.md', title: 'Plan', updatedAt: 1}],
         });
         expect(screen.getByText('Work / Sub')).toBeInTheDocument();
+    });
+
+    it('gives a row with a folder line the taller fixed height', () => {
+        setup({
+            showCrumbs: true,
+            notes: [
+                {id: 'Top.md', title: 'Top', updatedAt: 2},
+                {id: 'Work/Plan.md', title: 'Plan', updatedAt: 1},
+            ],
+        });
+        const height = (name: RegExp) =>
+            (screen.getByRole('option', {name}).parentElement as HTMLElement).style.height;
+        expect(height(/Top/)).toBe('48px');
+        expect(height(/Plan/)).toBe('64px');
     });
 
     it('hints note creation when filtered to empty with a query', () => {

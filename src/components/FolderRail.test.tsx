@@ -188,7 +188,7 @@ describe('FolderRail — folder actions', () => {
         await user.tab();
         expect(screen.getByRole('button', {name: 'Work actions'})).toHaveFocus();
         await user.tab();
-        expect(screen.getByRole('button', {name: 'New folder'})).toHaveFocus();
+        expect(screen.getByRole('button', {name: 'New Folder'})).toHaveFocus();
     });
 
     it('marks the row while its menu is open, and unmarks it on close', async () => {
@@ -270,9 +270,23 @@ describe('FolderRail — folder actions', () => {
     it('creates a folder at the root from the header button', async () => {
         const user = userEvent.setup();
         const {props} = setup();
-        await user.click(screen.getByRole('button', {name: 'New folder'}));
+        await user.click(screen.getByRole('button', {name: 'New Folder'}));
         await user.type(await screen.findByPlaceholderText('Folder name'), 'Projects{Enter}');
         expect(props.onCreateFolder).toHaveBeenCalledWith('', 'Projects');
+    });
+
+    it('offers a Trash row only when the caller can open the Trash', async () => {
+        const user = userEvent.setup();
+        const onOpenTrash = vi.fn();
+        setup({onOpenTrash, trashCount: 3});
+        await user.click(screen.getByRole('button', {name: /Trash/}));
+        expect(onOpenTrash).toHaveBeenCalledTimes(1);
+        expect(within(screen.getByRole('button', {name: /Trash/})).getByText('3')).toBeTruthy();
+    });
+
+    it('renders no Trash row without an onOpenTrash handler', () => {
+        setup();
+        expect(screen.queryByRole('button', {name: /Trash/})).toBeNull();
     });
 
     it('creates a subfolder from a folder menu', async () => {

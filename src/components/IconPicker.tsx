@@ -30,6 +30,7 @@ import {
     resolveIcon,
     subscribeIconCatalog,
 } from '../icons';
+import {Search} from '../icons/icons';
 
 import './IconPicker.css';
 
@@ -49,9 +50,9 @@ function useIcon(value?: string): ResolvedIcon {
 
 type IconPickerType = 'all' | 'icons' | 'emoji';
 
-/** Grid geometry: 8 columns, each row a 28px item + 6px gap. Kept in sync with IconPicker.css. */
+/** Grid geometry: 8 columns, each row a 30px cell + 2px gap. Kept in sync with IconPicker.css. */
 const COLUMNS = 8;
-const ROW_HEIGHT = 34;
+const ROW_HEIGHT = 32;
 
 /** A grid entry: a Gravity icon (keyed by component name) or an emoji (keyed/valued by its char). */
 type Entry =
@@ -196,6 +197,13 @@ export const IconPickerPopup = memo(function IconPickerPopup({
         return out;
     }, [open, debouncedQuery, type, emojis, icons]);
 
+    const catalogReady =
+        type === 'icons'
+            ? icons !== null
+            : type === 'emoji'
+              ? emojis !== null
+              : emojis !== null && icons !== null;
+
     // Chunk the flat entry list into fixed 8-wide rows so we can virtualize by row: the catalog runs
     // to thousands of icons/emoji and mounting them all was what made the popup lag.
     const rows = useMemo<Entry[][]>(() => {
@@ -326,7 +334,8 @@ export const IconPickerPopup = memo(function IconPickerPopup({
                     placeholder="Search icons…"
                     value={query}
                     onUpdate={setQuery}
-                    size="s"
+                    size="m"
+                    startContent={<Search size={12} className="icon-picker__search-icon" />}
                     controlProps={{
                         role: 'combobox',
                         'aria-expanded': true,
@@ -340,6 +349,7 @@ export const IconPickerPopup = memo(function IconPickerPopup({
                     className="icon-picker__types"
                     value={type}
                     size="s"
+                    width="max"
                     onUpdate={(t: IconPickerType) => setType(t)}
                 >
                     <SegmentedRadioGroup.Option value="all">All</SegmentedRadioGroup.Option>
@@ -353,6 +363,9 @@ export const IconPickerPopup = memo(function IconPickerPopup({
                     role="listbox"
                     aria-label="Pick an icon"
                 >
+                    {catalogReady && entries.length === 0 ? (
+                        <p className="icon-picker__empty">No icons match.</p>
+                    ) : null}
                     <div
                         className="icon-picker__grid-inner"
                         style={{height: rowVirtualizer.getTotalSize()}}
@@ -369,12 +382,16 @@ export const IconPickerPopup = memo(function IconPickerPopup({
                                         <Button
                                             key={entry.key}
                                             id={optionId(index)}
-                                            view={value === entry.value ? 'normal' : 'flat'}
+                                            view="flat"
                                             size="m"
                                             role="option"
                                             aria-selected={value === entry.value}
                                             title={entry.title}
-                                            className={`icon-picker__item${index === activeIndex ? ' icon-picker__item_active' : ''}`}
+                                            className={`icon-picker__item${
+                                                value === entry.value
+                                                    ? ' icon-picker__item_current'
+                                                    : ''
+                                            }${index === activeIndex ? ' icon-picker__item_active' : ''}`}
                                             onClick={() => pick(entry.value)}
                                         >
                                             <Button.Icon>
@@ -397,7 +414,7 @@ export const IconPickerPopup = memo(function IconPickerPopup({
                     </div>
                 </div>
                 {value ? (
-                    <Button view="flat" size="s" width="max" onClick={() => pick('')}>
+                    <Button view="flat" size="m" width="max" onClick={() => pick('')}>
                         Remove icon
                     </Button>
                 ) : null}
