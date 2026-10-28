@@ -286,9 +286,11 @@ entire note the first time a single character changed anywhere in it. With it, a
 anticipated costs you the block surface for that one note rather than the note's contents.
 
 The same reasoning shapes how a `[[wiki link]]` is styled. It gets a wrapper element whose text is
-still the literal `[[Title]]` bytes — never a decoration that hides the brackets, however much
-better that reads. The editor re-serializes from the live DOM, so a bracket-hiding decoration would
-rewrite every link in the file to a bare title the first time any character changed anywhere in it.
+still the literal `[[Title]]` bytes. The brackets — and the `Note|` of a `[[Note|text]]` — are hidden
+by CSS, never removed: the editor re-serializes from the live DOM, so a decoration that dropped them
+would rewrite every link in the file to a bare title the first time any character changed anywhere
+in it. The wrapper is one uneditable chip, so the caret can only sit beside it and no keystroke can
+land inside the hidden part.
 Bare `http(s)://` URLs get the same kind of wrapper, which is why they show as links in the editor
 while the file keeps them bare. Code blocks are coloured without any wrapper at all: highlight.js
 tokens are painted as CSS Custom Highlight ranges over the untouched text.
@@ -323,11 +325,13 @@ Markdown over anything clever.
   ENTIRE content is that one row reads back as an empty note, which is a different file, so the
   check above diverts it rather than rewrite it. Blank rows inside a note are unaffected.
 - **Undo does not cross the blocks ↔ source switch.** Each surface keeps its own history.
-- **A selection dragged across blocks acts on whole blocks.** Every block is its own
-  `contentEditable`, but one browser selection extends right across them — and deleting half of one
-  block and half of the next through the browser would edit DOM that React owns, behind its back, so
-  the text came back on the next render. Copy, cut and delete therefore take each block the
-  selection touches in full, the way the same range would behave if selected with `Esc` + `⇧↓`.
+- **A text selection across blocks ending in an image, a table or a collapsed toggle acts on whole
+  blocks.** Every block is its own `contentEditable`, but one browser selection extends right
+  across them — and letting the browser delete half of one block and half of the next would edit DOM
+  that React owns, behind its back, so the text came back on the next render. The editor therefore
+  makes those edits itself: between two text blocks it keeps the head of the first and the tail of
+  the last and joins them; where an end is not text, it takes each block the selection touches in
+  full, the way `Esc` + `⇧↓` would.
 - **A colour is the one thing this app writes that other Markdown tools can't read.** Colour has no
   portable spelling anywhere — Obsidian's own users reach for inline HTML — so notes carry the YFM
   colour extension's syntax instead: `{red}(text)` for ink, `{bg:yellow}(text)` for a background.

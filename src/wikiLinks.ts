@@ -47,6 +47,24 @@ export function normalizeTarget(target: string): string {
     return ref.trim();
 }
 
+/** A link's inside split into the note it names and its display text (`Note|text`), if any. */
+export function splitWikiTarget(inner: string): {name: string; alias: string | null} {
+    const bar = inner.indexOf('|');
+    if (bar === -1) return {name: inner, alias: null};
+    const alias = inner.slice(bar + 1);
+    return {name: inner.slice(0, bar), alias: alias.trim() ? alias : null};
+}
+
+/**
+ * What a link to `note` writes between the brackets: its title, or `Folder/Note` when another
+ * note shares the title — the resolver's same-folder/shallowest tiebreak would pick by itself.
+ */
+export function wikiLinkTargetFor(note: NoteMeta, notes: readonly NoteMeta[]): string {
+    const lower = note.title.toLowerCase();
+    const shared = notes.filter((other) => other.title.toLowerCase() === lower).length > 1;
+    return shared ? note.id.replace(/\.md$/i, '') : note.title;
+}
+
 /**
  * Pre-indexed note list, so a batch of resolutions (e.g. {@link buildBacklinks}) is O(1) per link
  * instead of re-scanning every note. `byId` maps a lowercased id → its note; `byTitle` maps a

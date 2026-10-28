@@ -482,6 +482,23 @@
     --gn-handle-top: -5px;
 }
 
+/* ---------- text selection ---------- */
+
+/* A text selection across blocks is painted by the editor (Custom Highlight API), so the browser's
+   own — which WebKit clips to one block — steps aside while it is up. Both are the same wash, so a
+   drag that crosses a block edge doesn't change colour. */
+.gn-block-editor ::selection {
+    background: var(--n-blue-selection);
+}
+
+.gn-block-editor ::highlight(gn-cross-blocks) {
+    background-color: var(--n-blue-selection);
+}
+
+.gn-block-editor_cross-selection ::selection {
+    background: transparent;
+}
+
 /* ---------- block selection / drag states ---------- */
 
 .gn-block-editor .block.selected .block-body {
@@ -1714,6 +1731,62 @@
 .gn-block-editor_mod-pressed .wiki-link {
     cursor: pointer;
     text-decoration: underline;
+}
+
+/* The brackets — and the note name, when the link has display text — stay in the text (and the
+   file) but are never drawn: the link is an atomic chip, changed through its popup. */
+.gn-block-editor .wiki-hidden {
+    display: none;
+}
+
+/* "Change note": the popup turns into a small note search — a field over the matching notes. */
+.gn-block-editor .wiki-tip-search {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 280px;
+}
+
+.gn-block-editor .wiki-tip-search .wiki-tip-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.gn-block-editor .wiki-tip-option {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--n-text);
+    cursor: pointer;
+}
+
+.gn-block-editor .wiki-tip-option_active,
+.gn-block-editor .wiki-tip-option:hover {
+    background: var(--n-hover);
+}
+
+.gn-block-editor .wiki-tip-option-path {
+    flex: none;
+    font-size: 11.5px;
+    color: var(--n-text-lighter);
+}
+
+/* The popup's display-text field, in the popup's own row. */
+.gn-block-editor .wiki-tip-input {
+    width: 220px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--n-blue);
+    border-radius: 4px;
+    background: var(--n-surface);
+    color: var(--n-text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
 }
 
 /* A link whose target doesn't exist yet — dimmed, with a dashed underline, so a typo or a

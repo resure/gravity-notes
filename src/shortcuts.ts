@@ -372,8 +372,9 @@ export const SHORTCUTS: ShortcutDescriptor[] = [
         group: 'Editing',
     },
     {
-        keys: 'mod+alt+up',
-        description: 'Move the selected block(s) up (⌘⌥↓ moves them down)',
+        keys: 'mod+up',
+        description:
+            'Jump to the start of the note (⌘↓ to its end); with blocks selected, move them up (⌘↓ down)',
         group: 'Editing',
     },
     {

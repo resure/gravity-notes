@@ -49,8 +49,8 @@ Markdown files, and they are yours.
 - **Markdown clipboard**: `⌘C` copies the selection as Markdown, not as rendered text; add
   `Shift` to copy or paste plain text with the Markdown stripped
 - **Optional spellcheck** — toggle “Check spelling” in Settings (off by default)
-- **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; put the caret in a link
-  for Open / Edit / Unlink
+- **`[[Wiki links]]` and backlinks**, stored verbatim — Obsidian-compatible; a link can show its own
+  text (`[[Note|text]]`); put the caret beside a link to open, re-point, retitle or unlink it
 - **Full-text search** across titles and bodies, ranked, with match snippets
 - **Nested folders, pins, sort modes, note icons**, and a recoverable **Trash**
 - **Other files stay visible** as muted, non-editable rows with full filenames and separate counts;

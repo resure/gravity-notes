@@ -373,7 +373,13 @@ Key modules:
   (`.editor-pane` widens the shared `--editor-gutter` to 36px, which the note TITLE reads
   too, so title and body keep one left edge). `[[wiki links]]` are authored here: `wikiDecorate.ts`
   wraps them for styling WITHOUT touching a character of text (so the caret offset is invariant and
-  the editor can re-decorate mid-keystroke and simply put the caret back), the broken class is
+  the editor can re-decorate mid-keystroke and simply put the caret back); a link is an ATOMIC chip
+  (`contenteditable="false"`) whose brackets — and the `Note|` of a `[[Note|text]]` — sit in
+  `wiki-hidden` spans, so the reader sees only the title or the text while the DOM text keeps every
+  byte (`moveCaretOutOfAtom`/`keepOutOfAtoms` keep the caret beside a chip, never in it); the writer
+  emits text inside a wiki-link span verbatim so brackets are never escaped; the caret against a chip
+  opens its popup (Open / Change note — a note search in the popup itself, which re-points the link
+  and keeps its text / Edit text / Unlink), the broken class is
   re-derived from `createWikiLinkResolver` whenever the note-id SIGNATURE changes (never per
   autosave), and `[[` opens `WikiSuggestMenu` — same portal/positioning machinery as the slash menu,
   with a trailing `Create "<query>"` row that inserts the literal `[[query]]` (insert-only).

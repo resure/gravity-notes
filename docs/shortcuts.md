@@ -40,13 +40,14 @@ The search box is the heart of the app (nvALT-style **search or create**):
 | `⌘⇧Enter` / `⌘N` | New note, in the selected folder (`⌘N` in the desktop app; browsers reserve it)                                                           |
 | `⌘⇧;`            | Toggle blocks / Markdown source — the raw text behind the blocks, with Markdown highlighting                                              |
 | `⌘F`             | In Markdown source: find and replace (`⌘G` / `⌘⇧G` next / previous); `⌥↑` / `⌥↓` move a line, `Enter` continues a list                    |
+| `⌘↑` / `⌘↓`      | Jump to the start / end of the note                                                                                                       |
 | `⌘⇧P`            | Toggle read-only preview                                                                                                                  |
 | `⌘⇧I`            | Note appearance — per-note font and text width                                                                                            |
 | `⌘K`             | Link the selected text, or edit the link the caret is in (clear the URL to unlink)                                                        |
 | `[[`             | Open the wiki-link note picker; the last row always offers to insert a link to a note that doesn't exist yet                              |
 | `⌘-click` a link | Open a URL in your browser, or follow a `[[wiki link]]` to its note (creating it if needed); in read-only preview a plain click works too |
 | `⌘Enter`         | Follow the `[[wiki link]]` under the caret (⌘-click does the same); in a to-do, tick it                                                   |
-| Caret in a link  | Open / Edit / Unlink appear under it — for a URL Edit opens the link box, for a `[[wiki link]]` the note picker                           |
+| Caret in a link  | Actions appear under it — a URL: Open / Edit / Unlink; a `[[wiki link]]`: Open / Change note / Edit text (`[[Note\|text]]`) / Unlink      |
 | `F2`             | Rename the selected note, or the focused folder in the rail                                                                               |
 | `⌘⇧M`            | Move the selected note to a folder (from the list; in the editor it's a typing chord)                                                     |
 | `⌘D`             | Duplicate the selected note (most dependable in the desktop app; browsers reserve it) — in the body it duplicates the block               |
@@ -87,9 +88,10 @@ keeps its indent.
 Paired `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `==mark==` and `++underline++`
 apply inline formatting. A backslash before the opening delimiter keeps it literal.
 
-A selection dragged across block boundaries is treated as a selection of whole blocks: copying,
-cutting, replacing or deleting it takes each block it touches in full, exactly as if those blocks had been
-selected with `Esc` + `⇧↓`.
+A text selection across blocks (a drag, or `⇧↑` / `⇧↓` / `⇧←` / `⇧→` past a block's edge) behaves
+as in any text editor: copying, cutting, typing over or deleting it acts on exactly the selected text,
+and the text before and after it joins into one block. Where an end of it is not text — an image,
+a table, a collapsed toggle — the blocks it touches go whole, as with `Esc` + `⇧↓`.
 
 With a block selected (after `Esc`):
 
@@ -97,7 +99,7 @@ With a block selected (after `Esc`):
 | -------------- | ------------------------------------------------------- |
 | `↑` / `↓`      | Move the selection to the previous / next block         |
 | `⇧↑` / `⇧↓`    | Extend the selection                                    |
-| `⌘⌥↑` / `⌘⌥↓`  | Move the selected block(s) up / down, children included |
+| `⌘↑` / `⌘↓`    | Move the selected block(s) up / down, children included |
 | `Tab` / `⇧Tab` | Indent / outdent the selected block(s)                  |
 | `↵`            | Edit the block again, caret at its end                  |
 | `⌘D`           | Duplicate the selected block(s)                         |

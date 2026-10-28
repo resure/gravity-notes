@@ -31,9 +31,15 @@ import {
 } from '../../markdown';
 import {canCarryColor, colorClassFor, colorFromClass} from '../../markdown/color';
 import {openExternalUrl} from '../../openExternal';
-import {isAttachmentRef} from '../../storage/noteText';
+import {dirname, formatCrumb, isAttachmentRef} from '../../storage/noteText';
 import type {NoteMeta} from '../../storage/types';
-import {createWikiLinkResolver, normalizeTarget, suggestWikiTargets} from '../../wikiLinks';
+import {
+    createWikiLinkResolver,
+    normalizeTarget,
+    splitWikiTarget,
+    suggestWikiTargets,
+    wikiLinkTargetFor,
+} from '../../wikiLinks';
 
 import AnchorEditor from './AnchorEditor';
 import Block from './Block';
@@ -61,18 +67,25 @@ import {
     caretOnFirstLine,
     caretOnLastLine,
     deleteTextRange,
+    edgePosition,
     escapeHtml,
     getCaretOffset,
     htmlToText,
     insertPlainTextAtCaret,
     isEmptyHtml,
     isSafeLinkHref,
+    lineIsFirst,
+    lineIsLast,
+    lineRectAt,
+    moveCaretOutOfAtom,
+    positionNearX,
     rangeTextWithin,
     selectionHtml,
     setCaret,
     setCaretAtPoint,
     splitHtmlAtCaret,
     stripZeroWidth,
+    textOffsetOf,
     toggleInlineCode,
     tryInlineMarkdown,
 } from './caret';
@@ -112,7 +125,12 @@ import {
 } from './types';
 import type {BlockColor, Block as BlockData, BlockType, ColumnAlign, TableData} from './types';
 import {URL_LINK_CLASS, decorateUrls} from './urlDecorate';
-import {WIKI_LINK_BROKEN_CLASS, decorateWikiLinks} from './wikiDecorate';
+import {
+    WIKI_HIDDEN_CLASS,
+    WIKI_LINK_BROKEN_CLASS,
+    decorateWikiLinks,
+    undecorate as undecorateWikiLinks,
+} from './wikiDecorate';
 
 import './editor.css';
 
@@ -317,6 +335,64 @@ function isYfmContainer(block: BlockData): boolean {
     );
 }
 
+/**
+ * `range` cut into one range per block it covers. WebKit paints a highlight only inside the
+ * editing host its range starts in, so one range across blocks drew as far as the end of the first
+ * block; ranges that each stay inside one block paint everywhere.
+ */
+function perBlockRanges(root: HTMLElement, range: Range): {block: HTMLElement; range: Range}[] {
+    const parts: {block: HTMLElement; range: Range}[] = [];
+    for (const block of root.querySelectorAll<HTMLElement>('[data-block-id]')) {
+        if (!range.intersectsNode(block)) {
+            // Document order: once past the range, nothing later can intersect it.
+            if (parts.length > 0) break;
+            continue;
+        }
+        const part = document.createRange();
+        part.selectNodeContents(block);
+        if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0)
+            part.setStart(range.startContainer, range.startOffset);
+        if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0)
+            part.setEnd(range.endContainer, range.endOffset);
+        if (!part.collapsed) parts.push({block, range: part});
+    }
+    return parts;
+}
+
+/** The block content element a DOM position sits in. */
+function blockElementOf(node: Node | null): HTMLElement | null {
+    const start = node instanceof Element ? node : (node?.parentElement ?? null);
+    return start?.closest<HTMLElement>('[data-block-id]') ?? null;
+}
+
+/** Safari and the desktop shell: a selection there stays inside its editing host (`acrossBlocks`). */
+const CLAMPS_SELECTION_TO_HOST =
+    typeof navigator !== 'undefined' &&
+    /AppleWebKit/.test(navigator.userAgent) &&
+    !/Chrome|Chromium|Android/.test(navigator.userAgent);
+
+/** The highlight (and root class) that paint a selection spanning blocks — see the effect. */
+const CROSS_SELECTION_HIGHLIGHT = 'gn-cross-blocks';
+const CROSS_SELECTION_CLASS = 'gn-block-editor_cross-selection';
+
+/** The `[[wiki link]]` chip a caret position is inside of, or directly against on either side. */
+function wikiLinkTouching(node: Node, offset: number): HTMLElement | null {
+    const selector = `.${WIKI_LINK_CLASS}`;
+    const element = node instanceof Element ? node : node.parentElement;
+    const inside = element?.closest<HTMLElement>(selector);
+    if (inside) return inside;
+    const asLink = (candidate: Node | null | undefined) =>
+        candidate instanceof HTMLElement && candidate.matches(selector) ? candidate : null;
+    if (node.nodeType === Node.TEXT_NODE) {
+        const length = (node as Text).length;
+        return (
+            (offset === 0 ? asLink(node.previousSibling) : null) ??
+            (offset === length ? asLink(node.nextSibling) : null)
+        );
+    }
+    return asLink(node.childNodes[offset - 1]) ?? asLink(node.childNodes[offset]);
+}
+
 /** Same members, order-insensitive — a cheap "did the marquee's hit set actually change?" test. */
 function sameIds(a: Set<string>, b: Set<string>): boolean {
     if (a.size !== b.size) return false;
@@ -332,6 +408,7 @@ function sameIds(a: Set<string>, b: Set<string>): boolean {
 const WIKI_SPAN_CLASSES = new Set([
     WIKI_LINK_CLASS,
     `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`,
+    WIKI_HIDDEN_CLASS,
 ]);
 
 /** The class a span may keep, rebuilt from what it means — never the attribute as it arrived. */
@@ -670,10 +747,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // eslint-disable-next-line react-hooks/exhaustive-deps -- `notes` only matters by signature
     }, [wikiSignature, noteId]);
     const decorate = useMemo(
-        (): Decorate => (html, type) => {
-            const linked = decorateWikiLinks(html, isWikiLinkBroken);
-            return type === 'code' ? linked : decorateUrls(linked);
-        },
+        (): Decorate => (html, type) =>
+            // In code `[[` is code (`matrix[[1]]`), not a link: no chip to hide its brackets.
+            type === 'code'
+                ? undecorateWikiLinks(html)
+                : decorateUrls(decorateWikiLinks(html, isWikiLinkBroken)),
         [isWikiLinkBroken],
     );
     // Read live from event handlers and from the imperative handle, which are captured per render
@@ -713,6 +791,14 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         x: number;
         y: number;
     } | null>(null);
+    // The link popup's field, while one is open: Edit text (`[[Note|text]]`), or Change note's
+    // search with its highlighted row.
+    const [tipEdit, setTipEdit] = useState<
+        {kind: 'text'; value: string} | {kind: 'note'; query: string; index: number} | null
+    >(null);
+    const tipEditRef = useRef(tipEdit);
+    tipEditRef.current = tipEdit;
+    const noteQuery = tipEdit?.kind === 'note' ? tipEdit.query : null;
     // The ordinary `[text](url)` link the caret is in: the same actions as a wiki link's, since an
     // anchor gives no other way to see or change where it points.
     const [anchorTip, setAnchorTip] = useState<{
@@ -806,16 +892,25 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * that matches nothing (the Markdown engine's picker closed there, stranding the user
      * mid-link).
      */
-    const wikiItems: WikiSuggestItem[] = useMemo(() => {
-        if (!wiki) return [];
-        const query = wiki.query.trim();
-        const matches = suggestWikiTargets(wiki.query, notesRef.current, noteIdRef.current);
+    /** The picker's rows for a query: matching notes, then "Create …" when none matches exactly. */
+    const wikiItemsFor = (raw: string): WikiSuggestItem[] => {
+        const query = raw.trim();
+        const matches = suggestWikiTargets(raw, notesRef.current, noteIdRef.current);
         const items: WikiSuggestItem[] = matches.map((note) => ({kind: 'note', note}));
         const exact = matches.some((note) => note.title.toLowerCase() === query.toLowerCase());
         if (query !== '' && !exact) items.push({kind: 'create', title: query});
         return items;
+    };
+    const wikiItems: WikiSuggestItem[] = useMemo(
+        () => (wiki ? wikiItemsFor(wiki.query) : []),
         // eslint-disable-next-line react-hooks/exhaustive-deps -- notes are read live; the signature is the real input
-    }, [wiki?.query, wiki?.blockId, wikiSignature, noteId]);
+        [wiki?.query, wiki?.blockId, wikiSignature, noteId],
+    );
+    const noteChangeItems: WikiSuggestItem[] = useMemo(
+        () => (noteQuery === null ? [] : wikiItemsFor(noteQuery)),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- as wikiItems
+        [noteQuery, wikiSignature, noteId],
+    );
 
     const showToast = (message: string) => {
         if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
@@ -1213,6 +1308,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return null;
     };
 
+    /** The first (or last) block the caret can sit in — ⌘↑ / ⌘↓ jump there. */
+    const edgeEditableBlock = (edge: 'start' | 'end'): BlockData | null => {
+        const bs = blocksRef.current;
+        const visible = visibleBlockIds(bs);
+        const ordered = edge === 'start' ? bs : [...bs].reverse();
+        return (
+            ordered.find(
+                (b) => visible.has(b.id) && (isEditableType(b.type) || b.type === 'table'),
+            ) ?? null
+        );
+    };
+
     /** Where the caret goes to sit at one end of a block — a table's end is its last cell. */
     const caretTargetIn = (
         block: BlockData,
@@ -1223,6 +1330,94 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const row = edge === 'start' ? 0 : table.cells.length - 1;
         const column = edge === 'start' ? 0 : Math.max(0, (table.cells[row]?.length ?? 1) - 1);
         return {id: tableCellId(block.id, row, column), pos: edge};
+    };
+
+    /**
+     * Run a selection change that crosses blocks. WebKit clamps a selection to the editing host it
+     * started in, so `extend` into the next block's contentEditable lands at the END of the
+     * current one instead; with the editor's root editable for the duration of the call, both
+     * blocks share one host and the selection lands where asked. It survives the root going back
+     * (WebKit validates a selection when it is set, not afterwards). WebKit also hands keyboard
+     * focus to the root once it is editable, so a block gets it back — without that the next
+     * ⇧-arrow landed on the root and never reached the block's handler. That block is the one
+     * holding the selection's START: WebKit collapses the selection onto a focused host that does
+     * not contain it, which undid every extension upwards or leftwards. Chromium needs none of
+     * this, and there the root's flip dropped focus too, and refocusing collapsed the selection.
+     */
+    const acrossBlocks = (host: HTMLElement, change: () => void) => {
+        const root = rootRef.current;
+        if (!CLAMPS_SELECTION_TO_HOST || !root || root.isContentEditable) {
+            change();
+            return;
+        }
+        root.contentEditable = 'true';
+        try {
+            change();
+        } finally {
+            root.removeAttribute('contenteditable');
+            if (!blockElementOf(document.activeElement)) {
+                const sel = window.getSelection();
+                const start = sel?.rangeCount
+                    ? blockElementOf(sel.getRangeAt(0).startContainer)
+                    : null;
+                (start && root.contains(start) ? start : host).focus({preventScroll: true});
+            }
+        }
+    };
+
+    /**
+     * ⇧ + an arrow, where the selection's FOCUS sits at the edge of its block: carry it into the
+     * neighbouring block, so a text selection grows across blocks from the keyboard the way a mouse
+     * drag already makes it. Each block is its own contentEditable, and the browser's own extension
+     * stops at the editing host. Inside a block the browser extends as usual; once the selection
+     * spans blocks, it is moved here, by line or by character.
+     */
+    const extendSelectionAcross = (key: string, host: HTMLElement): boolean => {
+        const sel = window.getSelection();
+        const node = sel?.focusNode;
+        if (!sel || !node) return false;
+        const el = blockElementOf(node);
+        // Tables keep their own cell-to-cell keyboard model.
+        if (!el || el.dataset.tableBlockId || !el.dataset.blockId) return false;
+        const vertical = key === 'ArrowUp' || key === 'ArrowDown';
+        const forward = key === 'ArrowDown' || key === 'ArrowRight';
+        let atEdge: boolean;
+        let x = 0;
+        if (vertical) {
+            const line = lineRectAt(el, node, sel.focusOffset);
+            if (!line) return false;
+            x = line.left;
+            atEdge = forward ? lineIsLast(el, line) : lineIsFirst(el, line);
+        } else {
+            const offset = textOffsetOf(el, node, sel.focusOffset);
+            atEdge = forward ? offset >= (el.textContent ?? '').length : offset === 0;
+        }
+        if (!atEdge) {
+            if (el === host && blockElementOf(sel.anchorNode) === host) return false;
+            acrossBlocks(host, () =>
+                sel.modify(
+                    'extend',
+                    forward ? 'forward' : 'backward',
+                    vertical ? 'line' : 'character',
+                ),
+            );
+            return true;
+        }
+        const next = findEditableSibling(el.dataset.blockId, forward ? 1 : -1);
+        const nextEl = next && next.type !== 'table' ? refs.current.get(next.id) : null;
+        if (!nextEl) {
+            if (!vertical) return false;
+            // No block beyond: run on to this block's own end, the way a last line does natively.
+            const [target, offset] = edgePosition(el, forward ? 'end' : 'start');
+            acrossBlocks(host, () => sel.extend(target, offset));
+            return true;
+        }
+        const [target, offset] = vertical
+            ? positionNearX(nextEl, x, forward ? 'top' : 'bottom')
+            : edgePosition(nextEl, forward ? 'start' : 'end');
+        acrossBlocks(host, () => sel.extend(target, offset));
+        nextEl.scrollIntoView({block: 'nearest'});
+        return true;
     };
 
     const focusNavigableBlock = (block: BlockData, edge: 'start' | 'end') => {
@@ -1514,16 +1709,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setWiki(null);
         const el = refs.current.get(state.blockId);
         if (!el) return;
-        let target = item.kind === 'note' ? item.note.title : item.title;
-        if (item.kind === 'note') {
-            // Two notes sharing a title need the explicit `Folder/Note` form, or the link would
-            // resolve by the same-folder/shallowest tiebreak rather than to the note that was
-            // picked.
-            const ambiguous =
-                notesRef.current.filter((note) => note.title.toLowerCase() === target.toLowerCase())
-                    .length > 1;
-            if (ambiguous) target = item.note.id.replace(/\.md$/i, '');
-        }
+        const target = linkTargetFor(item);
         // The range to replace comes from the STATE — the `[[` plus the query it was showing — not
         // from wherever the caret happens to be. Reading the live caret meant an arrow key between
         // opening the picker and pressing Enter spliced the link at the wrong offset: one step left
@@ -1540,6 +1726,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         insertPlainTextAtCaret(`[[${target}]]`);
         commitHtml(state.blockId, el);
     };
+
+    /** What a picked row writes between the brackets. */
+    const linkTargetFor = (item: WikiSuggestItem): string =>
+        item.kind === 'create'
+            ? // A link's inside can hold no bracket, and a `|` would split it into name and text.
+              item.title.replace(/[[\]|\n]/g, '')
+            : wikiLinkTargetFor(item.note, notesRef.current);
 
     // ----- block operations -----
 
@@ -1659,6 +1852,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const applyMark = (mark: InlineMark) => {
+        if (selectionCrossesBlocks()) return;
         const target = activeEditable();
         if (!target || findBlock(target.blockId)?.type === 'code') return;
         if (mark === 'code') {
@@ -1676,6 +1870,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     const applyColor = (color: BlockColor) => {
+        if (selectionCrossesBlocks()) return;
         const target = activeEditable();
         if (target && colorSelection(color, target.el)) {
             if (target.cell) {
@@ -2436,6 +2631,16 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 restoreHistory('redo');
                 return;
             }
+            // Formatting acts inside one block; across blocks the engine would format the first
+            // block's part only, and ⌘E would move other blocks' React-owned DOM into a <code>.
+            if (
+                ((!e.shiftKey && ['b', 'i', 'u', 'e', 'k'].includes(k)) ||
+                    (e.shiftKey && k === 's')) &&
+                selectionCrossesBlocks()
+            ) {
+                claimChord(e);
+                return;
+            }
             if (!e.shiftKey && (k === 'b' || k === 'i' || k === 'u')) {
                 claimChord(e);
                 if (block.type !== 'code') {
@@ -2537,19 +2742,24 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
         // A selection dragged across block boundaries is one document selection over several
         // separate contentEditables, and every key that would REPLACE it — Backspace, Delete,
-        // Enter — reaches only this block's handler. Both the browser's default and our own
-        // `deleteFromDocument` would then edit the other blocks' React-owned DOM behind React's
-        // back, so the removed text came back on the next render. Whole blocks go instead, which is
-        // what the equivalent block selection does (and what the cut path above settled on).
+        // Enter, a typed character — reaches only this block's handler. Both the browser's default
+        // and our own `deleteFromDocument` would then edit the other blocks' React-owned DOM behind
+        // React's back, so the removed text came back on the next render. The edit is made here
+        // instead, on what the selection covers; where an end isn't a text block, whole blocks go,
+        // as the equivalent block selection would.
+        const typed = e.key.length === 1 && !mod && !e.altKey;
         if (
-            (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter') &&
+            (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' || typed) &&
             !(mod && e.shiftKey) &&
             crossesBlocks()
         ) {
             const spanned = selectionBlockIds();
             if (spanned.length > 1) {
                 e.preventDefault();
-                removeBlocks(spanned, 'exact');
+                const ends = textSelectionAcross(spanned);
+                if (!ends) removeBlocks(spanned, 'exact');
+                else if (e.key === 'Enter') splitAcross(ends);
+                else deleteAcross(ends, typed ? e.key : '');
                 return;
             }
         }
@@ -2670,6 +2880,46 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             return;
         }
 
+        // ⌘↑ / ⌘↓: the start / end of the whole note, as in any text editor. Each block is its own
+        // contentEditable, so the native chord only reached the ends of the current block.
+        if (mod && !e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            const edge = e.key === 'ArrowUp' ? 'start' : 'end';
+            const target = edgeEditableBlock(edge);
+            if (target) {
+                claimChord(e);
+                focusNavigableBlock(target, edge);
+            }
+            return;
+        }
+
+        const arrow =
+            e.key === 'ArrowUp' ||
+            e.key === 'ArrowDown' ||
+            e.key === 'ArrowLeft' ||
+            e.key === 'ArrowRight';
+
+        if (e.shiftKey && !mod && !e.altKey && arrow) {
+            if (extendSelectionAcross(e.key, el)) e.preventDefault();
+            return;
+        }
+
+        // A plain arrow on a selection that spans blocks collapses it to the end it points at, the
+        // way a text editor does. Left to the browser, which only knows the block with focus, the
+        // caret landed somewhere past the selection.
+        if (!e.shiftKey && !mod && !e.altKey && arrow && crossesBlocks()) {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                e.preventDefault();
+                const range = sel.getRangeAt(0);
+                const toStart = e.key === 'ArrowUp' || e.key === 'ArrowLeft';
+                const node = toStart ? range.startContainer : range.endContainer;
+                const offset = toStart ? range.startOffset : range.endOffset;
+                blockElementOf(node)?.focus({preventScroll: true});
+                sel.collapse(node, offset);
+            }
+            return;
+        }
+
         if (e.key === 'ArrowUp' && !e.shiftKey && !mod) {
             if (caretOnFirstLine(el)) {
                 e.preventDefault();
@@ -2764,12 +3014,77 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     };
 
     /**
+     * Paint a selection that crosses blocks ourselves. Each block is its own contentEditable, and
+     * WebKit draws only the part of such a selection inside the block that has focus — ⇧↓ moved the
+     * selection on but showed it stopping at the end of the line. The CSS Custom Highlight API
+     * paints the real range in every engine, and the native highlight is hidden meanwhile so
+     * Chromium doesn't draw it twice.
+     */
+    useEffect(() => {
+        if (
+            typeof CSS === 'undefined' ||
+            !('highlights' in CSS) ||
+            typeof Highlight === 'undefined'
+        )
+            return undefined;
+        // The blocks the highlight last covered. WebKit doesn't always repaint them when a
+        // highlight goes away, leaving part of the old selection on screen, so they get a one-frame
+        // nudge that forces it.
+        let painted: HTMLElement[] = [];
+        const repaint = (blocks: HTMLElement[]) => {
+            for (const block of blocks) block.style.opacity = '0.999';
+            requestAnimationFrame(() => {
+                for (const block of blocks) block.style.removeProperty('opacity');
+            });
+        };
+        const update = () => {
+            const root = rootRef.current;
+            const selection = window.getSelection();
+            const crossing = Boolean(
+                root &&
+                selection &&
+                selection.rangeCount > 0 &&
+                root.contains(selection.anchorNode) &&
+                crossesBlocks(),
+            );
+            root?.classList.toggle(CROSS_SELECTION_CLASS, crossing);
+            if (crossing && root && selection) {
+                const parts = perBlockRanges(root, selection.getRangeAt(0));
+                const next = parts.map((part) => part.block);
+                // Every block the highlight covered or covers: one that keeps a smaller part of it
+                // can leave the dropped part painted, just as one that leaves it can.
+                repaint([...new Set([...painted, ...next])]);
+                painted = next;
+                CSS.highlights.set(
+                    CROSS_SELECTION_HIGHLIGHT,
+                    new Highlight(...parts.map((part) => part.range)),
+                );
+            } else if (painted.length > 0) {
+                CSS.highlights.delete(CROSS_SELECTION_HIGHLIGHT);
+                repaint(painted);
+                painted = [];
+            }
+        };
+        const unsubscribe = subscribeSelectionFrame(update);
+        return () => {
+            unsubscribe();
+            CSS.highlights.delete(CROSS_SELECTION_HIGHLIGHT);
+        };
+        // `crossesBlocks` reads only the live selection and DOM.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /**
      * Track the caret into and out of a link. `selectionchange` is the only event that fires for
      * every way the caret can get there — typing, arrows, a click, a drag — and the rect comes from
      * the DECORATION span (wikiDecorate.ts), which is the on-screen extent of the link.
      */
     useEffect(() => {
         const update = () => {
+            // While the popup's own text field has focus, the caret is in it, not in the note.
+            if (tipEditRef.current !== null) return;
+            // A click on a link chip puts the caret inside it, where no caret can live.
+            if (rootRef.current) moveCaretOutOfAtom(rootRef.current);
             const selection = window.getSelection();
             const node = selection?.anchorNode;
             const element = node instanceof Element ? node : node?.parentElement;
@@ -2792,7 +3107,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             } else {
                 setAnchorTip((current) => (current ? null : current));
             }
-            const span = element?.closest<HTMLElement>(`.${WIKI_LINK_CLASS}`);
+            // The chip is atomic, so the caret sits against it rather than in it.
+            const span = node ? wikiLinkTouching(node, selection.anchorOffset) : null;
             const content = span?.closest<HTMLElement>('[data-block-id]');
             const blockId = content?.dataset.blockId;
             if (!span || !blockId || !selection?.isCollapsed || !rootRef.current?.contains(span)) {
@@ -2817,6 +3133,20 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         return subscribeSelectionFrame(update);
     }, []);
 
+    const returnToLink = (tip: {blockId: string; end: number}) => {
+        const el = refs.current.get(tip.blockId);
+        if (!el) return;
+        el.focus({preventScroll: true});
+        setCaret(el, tip.end);
+    };
+
+    const repointLink = (tip: NonNullable<typeof linkTip>, item: WikiSuggestItem) => {
+        const {alias} = splitWikiTarget(tip.inner);
+        const target = linkTargetFor(item);
+        setTipEdit(null);
+        replaceWikiLink(tip, alias ? `[[${target}|${alias}]]` : `[[${target}]]`);
+    };
+
     /** Replace the link's whole `[[…]]` run with `replacement`, leaving the caret after it. */
     const replaceWikiLink = (tip: NonNullable<typeof linkTip>, replacement: string) => {
         const el = refs.current.get(tip.blockId);
@@ -2826,6 +3156,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // changed under it, and splicing a stale range would cut the wrong characters.
         const live = wikiLinkRangeAt(el.textContent ?? '', tip.start);
         if (!live || live.start !== tip.start || live.inner !== tip.inner) return;
+        // The popup's own field may have focus; the edit below types into whatever does.
+        el.focus({preventScroll: true});
         deleteTextRange(el, live.start, live.end);
         if (el.innerHTML === '<br>') el.innerHTML = '';
         if (replacement) insertPlainTextAtCaret(replacement);
@@ -3120,12 +3452,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * sit on the keystroke path that {@link selectionBlockIds} (an O(blocks) DOM scan) cannot.
      * A table cell reports its TABLE's id, since that is the block either one belongs to.
      */
+    const selectionCrossesBlocks = () => crossesBlocks() && selectionBlockIds().length > 1;
+
     const crossesBlocks = (): boolean => {
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
         const owner = (node: Node | null): string | null => {
-            const start = node instanceof Element ? node : (node?.parentElement ?? null);
-            const el = start?.closest<HTMLElement>('[data-block-id]');
+            const el = blockElementOf(node);
             return el ? (el.dataset.tableBlockId ?? el.dataset.blockId ?? null) : null;
         };
         const anchor = owner(selection.anchorNode);
@@ -3149,6 +3482,13 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         for (const el of rootRef.current?.querySelectorAll<HTMLElement>('.block') ?? [])
             wrappers.set(el.id, el);
 
+        // The blocks holding the ends count even where the range covers none of their text: a
+        // selection that stops at a block boundary still takes the break, as in a text editor.
+        const ownerOf = (node: Node) => {
+            const el = blockElementOf(node);
+            return el?.dataset.tableBlockId ?? el?.dataset.blockId;
+        };
+        const ends = new Set([ownerOf(range.startContainer), ownerOf(range.endContainer)]);
         const blocks = blocksRef.current;
         let first = -1;
         let last = -1;
@@ -3163,7 +3503,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 refs.current.get(blocks[index].id) ??
                 wrapper?.querySelector<HTMLElement>('.simple-table') ??
                 wrapper;
-            if (!el || rangeTextWithin(el, range) === '') continue;
+            if (!el || (!ends.has(blocks[index].id) && rangeTextWithin(el, range) === '')) continue;
             if (first < 0) first = index;
             last = index;
         }
@@ -3173,6 +3513,113 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // leaving them behind meant a drag across three blocks deleted two and left the rule in
         // the middle sitting on its own.
         return blocks.slice(first, last + 1).map((block) => block.id);
+    };
+
+    /**
+     * A text selection across blocks, split where it starts and ends: the first block's text before
+     * it (`head`) and selected part, the last block's selected part and text after it (`tail`).
+     * Null when an end is not a text block — an image, a table cell, a toggle hiding children —
+     * where an edit takes the blocks whole, as a block selection would.
+     */
+    const textSelectionAcross = (spanned: string[]) => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || spanned.length < 2) return null;
+        const range = selection.getRangeAt(0);
+        const first = findBlock(spanned[0]);
+        const last = findBlock(spanned[spanned.length - 1]);
+        const firstEl = first ? refs.current.get(first.id) : undefined;
+        const lastEl = last ? refs.current.get(last.id) : undefined;
+        if (!first || !last || !firstEl || !lastEl) return null;
+        if (!isEditableType(first.type) || !isEditableType(last.type)) return null;
+        if ((first.type === 'code') !== (last.type === 'code')) return null;
+        const bs = blocksRef.current;
+        const visible = visibleBlockIds(bs);
+        const after = bs[indexOf(last.id) + 1];
+        if (after && (after.depth ?? 0) > (last.depth ?? 0) && !visible.has(after.id)) return null;
+        type Point = [Node, number];
+        const slice = (el: HTMLElement, from: Point | null, to: Point | null) => {
+            const part = document.createRange();
+            part.selectNodeContents(el);
+            if (from) part.setStart(...from);
+            if (to) part.setEnd(...to);
+            const holder = document.createElement('div');
+            holder.appendChild(part.cloneContents());
+            return {html: stripZeroWidth(holder.innerHTML), length: part.toString().length};
+        };
+        const start: Point | null = firstEl.contains(range.startContainer)
+            ? [range.startContainer, range.startOffset]
+            : null;
+        const end: Point | null = lastEl.contains(range.endContainer)
+            ? [range.endContainer, range.endOffset]
+            : null;
+        const none = {html: '', length: 0};
+        return {
+            first,
+            last,
+            firstEl,
+            // Only what the reader can see: a collapsed toggle at the START keeps its hidden
+            // children under the joined line, as Backspace's merge does. A collapsed toggle in the
+            // middle still goes whole — `blocksInScope` re-adds its hidden children.
+            middle: spanned.slice(1, -1).filter((id) => visible.has(id)),
+            head: start ? slice(firstEl, null, start) : none,
+            firstPart: slice(firstEl, start, null),
+            lastPart: slice(lastEl, null, end),
+            tail: end ? slice(lastEl, end, null) : none,
+        };
+    };
+
+    /**
+     * Delete a cross-block text selection the way a text editor does: the first block keeps its
+     * head, gains the last block's tail (plus `insert`, typed or pasted text, between them), and
+     * everything selected in between goes. Done to the DOM at once, so a paste can carry on
+     * inside the merged block; returns that block's element.
+     */
+    const deleteAcross = (
+        ends: NonNullable<ReturnType<typeof textSelectionAcross>>,
+        insert = '',
+        mode: ChangeMode = 'structural',
+    ): HTMLElement => {
+        const {first, last, firstEl, head, tail} = ends;
+        const merged = decorateRef.current(
+            oneLineIfHeading(first.type, head.html + escapeHtml(insert) + tail.html),
+            first.type,
+        );
+        const removed = blocksInScope([...ends.middle, last.id], 'exact');
+        firstEl.innerHTML = merged;
+        firstEl.focus({preventScroll: true});
+        setCaret(firstEl, head.length + insert.length);
+        setBlocks(
+            (bs) =>
+                normalizeDepths(
+                    bs
+                        .filter((b) => !removed.has(b.id))
+                        .map((b) => (b.id === first.id ? {...b, html: merged} : b)),
+                ),
+            mode,
+            first.id,
+        );
+        return firstEl;
+    };
+
+    /** Enter over a cross-block selection: the selection goes, the head and tail stay apart. */
+    const splitAcross = (ends: NonNullable<ReturnType<typeof textSelectionAcross>>) => {
+        const {first, last, head, tail} = ends;
+        const removed = blocksInScope(ends.middle, 'exact');
+        setBlocks((bs) =>
+            normalizeDepths(
+                bs
+                    .filter((b) => !removed.has(b.id))
+                    .map((b) =>
+                        b.id === first.id
+                            ? {...b, html: head.html}
+                            : b.id === last.id
+                              ? {...b, html: tail.html}
+                              : b,
+                    ),
+            ),
+        );
+        window.getSelection()?.removeAllRanges();
+        focusReq.current = {id: last.id, pos: 'start'};
     };
 
     /**
@@ -3196,7 +3643,18 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             const spanned = selectionBlockIds();
             if (spanned.length > 1) {
                 e.preventDefault();
-                writeBlocksToClipboard(e.clipboardData, spanned, e.type === 'cut', 'exact');
+                const ends = textSelectionAcross(spanned);
+                if (!ends) {
+                    writeBlocksToClipboard(e.clipboardData, spanned, e.type === 'cut', 'exact');
+                    return;
+                }
+                const middle = blocksInScope(ends.middle, 'exact');
+                writeClipboardBlocks(e.clipboardData, [
+                    {...ends.first, html: ends.firstPart.html},
+                    ...blocksRef.current.filter((b) => middle.has(b.id)),
+                    {...ends.last, html: ends.lastPart.html},
+                ]);
+                if (e.type === 'cut') deleteAcross(ends);
                 return;
             }
         }
@@ -3249,8 +3707,30 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         else selectSingleBlock(pasted[pasted.length - 1].id);
     };
 
-    const onPaste = (e: ClipboardEvent<HTMLDivElement>, id: string) => {
+    const onPaste = (e: ClipboardEvent<HTMLDivElement>, id: string): void => {
         e.preventDefault();
+        // Over a cross-block selection the paste lands where the selection was, once it's gone.
+        if (crossesBlocks()) {
+            const ends = textSelectionAcross(selectionBlockIds());
+            if (ends) {
+                const plain = e.clipboardData.getData('text/plain');
+                // Refused before anything is deleted, or the selection would go for nothing.
+                if (
+                    plain.includes('\n') &&
+                    !e.clipboardData.getData('text/html') &&
+                    hasUnsupportedMarkdown(plain)
+                ) {
+                    showToast(
+                        'This Markdown needs source mode. Switch to source to paste it safely.',
+                    );
+                    return;
+                }
+                // As typing, so a one-line paste joins it in one undo step.
+                deleteAcross(ends, '', 'input');
+                onPaste(e, ends.first.id);
+                return;
+            }
+        }
         const el = refs.current.get(id);
         const block = findBlock(id);
         if (!el || !block) return;
@@ -3507,7 +3987,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             applyBlockType(chordType);
             return;
         }
-        if (mod && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        // ⌘↑ / ⌘↓ move the selected blocks (⌘⌥ too, the chord this used to be).
+        if (mod && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
             claimChord(e);
             moveSelectedBlocks(e.key === 'ArrowUp' ? -1 : 1);
         } else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -3581,6 +4062,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
      * highlighted. Cutting had to be told that too, or ⌘X over the same range that Backspace now
      * handles correctly still took the children the user had watched stay unhighlighted.
      */
+    const writeClipboardBlocks = (data: DataTransfer | null, blocks: BlockData[]) => {
+        data?.setData('application/x-notion-editor-blocks', JSON.stringify(blocks));
+        data?.setData('text/plain', blocksToClipboardMarkdown(blocks));
+    };
+
     const writeBlocksToClipboard = (
         data: DataTransfer | null,
         ids: Iterable<string>,
@@ -3590,8 +4076,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const selectedIds = blocksInScope(ids, scope);
         const selected = blocksRef.current.filter((block) => selectedIds.has(block.id));
         if (!selected.length) return;
-        data?.setData('application/x-notion-editor-blocks', JSON.stringify(selected));
-        data?.setData('text/plain', blocksToClipboardMarkdown(selected));
+        writeClipboardBlocks(data, selected);
         const noun = selected.length === 1 ? 'block' : 'blocks';
         showToast(`${cut ? 'Cut' : 'Copied'} ${selected.length} ${noun}`);
         // `'exact'`, whatever the scope was: the set is already expanded, and expanding it a
@@ -3602,6 +4087,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                 'exact',
             );
     };
+
+    // Text that arrives with no keydown — dictation, the emoji picker, autocorrect — over a
+    // selection crossing blocks: the browser would edit only the block with focus.
+    const onBeforeInputAcross = (e: InputEvent) => {
+        if (!e.cancelable || !crossesBlocks()) return;
+        const spanned = selectionBlockIds();
+        if (spanned.length < 2) return;
+        const ends = textSelectionAcross(spanned);
+        if (!ends) return;
+        if (e.inputType === 'insertParagraph') {
+            e.preventDefault();
+            splitAcross(ends);
+        } else if (
+            e.inputType.startsWith('insert') &&
+            e.inputType !== 'insertFromPaste' &&
+            e.inputType !== 'insertFromDrop'
+        ) {
+            e.preventDefault();
+            deleteAcross(ends, e.data ?? e.dataTransfer?.getData('text/plain') ?? '');
+        } else if (e.inputType.startsWith('delete')) {
+            e.preventDefault();
+            deleteAcross(ends);
+        }
+    };
+    const beforeInputRef = useRef(onBeforeInputAcross);
+    beforeInputRef.current = onBeforeInputAcross;
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return undefined;
+        const listener = (e: Event) => beforeInputRef.current(e as InputEvent);
+        root.addEventListener('beforeinput', listener);
+        return () => root.removeEventListener('beforeinput', listener);
+    }, []);
 
     const onSelectionClipboard = (e: globalThis.ClipboardEvent) => {
         if (!ownsDocumentEvent(e.target)) return;
@@ -4268,39 +4786,188 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
                         role="toolbar"
                         aria-label={`Link to ${linkTip.target}`}
                         // Every button keeps the caret where it is: these act on the link the caret
-                        // is IN, and a focus grab would take away the very thing they act on.
-                        onMouseDown={(event) => event.preventDefault()}
+                        // is against, and a focus grab would take away the very thing they act on.
+                        // The display-text field is the exception — it has to take focus.
+                        onMouseDown={(event) => {
+                            if (!(event.target instanceof HTMLInputElement)) event.preventDefault();
+                        }}
                     >
-                        <button
-                            type="button"
-                            className="wiki-tip-btn"
-                            onClick={() => {
-                                setLinkTip(null);
-                                onWikiLinkNavigate?.(linkTip.target);
-                            }}
-                        >
-                            Open
-                        </button>
-                        <button
-                            type="button"
-                            className="wiki-tip-btn"
-                            onClick={() => {
-                                // Re-open the picker over this link: the brackets go back to being
-                                // a live `[[` trigger, seeded with what the link says now.
-                                const el = refs.current.get(linkTip.blockId);
-                                replaceWikiLink(linkTip, `[[${linkTip.inner}`);
-                                if (el) openWikiMenu(linkTip.blockId, linkTip.start, linkTip.inner);
-                            }}
-                        >
-                            Edit
-                        </button>
-                        <button
-                            type="button"
-                            className="wiki-tip-btn"
-                            onClick={() => replaceWikiLink(linkTip, linkTip.inner)}
-                        >
-                            Unlink
-                        </button>
+                        {tipEdit?.kind === 'note' ? (
+                            // The popup's own note search: picking a row re-points the link and
+                            // keeps its display text; Esc leaves the note exactly as it was.
+                            <div className="wiki-tip-search">
+                                <input
+                                    className="wiki-tip-input"
+                                    aria-label="Search notes"
+                                    role="combobox"
+                                    aria-expanded
+                                    aria-controls="wiki-tip-options"
+                                    aria-activedescendant={
+                                        noteChangeItems.length > 0
+                                            ? `wiki-tip-option-${tipEdit.index}`
+                                            : undefined
+                                    }
+                                    value={tipEdit.query}
+                                    // Opens on a click in this same popup, for typing at once.
+                                    // eslint-disable-next-line jsx-a11y/no-autofocus
+                                    autoFocus
+                                    onFocus={(event) => event.currentTarget.select()}
+                                    onChange={(event) =>
+                                        setTipEdit({
+                                            kind: 'note',
+                                            query: event.target.value,
+                                            index: 0,
+                                        })
+                                    }
+                                    onKeyDown={(event) => {
+                                        if (event.nativeEvent.isComposing || event.keyCode === 229)
+                                            return;
+                                        const count = noteChangeItems.length;
+                                        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                                            event.preventDefault();
+                                            if (!count) return;
+                                            const step = event.key === 'ArrowDown' ? 1 : -1;
+                                            setTipEdit({
+                                                ...tipEdit,
+                                                index: (tipEdit.index + step + count) % count,
+                                            });
+                                        } else if (event.key === 'Enter' && count > 0) {
+                                            event.preventDefault();
+                                            repointLink(
+                                                linkTip,
+                                                noteChangeItems[Math.min(tipEdit.index, count - 1)],
+                                            );
+                                        } else if (event.key === 'Escape') {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setTipEdit(null);
+                                            returnToLink(linkTip);
+                                        }
+                                    }}
+                                    onBlur={() => setTipEdit(null)}
+                                />
+                                <div id="wiki-tip-options" role="listbox" aria-label="Notes">
+                                    {noteChangeItems.map((item, index) => (
+                                        <div
+                                            key={
+                                                item.kind === 'note'
+                                                    ? item.note.id
+                                                    : `create:${item.title}`
+                                            }
+                                            id={`wiki-tip-option-${index}`}
+                                            role="option"
+                                            aria-selected={index === tipEdit.index}
+                                            className={`wiki-tip-option${
+                                                index === tipEdit.index
+                                                    ? ' wiki-tip-option_active'
+                                                    : ''
+                                            }`}
+                                            onMouseDown={(event) => {
+                                                // Keep focus in the field, so it doesn't blur shut.
+                                                event.preventDefault();
+                                                repointLink(linkTip, item);
+                                            }}
+                                        >
+                                            <span className="wiki-tip-option-title">
+                                                {item.kind === 'note'
+                                                    ? item.note.title
+                                                    : `Link to new note “${item.title}”`}
+                                            </span>
+                                            {item.kind === 'note' && dirname(item.note.id) ? (
+                                                <span className="wiki-tip-option-path">
+                                                    {formatCrumb(dirname(item.note.id))}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : tipEdit?.kind === 'text' ? (
+                            <input
+                                className="wiki-tip-input"
+                                aria-label="Link text"
+                                placeholder={splitWikiTarget(linkTip.inner).name}
+                                value={tipEdit.value}
+                                // The field opens on a click in this same popup, for typing at once.
+                                // eslint-disable-next-line jsx-a11y/no-autofocus
+                                autoFocus
+                                onChange={(event) =>
+                                    setTipEdit({kind: 'text', value: event.target.value})
+                                }
+                                onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing || event.keyCode === 229)
+                                        return;
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        const {name} = splitWikiTarget(linkTip.inner);
+                                        // A link's inside can hold no bracket or line break.
+                                        const text = tipEdit.value.replace(/[[\]\n]/g, '').trim();
+                                        setTipEdit(null);
+                                        replaceWikiLink(
+                                            linkTip,
+                                            text && text !== name
+                                                ? `[[${name}|${text}]]`
+                                                : `[[${name}]]`,
+                                        );
+                                    } else if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setTipEdit(null);
+                                        returnToLink(linkTip);
+                                    }
+                                }}
+                                onBlur={() => setTipEdit(null)}
+                            />
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    onClick={() => {
+                                        setLinkTip(null);
+                                        onWikiLinkNavigate?.(linkTip.target);
+                                    }}
+                                >
+                                    Open
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    onClick={() =>
+                                        setTipEdit({
+                                            kind: 'note',
+                                            query: splitWikiTarget(linkTip.inner).name,
+                                            index: 0,
+                                        })
+                                    }
+                                >
+                                    Change note
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    onClick={() =>
+                                        setTipEdit({
+                                            kind: 'text',
+                                            value: splitWikiTarget(linkTip.inner).alias ?? '',
+                                        })
+                                    }
+                                >
+                                    Edit text
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wiki-tip-btn"
+                                    // The words the reader saw stay behind.
+                                    onClick={() => {
+                                        const {name, alias} = splitWikiTarget(linkTip.inner);
+                                        replaceWikiLink(linkTip, alias ?? name);
+                                    }}
+                                >
+                                    Unlink
+                                </button>
+                            </>
+                        )}
                     </div>
                 </OverlayPortal>
             )}
