@@ -5,21 +5,21 @@
     top: 0;
     /* Above the blocks, which paint later and would otherwise show through. */
     z-index: 3;
-    background: var(--g-color-base-background);
+    background: var(--bg-paper);
 }
 
 /* Once the note scrolls under the bar, a hairline separates them (a shadow, so it adds no height). */
 .editor-toolbar_scrolled {
-    box-shadow: 0 1px 0 0 var(--g-color-line-generic);
+    box-shadow: 0 1px 0 0 var(--line);
 }
 
 .editor-toolbar__row {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     /* The first icon lines up with the text edge: the gutter plus a block's 2px, less the button's
        own icon inset. */
-    padding: 4px var(--editor-gutter, 16px) 4px calc(var(--editor-gutter, 16px) - 6px);
+    padding: 6px var(--editor-gutter, 16px) 6px calc(var(--editor-gutter, 16px) - 5px);
     overflow-x: auto;
     scrollbar-width: none;
 }
@@ -27,31 +27,58 @@
 .editor-toolbar__divider {
     flex: none;
     width: 1px;
-    height: 18px;
-    margin: 0 6px;
-    background: var(--g-color-line-generic);
+    height: 14px;
+    margin: 0 5px;
+    background: var(--line);
+}
+
+.editor-toolbar__button.g-button {
+    flex: none;
+    min-width: 26px;
+    --g-button-padding: 5px;
+}
+
+/* The glyphs are our own SVGs and letterforms, which Gravity lays out as text: centre them. */
+.editor-toolbar__row .g-button__text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.editor-toolbar__letter {
+    display: inline-flex;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.editor-toolbar__letter :is(b, i, u, s) {
+    font-weight: inherit;
+}
+
+.editor-toolbar__letter_color {
+    text-decoration: underline 2px var(--accent);
+    text-underline-offset: 2px;
 }
 
 /* Fixed width, so the buttons after it stay put as the caret moves between text and headings. */
 .editor-toolbar__style {
     flex: none;
-    width: 112px;
+    width: 104px;
 }
 
 .editor-toolbar__style .g-button__text {
+    flex: 1;
+}
+
+.editor-toolbar__style-label {
     display: flex;
     flex: 1;
     align-items: center;
     justify-content: space-between;
     gap: 4px;
-}
-
-/* The block icons are the slash menu's own SVGs, not Gravity `Icon`s, so the button lays them out
-   as text: centre them the way it centres an icon. */
-.editor-toolbar__row .g-button__text:has(.editor-toolbar__block-icon) {
-    display: flex;
-    align-items: center;
-    height: 100%;
 }
 
 .editor-toolbar__block-icon,
@@ -61,8 +88,8 @@
 
 .editor-toolbar__block-icon svg,
 .editor-toolbar__item-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
 }
 
 .editor-toolbar__palette {

@@ -2,12 +2,14 @@
     /* Default widths of the notes list column and the folder rail beside it. The dividers
        (PanelResizer) override both inline on this element; the numbers are mirrored as
        *_DEFAULT_WIDTH in Workspace.tsx — keep them in step. */
-    --sidebar-width: 280px;
-    --rail-width: 200px;
+    --sidebar-width: 324px;
+    --rail-width: 236px;
     display: flex;
     flex-direction: column;
     height: 100%;
-    background-color: var(--g-color-base-background);
+    background: var(--bg-desk);
+    color: var(--text-1);
+    font-family: var(--font-ui);
 }
 
 .workspace__body {
@@ -34,6 +36,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: var(--bg-paper);
     /* The horizontal gutter shared by the editor body, the source view, and the note title, so
        their left edges line up. `.editor-pane` widens it to fit the block editor's drag handles;
        this is the fallback for anything mounted outside the pane. */
@@ -54,6 +57,28 @@
     top: 10px;
     right: 18px;
     z-index: 3;
+}
+
+.workspace__preview-badge.g-label {
+    height: 18px;
+    border-radius: var(--r-xs);
+    background: var(--bg-selected);
+    color: var(--text-3);
+    font-size: var(--fs-meta);
+    line-height: var(--lh-meta);
+}
+
+.workspace__preview-badge .g-label__main-button,
+.workspace__preview-badge .g-label__text {
+    gap: 4px;
+    padding: 0 4px 0 5px;
+    color: inherit;
+}
+
+@media (hover: hover) {
+    .workspace__preview-badge.g-label:hover {
+        color: var(--text-1);
+    }
 }
 
 .workspace__preview-badge .workspace__preview-badge-hover {
@@ -83,6 +108,9 @@
     justify-content: center;
     height: 100%;
     padding: 24px;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-3);
 }
 
 .workspace__conflict {
@@ -109,9 +137,9 @@
     transform: translateX(-100%);
     visibility: hidden;
     transition:
-        transform 0.15s ease,
-        visibility 0s linear 0.15s;
-    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+        transform var(--dur-3) var(--ease),
+        visibility 0s linear var(--dur-3);
+    box-shadow: var(--shadow-3);
 }
 
 /* Peeked (⌘\): slide the overlay in and make it focusable. visibility flips to visible
@@ -122,7 +150,7 @@
     transform: translateX(0);
     visibility: visible;
     transition:
-        transform 0.15s ease,
+        transform var(--dur-3) cubic-bezier(0.22, 1.15, 0.36, 1),
         visibility 0s linear 0s;
 }
 
@@ -133,7 +161,7 @@
     .workspace__body_peeked .workspace__sidebar {
         transition:
             transform 0s,
-            visibility 0s linear 0.15s;
+            visibility 0s linear var(--dur-3);
     }
     .workspace__body_peeked .workspace__sidebar {
         transition:
@@ -194,7 +222,7 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 0 16px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-3);
 }
 
 /* The scrim behind the drawer (mounted only on mobile while the rail is open) — a tap here closes

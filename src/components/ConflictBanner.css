@@ -1,0 +1,41 @@
+.conflict-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--r-md);
+    background: var(--bg-panel-2);
+    font-family: var(--font-ui);
+}
+
+.conflict-banner__text {
+    flex: 1;
+    min-width: 0;
+}
+
+.conflict-banner__title {
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    font-weight: 550;
+    letter-spacing: -0.003em;
+    color: var(--text-1);
+}
+
+.conflict-banner__body {
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 17px;
+    color: var(--text-2);
+}
+
+.conflict-banner__actions {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
