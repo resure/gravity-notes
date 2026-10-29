@@ -16,35 +16,29 @@ import type {
     RefObject,
 } from 'react';
 
+import {Button, Dialog, DropdownMenu, Select} from '@gravity-ui/uikit';
+import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
+import type {Virtualizer} from '@tanstack/react-virtual';
+
+import {useHeldValue} from '../hooks/useHeldValue';
 import {
-    ArrowUpRightFromSquare,
+    ArrowRight,
     Copy,
     Ellipsis,
-    File,
+    FileText,
     Folder,
     FolderOpen,
+    NewWindow,
     Pencil,
     Pin,
     PinFill,
     PinSlash,
     Plus,
-    TrashBin,
-} from '@gravity-ui/icons';
-import {
-    Button,
-    Dialog,
-    DropdownMenu,
-    Icon,
-    Label,
-    Select,
-    Text,
-    TextInput,
-} from '@gravity-ui/uikit';
-import {defaultRangeExtractor, useVirtualizer} from '@tanstack/react-virtual';
-
-import {useHeldValue} from '../hooks/useHeldValue';
+    Trash,
+    Xmark,
+} from '../icons/icons';
 import {escapeRegExp, tokenizeQuery} from '../search';
-import {isOpenInNewWindowChord} from '../shortcuts';
+import {isOpenInNewWindowChord, shortcutHint} from '../shortcuts';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, OtherFile, SortMode} from '../storage/types';
 
@@ -58,6 +52,25 @@ import './NoteList.css';
  */
 const NOTE_MIME = 'application/x-gravity-note';
 const NO_FILES: OtherFile[] = [];
+/** Fixed row heights: the virtualizer's offsets are computed from them, never measured. */
+const ROW_HEIGHT = 48;
+/** A row that also names its folder, on a third line (All Notes / search). */
+const ROW_WITH_FOLDER_HEIGHT = 64;
+
+function rowHeight(note: NoteMeta, showCrumbs: boolean): number {
+    return showCrumbs && dirname(note.id) ? ROW_WITH_FOLDER_HEIGHT : ROW_HEIGHT;
+}
+
+const SORT_OPTIONS: {value: SortMode; content: string}[] = [
+    {value: 'updated', content: 'Updated'},
+    {value: 'created', content: 'Created'},
+    {value: 'title', content: 'Title (A→Z)'},
+    {value: 'title-desc', content: 'Title (Z→A)'},
+];
+
+function menuHint(keys: string) {
+    return <span className="gn-menu-hint">{keys}</span>;
+}
 
 /**
  * Perf-regression seam: counts {@link NoteRow} render-body executions. A folder can hold thousands of
@@ -210,6 +223,8 @@ interface NoteRowProps {
     editInputRef: RefObject<HTMLInputElement>;
     /** Register/unregister this row's element in the parent's id→element map (stable). */
     registerRef: (id: string, el: HTMLDivElement | null) => void;
+    /** This row's ⋯ menu is open — keeps the ⋯ shown however far the pointer wanders. */
+    menuOpen: boolean;
     icon?: string;
     /** Toggle the list's one shared icon-picker popup, anchored to this row's glyph button. */
     onOpenIconPicker: (id: string, anchor: HTMLElement) => void;
@@ -242,6 +257,7 @@ const NoteRow = memo(function NoteRow({
     editValue,
     editInputRef,
     registerRef,
+    menuOpen,
     icon,
     onOpenIconPicker,
     showIcons,
@@ -258,7 +274,11 @@ const NoteRow = memo(function NoteRow({
     return (
         <div
             ref={(el) => registerRef(note.id, el)}
-            className={'note-list__item' + (selected ? ' note-list__item_selected' : '')}
+            className={
+                'note-list__item' +
+                (selected ? ' note-list__item_selected' : '') +
+                (menuOpen ? ' note-list__item_menu-open' : '')
+            }
             role="option"
             aria-selected={selected}
             tabIndex={tabbable ? 0 : -1}
@@ -284,62 +304,56 @@ const NoteRow = memo(function NoteRow({
             }}
             onKeyDown={(e) => onKeyDownRow(e, note.id)}
         >
-            {editing ? (
-                <TextInput
-                    className="note-list__edit"
-                    controlRef={editInputRef}
-                    value={editValue}
-                    onUpdate={onEditChange}
-                    onBlur={() => onEditCommit(note.id, note.title)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
-                            e.preventDefault();
-                            onEditCommit(note.id, note.title);
-                        } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            onEditCancel();
-                        }
-                    }}
-                />
-            ) : (
-                <>
-                    {/* The icon glyph in a soft rounded tile, centered against the whole two-line
-                        cell. The tile IS the picker target (the button fills it). Only when the
-                        Show-note-icons setting is on; otherwise the text column goes flush-left. */}
-                    {showIcons ? (
-                        <span className="note-list__icon-tile">
-                            <IconPickerButton
-                                className="note-list__icon"
-                                size="s"
-                                value={icon}
-                                onClick={(e) => {
-                                    // Like the ⋯ button: don't browse the row; toggle the one
-                                    // shared picker popup anchored to this button.
-                                    e.stopPropagation();
-                                    onOpenIconPicker(note.id, e.currentTarget);
-                                }}
-                            />
-                        </span>
-                    ) : null}
-                    <div className="note-list__text">
-                        <div className="note-list__row">
-                            {pinned ? (
-                                <Icon
-                                    className="note-list__pin"
-                                    data={PinFill}
-                                    size={14}
-                                    aria-hidden
-                                />
-                            ) : null}
-                            <Text className="note-list__title" ellipsis>
+            {showIcons ? (
+                <span className="note-list__icon-tile">
+                    <IconPickerButton
+                        className="note-list__icon"
+                        size="s"
+                        value={icon}
+                        onClick={(e) => {
+                            // Like the ⋯ button: don't browse the row; toggle the one shared
+                            // picker popup anchored to this button.
+                            e.stopPropagation();
+                            onOpenIconPicker(note.id, e.currentTarget);
+                        }}
+                    />
+                </span>
+            ) : null}
+            <div className="note-list__text">
+                <div className="note-list__line">
+                    {editing ? (
+                        <input
+                            ref={editInputRef}
+                            className="note-list__edit"
+                            aria-label="Rename note"
+                            value={editValue}
+                            onChange={(e) => onEditChange(e.target.value)}
+                            onBlur={() => onEditCommit(note.id, note.title)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                                    e.preventDefault();
+                                    onEditCommit(note.id, note.title);
+                                } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    onEditCancel();
+                                }
+                            }}
+                        />
+                    ) : (
+                        <>
+                            {pinned ? <PinFill size={12} className="note-list__pin" /> : null}
+                            <span className="note-list__title">
                                 {highlightTerms(note.title, terms)}
-                            </Text>
-                            {/* The ⋯ actions button, revealed on hover / focus / selection. */}
-                            <div className="note-list__actions">
+                            </span>
+                            <span className="note-list__trailing">
                                 <Button
+                                    className="note-list__actions"
                                     view="flat"
                                     size="s"
                                     aria-label="Note actions"
+                                    // Only the roving row's ⋯ sits in the Tab order, one stop after
+                                    // the row itself.
+                                    tabIndex={tabbable ? 0 : -1}
                                     onClick={(e) => {
                                         // Don't browse the row; open the one shared menu anchored to
                                         // this button (parent toggles it off if already this row's).
@@ -347,62 +361,91 @@ const NoteRow = memo(function NoteRow({
                                         onOpenMenu(note, e.currentTarget);
                                     }}
                                 >
-                                    <Icon data={Ellipsis} />
+                                    <Ellipsis size={15} />
                                 </Button>
-                            </div>
-                        </div>
-                        {/* Second line: the date, then the preview snippet (date back on this line). */}
-                        <div className="note-list__meta">
-                            <Text variant="caption-2" color="secondary" className="note-list__date">
-                                {formatNoteDate(note.updatedAt)}
-                            </Text>
-                            {previewText ? (
-                                <Text
-                                    variant="caption-2"
-                                    color="secondary"
-                                    className="note-list__preview"
-                                    ellipsis
-                                >
-                                    {highlightTerms(previewText, terms)}
-                                </Text>
-                            ) : null}
-                        </div>
-                        {crumb ? (
-                            // Apple-Notes-style folder chip: which folder this note lives in, shown
-                            // when the list spans folders (All Notes / search). Its own line below.
-                            <div className="note-list__folder">
-                                <Icon
-                                    data={Folder}
-                                    size={12}
-                                    className="note-list__folder-icon"
-                                    aria-hidden
-                                />
-                                <Text
-                                    variant="caption-2"
-                                    color="secondary"
-                                    className="note-list__folder-name"
-                                    ellipsis
-                                >
-                                    {crumb}
-                                </Text>
-                            </div>
-                        ) : null}
+                            </span>
+                        </>
+                    )}
+                </div>
+                <div className="note-list__meta">
+                    <span className="note-list__date">{formatNoteDate(note.updatedAt)}</span>
+                    {previewText ? (
+                        <span className="note-list__preview">
+                            {highlightTerms(previewText, terms)}
+                        </span>
+                    ) : null}
+                </div>
+                {crumb ? (
+                    <div className="note-list__folder">
+                        <Folder size={12} className="note-list__folder-glyph" />
+                        <span className="note-list__folder-name">{crumb}</span>
                     </div>
-                </>
-            )}
+                ) : null}
+            </div>
         </div>
     );
 });
 
-/** Distinguish non-editable files from notes without adding a counter to notes-only lists. */
-function ListCounts({notes, files}: {notes: number; files: number}) {
-    if (files === 0) return null;
-    return (
-        <Text className="note-list__file-count" color="secondary" variant="caption-2">
-            {notes} {notes === 1 ? 'note' : 'notes'} · {files} {files === 1 ? 'file' : 'files'}
-        </Text>
-    );
+type NoteListVirtualizer = Virtualizer<HTMLDivElement, HTMLDivElement>;
+
+interface NoteViewportProps {
+    count: number;
+    scrollRef: RefObject<HTMLDivElement>;
+    rowHeights: number[];
+    getItemKey: (index: number) => string;
+    focusableIndex: number;
+    menuIndex: number;
+    iconPickerIndex: number;
+    showCrumbs: boolean;
+    onItemsRendered: () => void;
+    children: (virtualizer: NoteListVirtualizer) => ReactNode;
 }
+
+const NoteViewport = forwardRef<NoteListVirtualizer, NoteViewportProps>(function NoteViewportBody(
+    {
+        count,
+        scrollRef,
+        rowHeights,
+        getItemKey,
+        focusableIndex,
+        menuIndex,
+        iconPickerIndex,
+        showCrumbs,
+        onItemsRendered,
+        children,
+    },
+    ref,
+) {
+    const rangeExtractor = useCallback(
+        (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+            const indexes = defaultRangeExtractor(range);
+            for (const forced of [focusableIndex, menuIndex, iconPickerIndex]) {
+                if (forced >= 0 && !indexes.includes(forced)) indexes.push(forced);
+            }
+            return indexes.sort((a, b) => a - b);
+        },
+        [focusableIndex, menuIndex, iconPickerIndex],
+    );
+    const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+        count,
+        getScrollElement: () => scrollRef.current,
+        estimateSize: (index) => rowHeights[index] ?? ROW_HEIGHT,
+        overscan: 8,
+        getItemKey,
+        rangeExtractor,
+    });
+    useImperativeHandle(ref, () => virtualizer, [virtualizer]);
+    useLayoutEffect(() => {
+        virtualizer.measure();
+    }, [virtualizer, showCrumbs]);
+    useLayoutEffect(onItemsRendered);
+
+    return (
+        <div ref={scrollRef} className="note-list__items virtual-scroll">
+            {children(virtualizer)}
+        </div>
+    );
+});
 
 export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteList(
     {
@@ -516,32 +559,18 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         onSetIcon,
     };
 
-    // Virtualize the rows: a folder can hold thousands of notes, and mounting every row (each a few
-    // Gravity components) blows out first-paint, memory, and scroll. The virtualizer renders only the
-    // visible window (+overscan) and grows the scroll area to the full measured height. Rows are
-    // variable-height (the folder crumb adds a line), so heights are measured per row.
     const scrollRef = useRef<HTMLDivElement>(null);
-    const rowVirtualizer = useVirtualizer({
-        count: notes.length + files.length,
-        getScrollElement: () => scrollRef.current,
-        estimateSize: () => 56,
-        overscan: 8,
-        getItemKey: (index) =>
+    const rowVirtualizerRef = useRef<NoteListVirtualizer>(null);
+    const rowHeights = useMemo(
+        () => notes.map((note) => rowHeight(note, showCrumbs)),
+        [notes, showCrumbs],
+    );
+    // Stable, so the virtualizer recomputes its offsets only when the rows really change.
+    const getItemKey = useCallback(
+        (index: number) =>
             index < notes.length ? notes[index].id : `file:${files[index - notes.length].id}`,
-        // Always render the roving-tabindex (selected) row, even when it's scrolled out of the window,
-        // so the list always has a keyboard-focusable element and focusing it never needs an async
-        // scroll-then-mount — plus any open row popover's anchor row (⋯ menu / icon picker), so
-        // scrolling can't unmount the popup's anchor from under it. A fresh closure per render keeps
-        // the forced indexes current; the window is a few dozen sorted indexes, so the sort is free.
-        rangeExtractor: (range) => {
-            const indexes = defaultRangeExtractor(range);
-            for (const forced of [focusableIndex, menuIndex, iconPickerIndex]) {
-                if (forced >= 0 && !indexes.includes(forced)) indexes.push(forced);
-            }
-            return indexes.sort((a, b) => a - b);
-        },
-    });
-
+        [notes, files],
+    );
     // A row to focus once it has been scrolled into the virtual window (set by focusRowById below).
     const pendingFocusRef = useRef<string | null>(null);
 
@@ -550,23 +579,20 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
      * virtual window and focus it once it mounts (a row outside the window has no DOM element). Keeps
      * keyboard nav / focusSelected / focusRow working across the virtualized list.
      */
-    const focusRowById = useCallback(
-        (id: string) => {
-            const el = itemRefs.current.get(id);
-            if (el) {
-                el.focus();
-                return;
-            }
-            const index = live.current.noteIds.indexOf(id);
-            if (index === -1) return;
-            pendingFocusRef.current = id;
-            rowVirtualizer.scrollToIndex(index);
-        },
-        [rowVirtualizer],
-    );
+    const focusRowById = useCallback((id: string) => {
+        const el = itemRefs.current.get(id);
+        if (el) {
+            el.focus();
+            return;
+        }
+        const index = live.current.noteIds.indexOf(id);
+        if (index === -1) return;
+        pendingFocusRef.current = id;
+        rowVirtualizerRef.current?.scrollToIndex(index);
+    }, []);
 
     // After the window re-renders (e.g. following scrollToIndex), focus the pending row once it mounts.
-    useLayoutEffect(() => {
+    const focusPendingRow = useCallback(() => {
         const id = pendingFocusRef.current;
         if (!id) return;
         const el = itemRefs.current.get(id);
@@ -578,11 +604,11 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
         const active = document.activeElement;
         if (!active || active === document.body || scrollRef.current?.contains(active)) el.focus();
         pendingFocusRef.current = null;
-    });
+    }, []);
 
     // Focus the rename field when inline editing begins.
     useEffect(() => {
-        if (editingId) editInputRef.current?.focus();
+        if (editingId) editInputRef.current?.select();
     }, [editingId]);
 
     // When an inline rename ends (commit or cancel), return keyboard focus to the list so
@@ -789,80 +815,95 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
 
     const onEditCancel = useCallback(() => setEditingId(null), []);
 
-    // The per-note action list, shared by the row's ⋯ menu and the right-click context menu.
+    // The per-note action list, shared by the row's ⋯ menu and the right-click context menu. Delete
+    // is its own group, so the menu draws its one hairline above it.
     const noteMenuItems = (note: NoteMeta) => {
         const pinned = pinnedSet.has(note.id);
         return [
-            // Desktop only: a per-note window. First, like Apple Notes' context menu (⌘↵ too).
-            ...(onOpenInNewWindow
-                ? [
-                      {
-                          text: 'Open in New Window',
-                          iconStart: <Icon data={ArrowUpRightFromSquare} />,
-                          action: () => onOpenInNewWindow(note.id),
-                      },
-                  ]
-                : []),
-            {
-                text: pinned ? 'Unpin' : 'Pin to top',
-                iconStart: <Icon data={pinned ? PinSlash : Pin} />,
-                action: () => onTogglePin(note.id),
-            },
-            {
-                text: 'Rename',
-                iconStart: <Icon data={Pencil} />,
-                action: () => beginRename(note.id, note.title),
-            },
-            {
-                text: 'Move to…',
-                iconStart: <Icon data={Folder} />,
-                action: () => onRequestMove(note.id),
-            },
-            {
-                text: 'Duplicate',
-                iconStart: <Icon data={Copy} />,
-                action: () => onDuplicate(note.id),
-            },
-            // Desktop only: revealed in Finder when the backend supports it.
-            ...(onReveal
-                ? [
-                      {
-                          text: 'Reveal in Finder',
-                          iconStart: <Icon data={FolderOpen} />,
-                          action: () => onReveal(note.id),
-                      },
-                  ]
-                : []),
-            {
-                text: 'Delete',
-                theme: 'danger' as const,
-                iconStart: <Icon data={TrashBin} />,
-                action: () => setDeleting({id: note.id, title: note.title}),
-            },
+            [
+                // Desktop only: a per-note window. First, like Apple Notes' context menu (⌘↵ too).
+                ...(onOpenInNewWindow
+                    ? [
+                          {
+                              text: 'Open in New Window',
+                              iconStart: <NewWindow size={16} />,
+                              iconEnd: menuHint(shortcutHint('mod+enter')),
+                              action: () => onOpenInNewWindow(note.id),
+                          },
+                      ]
+                    : []),
+                {
+                    text: pinned ? 'Unpin' : 'Pin to top',
+                    iconStart: pinned ? <PinSlash size={16} /> : <Pin size={16} />,
+                    action: () => onTogglePin(note.id),
+                },
+                {
+                    text: 'Rename',
+                    iconStart: <Pencil size={16} />,
+                    iconEnd: menuHint('F2'),
+                    action: () => beginRename(note.id, note.title),
+                },
+                {
+                    text: 'Move to…',
+                    iconStart: <ArrowRight size={16} />,
+                    iconEnd: menuHint(shortcutHint('mod+shift+m')),
+                    action: () => onRequestMove(note.id),
+                },
+                {
+                    text: 'Duplicate',
+                    iconStart: <Copy size={16} />,
+                    iconEnd: menuHint(shortcutHint('mod+d')),
+                    action: () => onDuplicate(note.id),
+                },
+                // Desktop only: revealed in Finder when the backend supports it.
+                ...(onReveal
+                    ? [
+                          {
+                              text: 'Reveal in Finder',
+                              iconStart: <FolderOpen size={16} />,
+                              action: () => onReveal(note.id),
+                          },
+                      ]
+                    : []),
+            ],
+            [
+                {
+                    text: 'Delete',
+                    theme: 'danger' as const,
+                    iconStart: <Trash size={16} />,
+                    iconEnd: menuHint(shortcutHint('mod+shift+backspace')),
+                    action: () => setDeleting({id: note.id, title: note.title}),
+                },
+            ],
         ];
     };
 
     // Empty-state copy, tailored to context: a no-match search, an empty selected folder, or a
-    // truly empty store. A quiet second line points at the way to add a note.
+    // truly empty store.
     const renderEmpty = () => {
         const q = query.trim();
-        if (q) return <Text color="secondary">No match — press Enter to create “{q}”</Text>;
-        if (scopeLabel) {
+        if (q) {
             return (
                 <>
-                    <Text color="secondary">No notes in “{scopeLabel}”</Text>
-                    <Text color="hint" variant="caption-2">
-                        “New” adds a note here
-                    </Text>
+                    <p className="note-list__empty-line">Nothing matches “{q}”</p>
+                    <p className="note-list__empty-hint">
+                        Search covers titles and bodies across every folder.
+                    </p>
+                    <p className="note-list__empty-create">
+                        Create “{q}” <kbd className="note-list__kbd">↵</kbd>
+                    </p>
                 </>
             );
         }
         return (
             <>
-                <Text color="secondary">No notes yet</Text>
-                <Text color="hint" variant="caption-2">
-                    Type to search, or press Enter to create
-                </Text>
+                <Folder size={26} className="note-list__empty-glyph" />
+                <p className="note-list__empty-line">
+                    {scopeLabel ? `No notes in “${scopeLabel}”` : 'No notes yet'}
+                </p>
+                <p className="note-list__empty-hint">
+                    {scopeLabel ? '“New” adds a note here' : 'Type to search, or press ↵ to create'}
+                </p>
             </>
         );
     };
@@ -873,186 +914,230 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                 {/* `selected` doubles as the state signal: Gravity renders it as `aria-pressed`
                     (a raw aria-pressed prop would be clobbered), plus the pressed look. */}
                 <Button
-                    view="outlined"
+                    className="note-list__folders-toggle"
+                    view="flat"
                     size="m"
                     aria-label="Folders"
+                    title={railOpen ? 'Hide folders (⌘⇧\\)' : 'Show folders (⌘⇧\\)'}
                     selected={railOpen}
                     onClick={onToggleRail}
                 >
-                    <Icon data={Folder} />
+                    <Button.Icon>
+                        <Folder size={15} />
+                    </Button.Icon>
                 </Button>
                 <Select
                     className="note-list__sort"
                     aria-label="Sort notes"
-                    size="m"
-                    width="max"
+                    view="clear"
+                    size="s"
                     value={[sortMode]}
                     onUpdate={([next]) => {
                         if (next) onSortChange(next as SortMode);
                     }}
-                    options={[
-                        {value: 'updated', content: 'Updated'},
-                        {value: 'title', content: 'Title (A→Z)'},
-                        {value: 'title-desc', content: 'Title (Z→A)'},
-                        {value: 'created', content: 'Created'},
-                    ]}
+                    options={SORT_OPTIONS}
                 />
+                <div className="note-list__toolbar-gap" />
                 {/* aria-label keeps the name stable when the tight-width container query (see
                     NoteList.css) hides the text and leaves the icon. */}
                 <Button
                     className="note-list__new"
-                    view="normal"
-                    size="m"
+                    view="raised"
+                    size="s"
                     aria-label="New"
                     onClick={() => onCreate()}
                 >
-                    <Icon data={Plus} />
+                    <Button.Icon>
+                        <Plus size={12} />
+                    </Button.Icon>
                     New
                 </Button>
             </div>
+
+            {files.length > 0 ? (
+                <div className="note-list__counts">
+                    {notes.length} {notes.length === 1 ? 'note' : 'notes'} · {files.length}{' '}
+                    {files.length === 1 ? 'file' : 'files'}
+                </div>
+            ) : null}
 
             {/* Scope chip: with the rail closed, a selected folder silently filters the list — name
                 the scope, click-through to the folder tree, × back to All Notes. Hidden while a
                 search is live (the list is global then) and whenever the rail already shows it. */}
             {!railOpen && scopeLabel && !query.trim() && onClearScope ? (
                 <div className="note-list__scope">
-                    <Label
-                        className="note-list__scope-chip"
-                        size="xs"
-                        type="close"
-                        icon={<Icon data={Folder} size={12} />}
-                        interactive
-                        onClick={onToggleRail}
-                        onCloseClick={onClearScope}
-                        closeButtonLabel="Show all notes"
+                    <span
+                        className="note-list__chip"
                         title={`Showing “${scopeLabel}” — click to open folders`}
                     >
-                        {scopeLabel}
-                    </Label>
+                        <button
+                            type="button"
+                            className="note-list__chip-body"
+                            onClick={onToggleRail}
+                        >
+                            <Folder size={12} className="note-list__chip-icon" />
+                            <span className="note-list__chip-label">{scopeLabel}</span>
+                        </button>
+                        <button
+                            type="button"
+                            className="note-list__chip-dismiss"
+                            aria-label="Show all notes"
+                            onClick={onClearScope}
+                        >
+                            <Xmark size={10} />
+                        </button>
+                    </span>
                 </div>
             ) : null}
 
-            <ListCounts notes={notes.length} files={files.length} />
-            <div ref={scrollRef} className="note-list__items virtual-scroll">
-                {rowVirtualizer.options.count === 0 ? (
-                    <div role="listbox" aria-label="Notes" className="note-list__empty">
-                        {renderEmpty()}
-                    </div>
-                ) : (
-                    // Spacer sized to the full list; each visible row is absolutely positioned at its
-                    // measured offset. Only the windowed rows (getVirtualItems) are mounted.
-                    <div style={{height: rowVirtualizer.getTotalSize(), position: 'relative'}}>
-                        <div role="listbox" aria-label="Notes">
-                            {rowVirtualizer
-                                .getVirtualItems()
-                                .filter((row) => row.index < notes.length)
-                                .map((virtualRow) => {
-                                    const note = notes[virtualRow.index];
-                                    return (
-                                        <div
-                                            key={virtualRow.key}
-                                            data-index={virtualRow.index}
-                                            ref={rowVirtualizer.measureElement}
-                                            style={{
-                                                position: 'absolute',
-                                                top: 0,
-                                                left: 0,
-                                                width: '100%',
-                                                transform: `translateY(${virtualRow.start}px)`,
-                                            }}
-                                        >
-                                            <NoteRow
-                                                note={note}
-                                                selected={note.id === selectedId}
-                                                editing={note.id === editingId}
-                                                tabbable={
-                                                    note.id !== editingId && note.id === focusableId
-                                                }
-                                                pinned={pinnedSet.has(note.id)}
-                                                previewText={
-                                                    snippetById?.get(note.id) ?? note.preview ?? ''
-                                                }
-                                                crumb={
-                                                    showCrumbs ? formatCrumb(dirname(note.id)) : ''
-                                                }
-                                                terms={terms}
-                                                editValue={note.id === editingId ? editValue : ''}
-                                                editInputRef={editInputRef}
-                                                registerRef={registerRef}
-                                                icon={icons[note.id]}
-                                                onOpenIconPicker={onOpenIconPicker}
-                                                showIcons={showIcons}
-                                                onClickRow={onClickRow}
-                                                onDoubleClickRow={onDoubleClickRow}
-                                                onContextMenuRow={onContextMenuRow}
-                                                onKeyDownRow={onKeyDownRow}
-                                                onOpenMenu={onOpenMenu}
-                                                onEditChange={setEditValue}
-                                                onEditCommit={onEditCommit}
-                                                onEditCancel={onEditCancel}
-                                            />
-                                        </div>
-                                    );
-                                })}
+            <NoteViewport
+                ref={rowVirtualizerRef}
+                count={notes.length + files.length}
+                scrollRef={scrollRef}
+                rowHeights={rowHeights}
+                getItemKey={getItemKey}
+                focusableIndex={focusableIndex}
+                menuIndex={menuIndex}
+                iconPickerIndex={iconPickerIndex}
+                showCrumbs={showCrumbs}
+                onItemsRendered={focusPendingRow}
+            >
+                {(rowVirtualizer) =>
+                    rowVirtualizer.options.count === 0 ? (
+                        <div role="listbox" aria-label="Notes" className="note-list__empty">
+                            {renderEmpty()}
                         </div>
-                        {files.length > 0 ? (
-                            <div role="list" aria-label="Other files">
+                    ) : (
+                        // Spacer sized to the full list; each visible row is absolutely positioned at its
+                        // offset. Only the windowed rows (getVirtualItems) are mounted.
+                        <div style={{height: rowVirtualizer.getTotalSize(), position: 'relative'}}>
+                            <div role="listbox" aria-label="Notes">
                                 {rowVirtualizer
                                     .getVirtualItems()
-                                    .filter((row) => row.index >= notes.length)
-                                    .map((row) => {
-                                        const file = files[row.index - notes.length];
+                                    .filter((row) => row.index < notes.length)
+                                    .map((virtualRow) => {
+                                        const note = notes[virtualRow.index];
                                         return (
                                             <div
-                                                key={row.key}
-                                                role="listitem"
-                                                data-index={row.index}
-                                                ref={rowVirtualizer.measureElement}
-                                                className="note-list__file"
+                                                key={virtualRow.key}
+                                                data-index={virtualRow.index}
                                                 style={{
                                                     position: 'absolute',
                                                     top: 0,
                                                     left: 0,
                                                     width: '100%',
-                                                    transform: `translateY(${row.start}px)`,
+                                                    height: virtualRow.size,
+                                                    transform: `translateY(${virtualRow.start}px)`,
                                                 }}
                                             >
-                                                <Icon data={File} size={16} />
-                                                <div
-                                                    className="note-list__file-info"
-                                                    title={`${file.name} — not a Markdown note`}
-                                                >
-                                                    <Text className="note-list__file-name" ellipsis>
-                                                        {file.name}
-                                                    </Text>
-                                                    <Text color="secondary" variant="caption-2">
-                                                        {showCrumbs && dirname(file.id)
-                                                            ? `${formatCrumb(dirname(file.id))} · `
-                                                            : ''}
-                                                        Not editable
-                                                    </Text>
-                                                </div>
-                                                {onReveal ? (
-                                                    <Button
-                                                        view="flat"
-                                                        size="s"
-                                                        aria-label={`Reveal ${file.name} in Finder`}
-                                                        onClick={() => onReveal(file.id)}
-                                                        onKeyDown={(event) =>
-                                                            event.stopPropagation()
-                                                        }
-                                                    >
-                                                        <Icon data={FolderOpen} size={14} />
-                                                    </Button>
-                                                ) : null}
+                                                <NoteRow
+                                                    note={note}
+                                                    selected={note.id === selectedId}
+                                                    editing={note.id === editingId}
+                                                    tabbable={
+                                                        note.id !== editingId &&
+                                                        note.id === focusableId
+                                                    }
+                                                    pinned={pinnedSet.has(note.id)}
+                                                    previewText={
+                                                        snippetById?.get(note.id) ??
+                                                        note.preview ??
+                                                        ''
+                                                    }
+                                                    crumb={
+                                                        showCrumbs
+                                                            ? formatCrumb(dirname(note.id))
+                                                            : ''
+                                                    }
+                                                    terms={terms}
+                                                    editValue={
+                                                        note.id === editingId ? editValue : ''
+                                                    }
+                                                    editInputRef={editInputRef}
+                                                    registerRef={registerRef}
+                                                    menuOpen={menu?.note.id === note.id}
+                                                    icon={icons[note.id]}
+                                                    onOpenIconPicker={onOpenIconPicker}
+                                                    showIcons={showIcons}
+                                                    onClickRow={onClickRow}
+                                                    onDoubleClickRow={onDoubleClickRow}
+                                                    onContextMenuRow={onContextMenuRow}
+                                                    onKeyDownRow={onKeyDownRow}
+                                                    onOpenMenu={onOpenMenu}
+                                                    onEditChange={setEditValue}
+                                                    onEditCommit={onEditCommit}
+                                                    onEditCancel={onEditCancel}
+                                                />
                                             </div>
                                         );
                                     })}
                             </div>
-                        ) : null}
-                    </div>
-                )}
-            </div>
+                            {files.length > 0 ? (
+                                <div role="list" aria-label="Other files">
+                                    {rowVirtualizer
+                                        .getVirtualItems()
+                                        .filter((row) => row.index >= notes.length)
+                                        .map((row) => {
+                                            const file = files[row.index - notes.length];
+                                            return (
+                                                <div
+                                                    key={row.key}
+                                                    role="listitem"
+                                                    data-index={row.index}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        top: 0,
+                                                        left: 0,
+                                                        width: '100%',
+                                                        height: row.size,
+                                                        transform: `translateY(${row.start}px)`,
+                                                    }}
+                                                >
+                                                    <div
+                                                        className="note-list__file"
+                                                        title={`${file.name} — not a Markdown note`}
+                                                    >
+                                                        <FileText
+                                                            size={15}
+                                                            className="note-list__file-glyph"
+                                                        />
+                                                        <div className="note-list__file-info">
+                                                            <span className="note-list__file-name">
+                                                                {file.name}
+                                                            </span>
+                                                            <span className="note-list__file-meta">
+                                                                {showCrumbs && dirname(file.id)
+                                                                    ? `${formatCrumb(dirname(file.id))} · `
+                                                                    : ''}
+                                                                Not editable
+                                                            </span>
+                                                        </div>
+                                                        {onReveal ? (
+                                                            <Button
+                                                                className="note-list__file-reveal"
+                                                                view="flat"
+                                                                size="s"
+                                                                aria-label={`Reveal ${file.name} in Finder`}
+                                                                onClick={() => onReveal(file.id)}
+                                                                onKeyDown={(event) =>
+                                                                    event.stopPropagation()
+                                                                }
+                                                            >
+                                                                <Button.Icon>
+                                                                    <FolderOpen size={15} />
+                                                                </Button.Icon>
+                                                            </Button>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            ) : null}
+                        </div>
+                    )
+                }
+            </NoteViewport>
 
             <Dialog
                 open={deleting !== null}
@@ -1063,11 +1148,9 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
             >
                 <Dialog.Header caption="Move to Trash" />
                 <Dialog.Body>
-                    <Text>
-                        {deletingView
-                            ? `Move "${deletingView.title}" to the Trash? You can restore it later from the Trash.`
-                            : ''}
-                    </Text>
+                    {deletingView
+                        ? `Move "${deletingView.title}" to the Trash? You can restore it later from the Trash.`
+                        : ''}
                 </Dialog.Body>
                 <Dialog.Footer
                     textButtonApply="Move to Trash"
@@ -1088,7 +1171,7 @@ export const NoteList = forwardRef<NoteListHandle, NoteListProps>(function NoteL
                     if (!open) setMenu(null);
                 }}
                 renderSwitcher={() => <span hidden />}
-                popupProps={{anchorElement: menu?.anchor}}
+                popupProps={{anchorElement: menu?.anchor, className: 'note-list__menu'}}
                 items={menu ? noteMenuItems(menu.note) : []}
             />
 

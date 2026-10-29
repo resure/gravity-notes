@@ -1,13 +1,20 @@
+/* The floating material comes from .g-popup (gravity.css); this is only the body inside it. */
 .icon-picker__popup {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 8px;
+    box-sizing: content-box;
+    width: calc(8 * 30px + 7 * 2px);
+    padding: 4px;
+}
+
+.icon-picker__search-icon {
+    margin-inline-start: 8px;
+    color: var(--text-3);
 }
 
 .icon-picker__grid {
-    min-width: 281px; /* 8 columns * 28px + 7 gaps */
-    max-height: 290px; /* ~8.5 rows */
+    max-height: 256px; /* 8 rows; a short result list shrinks the popup */
     overflow-y: auto;
     scrollbar-width: none;
 }
@@ -22,17 +29,31 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(8, 30px);
+    gap: 2px;
 }
 
-/* Keyboard-roved item: a focus ring, distinct from the filled `view="normal"` of the SELECTED item. */
+.icon-picker__item.g-button {
+    --g-button-height: 30px;
+    --g-button-border-radius: var(--r-sm);
+    --g-button-text-color: var(--text-2);
+}
+
+.icon-picker__item_current.g-button {
+    --g-button-background-color: var(--bg-selected);
+    --g-button-text-color: var(--text-1);
+}
+
+/* The keyboard's cell: the focus ring, distinct from the current icon's wash. */
 .icon-picker__item_active {
-    outline: 2px solid var(--g-color-line-focus);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
-    border-radius: var(--g-focus-border-radius, 5px);
+    border-radius: var(--r-sm);
+}
+
+.icon-picker__item .icon-picker__emoji {
+    font-size: 18px;
 }
 
 .icon-picker__emoji {
@@ -40,4 +61,11 @@
     font-size: 16px;
     line-height: 1;
     transform: translateY(0.8px); /* optical nudge — emoji glyphs sit high in the line box */
+}
+
+.icon-picker__empty {
+    margin: 8px 0;
+    font-size: var(--fs-menu);
+    text-align: center;
+    color: var(--text-3);
 }

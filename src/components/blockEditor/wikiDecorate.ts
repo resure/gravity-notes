@@ -12,35 +12,75 @@
  * Because the text never changes, a plain-text caret offset is invariant across a decoration pass,
  * which is what lets the editor re-decorate mid-typing and simply put the caret back where it was.
  *
+ * The link renders as an atomic chip (`contenteditable="false"`): the caret steps over it as one
+ * unit and the link is changed through its popup. Inside, the parts a reader shouldn't see — the
+ * brackets, and the note name when an `|alias` gives display text — sit in `WIKI_HIDDEN_CLASS`
+ * spans, hidden by CSS. The text, and so the file, still holds every byte.
+ *
  * String-based rather than DOM-based, like the rest of `src/markdown/*`: it runs in plain Node tests
  * and cannot be fooled by whatever a browser normalizes the markup into.
  */
 
 import {WIKI_LINK_CLASS, decodeEntities} from '../../markdown';
+import {splitWikiTarget} from '../../wikiLinks';
 
 /** Marks a link whose target resolves to no note (styled as "broken", like the Markdown engine's). */
 export const WIKI_LINK_BROKEN_CLASS = 'wiki-link_broken';
+/** Wraps the parts of a link that are kept in the text but never shown: `[[`, `]]`, `Note|`. */
+export const WIKI_HIDDEN_CLASS = 'wiki-hidden';
 
 const WIKI_LINK = /\[\[([^[\]\n]+)\]\]/g;
-/**
- * A whole wrapper written by a previous pass. Matched as a unit (rather than as two loose tags) so
- * the pass can never eat a `</span>` that isn't ours; the wrapper's content is escaped text, so it
- * holds no nested tags to confuse the lazy match.
- */
-const EXISTING_WRAPPER = new RegExp(
-    `<span class="${WIKI_LINK_CLASS}(?: ${WIKI_LINK_BROKEN_CLASS})?">([^<]*)</span>`,
-    'g',
-);
 /** Cheap pre-test: nothing to do unless the html holds a link or a wrapper from an earlier pass. */
 const NEEDS_PASS = new RegExp(`\\[\\[|class="${WIKI_LINK_CLASS}`);
 
+const OUR_SPAN = new RegExp(`^<span class="(?:${WIKI_LINK_CLASS}|${WIKI_HIDDEN_CLASS})[ "]`);
+
 /**
  * Strip the wrappers a previous pass added, so re-decorating is idempotent and a link the user just
- * broke up (deleting a `]`) loses its styling. Only OUR spans are touched; a `<span>` from anywhere
- * else can't reach a block's html (the editor's sanitizer drops it).
+ * broke up (deleting a `]`) loses its styling. Spans are paired by a stack rather than by pattern,
+ * so typing that lands INSIDE a bracket span (or a colour span around a link) can never make the
+ * pass drop someone else's `</span>`. Only OUR spans are removed; a `<span>` from anywhere else
+ * can't reach a block's html (the editor's sanitizer drops it).
  */
-function undecorate(html: string): string {
-    return html.replace(EXISTING_WRAPPER, '$1');
+export function undecorate(html: string): string {
+    if (!html.includes('class="wiki-')) return html;
+    let out = '';
+    let index = 0;
+    const ours: boolean[] = [];
+    while (index < html.length) {
+        const lt = html.indexOf('<', index);
+        if (lt === -1) {
+            out += html.slice(index);
+            break;
+        }
+        out += html.slice(index, lt);
+        const gt = html.indexOf('>', lt);
+        if (gt === -1) {
+            out += html.slice(lt);
+            break;
+        }
+        const tag = html.slice(lt, gt + 1);
+        if (/^<span[\s>]/i.test(tag)) {
+            const mine = OUR_SPAN.test(tag);
+            ours.push(mine);
+            if (!mine) out += tag;
+        } else if (/^<\/span>/i.test(tag)) {
+            if (!ours.pop()) out += tag;
+        } else {
+            out += tag;
+        }
+        index = gt + 1;
+    }
+    return out;
+}
+
+const hidden = (text: string) => `<span class="${WIKI_HIDDEN_CLASS}">${text}</span>`;
+
+/** The chip's inside: the note name, or — given `Note|text` — the text, with the rest hidden. */
+function chipContent(inner: string): string {
+    const {name, alias} = splitWikiTarget(inner);
+    if (alias === null) return `${hidden('[[')}${inner}${hidden(']]')}`;
+    return `${hidden(`[[${name}|`)}${alias}${hidden(']]')}`;
 }
 
 /**
@@ -62,14 +102,14 @@ export function decorateWikiLinks(html: string, isBroken: (target: string) => bo
             out += text;
             return;
         }
-        out += text.replace(WIKI_LINK, (whole, inner: string) => {
+        out += text.replace(WIKI_LINK, (_whole, inner: string) => {
             // This walks HTML, so the target arrives escaped — `[[R&D notes]]` is `[[R&amp;D notes]]`
             // here. Resolve the DECODED form, or every title holding an `&`, `<` or `>` would read
             // as broken while ⌘↵ (which reads textContent) followed it perfectly well.
             const className = isBroken(decodeEntities(inner))
                 ? `${WIKI_LINK_CLASS} ${WIKI_LINK_BROKEN_CLASS}`
                 : WIKI_LINK_CLASS;
-            return `<span class="${className}">${whole}</span>`;
+            return `<span class="${className}" contenteditable="false">${chipContent(inner)}</span>`;
         });
     };
 

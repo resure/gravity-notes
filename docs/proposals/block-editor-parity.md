@@ -1,6 +1,14 @@
 # Block editor parity
 
-## Session summary
+## Current status (2026-10-28)
+
+This document began as the 2026-10-16 parity audit. Its session summary and validation log below
+record that run, not new checks. Later work resolved D13 (partial text selections across blocks),
+the block-editor note-switch part of D12, and D19’s source tooling. Source undo across note
+switches and history transfer between blocks and source remain deferred. See the updated entries
+below and [architecture.md](../architecture.md) for the current behaviour.
+
+## Session summary (2026-10-16)
 
 Completed the audited scope on `block-editor-v2` on 2026-10-16. Every row below is implemented
 with tests or explicitly deferred. Full old-editor parity is **not** claimed.
@@ -92,14 +100,14 @@ seeds each; their grammar now includes YFM marks and containers.
 | Enter in a YFM note title                         | Fixed for empty/nonempty titles; existing body remains inside the container                                              | P0       |
 | Preview from source / forced source               | Fixed test-first; unsaved buffer rendered and same textarea restored                                                     | P0       |
 | Paste ending in image/table                       | Fixed test-first; text after the caret retained as a separate block when needed                                          | P0       |
-| Paste crossing text blocks                        | Fixed test-first and browser-qualified; touched blocks replaced as a unit                                                | P0       |
+| Paste crossing text blocks                        | Implemented; partial text retained at both ends (D13), with whole-block fallbacks                                        | P0       |
 | First block of a Markdown paste                   | Fixed for an empty paragraph; headings, lists, tables and YFM note tested                                                | P1       |
 | Unsupported multiline paste                       | Refused visibly with a source-mode hint; source accepts the original bytes                                               | P0       |
 | Excessive nesting / false structural guard passes | Depth and unsupported-structure regression tests added; source fallback                                                  | P0       |
 | Typing Markdown / numbered starts                 | Implemented with tests and Chromium typing; escaped/invalid delimiters stay literal                                      | P1       |
 | Focus, caret and title handoff                    | Existing regressions pass; normal typing, collapsed cuts and toolbar exercised; native qualification D14                 | P1       |
-| Undo/redo, StrictMode and note switching          | Existing regressions pass; Chromium table undo exercised; retained history across notes/modes deferred D12               | P0       |
-| Cross-block copy/cut/delete                       | Existing whole-block model retained; partial-text replacement deferred D13                                               | P1       |
+| Undo/redo, StrictMode and note switching          | Block-editor history retained across note switches (D12); source-note and cross-mode history deferred                    | P0       |
+| Cross-block copy/cut/delete                       | Implemented partial-text copy/cut/delete/paste and keyboard selection; whole-block fallbacks remain (D13)                | P1       |
 | Markdown/plain/internal clipboard                 | Existing tests plus paste boundary regressions pass                                                                      | P1       |
 | Rich HTML clipboard                               | Implemented (D9): `htmlImport.ts` maps structure and marks via the Markdown writer; corpus tests                         | P1       |
 | Paste URL over selected text                      | Chromium native `execCommand` produces the expected anchor                                                               | P1       |
@@ -111,7 +119,7 @@ seeds each; their grammar now includes YFM marks and containers.
 | Empty placeholders, handles, turn-into            | Existing component/menu regressions pass; browser furniture, slash and drag exercised                                    | P1       |
 | Long documents / large tables                     | 5,000-paragraph and 150,000-row serialization audit passes; 2,000-block browser edit passed; virtualisation deferred D15 | P1       |
 | Bare URL linkification                            | Implemented (D16): bare `http(s)://` URLs decorate as links, spelling kept; fuzzy domains stay text                      | P1       |
-| Source syntax highlighting / advanced commands    | Textarea remains editable; CodeMirror-level tooling deferred D19                                                         | P2       |
+| Source syntax highlighting / advanced commands    | Implemented in CodeMirror with textarea loading/failure fallback (D19)                                                   | P2       |
 | Spellcheck / image resize / file drop             | Existing inheritance/upload plumbing retained; hardware/native qualification deferred D14                                | P1       |
 
 The comparison uses [Notion keyboard and Markdown shortcuts](https://www.notion.com/help/keyboard-shortcuts)
@@ -165,12 +173,19 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
   (`codeHighlight.ts`): highlight.js tokens become painted ranges, so the editable DOM, caret, IME
   and undo are untouched, in the preview's palette. A highlight can only paint colour, so the
   preview's bold keywords stay plain in the editor.
-- **D12 — history across note or source/block switches.** Per-note remounts intentionally prevent
-  undo crossing into another file. Retaining independent histories and transferring them across
-  source conversion needs the separate history design already tracked in the repository backlog.
-- **D13 — partial text across blocks.** Copy/cut/delete/paste use touched whole blocks. Partial tree
-  replacement would need a document-range model; letting the browser mutate React-owned block DOM
-  caused the reproduced exception and is no longer used for cross-block paste.
+- **D12 — history across note or source/block switches.** Partially implemented in
+  `BlockEditorBody.tsx`: block-editor snapshots resume on returning to a note when their Markdown
+  matches its content after trimming outer whitespace. The ten most recently left notes retain
+  eligible histories (up to 256,000 characters per snapshot’s current Markdown); changed content
+  starts fresh. `BlockEditorBody.test.tsx` covers switch-back undo and external-change rejection.
+  Source history across note switches and blocks ↔ source history transfer remain deferred; the
+  [original history proposal](preserve-undo-across-notes.md) describes the former editor.
+- **D13 — partial text across blocks.** Implemented in `blockEditor/Editor.tsx`: copy/cut/delete,
+  typing, Enter, paste and Shift-arrows preserve the unselected text at either end. `beforeinput`
+  also handles edits without keydown. Non-text ends use whole-block fallbacks; inline formatting
+  chords are ignored across blocks. `Editor.test.tsx` covers partial deletion, typing, Enter and
+  undo. Accepted plain, rich and internal-block pastes now replace the range in one undo step;
+  rejected payloads leave the selected text unchanged.
 - **D14 — native/hardware interaction qualification.** Chromium interactions and synthetic IME
   tests ran; real OS composition, WKWebView caret/drag, native file dialogs and image resizing need
   hands-on qualification. Rust `cargo check` passed; no signed/notarized app or full DMG build ran.
@@ -185,9 +200,11 @@ Keep the app's established shortcuts: `>` creates a Markdown quote; `⌘/` opens
   and says so; persisting it requires choosing a richer table dialect, rather than hidden metadata.
 - **D18 — colour grammar.** Unbalanced parentheses have the same limitations as the YFM extension;
   there is no portable colour syntax. Existing token spelling is retained rather than changed.
-- **D19 — source tooling.** The source surface remains a dependency-free textarea. Highlighting,
-  structured source shortcuts and source/block undo transfer would reintroduce an editor subsystem;
-  source editing, preview, resizing and per-note content isolation remain covered.
+- **D19 — source tooling.** Implemented in lazy-loaded `SourceEditor.tsx` (CodeMirror): Markdown
+  and fenced-code highlighting, find/replace, list continuation and source editing shortcuts, with
+  app chords left to the shell. `TextareaSource` remains the loading/failure fallback. Source
+  content isolation and buffer/focus behaviour are covered by `BlockEditorBody.test.tsx` and
+  `SourceEditor.test.tsx`. Source/block undo transfer is still deferred under D12.
 - **D20 — emoji picker.** The optional old Emoji extension was not configured. Native Unicode
   input still works; a Notion-style colon picker is not necessary for the verified baseline.
 

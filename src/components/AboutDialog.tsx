@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 
-import {Dialog, Link, Text} from '@gravity-ui/uikit';
+import {Dialog} from '@gravity-ui/uikit';
 
 import {isTauri} from '../isTauri';
 import {openExternalUrl} from '../openExternal';
@@ -43,23 +43,29 @@ export function AboutDialog({open, onClose}: {open: boolean; onClose: () => void
     };
 
     return (
-        <Dialog open={open} onClose={onClose} size="s">
+        <Dialog
+            open={open}
+            onClose={onClose}
+            aria-label="About Gravity Notes"
+            className="about-dialog"
+            hasCloseButton={false}
+        >
             <Dialog.Body>
-                <div className="about-dialog">
-                    <div className="about-dialog__orb" aria-hidden />
-                    <Text variant="subheader-2">Gravity Notes</Text>
-                    {version ? (
-                        <Text color="secondary" variant="body-1">
-                            Version {version}
-                        </Text>
-                    ) : null}
-                    <div className="about-dialog__links">
-                        <Link href={GITHUB_URL} onClick={openLink(GITHUB_URL)}>
+                <div className="about">
+                    <div className="about__orb" aria-hidden />
+                    <div className="about__name">Gravity Notes</div>
+                    {version ? <div className="about__version">Version {version}</div> : null}
+                    <div className="about__links">
+                        <a className="about__link" href={GITHUB_URL} onClick={openLink(GITHUB_URL)}>
                             Project on GitHub
-                        </Link>
-                        <Link href={GRAVITY_URL} onClick={openLink(GRAVITY_URL)}>
+                        </a>
+                        <a
+                            className="about__link"
+                            href={GRAVITY_URL}
+                            onClick={openLink(GRAVITY_URL)}
+                        >
                             Powered by GravityUI
-                        </Link>
+                        </a>
                     </div>
                 </div>
             </Dialog.Body>

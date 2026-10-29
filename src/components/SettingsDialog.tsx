@@ -1,8 +1,7 @@
 import type {ReactNode} from 'react';
 
-import {Dialog, Label, Switch, Text} from '@gravity-ui/uikit';
+import {Dialog, Switch} from '@gravity-ui/uikit';
 
-import {useIsNarrow} from '../hooks/useIsNarrow';
 import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
 
 import {
@@ -31,7 +30,10 @@ interface SettingsDialogProps {
     workspaceLabel: string | null;
 }
 
-/** App preferences sheet (⌘, / the menu). App-wide settings and per-workspace overrides. */
+/**
+ * App preferences sheet (⌘, / the menu): app-wide settings and per-workspace overrides. No Save
+ * button — every control commits on change and the app repaints live behind the scrim.
+ */
 export function SettingsDialog({
     open,
     onClose,
@@ -44,92 +46,88 @@ export function SettingsDialog({
     const workspaceDescription = `Override the app appearance for ${
         workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
     }. “Default” inherits it.`;
-    // The `row` layout spends a fixed 150px column on the label, which leaves a phone-width dialog
-    // too little room for the segmented pickers — their last options ("Gray", "Unlimited") were
-    // clipped off the edge. Narrow screens reuse the `stack` layout the note-appearance popover
-    // already uses: label above, control across the full width.
-    const rowLayout = useIsNarrow() ? 'stack' : 'row';
     return (
         // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
-        // size="m" is 720px — a touch wide for these rows; cap it via --g-dialog-width (see CSS).
         <Dialog
             open={open}
             onClose={onClose}
-            size="m"
-            className="settings-dialog-modal"
+            className="settings-dialog"
+            hasCloseButton={false}
             disableBodyScrollLock
             contentOverflow="auto"
         >
             <Dialog.Header caption="Settings" />
             <Dialog.Body>
-                <div className="settings-dialog">
-                    <Section title="General">
-                        <ToggleRow
-                            title="Show editor toolbar"
-                            checked={settings.showEditorToolbar}
-                            onUpdate={(value) => setSetting('showEditorToolbar', value)}
-                        />
-                        <ToggleRow
-                            title="Check spelling"
-                            checked={settings.spellcheck}
-                            onUpdate={(value) => setSetting('spellcheck', value)}
-                        />
-                        <ToggleRow
-                            title="Show note icons"
-                            experimental
-                            checked={settings.showNoteIcons}
-                            onUpdate={(value) => setSetting('showNoteIcons', value)}
-                        />
-                    </Section>
+                <Section title="Editor">
+                    <ToggleRow
+                        title="Show editor toolbar"
+                        checked={settings.showEditorToolbar}
+                        onUpdate={(value) => setSetting('showEditorToolbar', value)}
+                    />
+                    <ToggleRow
+                        title="Show note icons"
+                        experimental
+                        checked={settings.showNoteIcons}
+                        onUpdate={(value) => setSetting('showNoteIcons', value)}
+                    />
+                    <ToggleRow
+                        title="Check spelling"
+                        checked={settings.spellcheck}
+                        onUpdate={(value) => setSetting('spellcheck', value)}
+                    />
+                </Section>
 
-                    <Section title="Appearance">
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Editor font"
-                            options={FONT_OPTIONS}
-                            value={settings.editorFont}
-                            onUpdate={(value) => setSetting('editorFont', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Accent color"
-                            options={ACCENT_OPTIONS}
-                            value={settings.accentColor}
-                            onUpdate={(value) => setSetting('accentColor', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Text width"
-                            options={WIDTH_OPTIONS}
-                            value={settings.textWidth}
-                            onUpdate={(value) => setSetting('textWidth', value)}
-                        />
-                    </Section>
+                <Section title="Appearance">
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Editor font"
+                        options={FONT_OPTIONS}
+                        value={settings.editorFont}
+                        onUpdate={(value) => setSetting('editorFont', value)}
+                    />
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Accent color"
+                        options={ACCENT_OPTIONS}
+                        value={settings.accentColor}
+                        onUpdate={(value) => setSetting('accentColor', value)}
+                    />
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Text width"
+                        options={WIDTH_OPTIONS}
+                        value={settings.textWidth}
+                        onUpdate={(value) => setSetting('textWidth', value)}
+                    />
+                </Section>
 
-                    <Section title="This workspace" description={workspaceDescription}>
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Editor font"
-                            options={FONT_OPTIONS_WS}
-                            value={workspaceSettings.editorFont}
-                            onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Accent color"
-                            options={ACCENT_OPTIONS_WS}
-                            value={workspaceSettings.accentColor}
-                            onUpdate={(value) => setWorkspaceSetting('accentColor', value)}
-                        />
-                        <AppearanceChoiceRow
-                            layout={rowLayout}
-                            label="Text width"
-                            options={WIDTH_OPTIONS_WS}
-                            value={workspaceSettings.textWidth}
-                            onUpdate={(value) => setWorkspaceSetting('textWidth', value)}
-                        />
-                    </Section>
-                </div>
+                <Section title="This workspace" description={workspaceDescription}>
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Editor font"
+                        options={FONT_OPTIONS_WS}
+                        value={workspaceSettings.editorFont}
+                        onUpdate={(value) => setWorkspaceSetting('editorFont', value)}
+                    />
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Accent color"
+                        options={ACCENT_OPTIONS_WS}
+                        value={workspaceSettings.accentColor}
+                        onUpdate={(value) => setWorkspaceSetting('accentColor', value)}
+                    />
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Text width"
+                        options={WIDTH_OPTIONS_WS}
+                        value={workspaceSettings.textWidth}
+                        onUpdate={(value) => setWorkspaceSetting('textWidth', value)}
+                    />
+                    <p className="settings__note">
+                        A single note can depart from these in its own ⋯ menu, where “Default”
+                        inherits what is set here.
+                    </p>
+                </Section>
             </Dialog.Body>
         </Dialog>
     );
@@ -143,21 +141,9 @@ interface SectionProps {
 
 function Section({title, description, children}: SectionProps) {
     return (
-        <section className="settings-dialog__section">
-            <div className="settings-dialog__section-head">
-                <Text
-                    variant="subheader-2"
-                    color="secondary"
-                    className="settings-dialog__section-title"
-                >
-                    {title}
-                </Text>
-                {description ? (
-                    <Text color="secondary" variant="body-1">
-                        {description}
-                    </Text>
-                ) : null}
-            </div>
+        <section className="settings">
+            <h3 className="settings__section-label">{title}</h3>
+            {description ? <p className="settings__description">{description}</p> : null}
             {children}
         </section>
     );
@@ -170,17 +156,12 @@ interface ToggleRowProps {
     onUpdate: (value: boolean) => void;
 }
 
-/** A toggle row: label on the left, the Switch on the right edge (platform convention). */
 function ToggleRow({title, experimental, checked, onUpdate}: ToggleRowProps) {
     return (
-        <div className="settings-dialog__row">
-            <span className="settings-dialog__label">
-                <Text variant="body-1">{title}</Text>
-                {experimental ? (
-                    <Label theme="info" size="xs">
-                        Experimental
-                    </Label>
-                ) : null}
+        <div className="settings__row">
+            <span className="settings__label">
+                {title}
+                {experimental ? <span className="appearance-choice__tag">Experimental</span> : null}
             </span>
             {/* The Switch is itself a <label>; its visible title lives beside it, so name it via aria. */}
             <Switch checked={checked} onUpdate={onUpdate} controlProps={{'aria-label': title}} />

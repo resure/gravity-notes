@@ -14,6 +14,8 @@ export interface EditorPaneHandle {
     toggleMode(): void;
     /** Move keyboard focus into the editor body. */
     focus(): void;
+    /** Focus the open note's title with its text selected, ready to be typed over. */
+    renameTitle(): void;
 }
 
 interface EditorPaneProps {
@@ -126,6 +128,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
             },
             focus() {
                 bodyRef.current?.focus();
+            },
+            renameTitle() {
+                titleRef.current?.focus();
+                titleRef.current?.select();
             },
         }),
         [],

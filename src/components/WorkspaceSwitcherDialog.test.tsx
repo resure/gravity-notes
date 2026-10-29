@@ -132,6 +132,59 @@ describe('WorkspaceSwitcherDialog', () => {
         expect(onOpen).not.toHaveBeenCalled();
     });
 
+    it('points aria-activedescendant at a real option even when the id holds spaces', () => {
+        setup({
+            workspaces: [
+                ...WORKSPACES,
+                {
+                    id: 'tauri:/Users/me/My Vault',
+                    backend: 'tauri-fs',
+                    name: 'My Vault',
+                    path: '/Users/me/My Vault',
+                },
+            ],
+        });
+        type('vault');
+        const activeId = filter().getAttribute('aria-activedescendant');
+        expect(activeId).not.toMatch(/\s/);
+        expect(document.getElementById(activeId ?? '')).toHaveTextContent('My Vault');
+    });
+
+    it.each([
+        ['!a', '\u021a'],
+        ['A/a', 'A\u02fa'],
+    ])('keeps workspace accessibility targets distinct for %j and %j', (first, second) => {
+        setup({
+            workspaces: [first, second].map((name) => ({
+                id: `tauri:/${name}`,
+                backend: 'tauri-fs',
+                name,
+                path: `/${name}`,
+            })),
+            supportsFolders: false,
+        });
+        const rows = screen.getAllByRole('option');
+        expect(rows[0].id).not.toBe(rows[1].id);
+        expect(document.getElementById(filter().getAttribute('aria-activedescendant') ?? '')).toBe(
+            rows[0],
+        );
+        press('ArrowDown');
+        expect(document.getElementById(filter().getAttribute('aria-activedescendant') ?? '')).toBe(
+            rows[1],
+        );
+        expect(rows[1]).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('leaves Enter and arrows to an open IME composition', () => {
+        const {onOpen} = setup();
+        press('ArrowDown', {isComposing: true});
+        press('Enter', {isComposing: true});
+        press('Enter', {keyCode: 229});
+        expect(onOpen).not.toHaveBeenCalled();
+        press('Enter');
+        expect(onOpen).toHaveBeenCalledWith('tauri:/Users/me/Work');
+    });
+
     it('arrows walk the selectable rows down to the Open Folder action', () => {
         const {onOpen, onOpenFolder} = setup();
         // Order: [Work] → In this app → Notes (current, skipped) → Open Folder….

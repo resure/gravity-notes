@@ -1,5 +1,10 @@
 /** Selection/caret and inline-HTML helpers for contentEditable blocks. */
 
+import {WIKI_LINK_CLASS} from '../../markdown';
+
+/** An atomic inline: a wiki-link chip, which the caret steps over and never enters. */
+const ATOM = `.${WIKI_LINK_CLASS}[contenteditable="false"]`;
+
 export type CaretPos = 'start' | 'end' | number | {x: number; edge: 'top' | 'bottom'};
 
 export interface LineRect {
@@ -20,14 +25,7 @@ export function getCaretOffset(el: HTMLElement): number {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return 0;
     const range = sel.getRangeAt(0);
-    const pre = document.createRange();
-    pre.selectNodeContents(el);
-    try {
-        pre.setEnd(range.startContainer, range.startOffset);
-    } catch {
-        return 0;
-    }
-    return pre.toString().length;
+    return textOffsetOf(el, range.startContainer, range.startOffset);
 }
 
 export function caretAtStart(el: HTMLElement): boolean {
@@ -80,11 +78,57 @@ export function setCaret(el: HTMLElement, pos: CaretPos): void {
         const [node, off] = findTextPos(el, pos);
         range.setStart(node, off);
         range.collapse(true);
+        keepOutOfAtoms(el, range);
     }
     const sel = window.getSelection();
     if (!sel) return;
     sel.removeAllRanges();
     sel.addRange(range);
+}
+
+/** The atomic inline (a `contenteditable="false"` wiki-link chip) a range starts in, if any. */
+function atomAt(el: HTMLElement, range: Range): {atom: HTMLElement; before: number} | null {
+    const start = range.startContainer;
+    const host = start instanceof Element ? start : start.parentElement;
+    const atom = host?.closest<HTMLElement>(ATOM);
+    if (!atom || atom === el || !el.contains(atom)) return null;
+    return {atom, before: textOffsetOf(atom, range.startContainer, range.startOffset)};
+}
+
+/** `[node, offset]` moved out of a chip it falls inside, to the chip's near side. */
+function outsideAtoms(el: HTMLElement, [node, offset]: [Node, number]): [Node, number] {
+    const range = document.createRange();
+    range.setStart(node, offset);
+    keepOutOfAtoms(el, range);
+    return [range.startContainer, range.startOffset];
+}
+
+/**
+ * A collapsed caret that a click left INSIDE an atomic inline (WebKit and Chromium both put it in
+ * the chip's text, where nothing can be typed) moves to the chip's near edge. Returns whether it
+ * moved.
+ */
+export function moveCaretOutOfAtom(root: HTMLElement): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+    const found = atomAt(root, sel.getRangeAt(0));
+    if (!found) return false;
+    const next = document.createRange();
+    if (found.before * 2 < (found.atom.textContent ?? '').length) next.setStartBefore(found.atom);
+    else next.setStartAfter(found.atom);
+    next.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(next);
+    return true;
+}
+
+/** A text offset at a chip's edge maps to a spot INSIDE its text; move it to the chip's near side. */
+function keepOutOfAtoms(el: HTMLElement, range: Range): void {
+    const found = atomAt(el, range);
+    if (!found) return;
+    if (found.before === 0) range.setStartBefore(found.atom);
+    else range.setStartAfter(found.atom);
+    range.collapse(true);
 }
 
 function caretRangeFromPoint(x: number, y: number): Range | null {
@@ -107,13 +151,140 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
     return null;
 }
 
+const graphemes = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+
+function textRuns(el: HTMLElement): Text[][] {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT + NodeFilter.SHOW_ELEMENT);
+    const runs: Text[][] = [[]];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeName === 'BR') runs.push([]);
+        else if (node.nodeType === Node.TEXT_NODE) runs[runs.length - 1].push(node as Text);
+    }
+    return runs;
+}
+
+function graphemePositions(el: HTMLElement): {start: [Node, number]; end: [Node, number]}[] {
+    const positions: {start: [Node, number]; end: [Node, number]}[] = [];
+    for (const nodes of textRuns(el)) {
+        let nodeIndex = 0;
+        let nodeStart = 0;
+        for (const {index, segment} of graphemes.segment(nodes.map((node) => node.data).join(''))) {
+            while (nodeIndex < nodes.length - 1 && index >= nodeStart + nodes[nodeIndex].length) {
+                nodeStart += nodes[nodeIndex++].length;
+            }
+            const start: [Node, number] = [nodes[nodeIndex], index - nodeStart];
+            const end = index + segment.length;
+            while (nodeIndex < nodes.length - 1 && end > nodeStart + nodes[nodeIndex].length) {
+                nodeStart += nodes[nodeIndex++].length;
+            }
+            positions.push({start, end: [nodes[nodeIndex], end - nodeStart]});
+        }
+    }
+    return positions;
+}
+
+function distanceToRect(rect: DOMRect, x: number, y: number): {dy: number; dx: number} {
+    return {
+        dy: Math.max(rect.top - y, y - rect.bottom, 0),
+        dx: Math.max(rect.left - x, x - rect.right, 0),
+    };
+}
+
+function compareDistance(a: {dy: number; dx: number}, b: {dy: number; dx: number}): number {
+    return a.dy - b.dy || a.dx - b.dx;
+}
+
+// A hit test lands on whatever is on top, and a popup (the wiki-link tip below a chip, say) can
+// cover the very line asked for. Then the nearest character is found by measuring instead.
+function caretRangeIn(el: HTMLElement, x: number, y: number): Range | null {
+    const hit = caretRangeFromPoint(x, y);
+    if (hit && el.contains(hit.startContainer)) return hit;
+    const positions = graphemePositions(el);
+    const chunks: {start: number; end: number; dy: number; dx: number}[] = [];
+    const chunk = document.createRange();
+    for (let start = 0; start < positions.length; start += 128) {
+        const end = Math.min(start + 128, positions.length);
+        chunk.setStart(...positions[start].start);
+        chunk.setEnd(...positions[end - 1].end);
+        let nearest: {dy: number; dx: number} | null = null;
+        for (const rect of chunk.getClientRects()) {
+            const distance = distanceToRect(rect, x, y);
+            if (!nearest || compareDistance(distance, nearest) < 0) nearest = distance;
+        }
+        if (nearest) chunks.push({start, end, ...nearest});
+    }
+    // Chunk boxes bound their graphemes, so distant text needs no individual geometry reads.
+    chunks.sort(compareDistance);
+    const character = document.createRange();
+    let best: {position: [Node, number]; index: number; dy: number; dx: number} | null = null;
+    for (const bounds of chunks) {
+        if (best && compareDistance(bounds, best) > 0) break;
+        for (let i = bounds.start; i < bounds.end; i++) {
+            const position = positions[i];
+            character.setStart(...position.start);
+            character.setEnd(...position.end);
+            const rect = character.getClientRects()[0];
+            if (!rect) continue;
+            const distance = distanceToRect(rect, x, y);
+            if (
+                !best ||
+                compareDistance(distance, best) < 0 ||
+                (compareDistance(distance, best) === 0 && i < best.index)
+            ) {
+                const after = x > rect.left + rect.width / 2;
+                best = {position: after ? position.end : position.start, index: i, ...distance};
+            }
+        }
+    }
+    if (!best) return null;
+    character.setStart(...best.position);
+    character.collapse(true);
+    return character;
+}
+
+function edgeLineY(el: HTMLElement, rect: DOMRect, edge: 'top' | 'bottom'): number {
+    const style = getComputedStyle(el);
+    const padding = parseFloat(edge === 'top' ? style.paddingTop : style.paddingBottom) || 0;
+    const inset = Math.min(padding + lineHeightOf(el) / 2, rect.height / 2);
+    return edge === 'top' ? rect.top + inset : rect.bottom - inset;
+}
+
 /** Place caret on the first/last line of `el`, as close to viewport x as possible. */
 function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void {
     const rect = el.getBoundingClientRect();
-    const lh = lineHeightOf(el);
-    const inset = Math.min(lh / 2, rect.height / 2);
-    const y = edge === 'top' ? rect.top + inset : rect.bottom - inset;
-    setCaretAtPoint(el, x, y, edge === 'top' ? 'start' : 'end');
+    setCaretAtPoint(el, x, edgeLineY(el, rect, edge), edge === 'top' ? 'start' : 'end');
+}
+
+/**
+ * The text position on `el`'s first/last line nearest viewport x, as [node, offset] — where a
+ * selection EXTENDED into `el` from a neighbouring block should land.
+ */
+export function positionNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): [Node, number] {
+    const rect = el.getBoundingClientRect();
+    const range = caretRangeIn(
+        el,
+        Math.min(Math.max(x, rect.left + 2), Math.max(rect.left + 2, rect.right - 2)),
+        edgeLineY(el, rect, edge),
+    );
+    if (range) return outsideAtoms(el, [range.startContainer, range.startOffset]);
+    return edgePosition(el, edge === 'top' ? 'start' : 'end');
+}
+
+/** The first or last text position inside `el`. */
+export function edgePosition(el: HTMLElement, edge: 'start' | 'end'): [Node, number] {
+    return outsideAtoms(el, findTextPos(el, edge === 'start' ? 0 : (el.textContent ?? '').length));
+}
+
+/** Character offset of an arbitrary DOM position within `el` (the selection's FOCUS, say). */
+export function textOffsetOf(el: HTMLElement, node: Node, offset: number): number {
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    try {
+        pre.setEnd(node, offset);
+    } catch {
+        return 0;
+    }
+    return pre.toString().length;
 }
 
 /** The caret at the character under a viewport point, pulled inside `el`'s box first. */
@@ -126,11 +297,12 @@ export function setCaretAtPoint(
     const rect = el.getBoundingClientRect();
     const clamp = (value: number, low: number, high: number) =>
         Math.min(Math.max(value, low), Math.max(low, high));
-    const range = caretRangeFromPoint(
+    const range = caretRangeIn(
+        el,
         clamp(x, rect.left + 2, rect.right - 2),
         clamp(y, rect.top + 1, rect.bottom - 1),
     );
-    if (range && el.contains(range.startContainer)) {
+    if (range) {
         range.collapse(true);
         const sel = window.getSelection();
         if (sel) {
@@ -146,16 +318,45 @@ export function setCaretAtPoint(
 export function caretLineRect(el: HTMLElement): LineRect {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).startContainer)) {
-        const r = sel.getRangeAt(0).cloneRange();
-        r.collapse(true);
-        const rects = r.getClientRects();
-        if (rects.length > 0) {
-            const rect = rects[0];
-            return {left: rect.left, top: rect.top, bottom: rect.bottom};
-        }
-        const br = r.getBoundingClientRect();
-        if (br.height > 0 || br.top !== 0) return {left: br.left, top: br.top, bottom: br.bottom};
+        const range = sel.getRangeAt(0);
+        const rect = lineRectAt(el, range.startContainer, range.startOffset);
+        if (rect) return rect;
     }
+    return firstLineRect(el);
+}
+
+/** Viewport rect of the line a DOM position inside `el` sits on, or null when it has no box. */
+export function lineRectAt(el: HTMLElement, node: Node, offset: number): LineRect | null {
+    const r = document.createRange();
+    try {
+        r.setStart(node, offset);
+    } catch {
+        return null;
+    }
+    r.collapse(true);
+    const rects = r.getClientRects();
+    if (rects.length > 0) {
+        const rect = rects[0];
+        return {left: rect.left, top: rect.top, bottom: rect.bottom};
+    }
+    const br = r.getBoundingClientRect();
+    if (br.height > 0 || br.top !== 0) return {left: br.left, top: br.top, bottom: br.bottom};
+    // A position parked on an ELEMENT boundary (`setCaret(el, 'end')` collapses onto the block
+    // itself) has no box of its own, and falling back to the first line made ↑ from the end of a
+    // long paragraph leave the block. Measure what sits before it instead — a link chip itself,
+    // since the character before is its hidden `]]`, which has no box either.
+    const previous = node.nodeType === Node.ELEMENT_NODE ? node.childNodes[offset - 1] : null;
+    if (previous instanceof Element) {
+        const boxes = previous.getClientRects();
+        const last = boxes[boxes.length - 1];
+        if (last && (last.height > 0 || last.top !== 0))
+            return {left: last.right, top: last.top, bottom: last.bottom};
+    }
+    const textOffset = textOffsetOf(el, node, offset);
+    return textOffset === 0 ? firstLineRect(el) : characterBeforeRect(el, textOffset);
+}
+
+function firstLineRect(el: HTMLElement): LineRect {
     const er = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
     const pt = parseFloat(cs.paddingTop) || 0;
@@ -164,15 +365,38 @@ export function caretLineRect(el: HTMLElement): LineRect {
     return {left: er.left + pl, top: er.top + pt, bottom: er.top + pt + lh};
 }
 
+function characterBeforeRect(el: HTMLElement, offset: number): LineRect | null {
+    if (offset === 0) return null;
+    const [startNode, startOffset] = findTextPos(el, offset - 1);
+    const [endNode, endOffset] = findTextPos(el, offset);
+    const range = document.createRange();
+    try {
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+    } catch {
+        return null;
+    }
+    const rects = range.getClientRects();
+    const rect = rects[rects.length - 1];
+    if (!rect || (rect.height === 0 && rect.top === 0)) return null;
+    return {left: rect.right, top: rect.top, bottom: rect.bottom};
+}
+
 export function caretOnFirstLine(el: HTMLElement): boolean {
-    const line = caretLineRect(el);
+    return lineIsFirst(el, caretLineRect(el));
+}
+
+export function lineIsFirst(el: HTMLElement, line: LineRect): boolean {
     const er = el.getBoundingClientRect();
     const pt = parseFloat(getComputedStyle(el).paddingTop) || 0;
     return line.top - (er.top + pt) < lineHeightOf(el) / 2;
 }
 
 export function caretOnLastLine(el: HTMLElement): boolean {
-    const line = caretLineRect(el);
+    return lineIsLast(el, caretLineRect(el));
+}
+
+export function lineIsLast(el: HTMLElement, line: LineRect): boolean {
     const er = el.getBoundingClientRect();
     const pb = parseFloat(getComputedStyle(el).paddingBottom) || 0;
     return er.bottom - pb - line.bottom < lineHeightOf(el) / 2;
@@ -183,12 +407,41 @@ export function splitHtmlAtCaret(el: HTMLElement): [string, string] {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return [el.innerHTML, ''];
     const range = sel.getRangeAt(0);
+    const runs = textRuns(el).map((nodes) => ({
+        nodes,
+        text: nodes.map((node) => node.data).join(''),
+    }));
+    // Programmatic selections can bisect a grapheme even though native typing usually repairs it.
+    const boundary = (node: Node, offset: number, edge: 'start' | 'end'): [Node, number] => {
+        const position = textOffsetOf(el, node, offset);
+        let remaining = position;
+        for (const {nodes, text} of runs) {
+            if (remaining >= text.length) {
+                remaining -= text.length;
+                continue;
+            }
+            const segment = graphemes.segment(text).containing(remaining);
+            if (!segment || segment.index === remaining) break;
+            const end = segment.index + segment.segment.length;
+            const after = range.collapsed
+                ? remaining - segment.index >= end - remaining
+                : edge === 'end';
+            let local = after ? end : segment.index;
+            for (const textNode of nodes) {
+                if (local <= textNode.length) return [textNode, local];
+                local -= textNode.length;
+            }
+        }
+        return [node, offset];
+    };
+    const [startNode, startOffset] = boundary(range.startContainer, range.startOffset, 'start');
+    const [endNode, endOffset] = boundary(range.endContainer, range.endOffset, 'end');
     const before = document.createRange();
     before.selectNodeContents(el);
-    before.setEnd(range.startContainer, range.startOffset);
+    before.setEnd(startNode, startOffset);
     const after = document.createRange();
     after.selectNodeContents(el);
-    after.setStart(range.endContainer, range.endOffset);
+    after.setStart(endNode, endOffset);
     const toHtml = (fragment: DocumentFragment) => {
         const div = document.createElement('div');
         div.appendChild(fragment);
@@ -320,7 +573,7 @@ export function tryInlineMarkdown(el: HTMLElement): boolean {
         {re: /\*\*([^*\n]+)\*\*$/, tag: 'strong'},
         {re: /(?<!\*)\*([^*\s][^*\n]*?)\*$/, tag: 'em'},
         {re: /(?<!~)~~([^~\n]+)~~$/, tag: 's'},
-        {re: /==([^=\s][^=\n]*?)==$/, tag: 'mark'},
+        {re: /[=]=([^=\s][^=\n]*?)==$/, tag: 'mark'},
         {re: /\+\+([^+\s][^+\n]*?)\+\+$/, tag: 'ins'},
     ];
 

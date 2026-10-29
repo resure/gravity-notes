@@ -1,219 +1,326 @@
+/* The title bar. 40px, and the whole strip is the window's drag region except its controls (the
+   attribute is on the <header>). Traffic lights are positioned by the SYSTEM — never hand-position
+   them: macOS 26 re-runs title-bar layout and reverts hand-set frames.
+
+   The search field is centred on the WINDOW and the orb rides beside it, measured off the field's
+   own edge, so a long title or a wide sidebar can never nudge the pair off centre. Below 1280 the
+   field takes whatever is left between the two flow clusters; `--topbar-side-reserve` is the room
+   each end needs. */
+
 .topbar {
+    --topbar-side-reserve: 110px;
+    --topbar-search-width: min(404px, calc(100vw - var(--topbar-side-reserve) * 2));
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
+    gap: 2px;
+    height: 40px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-panel);
+    color: var(--text-1);
+    font-family: var(--font-ui);
+}
+
+/* Desktop app: inset past the traffic lights (~78px on macOS 26), and take the same room off the
+   field's half-width — it is centred on the window while the lights push its neighbours inward. */
+.tauri-app:not(.ios) .topbar {
+    padding-left: 92px;
+    --topbar-side-reserve: 190px;
+}
+
+.topbar__panes {
+    display: flex;
+    gap: 2px;
+    margin-left: 2px;
+}
+
+.topbar__pane-toggle,
+.topbar__note-actions,
+.topbar__back {
+    flex: none;
+}
+
+/* ── The orb ─────────────────────────────────────────────────────────────────────────────────
+   An 18px glowing disc in a 26px target, 8px left of the field: half the field, the target and
+   the gap. It also carries the save state. */
+
+.topbar__orb-slot {
+    position: absolute;
+    left: 50%;
+    margin-left: calc(var(--topbar-search-width) / -2 - 34px);
+    display: flex;
+}
+
+.topbar__orb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+}
+
+.topbar__orb-disc {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gn-orange);
+    box-shadow: 0 0 12px -1px var(--gn-orb-halo);
+    transition:
+        transform var(--dur-1) var(--ease),
+        box-shadow var(--dur-2) var(--ease),
+        opacity var(--dur-2) var(--ease),
+        background var(--dur-2) var(--ease);
+}
+
+.topbar__orb_saving .topbar__orb-disc {
+    opacity: 0.7;
+    box-shadow: 0 0 8px -2px var(--gn-orb-halo);
+}
+
+.topbar__orb_error .topbar__orb-disc,
+.topbar__orb_conflict .topbar__orb-disc {
+    background: var(--danger);
+    box-shadow: 0 0 12px -1px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.topbar__orb:active .topbar__orb-disc {
+    transform: scale(0.94);
+}
+
+.topbar__orb-menu {
+    width: 228px;
+    box-sizing: border-box;
+}
+
+/* ── Search ──────────────────────────────────────────────────────────────────────────────────── */
+
+.topbar__search {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: var(--topbar-search-width);
+}
+
+.topbar__search .g-text-input__content {
+    align-items: center;
+    gap: 7px;
+    padding-inline: 9px 8px;
+}
+
+.topbar__search .g-text-input__control {
+    padding: 0;
+}
+
+/* Gravity's size-m control states its own 28px height, past `--g-text-input-height`. */
+.topbar__search.g-text-input_size_m .g-text-input__control,
+.topbar__search.g-text-input_size_m .g-text-input__additional-content {
+    height: 25px;
+}
+
+.topbar__search .g-text-input__additional-content {
+    display: flex;
+    align-items: center;
+    padding: 0;
+}
+
+.topbar__search-icon {
+    display: flex;
+    flex: none;
+    color: var(--text-3);
+}
+
+.topbar__search .g-text-input__clear {
+    margin-inline-end: 4px;
+    color: var(--text-3);
+}
+
+.topbar__kbd {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    box-sizing: border-box;
+    gap: 1px;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in oklab, var(--line), transparent 10%);
+    border-radius: var(--r-xs);
+    background: color-mix(in oklab, var(--bg-panel), var(--bg-paper) 50%);
+    color: var(--text-4);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    line-height: 14px;
+    white-space: nowrap;
+}
+
+/* ── Right cluster: the note ⋯ ───────────────────────────────────────────────────────────────── */
+
+.topbar__right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+}
+
+/* The save state rides on the orb; this is only its text, kept for a screen reader to ask for. */
+.topbar__sync {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* ── Mobile (≤700px) ─────────────────────────────────────────────────────────────────────────
+   One row, everything in flow: Back · orb · search · ⋯. */
+
+.topbar_mobile {
+    height: auto;
     gap: 8px;
     padding: 6px 12px;
-    border-bottom: 1px solid var(--g-color-line-generic);
-    flex-shrink: 0;
-    /* Anchors the note-actions ⋯, which the desktop layout pins to the right edge (see below). */
-    position: relative;
-}
-
-/* Desktop app (Tauri): the native title bar is hidden (titleBarStyle "Overlay") and this strip plays
-   its part. Center the orb + a constrained-width search as a "command center" (VS Code style). The
-   traffic lights sit far left, clear of the centered group even at the min window width, and the empty
-   bar on either side is the window drag handle (data-tauri-drag-region on the <header>); the orb and
-   search stay clickable. The web build has no .tauri-app class, so it keeps the full-width search. */
-.tauri-app .topbar {
-    justify-content: center;
-}
-
-.tauri-app .topbar__search {
-    flex: none;
-    width: clamp(320px, 40vw, 520px);
-}
-
-/* Desktop: the orb + search are a centered "command center", so the ⋯ can't ride along in that group
-   or it shifts the search off-center. Pin it to the window's right edge instead (it sits in the empty
-   drag area), leaving the centered search at its full width. The web build keeps it in flow (the
-   full-width search already runs to the right edge, with the ⋯ right after it).
-
-   Not on the mobile editor pane, where the bar is a plain flex row (Back ← → ⋯) and the ⋯ stays in
-   it, centered WITH Back rather than against the safe-area-padded header. Excluding it here, instead
-   of undoing these declarations there, leaves the button Gravity's own `position: relative` and
-   `transform: scale(1)` — the transform is what keeps its `z-index: -1` hover layer above the bar. */
-.tauri-app .topbar:not(.topbar_mobile) .topbar__note-actions {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-/* Mobile (web): viewport-fit=cover lets the page draw edge-to-edge, so pad the bar for the device
-   safe areas (notch / rounded corners / landscape sensor housing). max() keeps the normal 6/12px on
-   non-notched screens (inset = 0), so it's inert on desktop and the Tauri build. */
-.topbar_mobile {
     padding-top: max(6px, env(safe-area-inset-top));
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
-}
-
-/* A NARROW Tauri window switches to the mobile layout, but the native overlay titlebar still floats
-   the macOS traffic lights at the top-left. Undo the desktop command-center centering (left-align
-   like the web build) and inset the bar's leading content past the lights so the orb / Back button
-   clear them with a comfortable gap — sitting flush against the cluster made the round orb read as a
-   4th window button. The inset spans the light cluster (~78px on macOS 26) plus breathing room.
-   Higher specificity than the web `.topbar_mobile` above, so this padding-left wins on desktop.
-   Scoped to :not(.ios): iOS is also a Tauri build but has no traffic lights, so it keeps the plain
-   safe-area padding from `.topbar_mobile` and left-aligns without the 96px inset. */
-.tauri-app .topbar_mobile {
-    justify-content: flex-start;
 }
 
 .tauri-app:not(.ios) .topbar_mobile {
     padding-left: 96px;
 }
 
-/* On mobile the search is the hero again (full remaining width), not the desktop's fixed clamp. */
-.tauri-app .topbar_mobile .topbar__search {
-    flex: 1;
-    width: auto;
+.topbar_mobile .topbar__orb-slot,
+.topbar_mobile .topbar__search {
+    position: static;
+    margin-left: 0;
+    transform: none;
 }
 
-/* macOS only: the traffic-light inset already clears the lights, so drop the Back button's web
-   nudge toward the edge. On iOS there's no inset, so the nudge (from `.topbar__back`) stays. */
+.topbar_mobile .topbar__search {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+}
+
+/* WKWebView zooms a focused input below 16px. */
+.topbar_mobile .g-text-input_size_l .g-text-input__control {
+    font-size: 16px;
+}
+
+.topbar_mobile .topbar__right {
+    gap: 6px;
+}
+
+.topbar__back {
+    margin-left: -8px;
+}
+
 .tauri-app:not(.ios) .topbar_mobile .topbar__back {
     margin-left: 0;
 }
 
-/* The search is the hero: it fills from the orb up to the right edge. */
-.topbar__search {
-    flex: 1;
-    min-width: 0;
-}
-
-/* DropdownMenu wraps the switcher in this div (it's the popup anchor); keep it from stretching. */
-.topbar__menu-anchor {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-}
-
-/* The open note's ⋯ "Note appearance" button, pinned at the bar's right edge (after the flex:1
-   search). A little transparent so it stays quiet next to the search; full-strength on hover. */
-.topbar__note-actions {
-    flex-shrink: 0;
-    opacity: 0.6;
-    transition: opacity 0.12s ease;
-}
-/* Pointer-only (see NoteList.css): on touch, :hover eats the first tap. */
-@media (hover: hover) {
-    .topbar__note-actions:hover {
-        opacity: 1;
-    }
-}
-
-/* The orange orb = the app mark and the menu trigger: a small, flat disc in the app icon's orange —
-   no gradient, shadow, or outline, so it reads as one clean dot. Its color doubles as the save
-   indicator (it recolors for error/conflict and pulses while saving). */
-.topbar__menu-orb {
-    box-sizing: border-box;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background-color: var(--gn-orange);
-    /* The orb is the app's mark and light source — a soft halo makes it read as luminous. */
-    box-shadow: 0 0 12px -2px var(--gn-orb-halo);
-    cursor: pointer;
-    transition:
-        transform 0.1s ease,
-        box-shadow 0.2s ease,
-        background-color 0.2s ease;
-}
-
-/* No size change on hover; only a small press feedback stays. */
-.topbar__menu-orb:active {
-    transform: scale(0.95);
-}
-
-.topbar__menu-orb:focus-visible {
-    outline: 2px solid var(--g-color-line-focus);
-    outline-offset: 2px;
-}
-
-/* Saving: a slow, very gentle pulse — a shallow opacity dip so it reads as a quiet breath, not a
-   blink (kept subtle on purpose; the menu's status line spells out the state). Driven by a `_pulsing`
-   class (not `_saving`) so TopBar can ease it OUT when saving stops instead of snapping — see the
-   freeze-and-release effect there. */
-.topbar__menu-orb_pulsing {
-    animation: topbar-orb-blink 1.8s ease-in-out infinite;
-}
-
-@keyframes topbar-orb-blink {
-    0%,
-    100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.72;
-    }
-}
-
-/* Something needs attention: recolor the disc (the menu's status line says what). */
-.topbar__menu-orb_error {
-    background-color: var(--g-color-text-danger);
-}
-
-.topbar__menu-orb_conflict {
-    background-color: var(--g-color-text-warning);
-}
-
-/* Honor a reduced-motion preference: hold the orb steady instead of pulsing. */
-@media (prefers-reduced-motion: reduce) {
-    .topbar__menu-orb_pulsing {
-        animation: none;
-    }
-}
-
-/* Small status swatch in the read-only menu line, colored by state (mirrors the orb). */
-.topbar__menu-status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin: 0 4px;
-    border-radius: 50%;
-    background-color: var(--g-color-text-positive);
-}
-.topbar__menu-status-dot_saving {
-    background-color: var(--gn-orange);
-}
-.topbar__menu-status-dot_error {
-    background-color: var(--g-color-text-danger);
-}
-.topbar__menu-status-dot_conflict {
-    background-color: var(--g-color-text-warning);
-}
-
-/* Keyboard hints trailing a menu item (⌘\, ⌘/) — quiet, so the label leads. */
-.topbar__menu-kbd {
-    color: var(--g-color-text-hint);
-    font-size: 12px;
-}
-
-/* The storage label is context, not an action — cap its width so a long folder name can't blow out
-   the menu. */
-.topbar__menu-storage {
-    max-width: 260px;
-}
-
-/* ── Mobile editor pane (≤700px) ────────────────────────────────────────────────────────────────
-   An icon-only Back leading the one-row bar (‹ · orb · search · ⋯). No `margin-right: auto` here:
-   the search's `flex: 1` already takes the slack and pins the ⋯ to the right edge, and pushing from
-   here would instead shove the orb and search away from the chevron. */
-.topbar__back {
-    flex-shrink: 0;
-    /* -8px pulls the chevron toward the window edge, past the button's own padding. */
-    margin-left: -8px;
-}
-
-/* A control that belongs to the OTHER pane: still laid out (so the orb and search keep exactly the
-   same position and width in both), but invisible and inert. `visibility: hidden` rather than
-   `display: none` is the whole point — it reserves the slot. Paired with `aria-hidden` +
-   `tabIndex={-1}` in TopBar.tsx so it's equally absent from the accessibility tree and tab order. */
+/* A control that belongs to the OTHER pane: laid out (so the orb and search keep the same position
+   in both) but invisible and inert, paired with `aria-hidden` + `tabIndex={-1}`. */
 .topbar__back_placeholder,
 .topbar__note-actions_placeholder {
     visibility: hidden;
     pointer-events: none;
+}
+
+/* ── Menu bits ───────────────────────────────────────────────────────────────────────────────── */
+
+.topbar__ws-dot {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-1) 18%, transparent);
+}
+
+.topbar__ws-dot_active {
+    background: var(--accent);
+}
+
+.topbar__ws-dot_danger {
+    background: var(--danger);
+}
+
+.topbar__menu-blank {
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
+.topbar__menu-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.topbar__menu-workspace .g-menu__item-content {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The ⋯ menu: the appearance strips, then the rows. */
+.note-menu {
+    width: 320px;
+    max-height: calc(100vh - 8px);
+    max-height: calc(100dvh - 8px);
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px;
+    font-size: var(--fs-menu);
+    line-height: var(--lh-menu);
+}
+
+.note-menu .g-menu {
+    padding: 0;
+}
+
+.note-menu__panel {
+    padding: 4px 10px 10px;
+}
+
+.note-menu__panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.note-menu__panel-label {
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+.note-menu__reset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+}
+
+@media (hover: hover) {
+    .note-menu__reset:hover {
+        color: var(--link-hover);
+    }
+}
+
+.note-menu__separator {
+    height: 1px;
+    margin: 4px 8px;
+    background: var(--line);
 }

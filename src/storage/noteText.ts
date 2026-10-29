@@ -169,10 +169,13 @@ export function previewFromContent(text: string): string {
             .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
             .replace(/\[\[([^[\]\n]+)\]\]/g, '$1') // [[wiki links]] → their title, as the editor shows them
             .replace(/^(\s{0,3}#{1,6}\s.*?)(?:[ \t]+\{#[^\s{}]+\})+[ \t]*$/gm, '$1') // heading {#id} anchors
-            // Strip the stacked line-start block markers — ATX heading / blockquote / bullet / ordered —
-            // in one pass. The trailing `+` peels NESTED prefixes (e.g. a blockquoted list `> - item` →
-            // `item`); a single match would leave the inner marker behind.
-            .replace(/^(?:\s{0,3}#{1,6}\s+|\s*>\s?|\s*[-*+]\s+|\s*\d+\.\s+)+/gm, '')
+            // Strip the stacked line-start block markers — ATX heading / blockquote / bullet / ordered /
+            // task box / callout kind — in one pass. The trailing `+` peels NESTED prefixes (e.g. a
+            // blockquoted to-do `> - [x] item` → `item`); a single match would leave the inner marker.
+            .replace(
+                /^(?:\s{0,3}#{1,6}\s+|\s*>\s?|\s*[-*+]\s+|\s*\d+\.\s+|\[[ xX]\]\s+|\[![A-Za-z]+\][+-]?\s*)+/gm,
+                '',
+            )
             .replace(/\\([^\sA-Za-z0-9])/g, '$1') // drop CommonMark backslash-escapes (e.g. 0\. → 0.)
             .replace(/\\$/gm, ''), // hard-line-break backslashes
     ).slice(0, 140);

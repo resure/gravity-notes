@@ -5,8 +5,8 @@
  * backend-agnostic.
  *
  * A link's target is matched to a note by *title* (the file-name leaf without `.md`),
- * case-insensitively. A target that carries a slash is also tried as an explicit relative path
- * (`Folder/Note` → `Folder/Note.md`). An `|alias` (Obsidian-style display text) and a `#heading`
+ * case-insensitively. `Folder/Note` also tries an explicit path, while `/Note` resolves only from
+ * the vault root. An `|alias` (Obsidian-style display text) and a `#heading`
  * anchor are accepted and ignored for resolution. On disk the note keeps the literal `[[target]]`,
  * so it round-trips through any Markdown tool.
  */
@@ -47,6 +47,42 @@ export function normalizeTarget(target: string): string {
     return ref.trim();
 }
 
+/** A link's inside split into the note it names and its display text (`Note|text`), if any. */
+export function splitWikiTarget(inner: string): {name: string; alias: string | null} {
+    const bar = inner.indexOf('|');
+    if (bar === -1) return {name: inner, alias: null};
+    const alias = inner.slice(bar + 1);
+    return {name: inner.slice(0, bar), alias: alias.trim() ? alias : null};
+}
+
+export function wikiLinkTargetFor(note: NoteMeta, notes: readonly NoteMeta[]): string {
+    const lower = note.title.toLowerCase();
+    const shared = notes.filter((other) => other.title.toLowerCase() === lower).length > 1;
+    if (!shared) return note.title;
+    const path = note.id.replace(/\.md$/i, '');
+    return path.includes('/') ? path : `/${path}`;
+}
+
+export function copyableWikiLinkTargetFor(
+    note: NoteMeta,
+    notes: readonly NoteMeta[],
+): string | null {
+    const resolve = createWikiLinkResolver([...notes]);
+    for (const target of [wikiLinkTargetFor(note, notes), `/${note.id}`]) {
+        const text = `[[${target}]]`;
+        const links = extractWikiLinks(text);
+        if (
+            links.length === 1 &&
+            links[0].index === 0 &&
+            links[0].length === text.length &&
+            resolve(links[0].target, '') === note.id
+        ) {
+            return target;
+        }
+    }
+    return null;
+}
+
 /**
  * Pre-indexed note list, so a batch of resolutions (e.g. {@link buildBacklinks}) is O(1) per link
  * instead of re-scanning every note. `byId` maps a lowercased id → its note; `byTitle` maps a
@@ -77,19 +113,20 @@ function buildResolveIndex(notes: NoteMeta[]): ResolveIndex {
 
 /**
  * Map-based core of {@link resolveWikiLink}: resolve a `[[target]]` against a prebuilt index. Same
- * rules — explicit relative path first, else by title with the same-folder/shallowest/lexicographic
+ * rules — explicit path first, else by title with the same-folder/shallowest/lexicographic
  * tiebreak — but lookups are O(1), so a whole backlink scan avoids the O(N²) re-filter.
  */
 function resolveWith(target: string, fromId: string, index: ResolveIndex): string | null {
     const ref = normalizeTarget(target);
     if (!ref) return null;
 
-    // Explicit relative-path form: "Folder/Note" (or "Folder/Note.md") → that exact id.
     if (ref.includes('/')) {
-        const wantId = (ref.toLowerCase().endsWith(MD_EXT) ? ref : ref + MD_EXT).toLowerCase();
+        const fromRoot = ref.startsWith('/');
+        const path = fromRoot ? ref.slice(1) : ref;
+        const wantId = (path.toLowerCase().endsWith(MD_EXT) ? path : path + MD_EXT).toLowerCase();
         const exact = index.byId.get(wantId);
         if (exact) return exact.id;
-        // No exact path hit — fall through and try matching the leaf as a bare title.
+        if (fromRoot) return null;
     }
 
     const wantTitle = titleFromFileName(ref).toLowerCase();
@@ -111,8 +148,8 @@ function resolveWith(target: string, fromId: string, index: ResolveIndex): strin
 
 /**
  * Resolve a `[[target]]` to a note id, relative to the note it was written in (`fromId`). Returns
- * `null` when nothing matches. A target with a slash is first tried as an explicit relative path;
- * otherwise it's matched by title. When several notes share a title, prefer one in the same folder as
+ * `null` when nothing matches. A leading slash resolves only from the vault root; other paths are
+ * tried explicitly, then by title. When several notes share a title, prefer one in the same folder as
  * `fromId`, then the shallowest path, then the lexicographically-first id (so it's stable).
  */
 export function resolveWikiLink(target: string, fromId: string, notes: NoteMeta[]): string | null {

@@ -1,19 +1,9 @@
 import {useCallback, useEffect, useState} from 'react';
-import type {RefObject} from 'react';
+import type {ReactNode, RefObject} from 'react';
 
-import {
-    ArrowUturnCcwLeft,
-    ArrowUturnCwRight,
-    Bold,
-    ChevronDown,
-    Code,
-    Italic,
-    LetterAUnderline,
-    Link,
-    Strikethrough,
-    Underline,
-} from '@gravity-ui/icons';
-import {Button, DropdownMenu, Icon, Popup} from '@gravity-ui/uikit';
+import {Button, DropdownMenu, Popup} from '@gravity-ui/uikit';
+
+import {ChevronDown, Link, Redo, Undo} from '../icons/icons';
 
 import type {EditorHandle, InlineMark} from './blockEditor/Editor';
 import {ColorPalette} from './blockEditor/blockColors';
@@ -23,12 +13,13 @@ import type {BlockType} from './blockEditor/types';
 
 import './EditorToolbar.css';
 
-const MARKS: {mark: InlineMark; label: string; icon: typeof Bold; command?: string}[] = [
-    {mark: 'bold', label: 'Bold (⌘B)', icon: Bold, command: 'bold'},
-    {mark: 'italic', label: 'Italic (⌘I)', icon: Italic, command: 'italic'},
-    {mark: 'underline', label: 'Underline (⌘U)', icon: Underline, command: 'underline'},
-    {mark: 'strike', label: 'Strikethrough (⌘⇧S)', icon: Strikethrough, command: 'strikeThrough'},
-    {mark: 'code', label: 'Code (⌘E)', icon: Code},
+// The marks are type, not icons: letterforms in the toolbar's own face.
+const MARKS: {mark: InlineMark; label: string; glyph: ReactNode; command?: string}[] = [
+    {mark: 'bold', label: 'Bold (⌘B)', glyph: <b>B</b>, command: 'bold'},
+    {mark: 'italic', label: 'Italic (⌘I)', glyph: <i>I</i>, command: 'italic'},
+    {mark: 'underline', label: 'Underline (⌘U)', glyph: <u>U</u>, command: 'underline'},
+    {mark: 'strike', label: 'Strikethrough (⌘⇧S)', glyph: <s>S</s>, command: 'strikeThrough'},
+    {mark: 'code', label: 'Code (⌘E)', glyph: <span>{'<>'}</span>},
 ];
 
 const TEXT_STYLES: BlockType[] = [
@@ -142,7 +133,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
     const button = (
         key: string,
         label: string,
-        icon: React.ReactNode,
+        content: ReactNode,
         action: (editor: EditorHandle) => void,
         selected = false,
         disabled = false,
@@ -151,6 +142,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
             key={key}
             view="flat"
             size="m"
+            className="editor-toolbar__button"
             selected={selected}
             disabled={disabled}
             title={label}
@@ -158,7 +150,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
             aria-pressed={selected}
             onClick={() => run(action)}
         >
-            {icon}
+            {content}
         </Button>
     );
 
@@ -176,8 +168,8 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                     if ((event.target as HTMLElement).closest('button')) event.preventDefault();
                 }}
             >
-                {button('undo', 'Undo (⌘Z)', <Icon data={ArrowUturnCcwLeft} />, (e) => e.undo())}
-                {button('redo', 'Redo (⌘⇧Z)', <Icon data={ArrowUturnCwRight} />, (e) => e.redo())}
+                {button('undo', 'Undo (⌘Z)', <Undo size={15} />, (e) => e.undo())}
+                {button('redo', 'Redo (⌘⇧Z)', <Redo size={15} />, (e) => e.redo())}
                 <span className="editor-toolbar__divider" />
                 <DropdownMenu
                     size="m"
@@ -189,8 +181,10 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                             className="editor-toolbar__style"
                             title="Text style"
                         >
-                            {itemFor(state.type ?? 'text')?.label}
-                            <Icon data={ChevronDown} size={14} />
+                            <span className="editor-toolbar__style-label">
+                                {itemFor(state.type ?? 'text')?.label}
+                                <ChevronDown size={12} />
+                            </span>
                         </Button>
                     )}
                     items={TEXT_STYLES.map((type) => ({
@@ -206,11 +200,11 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                     }))}
                 />
                 <span className="editor-toolbar__divider" />
-                {MARKS.map(({mark, label, icon}) =>
+                {MARKS.map(({mark, label, glyph}) =>
                     button(
                         mark,
                         label,
-                        <Icon data={icon} />,
+                        <span className="editor-toolbar__letter">{glyph}</span>,
                         (e) => e.format(mark),
                         state.marks.has(mark),
                         !canFormat,
@@ -219,6 +213,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                 <Button
                     view="flat"
                     size="m"
+                    className="editor-toolbar__button"
                     title="Color"
                     aria-label="Color"
                     aria-expanded={Boolean(paletteAnchor)}
@@ -227,7 +222,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                         setPaletteAnchor(paletteAnchor ? null : event.currentTarget)
                     }
                 >
-                    <Icon data={LetterAUnderline} />
+                    <span className="editor-toolbar__letter editor-toolbar__letter_color">A</span>
                 </Button>
                 <Popup
                     open={Boolean(paletteAnchor)}
@@ -255,7 +250,7 @@ export function EditorToolbar({editorRef, rootRef, scrollContainerRef}: EditorTo
                 {button(
                     'link',
                     'Link (⌘K)',
-                    <Icon data={Link} />,
+                    <Link size={15} />,
                     (e) => e.link(),
                     false,
                     !canFormat || !state.linkable,

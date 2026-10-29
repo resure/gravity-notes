@@ -37,16 +37,16 @@ function withoutAppChords(bindings: readonly KeyBinding[]): KeyBinding[] {
 }
 
 const markdownStyle = HighlightStyle.define([
-    {tag: tags.heading, fontWeight: '700', color: 'var(--g-color-text-primary)'},
+    {tag: tags.heading, fontWeight: '700', color: 'var(--text-1)'},
     {tag: tags.strong, fontWeight: '700'},
     {tag: tags.emphasis, fontStyle: 'italic'},
     {tag: tags.strikethrough, textDecoration: 'line-through'},
-    {tag: [tags.link, tags.url], color: 'var(--g-color-text-link)'},
+    {tag: [tags.link, tags.url], color: 'var(--link)'},
     {tag: tags.monospace, color: 'var(--yfm-color-hljs-deletion, #880000)'},
-    {tag: tags.quote, color: 'var(--g-color-text-secondary)'},
+    {tag: tags.quote, color: 'var(--text-2)'},
     {
         tag: [tags.processingInstruction, tags.meta, tags.contentSeparator],
-        color: 'var(--g-color-text-hint)',
+        color: 'var(--text-3)',
     },
     // Fenced code, in the preview's palette.
     {tag: tags.comment, color: 'var(--yfm-color-hljs-comment, #888888)'},
@@ -85,7 +85,7 @@ const wikiLinks = ViewPlugin.fromClass(
 
 const theme = EditorView.theme({
     '&': {
-        color: 'var(--g-color-text-primary)',
+        color: 'var(--text-1)',
         backgroundColor: 'transparent',
         fontSize: '14px',
     },
@@ -93,40 +93,40 @@ const theme = EditorView.theme({
     // The PANE scrolls source mode, exactly as it scrolls the blocks: no inner scrollbar.
     '.cm-scroller': {
         overflow: 'visible',
-        fontFamily: 'var(--g-font-family-monospace)',
+        fontFamily: 'var(--font-mono)',
         lineHeight: '1.6',
     },
     '.cm-content': {
         minHeight: '60vh',
         padding: '4px 0 30vh',
-        caretColor: 'var(--g-color-text-primary)',
+        caretColor: 'var(--text-1)',
     },
     '.cm-line': {padding: '0 var(--editor-gutter, 16px)'},
-    '.cm-cursor': {borderLeftColor: 'var(--g-color-text-primary)'},
+    '.cm-cursor': {borderLeftColor: 'var(--text-1)'},
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-        backgroundColor: 'var(--g-color-base-selection) !important',
+        backgroundColor: 'var(--accent-selection) !important',
     },
-    '.cm-selectionMatch': {backgroundColor: 'var(--g-color-base-simple-hover)'},
-    '.cm-matchingBracket': {backgroundColor: 'var(--g-color-base-simple-hover)', outline: 'none'},
-    '.cm-wiki-link': {color: 'var(--g-color-text-link)'},
-    '.cm-searchMatch': {backgroundColor: 'var(--g-color-base-warning-medium)'},
-    '.cm-searchMatch-selected': {backgroundColor: 'var(--g-color-base-warning-heavy)'},
+    '.cm-selectionMatch': {backgroundColor: 'var(--bg-hover)'},
+    '.cm-matchingBracket': {backgroundColor: 'var(--bg-hover)', outline: 'none'},
+    '.cm-wiki-link': {color: 'var(--link)'},
+    '.cm-searchMatch': {backgroundColor: 'var(--accent-selection)'},
+    '.cm-searchMatch-selected': {backgroundColor: 'var(--accent-strong-wash)'},
     '.cm-panels': {
-        backgroundColor: 'var(--g-color-base-background)',
-        color: 'var(--g-color-text-primary)',
+        backgroundColor: 'var(--bg-paper)',
+        color: 'var(--text-1)',
     },
-    '.cm-panels-bottom': {borderTop: '1px solid var(--g-color-line-generic)'},
-    '.cm-panels-top': {borderBottom: '1px solid var(--g-color-line-generic)'},
+    '.cm-panels-bottom': {borderTop: '1px solid var(--line)'},
+    '.cm-panels-top': {borderBottom: '1px solid var(--line)'},
     '.cm-textfield': {
-        backgroundColor: 'var(--g-color-base-generic)',
-        border: '1px solid var(--g-color-line-generic)',
+        backgroundColor: 'var(--bg-hover)',
+        border: '1px solid var(--line)',
         borderRadius: '4px',
         color: 'inherit',
     },
     '.cm-button': {
         backgroundImage: 'none',
-        backgroundColor: 'var(--g-color-base-generic)',
-        border: '1px solid var(--g-color-line-generic)',
+        backgroundColor: 'var(--bg-hover)',
+        border: '1px solid var(--line)',
         borderRadius: '4px',
         color: 'inherit',
     },

@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {
     MobileProvider,
@@ -41,6 +41,21 @@ export function App() {
         } catch {
             // ignore — the theme just won't survive a reload
         }
+    }, [themePref]);
+
+    // Stamp the resolved theme onto `<html data-theme>`, which every Sol token reads (tokens.css).
+    // Gravity's ThemeProvider resolves System the same way for its own classes on <body>.
+    useLayoutEffect(() => {
+        const root = document.documentElement;
+        if (themePref !== 'system') {
+            root.setAttribute('data-theme', themePref);
+            return undefined;
+        }
+        const media = window.matchMedia('(prefers-color-scheme: dark)');
+        const apply = () => root.setAttribute('data-theme', media.matches ? 'dark' : 'light');
+        apply();
+        media.addEventListener('change', apply);
+        return () => media.removeEventListener('change', apply);
     }, [themePref]);
 
     // Drive the NATIVE window's appearance to match the in-app theme on desktop. The Rust shell reads

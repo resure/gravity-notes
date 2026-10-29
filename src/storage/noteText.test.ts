@@ -212,6 +212,12 @@ describe('canonicalBody / stripTrailingNewlines', () => {
 });
 
 describe('previewFromContent', () => {
+    it('drops to-do boxes and callout kinds, keeping the words', () => {
+        expect(previewFromContent('- [x] Done\n- [ ] Next\n\n> [!note]\n> Read me')).toBe(
+            'Done Next Read me',
+        );
+    });
+
     it('flattens markdown markers and newlines into a single flowing snippet', () => {
         expect(previewFromContent('# Title\n\n- one\n- two')).toBe('Title one two');
         expect(previewFromContent('## Usage {#Computer_usage}\n\nBody')).toBe('Usage Body');

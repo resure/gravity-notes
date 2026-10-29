@@ -1,5 +1,12 @@
 import {type Dispatch, type SetStateAction, useEffect, useRef, useState} from 'react';
 
+export function domIdPart(key: string): string {
+    return key.replace(
+        /[^A-Za-z0-9-]/g,
+        (ch) => `_${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
+}
+
 export interface ListboxNav {
     /** The highlighted row index (`-1` = nothing highlighted). */
     activeIndex: number;
@@ -98,6 +105,8 @@ export function useListboxNav<T>({
 
     // Rebound every render (via the ref) so the once-bound document listener reads fresh state.
     const handleKey = (event: KeyboardEvent) => {
+        // An open IME composition owns the arrows and Enter; 229 is the legacy signal for it.
+        if (event.isComposing || event.keyCode === 229) return;
         switch (event.key) {
             case 'ArrowDown':
                 event.preventDefault();

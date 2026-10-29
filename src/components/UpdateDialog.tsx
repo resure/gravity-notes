@@ -1,7 +1,7 @@
 import {useMemo} from 'react';
 
 import transform from '@diplodoc/transform';
-import {Dialog, Loader, Progress, Text} from '@gravity-ui/uikit';
+import {Dialog, Progress} from '@gravity-ui/uikit';
 
 import type {AppUpdater, UpdaterStatus} from '../hooks/useAppUpdater';
 
@@ -51,41 +51,33 @@ function UpdateBody({updater}: {updater: AppUpdater}) {
 
     return (
         <div className="update-dialog">
-            {status === 'checking' ? (
-                <div className="update-dialog__center">
-                    <Loader size="m" />
-                    <Text color="secondary">Checking for updates…</Text>
-                </div>
-            ) : null}
+            {status === 'checking' ? <Waiting label="Checking for updates…" /> : null}
 
             {status === 'idle' && upToDate ? (
-                <Text>You’re up to date{currentVersion ? ` (v${currentVersion})` : ''}.</Text>
+                <p className="update-dialog__line">
+                    You’re up to date{currentVersion ? ` (v${currentVersion})` : ''}.
+                </p>
             ) : null}
 
             {showVersion ? (
                 <>
-                    <Text variant="subheader-2">Gravity Notes v{info.version}</Text>
-                    <Text color="secondary" variant="body-1">
-                        You have v{info.currentVersion}.
-                    </Text>
+                    <p className="update-dialog__version">Gravity Notes v{info.version}</p>
+                    <p className="update-dialog__sub">You have v{info.currentVersion}.</p>
                     {info.notes ? <ReleaseNotes notes={info.notes} /> : null}
                 </>
             ) : null}
 
             {downloading ? <DownloadProgress progress={progress} /> : null}
 
-            {installed ? (
-                <div className="update-dialog__center">
-                    <Loader size="m" />
-                    <Text color="secondary">Installed — restarting…</Text>
-                </div>
-            ) : null}
+            {installed ? <Waiting label="Installed — restarting…" /> : null}
 
             {status === 'restart-required' ? (
-                <Text>Update installed. Quit and reopen Gravity Notes to finish.</Text>
+                <p className="update-dialog__line">
+                    Update installed. Quit and reopen Gravity Notes to finish.
+                </p>
             ) : null}
 
-            {status === 'error' && error ? <Text color="danger">{error}</Text> : null}
+            {status === 'error' && error ? <p className="update-dialog__error">{error}</p> : null}
         </div>
     );
 }
@@ -110,26 +102,35 @@ function ReleaseNotes({notes}: {notes: string}) {
     return <div className="update-dialog__notes yfm" dangerouslySetInnerHTML={{__html: html}} />;
 }
 
-/** Download line: a determinate bar with byte counts, or an indeterminate spinner if size is unknown. */
+/** An indeterminate wait: a sweeping bar with its label under it. */
+function Waiting({label}: {label: string}) {
+    return (
+        <div className="update-dialog__progress">
+            <Progress
+                className="update-dialog__bar update-dialog__bar_indeterminate"
+                size="xs"
+                value={100}
+            />
+            <p className="update-dialog__sub">{label}</p>
+        </div>
+    );
+}
+
+/** Download line: a determinate bar with byte counts, or an indeterminate one if size is unknown. */
 function DownloadProgress({progress}: {progress: AppUpdater['progress']}) {
     if (progress && progress.total !== null && progress.total > 0) {
         const percent = Math.min(100, Math.round((progress.downloaded / progress.total) * 100));
         return (
             <div className="update-dialog__progress">
-                <Progress value={percent} />
-                <Text color="secondary" variant="caption-2">
+                <Progress className="update-dialog__bar" size="xs" value={percent} />
+                <p className="update-dialog__sub">
                     {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
-                </Text>
+                </p>
             </div>
         );
     }
     return (
-        <div className="update-dialog__center">
-            <Loader size="s" />
-            <Text color="secondary" variant="caption-2">
-                Downloading{progress ? ` ${formatBytes(progress.downloaded)}` : ''}…
-            </Text>
-        </div>
+        <Waiting label={`Downloading${progress ? ` ${formatBytes(progress.downloaded)}` : ''}…`} />
     );
 }
 
@@ -164,9 +165,10 @@ export function UpdateDialog({open, updater, onClose}: UpdateDialogProps) {
     return (
         <Dialog
             open={open}
-            // No-op the close request while busy so Esc / backdrop / the header ✕ can't dismiss it.
+            // No-op the close request while busy so Esc / the backdrop can't dismiss it.
             onClose={busy ? () => {} : onClose}
-            size="s"
+            className="update-dialog-modal"
+            hasCloseButton={false}
             disableBodyScrollLock
             contentOverflow="auto"
         >
@@ -177,6 +179,7 @@ export function UpdateDialog({open, updater, onClose}: UpdateDialogProps) {
             <Dialog.Footer
                 textButtonCancel={cancelLabel}
                 onClickButtonCancel={onClose}
+                propsButtonCancel={{view: 'outlined'}}
                 textButtonApply={applyLabel}
                 onClickButtonApply={onApply}
             />

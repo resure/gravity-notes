@@ -10,7 +10,7 @@ FolderGate ──▶ NoteStore (filesystem | tauri-fs | indexeddb) ──▶ use
 ```
 
 The app ships two ways from one codebase: a **web app** and a **macOS desktop app** (Tauri 2).
-Everything interesting sits behind one seam.
+Persistence sits behind one seam; the chrome keeps Gravity UI components with the Sol design.
 
 ## The storage seam
 
@@ -61,9 +61,15 @@ format, in full:
   deletion. Both filesystem backends inspect contents before cleanup and delete non-recursively;
   an entry arriving during deletion is preserved. A failed deletion attempts to restore `.gnkeep`.
 - **`[[Wiki links]]`** are stored verbatim — `[[Title]]` on disk, Obsidian-compatible round-trip.
+  A leading slash makes the target exact from the notes root: `[[/Shared]]` names `Shared.md`,
+  even when another folder contains a note with that title. An unresolved root path stays broken
+  instead of falling back to a same-title note. Copied links use this spelling for ambiguous root
+  notes; ordinary titles and `Folder/Note` targets retain their existing resolution rules.
+  Following a missing `/path` creates the addressed note from the root. Paths that would be
+  sanitized into a different name or enter a reserved directory report an error without writing.
 - **Bare URLs** are written exactly as you type them. A CommonMark autolink (`<https://example.com>`)
-  and `[text](url)` render as links; a bare `https://example.com` stays plain text. See the known
-  limitation below — the linkify-as-you-type the previous editor had went with it.
+  and `[text](url)` retain their spelling too. Bare `http(s)://` URLs are decorated as links in the
+  editor without changing the stored text.
 - **Blank lines** persist on disk as `&nbsp;` lines — the spelling this app has always used, since
   Markdown has no way to write an intentional blank ROW (a bare blank line is just block
   separation). They read back as empty blocks, and an empty block you type here is written the same
@@ -71,11 +77,63 @@ format, in full:
   empty is written with `&nbsp;` in each cell for the same reason: GFM has no headerless table, so a
   truly empty header row is how a table WITHOUT a header is spelled.
 
+## The Sol design on Gravity UI
+
+[`src/tokens.css`](../src/tokens.css) defines the palette, type scale, radii, shadows and motion.
+[`src/gravity.css`](../src/gravity.css) maps Gravity theme variables onto those tokens and supplies
+component recipes for buttons, fields, menus, popups, dialogs, switches, segments and toasts.
+Gravity UI still owns their behaviour; the Base UI layer from the experimental `sol-design`
+branch is not used. App chrome uses the system font and the stroke icons in `src/icons/`; PT Serif
+is bundled for the serif note-content option. `data-theme` on `<html>` follows light/dark/system,
+and `data-accent` selects blue or gray (amber is the default).
+
+The surfaces step from desk through the two panels to paper. Paper is the brightest surface in
+light mode and the lightest dark surface in dark mode. Raised controls get lighter in dark mode,
+while fields get darker with an inner shadow. Menu highlights stay neutral; accent marks focus,
+selected segments, links, save state, text selection and the open note’s row.
+
+The default pane widths are **236px folders / 324px notes / remaining editor**, with resizable
+dividers. The **40px title bar** puts a left-panel toggle at the left, the search field centred on
+the window and the orb beside it, and the open note’s `⋯` at the right. The desktop’s empty strip
+drags the window; the native unified toolbar leaves traffic-light placement to macOS.
+
+- The **orb** carries save state and app-wide actions: up to six recent workspaces inline,
+  Open Folder…, Workspaces…, export/import, attachments, Trash, reload, panel toggles, theme,
+  settings, shortcuts, updates and About. Desktop `⌘-click` on another workspace or Open Folder…
+  opens a new window. The orb’s tooltip names the save state; errors and conflicts also appear in
+  its menu.
+- The **note’s `⋯` menu** (`⌘⇧I`) combines live font/width controls with preview, source mode,
+  pin, rename, move, duplicate, reveal, copy wiki link and delete. It targets the open note even
+  when search filters its row out. The list row’s menu targets that row instead. Copy link verifies
+  that its output resolves to the same note, falling back to an exact root-relative filename when
+  needed. A name the wiki syntax cannot represent reports an error without replacing the clipboard.
+- The **note list** keeps a folder toggle, sort control and raised “New” button in its toolbar.
+  Virtualized rows are **48px**, or **64px** when a third line shows the folder in All Notes or
+  search. The title sits above the timestamp and preview; row actions appear at the title’s right
+  edge on hover without moving the text. Pins lead the list. Trash is also available at the foot
+  of the folder rail.
+
+## Appearance settings
+
+Settings commit live. Font and width resolve from the note outward; “Default” inherits the wider
+scope. Accent is an app/workspace choice and stays the same while browsing notes.
+
+| Scope     | Preferences                                                                            | Persistence                                            |
+| --------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| App       | Editor font, text width, amber/blue/gray accent; toolbar, icons and spellcheck toggles | `gravity-notes:settings` in localStorage               |
+| Workspace | Editor font, text width and accent, each with “Default”                                | `gravity-notes:<workspaceId>:settings` in localStorage |
+| Note      | Editor font and text width, each with “Default”                                        | `appearances` in the metadata sidecar                  |
+
+App and workspace settings merge changes into the latest stored value and adopt other windows’
+`storage` events. Note overrides travel with the folder and follow rename/move and trash/restore.
+Theme is a separate app-wide preference. “Show note icons” remains experimental: icons and emoji
+are supported, with a file glyph for notes that have no custom icon.
+
 ## Workspaces & windows
 
 Every opened folder/store is a **workspace**, remembered (with recency) in an IndexedDB registry
 ([`src/storage/workspaceRegistry.ts`](../src/storage/workspaceRegistry.ts)) that feeds the orb
-menu's Open Recent, the `⌃R` switcher, and launch restore. On the desktop each workspace can have
+menu’s inline workspace rows, the `⌃R` switcher, and launch restore. On the desktop each workspace can have
 its own native window, plus Apple-Notes-style **per-note windows** (`⌘↵` on a list row) — small,
 panels tucked away, focus-if-open, with `⌘0` bringing back the workspace's main window. The window
 ↔ workspace/note assignments live in the Rust shell, so new windows boot straight into the right
@@ -101,7 +159,7 @@ horizontally-scrolled block (a wide table, a code fence) is left alone. Both out
 drag position with no timer, so a backgrounded tab (where timers are throttled) can't strand it.
 
 The top bar is **one row that never swaps layouts**: orb · search in both panes, with a compact
-icon-only Back leading it on the editor pane and the note's ⋯ at the right edge. Keeping the search
+icon-only Back leading it on the editor pane and the note’s ⋯ at the right edge. Keeping the search
 mounted in both panes is what makes searching from inside a note work — a query typed there switches
 to the list so the results are visible (and clearing it hands the note back), without the box ever
 losing focus, since it is the same element throughout. The bar's geometry is _identical_ in the two
@@ -205,8 +263,10 @@ Markdown and fenced-code highlighting, find and replace, list continuation. It i
 use (warmed while idle), with a plain textarea (`SourceSurface.tsx`) standing in until it arrives,
 and gives the app's global chords precedence over its own defaults. It is also where a note lands
 when the block model can't hold it (see below), so it is a real editing surface rather than a viewer.
-Each note keeps its block-editor undo history across note switches (the ten most recent), for as
-long as the file still holds exactly what that history ends in.
+The ten most recently left notes keep eligible block-editor undo histories while the workspace
+stays mounted. A snapshot is retained when its current Markdown is at most 256,000 characters and
+resumes only when it matches the incoming content after trimming outer whitespace. Source undo
+history is not retained across note switches.
 
 A note becomes a document once per editing session: the editor parses the file into blocks at mount
 and is remounted per note. The pane carries the per-note scroll and caret across a switch, so
@@ -221,13 +281,33 @@ The compatibility audit and its validation log live in
 Typing shortcuts retain an ordered list's starting number and support bold, italic, code,
 strikethrough, mark and underline. Escaped delimiters stay literal. Pasting a multiline Markdown
 document into an empty paragraph parses its first block as well as the rest. Replacing a text
-selection across blocks replaces the touched blocks as a unit, matching copy/cut/delete. A pasted
+selection across text blocks keeps the unselected head and tail, matching copy/cut/delete. A pasted
 image or table cannot consume the text that followed the caret. Multiline syntax that the block
 model cannot preserve is refused with a source-mode hint; it can be pasted into source instead.
 Rich clipboard HTML goes through `htmlImport.ts`, which builds blocks, writes them to Markdown and
 parses that back, so a paste is exactly what the note will reload as. It is used only when the HTML
 carries structure or marks beyond its plain-text flavour; images become alt text or a link, and
 colours and underline are dropped.
+
+### Cross-block selections
+
+The editor handles text selections across its separate editing hosts: copy/cut, typed characters,
+Backspace/Delete, Enter and paste. It splits the selection’s ends and updates block state in one
+operation, keeping unselected text. Shift-arrows extend the selection across block boundaries;
+inline formatting chords are ignored while the selection spans blocks. A `beforeinput` guard also
+covers insertion or deletion that arrives without a keydown, such as dictation or autocorrect.
+An image/table endpoint, mixed code/text endpoints, or an ending toggle with hidden children uses
+whole-block handling. A selection starting in a collapsed toggle’s summary keeps its hidden children.
+Accepted plain, rich and internal-block pastes replace a text selection in one undo transaction,
+keeping the retained head before the payload and the retained tail after it. Rejected or empty
+clipboard content leaves the note unchanged. Internal text-block wiki chips are redecorated after
+sanitizing; table cells retain their existing direct text editing.
+
+WebKit clamps native selections to the host where they started. During cross-block extension the
+editor temporarily makes its root editable, then restores focus to the block containing the
+selection’s start. Chromium skips that workaround. WebKit selection painting uses the CSS Custom
+Highlight `gn-cross-blocks`, with a repaint nudge when clearing it. These paths need WebKit/desktop
+verification as well as DOM tests.
 
 Read-only preview (⌘⇧P) is a different renderer — `@diplodoc/transform`, full CommonMark. That is
 deliberate: the notes the block model can't hold are exactly the ones a preview most needs to get
@@ -286,9 +366,11 @@ entire note the first time a single character changed anywhere in it. With it, a
 anticipated costs you the block surface for that one note rather than the note's contents.
 
 The same reasoning shapes how a `[[wiki link]]` is styled. It gets a wrapper element whose text is
-still the literal `[[Title]]` bytes — never a decoration that hides the brackets, however much
-better that reads. The editor re-serializes from the live DOM, so a bracket-hiding decoration would
-rewrite every link in the file to a bare title the first time any character changed anywhere in it.
+still the literal `[[Title]]` bytes. The brackets — and the `Note|` of a `[[Note|text]]` — are hidden
+by CSS, never removed: the editor re-serializes from the live DOM, so a decoration that dropped them
+would rewrite every link in the file to a bare title the first time any character changed anywhere
+in it. The wrapper is one uneditable chip, so the caret can only sit beside it and no keystroke can
+land inside the hidden part.
 Bare `http(s)://` URLs get the same kind of wrapper, which is why they show as links in the editor
 while the file keeps them bare. Code blocks are coloured without any wrapper at all: highlight.js
 tokens are painted as CSS Custom Highlight ranges over the untouched text.
@@ -323,11 +405,13 @@ Markdown over anything clever.
   ENTIRE content is that one row reads back as an empty note, which is a different file, so the
   check above diverts it rather than rewrite it. Blank rows inside a note are unaffected.
 - **Undo does not cross the blocks ↔ source switch.** Each surface keeps its own history.
-- **A selection dragged across blocks acts on whole blocks.** Every block is its own
-  `contentEditable`, but one browser selection extends right across them — and deleting half of one
-  block and half of the next through the browser would edit DOM that React owns, behind its back, so
-  the text came back on the next render. Copy, cut and delete therefore take each block the
-  selection touches in full, the way the same range would behave if selected with `Esc` + `⇧↓`.
+- **A text selection with an image/table endpoint, mixed code/text endpoints, or an ending toggle
+  hiding children acts on whole blocks.** Every block is its own `contentEditable`, but one browser selection extends right
+  across them — and letting the browser delete half of one block and half of the next would edit DOM
+  that React owns, behind its back, so the text came back on the next render. The editor therefore
+  makes those edits itself: between two text blocks it keeps the head of the first and the tail of
+  the last and joins them; where an end is not text, it takes each block the selection touches in
+  full, the way `Esc` + `⇧↓` would.
 - **A colour is the one thing this app writes that other Markdown tools can't read.** Colour has no
   portable spelling anywhere — Obsidian's own users reach for inline HTML — so notes carry the YFM
   colour extension's syntax instead: `{red}(text)` for ink, `{bg:yellow}(text)` for a background.
@@ -338,14 +422,10 @@ Markdown over anything clever.
   divider or image** has no inline text to wrap and so refuses a colour out loud; and content holding
   an **unbalanced `)`** closes the wrapper early — in the colour extension too, which is why the
   reader matches its rule — which shifts where the colour ends without changing a word of the text.
-- **No syntax highlighting or KaTeX in the editor.** Code blocks are plain text while you write —
-  read-only preview highlights them, using the language set from the block's own picker (it rides on
-  the fence's info string, so it is what any other Markdown tool reads too). A table's **header-column** flag has no Markdown spelling and
-  is dropped on save; it still applies for the session, and says so in a toast when you use it.
-- **Bare URLs are not linkified as you type.** `<https://example.com>` (a CommonMark autolink) and
-  `[text](url)` render as real links; a bare `https://example.com` stays plain text until you wrap
-  it. Linkifying it automatically would rewrite the URL's spelling on disk, so it waits for a
-  typing-time rule that can round-trip.
+- **KaTeX is not rendered in the editor.** Code highlighting uses the language from the block’s
+  picker and fence info string; unsupported languages remain plain. A table’s **header-column**
+  flag has no Markdown spelling and is dropped on save; it still applies for the session, and
+  says so in a toast when you use it.
 - **Two windows on one store can clobber each other's _metadata_.** The sidecar (sort, pins,
   icons, per-note appearance) is last-write-wins everywhere: desktop windows coordinate their
   workspace assignments and note _bodies_ (the live watcher + conflict banner) through the shell,

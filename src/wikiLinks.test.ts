@@ -4,10 +4,13 @@ import type {NoteMeta} from './storage/types';
 import {
     buildBacklinkInversion,
     buildBacklinks,
+    copyableWikiLinkTargetFor,
+    createWikiLinkResolver,
     extractWikiLinks,
     materializeBacklinks,
     resolveWikiLink,
     suggestWikiTargets,
+    wikiLinkTargetFor,
 } from './wikiLinks';
 
 /** Build a NoteMeta list from ids (title derived from the leaf), with descending updatedAt. */
@@ -62,6 +65,33 @@ describe('resolveWikiLink', () => {
         expect(resolveWikiLink('Work/Roadmap.md', 'Ideas.md', notes)).toBe('Work/Roadmap.md');
     });
 
+    it.each([
+        ['/Shared', 'Shared.md'],
+        ['/shared.MD', 'Shared.md'],
+        ['/Shared|root note', 'Shared.md'],
+        ['/SHARED#Heading|root note', 'Shared.md'],
+        ['/Work/Shared', 'Work/Shared.md'],
+        ['/work/shared.md#Heading|nested note', 'Work/Shared.md'],
+    ])('resolves the explicit vault-root target %s to %s', (target, expected) => {
+        const notes = notesFrom(['Shared.md', 'Work/Shared.md', 'Work/Other.md']);
+        expect(resolveWikiLink(target, 'Work/Other.md', notes)).toBe(expected);
+        expect(createWikiLinkResolver(notes)(target, 'Work/Other.md')).toBe(expected);
+    });
+
+    it.each(['/Shared', '/Missing/Shared', '/Missing/Shared.md#Heading|alias'])(
+        'does not fall back to a same-title note for the missing vault-root target %s',
+        (target) => {
+            const notes = notesFrom(['Work/Shared.md', 'Work/Other.md']);
+            expect(resolveWikiLink(target, 'Work/Other.md', notes)).toBeNull();
+            expect(createWikiLinkResolver(notes)(target, 'Work/Other.md')).toBeNull();
+        },
+    );
+
+    it('keeps title fallback for an unresolved folder path without a leading slash', () => {
+        const notes = notesFrom(['Shared.md', 'Work/Shared.md']);
+        expect(resolveWikiLink('Missing/Shared', 'Work/Other.md', notes)).toBe('Work/Shared.md');
+    });
+
     it('prefers a same-folder note when a bare title is ambiguous', () => {
         const notes = notesFrom(['Notes.md', 'Work/Notes.md', 'Archive/Notes.md']);
         expect(resolveWikiLink('Notes', 'Work/Plan.md', notes)).toBe('Work/Notes.md');
@@ -74,6 +104,70 @@ describe('resolveWikiLink', () => {
         // equally-deep candidates the lexicographic id wins.
         const notes = notesFrom(['Zeta/Notes.md', 'Alpha/Notes.md', 'Inbox/Sub/Notes.md']);
         expect(resolveWikiLink('Notes', 'Elsewhere/Plan.md', notes)).toBe('Alpha/Notes.md');
+    });
+});
+
+describe('wikiLinkTargetFor', () => {
+    it('keeps a plain title when it is unambiguous', () => {
+        const notes = notesFrom(['Root.md', 'Work/Nested.md']);
+        expect(notes.map((note) => wikiLinkTargetFor(note, notes))).toEqual(['Root', 'Nested']);
+    });
+
+    it('uses an explicit root or folder path for case-insensitively shared titles', () => {
+        const notes = notesFrom(['Shared.md', 'Work/shared.md', 'Archive/Shared.md']);
+        const targets = notes.map((note) => wikiLinkTargetFor(note, notes));
+        expect(targets).toEqual(['/Shared', 'Work/shared', 'Archive/Shared']);
+        for (const fromId of ['Other.md', 'Work/Other.md', 'Archive/Other.md']) {
+            expect(targets.map((target) => resolveWikiLink(target, fromId, notes))).toEqual(
+                notes.map((note) => note.id),
+            );
+        }
+    });
+});
+
+describe('copyableWikiLinkTargetFor', () => {
+    it.each([
+        ['Plan.md', 'Other.md', 'Plan'],
+        ['Work/Plan.md', 'Other.md', 'Plan'],
+        ['Shared.md', 'Work/Shared.md', '/Shared'],
+        ['Work/shared.md', 'Shared.md', 'Work/shared'],
+        ['Topic.md.md', 'Topic.md', '/Topic.md.md'],
+        ['Work/Topic.md.md', 'Work/Topic.md', '/Work/Topic.md.md'],
+        ['Folder#section/Plan.md', 'Other.md', 'Plan'],
+    ])('copies an extractable, context-independent target for %s', (id, otherId, expected) => {
+        const notes = notesFrom([id, otherId]);
+        const target = copyableWikiLinkTargetFor(notes[0], notes);
+        expect(target).toBe(expected);
+        const text = `[[${target}]]`;
+        const links = extractWikiLinks(text);
+        expect(links).toEqual([{target: expected, index: 0, length: text.length}]);
+        for (const from of ['Other.md', 'Work/Other.md', 'Archive/Other.md']) {
+            expect(resolveWikiLink(links[0].target, from, notes)).toBe(id);
+        }
+    });
+
+    it.each(['C#.md', 'A[B].md', 'A]B.md', 'A|B.md', 'A\nB.md'])(
+        'refuses a filename that wiki syntax cannot represent: %s',
+        (id) => {
+            const notes = notesFrom([id, 'C.md', 'A.md']);
+            expect(copyableWikiLinkTargetFor(notes[0], notes)).toBeNull();
+        },
+    );
+
+    it('refuses an ambiguous title when its explicit path cannot be represented', () => {
+        const notes = notesFrom(['Folder#section/Plan.md', 'Plan.md']);
+        expect(copyableWikiLinkTargetFor(notes[0], notes)).toBeNull();
+    });
+
+    it('refuses a case-only duplicate that the resolver cannot address', () => {
+        const notes = notesFrom(['Work/Plan.md', 'work/plan.md']);
+        expect(copyableWikiLinkTargetFor(notes[0], notes)).toBe('Work/Plan');
+        expect(copyableWikiLinkTargetFor(notes[1], notes)).toBeNull();
+    });
+
+    it('refuses to copy a target absent from the note list', () => {
+        const [note] = notesFrom(['Plan.md']);
+        expect(copyableWikiLinkTargetFor(note, notesFrom(['Other.md']))).toBeNull();
     });
 });
 
@@ -119,6 +213,19 @@ describe('buildBacklinks', () => {
         ]);
         // The root Notes.md gets no backlink from Work/Plan.md (it lost the same-folder tiebreak).
         expect(buildBacklinks('Notes.md', dupes, dupeCorpus)).toEqual([]);
+    });
+
+    it('indexes explicit vault-root links separately from same-folder title links', () => {
+        const dupes = notesFrom(['Shared.md', 'Work/Shared.md', 'Work/Plan.md']);
+        const dupeCorpus = new Map([
+            ['Work/Plan.md', '[[/SHARED#Heading|root]] [[Shared]] [[/Missing/Shared]]'],
+        ]);
+        const rootLinks = buildBacklinks('Shared.md', dupes, dupeCorpus);
+        const nestedLinks = buildBacklinks('Work/Shared.md', dupes, dupeCorpus);
+        expect(rootLinks.map((source) => source.note.id)).toEqual(['Work/Plan.md']);
+        expect(rootLinks[0].contexts).toHaveLength(1);
+        expect(nestedLinks.map((source) => source.note.id)).toEqual(['Work/Plan.md']);
+        expect(nestedLinks[0].contexts).toHaveLength(1);
     });
 
     it('uses the precomputed links index when supplied (authoritative over the body)', () => {

@@ -325,6 +325,12 @@ describe('[[wiki links]] in the body', () => {
 
     useInsertTextStub();
 
+    it('leaves `[[` in a code block as code, not a link chip', () => {
+        renderWithNotes('```js\nconst matrix = [[1]];\n```');
+        expect(document.querySelector('.wiki-link')).toBeNull();
+        expect(document.querySelector('.content')?.textContent).toBe('const matrix = [[1]];');
+    });
+
     /**
      * Replace a block's text and fire the input the editor listens for, with the caret parked at the
      * end — which is what the `[[` trigger reads. jsdom keeps no caret of its own, so a test that
@@ -1030,10 +1036,10 @@ describe('clipboard: Markdown out, plain text in', () => {
      * Each block is its own contentEditable, but one document selection drags right across them.
      * The partial path cannot serve that: `deleteFromDocument()` rips nodes out of the OTHER
      * blocks' React-owned DOM while only the event's own block is committed to state, so the cut
-     * text reappears on the next render. Across blocks the cut is a WHOLE-BLOCK operation instead,
-     * matching what the equivalent block selection does.
+     * text reappears on the next render. The editor cuts it itself: exactly what is highlighted
+     * goes, and the two ends join, as in any text editor.
      */
-    it('cuts whole blocks when the selection crosses them', () => {
+    it('cuts exactly the selected text when the selection crosses blocks', () => {
         const onChange = vi.fn();
         renderEditor('first paragraph\n\nsecond paragraph\n\nthird paragraph', onChange);
         const contents = document.querySelectorAll<HTMLElement>('.content');
@@ -1045,14 +1051,15 @@ describe('clipboard: Markdown out, plain text in', () => {
         });
 
         expect(event.defaultPrevented).toBe(true);
-        // Real Markdown, spacing included — the two paragraphs are a document, not two strings
-        // glued together.
-        expect(data['text/plain']).toBe('first paragraph\n\nsecond paragraph');
-        // Both blocks gone — not one edited block and one that silently grew its text back.
+        // Real Markdown, spacing included — the two pieces are a document, not two strings glued
+        // together.
+        expect(data['text/plain']).toBe('paragraph\n\nsec');
+        // One joined block — not one edited block and one that silently grew its text back.
         expect([...document.querySelectorAll('.content')].map((el) => el.textContent)).toEqual([
+            'firstond paragraph',
             'third paragraph',
         ]);
-        expect(onChange.mock.calls.at(-1)![0]).toBe('third paragraph');
+        expect(onChange.mock.calls.at(-1)![0]).toBe('firstond paragraph\n\nthird paragraph');
     });
 
     /**
@@ -1070,7 +1077,7 @@ describe('clipboard: Markdown out, plain text in', () => {
             fireEvent(contents[0], event);
         });
 
-        expect(data['text/plain']).toBe('- Parent\n  - Child');
+        expect(data['text/plain']).toBe('- t\n  - Chi');
     });
 
     /**
@@ -1089,7 +1096,47 @@ describe('clipboard: Markdown out, plain text in', () => {
         });
 
         expect(document.querySelector('hr')).toBeNull();
-        expect(onChange.mock.calls.at(-1)![0]).toBe('');
+        expect(onChange.mock.calls.at(-1)![0]).toBe('para a B');
+    });
+
+    it('joins two blocks over a selection that stops at their boundary', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nsecond paragraph\n\nthird paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        const range = document.createRange();
+        range.setStart(contents[0].firstChild!, 'first paragraph'.length);
+        range.setEnd(contents[1].firstChild!, 0);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(range);
+
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'Backspace'});
+        });
+
+        expect(onChange.mock.calls.at(-1)![0]).toBe(
+            'first paragraphsecond paragraph\n\nthird paragraph',
+        );
+    });
+
+    it('extends leftwards into the block above and keeps it', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nsecond paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        contents[1].focus();
+        window.getSelection()?.collapse(contents[1].firstChild!, 0);
+
+        act(() => {
+            fireEvent.keyDown(contents[1], {key: 'ArrowLeft', shiftKey: true});
+        });
+
+        const selection = window.getSelection()!;
+        expect(contents[1].contains(selection.anchorNode)).toBe(true);
+        expect(contents[0].contains(selection.focusNode)).toBe(true);
+
+        act(() => {
+            fireEvent.keyDown(contents[1], {key: 'Backspace'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('first paragraphsecond paragraph');
     });
 
     /** And ⌘X over that same selection — the cut path had to be told the scope as well. */
@@ -1104,8 +1151,9 @@ describe('clipboard: Markdown out, plain text in', () => {
             fireEvent(contents[0], event);
         });
 
-        expect(data['text/plain']).toBe('Intro paragraph\n\n- Parent');
+        expect(data['text/plain']).toBe('paragraph\n\n- Par');
         expect([...document.querySelectorAll('.content')].map((el) => el.textContent)).toEqual([
+            'Introent',
             'Child A',
             'Child B',
         ]);
@@ -1144,7 +1192,7 @@ describe('clipboard: Markdown out, plain text in', () => {
         expect(data['application/x-notion-editor-blocks']).toContain('hidden child');
     });
     /** Backspace over the same selection has the same problem, and the same answer. */
-    it('deletes whole blocks when Backspace lands on a selection crossing them', () => {
+    it('deletes exactly the selected text when Backspace lands on a selection crossing blocks', () => {
         renderEditor('first paragraph\n\nsecond paragraph\n\nthird paragraph');
         const contents = document.querySelectorAll<HTMLElement>('.content');
         selectAcross(contents[0], contents[1]);
@@ -1154,8 +1202,103 @@ describe('clipboard: Markdown out, plain text in', () => {
         });
 
         expect([...document.querySelectorAll('.content')].map((el) => el.textContent)).toEqual([
+            'firstond paragraph',
             'third paragraph',
         ]);
+    });
+
+    it('types over a selection crossing blocks', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nsecond paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[1]);
+
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'X'});
+        });
+
+        expect(onChange.mock.calls.at(-1)![0]).toBe('firstXond paragraph');
+    });
+
+    it('splits at a selection crossing blocks on Enter, keeping both ends', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nmiddle\n\nsecond paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[2]);
+
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'Enter'});
+        });
+
+        expect(onChange.mock.calls.at(-1)![0]).toBe('first\n\nond paragraph');
+    });
+
+    it('undoes a typed-over cross-block selection in one step', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nsecond paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[1]);
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'X'});
+        });
+        const merged = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            fireEvent.keyDown(merged, {key: 'z', metaKey: true});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('first paragraph\n\nsecond paragraph');
+    });
+
+    it('keeps a collapsed toggle’s hidden children when the selection starts in its summary', () => {
+        const onChange = vi.fn();
+        renderEditor(
+            [
+                '<details>',
+                '<summary>Summary line</summary>',
+                '',
+                'hidden child',
+                '',
+                '</details>',
+                '',
+                'tail text',
+            ].join('\n'),
+            onChange,
+        );
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        expect([...contents].map((el) => el.textContent)).toEqual(['Summary line', 'tail text']);
+        selectAcross(contents[0], contents[1]);
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'Backspace'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toContain('hidden child');
+        expect(onChange.mock.calls.at(-1)![0]).toContain('Summal text');
+    });
+
+    it('leaves formatting chords alone over a selection crossing blocks', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\nsecond paragraph', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[1]);
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'e', metaKey: true});
+        });
+        expect(onChange).not.toHaveBeenCalled();
+        expect([...document.querySelectorAll('.content')].map((el) => el.textContent)).toEqual([
+            'first paragraph',
+            'second paragraph',
+        ]);
+    });
+
+    it('still takes whole blocks when an end of the selection is not text', () => {
+        const onChange = vi.fn();
+        renderEditor('first paragraph\n\n```\ncode line\n```', onChange);
+        const contents = document.querySelectorAll<HTMLElement>('.content');
+        selectAcross(contents[0], contents[1]);
+
+        act(() => {
+            fireEvent.keyDown(contents[0], {key: 'Backspace'});
+        });
+
+        expect(onChange.mock.calls.at(-1)![0]).toBe('');
     });
 
     /**
@@ -1175,12 +1318,12 @@ describe('clipboard: Markdown out, plain text in', () => {
         });
 
         expect([...document.querySelectorAll('.content')].map((el) => el.textContent)).toEqual([
+            'Introent',
             'Child A',
             'Child B',
         ]);
-        // …and they are promoted, not left at an indent their parent no longer supports: Markdown
-        // cannot write an orphaned level, so the file would come back flatter than the screen.
-        expect(onChange.mock.calls.at(-1)![0]).toBe('- Child A\n- Child B');
+        // …and they stay under the joined line, as Backspace's own merge leaves them.
+        expect(onChange.mock.calls.at(-1)![0]).toBe('Introent\n  - Child A\n  - Child B');
     });
 
     /**
@@ -1514,13 +1657,17 @@ describe('code blocks', () => {
 
 describe('the [[wiki link]] actions', () => {
     useInsertTextStub();
-    const NOTES = [{id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3}];
+    const NOTES = [
+        {id: 'Daily log.md', title: 'Daily log', preview: '', updatedAt: 3},
+        {id: 'Work/Weekly plan.md', title: 'Weekly plan', preview: '', updatedAt: 2},
+    ];
 
     /** Put the caret inside the link's decoration span, as a click or an arrow key would. */
     async function caretInLink() {
         const span = document.querySelector<HTMLElement>('.wiki-link')!;
         const range = document.createRange();
-        range.setStart(span.firstChild!, 2);
+        // The title's text node, between the two bracket spans.
+        range.setStart(span.childNodes[1], 1);
         range.collapse(true);
         const selection = window.getSelection()!;
         selection.removeAllRanges();
@@ -1565,6 +1712,111 @@ describe('the [[wiki link]] actions', () => {
             fireEvent.click(screen.getByText('Unlink'));
         });
         expect(onChange.mock.calls.at(-1)![0]).toBe('see Daily log now');
+    });
+
+    it('unlinks `[[Note|text]]` to its text', async () => {
+        const onChange = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log|today]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={onChange}
+            />,
+        );
+        await caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Unlink'));
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('see today now');
+    });
+
+    it('re-points the link from the popup search, keeping its text', async () => {
+        const onChange = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log|today]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={onChange}
+            />,
+        );
+        await caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Change note'));
+        });
+        const field = screen.getByRole('combobox', {name: 'Search notes'});
+        expect(field).toHaveValue('Daily log');
+        // The link itself is untouched while the search is open.
+        expect(onChange).not.toHaveBeenCalled();
+        act(() => {
+            fireEvent.change(field, {target: {value: 'plan'}});
+        });
+        expect(screen.getAllByRole('option')[0]).toHaveTextContent('Weekly plan');
+        act(() => {
+            fireEvent.keyDown(field, {key: 'Enter'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('see [[Weekly plan|today]] now');
+    });
+
+    it('leaves the link alone when the popup search is dismissed', async () => {
+        const onChange = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={onChange}
+            />,
+        );
+        await caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Change note'));
+        });
+        const field = screen.getByRole('combobox', {name: 'Search notes'});
+        act(() => {
+            fireEvent.change(field, {target: {value: 'plan'}});
+            fireEvent.keyDown(field, {key: 'Escape'});
+        });
+        expect(screen.queryByRole('combobox', {name: 'Search notes'})).not.toBeInTheDocument();
+        expect(onChange).not.toHaveBeenCalled();
+        expect(document.querySelector('.wiki-link')?.textContent).toContain('Daily log');
+    });
+
+    it('sets the display text from "Edit text", and clears it again', async () => {
+        const onChange = vi.fn();
+        render(
+            <Editor
+                value="see [[Daily log]] now"
+                notes={NOTES}
+                noteId="Home.md"
+                onChange={onChange}
+            />,
+        );
+        await caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Edit text'));
+        });
+        const field = screen.getByRole('textbox', {name: 'Link text'});
+        act(() => {
+            fireEvent.change(field, {target: {value: 'today'}});
+            fireEvent.keyDown(field, {key: 'Enter'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('see [[Daily log|today]] now');
+        // The chip shows the text, not the note name.
+        expect(document.querySelector('.wiki-link')?.textContent).toContain('today');
+
+        await caretInLink();
+        act(() => {
+            fireEvent.click(screen.getByText('Edit text'));
+        });
+        const again = screen.getByRole('textbox', {name: 'Link text'});
+        expect(again).toHaveValue('today');
+        act(() => {
+            fireEvent.change(again, {target: {value: ''}});
+            fireEvent.keyDown(again, {key: 'Enter'});
+        });
+        expect(onChange.mock.calls.at(-1)![0]).toBe('see [[Daily log]] now');
     });
 });
 
@@ -1630,16 +1882,23 @@ describe('dragging a block', () => {
             setData: (type: string, value: string) => store.set(type, value),
             setDragImage: vi.fn(),
         };
+        const elements = blocks();
+        const root = document.querySelector<HTMLElement>('.gn-block-editor');
+        if (!root) throw new Error('Missing block editor');
+        root.getBoundingClientRect = () => new DOMRect(0, 0, 400, elements.length * 100);
+        elements.forEach((block, index) => {
+            block.getBoundingClientRect = () => new DOMRect(0, index * 100, 400, 100);
+        });
         const target = blocks()[targetIndex];
         act(() => {
             fireEvent.dragStart(blocks()[sourceIndex].querySelector('.drag-btn')!, {dataTransfer});
         });
         act(() => {
-            // The handler picks the edge by comparing the pointer against the target's midpoint,
-            // which jsdom reports as 0 — and a `clientY` passed in the event init never reaches the
-            // event, so it has to be defined on it.
             const event = createEvent.drop(target, {dataTransfer});
-            Object.defineProperty(event, 'clientY', {value: edge === 'before' ? -1 : 1});
+            Object.defineProperties(event, {
+                clientX: {value: 50},
+                clientY: {value: targetIndex * 100 + (edge === 'before' ? 25 : 75)},
+            });
             fireEvent(target, event);
         });
     }

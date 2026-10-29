@@ -1,0 +1,552 @@
+/* Gravity UI, dressed in Sol.
+   ─────────────────────────────────────────────────────────────────────────────────────────────
+   The app keeps `@gravity-ui/uikit` for behaviour and restyles it here: first by pointing Gravity's
+   theme variables at the tokens (tokens.css), then with per-component recipes where a variable
+   doesn't reach. Loaded after uikit's own stylesheet, at the same specificity, so these win on
+   order. Theme still follows `data-theme` on <html>: the tokens re-declare themselves there, and
+   every variable below only forwards to them. */
+
+.g-root_theme_light,
+.g-root_theme_dark {
+    --g-font-family-sans: var(--font-ui);
+    --g-font-family-monospace: var(--font-mono);
+    --g-text-body-font-family: var(--font-ui);
+
+    --g-color-base-background: var(--bg-paper);
+    --g-color-base-modal: var(--bg-paper);
+    --g-color-base-float: var(--bg-paper);
+    --g-color-base-float-hover: var(--bg-hover);
+    --g-color-base-generic: var(--bg-selected);
+    --g-color-base-generic-hover: var(--bg-selected-strong);
+    --g-color-base-generic-medium: color-mix(in srgb, var(--text-4) 55%, transparent);
+    --g-color-base-generic-ultralight: var(--bg-hover);
+    --g-color-base-simple-hover: var(--bg-hover);
+    --g-color-base-selection: var(--bg-selected);
+    --g-color-base-selection-hover: var(--bg-selected-strong);
+    --g-color-base-misc-light: var(--bg-selected);
+    --g-color-base-brand: var(--text-1);
+    --g-color-base-brand-hover: color-mix(in oklab, var(--text-1), var(--text-2) 35%);
+
+    --g-color-text-primary: var(--text-1);
+    --g-color-text-complementary: var(--text-2);
+    --g-color-text-secondary: var(--text-2);
+    --g-color-text-hint: var(--text-3);
+    --g-color-text-misc: var(--text-2);
+    --g-color-text-brand: var(--text-1);
+    --g-color-text-brand-heavy: var(--text-1);
+    --g-color-text-brand-contrast: var(--bg-paper);
+    --g-color-text-link: var(--link);
+    --g-color-text-link-hover: var(--link-hover);
+    --g-color-text-link-visited: var(--link);
+    --g-color-text-danger: var(--danger);
+
+    --g-color-line-generic: var(--line);
+    --g-color-line-generic-solid: var(--line);
+    --g-color-line-generic-hover: color-mix(in srgb, var(--text-1) 16%, transparent);
+    --g-color-line-generic-active: color-mix(in srgb, var(--text-1) 24%, transparent);
+    --g-color-line-brand: var(--accent);
+    --g-color-line-focus: var(--accent);
+    --g-color-line-misc: var(--accent);
+
+    --g-color-sfx-veil: rgba(28, 24, 18, 0.22);
+    --g-color-sfx-shadow: rgba(52, 44, 32, 0.18);
+
+    --g-border-radius-xs: var(--r-xs);
+    --g-border-radius-s: var(--r-sm);
+    --g-border-radius-m: var(--r-sm);
+    --g-border-radius-l: var(--r-md);
+    --g-border-radius-xl: var(--r-lg);
+    --g-focus-border-radius: var(--r-sm);
+}
+
+.g-root_theme_dark {
+    --g-color-sfx-veil: rgba(0, 0, 0, 0.42);
+    --g-color-sfx-shadow: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Button ────────────────────────────────────────────────────────────────────────────────────
+   Gravity's views map onto Sol's three: `flat` is quiet (no chrome until hovered), `raised` is
+   the one action a pane exists for, `action` is filled ink. `normal` / `outlined` become the
+   hairline secondary a dialog footer uses — a grey slab reads heavier than anything else in Sol. */
+/* No press-shrink: in Sol a control answers with its fill, never with motion. */
+.g-root .g-button:active {
+    transform: none;
+}
+
+.g-root .g-button {
+    --g-button-border-radius: var(--r-sm);
+    --g-button-focus-outline-color: var(--accent);
+    font-weight: 510;
+    letter-spacing: -0.003em;
+}
+
+.g-root .g-button_size_xs {
+    --g-button-height: 20px;
+    --g-button-font-size: var(--fs-ui-sm);
+}
+
+.g-root .g-button_size_s {
+    --g-button-height: 24px;
+    --g-button-font-size: var(--fs-ui-sm);
+}
+
+.g-root .g-button_size_m {
+    --g-button-height: 26px;
+    --g-button-padding: 8px;
+    --g-button-font-size: var(--fs-ui-sm);
+}
+
+.g-root .g-button_size_l {
+    --g-button-height: 30px;
+    --g-button-padding: 14px;
+    --g-button-font-size: var(--fs-menu);
+    --g-button-border-radius: var(--r-md);
+}
+
+.g-root .g-button_size_xl {
+    --g-button-height: 34px;
+    --g-button-font-size: var(--fs-menu);
+    --g-button-border-radius: var(--r-md);
+}
+
+.g-root .g-button_view_flat,
+.g-root .g-button_view_flat-secondary {
+    --g-button-text-color: var(--text-2);
+    --g-button-text-color-hover: var(--text-1);
+    --g-button-background-color-hover: var(--bg-hover);
+}
+
+.g-root .g-button_view_flat.g-button_selected,
+.g-root .g-button_view_flat-secondary.g-button_selected {
+    --g-button-background-color: var(--bg-selected);
+    --g-button-background-color-hover: var(--bg-selected-strong);
+    --g-button-text-color: var(--text-1);
+}
+
+.g-root .g-button_view_normal,
+.g-root .g-button_view_outlined {
+    --g-button-background-color: transparent;
+    --g-button-background-color-hover: var(--bg-hover);
+    --g-button-border-width: 1px;
+    --g-button-border-color: color-mix(in srgb, var(--text-1) 16%, transparent);
+    --g-button-text-color: var(--text-1);
+    --g-button-text-color-hover: var(--text-1);
+}
+
+.g-root .g-button_view_outlined:hover,
+.g-root .g-button_view_normal:hover {
+    --g-button-border-color: color-mix(in srgb, var(--text-1) 24%, transparent);
+}
+
+.g-root .g-button_view_raised {
+    --g-button-background-color: var(--bg-paper);
+    --g-button-background-color-hover: color-mix(in oklab, var(--bg-paper), var(--text-1) 4%);
+    --g-button-text-color: var(--text-1);
+    --g-button-text-color-hover: var(--text-1);
+}
+
+.g-root .g-button_view_raised {
+    --g-button-border-width: 1px;
+    --g-button-border-color: var(--line);
+}
+
+.g-root .g-button_view_raised::before,
+.g-root .g-button_view_raised:active::before {
+    box-shadow:
+        0 1px 1.5px rgba(52, 44, 32, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Dark lifts a raised control LIGHTER than its pane, lit along the top: a hairline inside that
+   highlight drew a second edge and read as an outline, so it goes. */
+[data-theme='dark'] .g-root .g-button_view_raised {
+    --g-button-background-color: color-mix(in oklab, var(--bg-paper), white 4%);
+    --g-button-background-color-hover: color-mix(in oklab, var(--bg-paper), white 8%);
+}
+
+[data-theme='dark'] .g-root .g-button_view_raised {
+    --g-button-border-color: transparent;
+}
+
+[data-theme='dark'] .g-root .g-button_view_raised::before,
+[data-theme='dark'] .g-root .g-button_view_raised:active::before {
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.g-root .g-button_view_action {
+    --g-button-background-color: var(--text-1);
+    --g-button-background-color-hover: color-mix(in oklab, var(--text-1), var(--text-2) 35%);
+    --g-button-text-color: var(--bg-paper);
+    --g-button-text-color-hover: var(--bg-paper);
+    font-weight: 550;
+}
+
+.g-root .g-button_view_flat-danger,
+.g-root .g-button_view_outlined-danger {
+    --g-button-text-color: var(--danger);
+    --g-button-text-color-hover: var(--danger);
+    --g-button-background-color-hover: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.g-root .g-button_view_outlined-danger {
+    --g-button-border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+/* ── Fields ────────────────────────────────────────────────────────────────────────────────────
+   Inputs go the other way from raised controls: paper with a hairline and a shallow inner shadow
+   in light, darker than the pane in dark. Focus is the accent BORDER, on the field itself — a ring
+   2px off a 27px box draws a detached lozenge, and the search box holds focus most of the time. */
+.g-root .g-text-input_view_normal,
+.g-root .g-text-area_view_normal {
+    --g-text-input-border-color: var(--line);
+    --g-text-input-border-color-hover: color-mix(in srgb, var(--text-1) 14%, transparent);
+    --g-text-input-border-color-active: var(--accent);
+    --g-text-input-background-color: var(--bg-paper);
+    --g-text-input-focus-outline-color: transparent;
+    --g-text-input-placeholder-color: var(--text-3);
+    --g-text-input-border-radius: 7px;
+    --g-text-area-border-color: var(--line);
+    --g-text-area-border-color-hover: color-mix(in srgb, var(--text-1) 14%, transparent);
+    --g-text-area-border-color-active: var(--accent);
+    --g-text-area-background-color: var(--bg-paper);
+    --g-text-area-focus-outline-color: transparent;
+    --g-text-area-placeholder-color: var(--text-3);
+    --g-text-area-border-radius: 7px;
+}
+
+.g-root .g-text-input_view_normal .g-text-input__content,
+.g-root .g-text-area_view_normal .g-text-area__content {
+    box-shadow:
+        0 1px 1px rgba(52, 44, 32, 0.03),
+        inset 0 1px 2px rgba(52, 44, 32, 0.03);
+}
+
+[data-theme='dark'] .g-root .g-text-input_view_normal,
+[data-theme='dark'] .g-root .g-text-area_view_normal {
+    --g-text-input-background-color: color-mix(in oklab, var(--bg-panel), black 22%);
+    --g-text-area-background-color: color-mix(in oklab, var(--bg-panel), black 22%);
+}
+
+[data-theme='dark'] .g-root .g-text-input_view_normal .g-text-input__content,
+[data-theme='dark'] .g-root .g-text-area_view_normal .g-text-area__content {
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.g-root .g-text-input__control,
+.g-root .g-text-area__control {
+    letter-spacing: -0.003em;
+}
+
+.g-root .g-text-input_size_m {
+    --g-text-input-height: 27px;
+}
+
+.g-root .g-text-input_size_m .g-text-input__control {
+    font-size: 12.5px;
+}
+
+/* Gravity sizes the control itself (28px less the border), which would outgrow the 27px field. */
+.g-root .g-text-input_size_m .g-text-input__control,
+.g-root .g-text-input_size_m .g-text-input__additional-content {
+    height: calc(var(--g-text-input-height) - 2px);
+}
+
+.g-root .g-select-control__button {
+    --g-button-border-radius: 7px;
+}
+
+/* ── The floating material ─────────────────────────────────────────────────────────────────────
+   Every menu, select and popover: paper, one hairline, shadow-3 (whose inset top highlight is most
+   of what reads as "raised"), a 10px radius, 4px of padding around 28px rows. Highlights are
+   NEUTRAL: the accent marks persistent state, a menu highlight is only where the keyboard is. */
+.g-root .g-popup {
+    --g-popup-background-color: var(--bg-paper);
+    --g-popup-border-color: var(--line);
+    --g-popup-border-radius: 10px;
+    box-shadow:
+        0 0 0 1px var(--line),
+        var(--shadow-3);
+    color: var(--text-1);
+}
+
+.g-root .g-popup .g-menu {
+    padding: 4px;
+    background: transparent;
+    font-size: var(--fs-menu);
+    line-height: var(--lh-menu);
+}
+
+.g-root .g-menu__item {
+    box-sizing: border-box;
+    min-height: 28px;
+    padding-inline: 8px;
+    border-radius: var(--r-sm);
+    letter-spacing: -0.003em;
+}
+
+.g-root .g-menu_size_m .g-menu__item,
+.g-root .g-menu_size_s .g-menu__item {
+    line-height: 28px;
+}
+
+.g-root .g-menu__item-icon {
+    color: color-mix(in oklab, var(--text-2), var(--text-3) 45%);
+}
+
+.g-root .g-menu__item_selected,
+.g-root .g-menu__item_active {
+    background-color: var(--bg-hover);
+}
+
+.g-root .g-menu__item_theme_danger:not(.g-menu__item_disabled) .g-menu__item-icon {
+    color: inherit;
+}
+
+/* DropdownMenu draws a group break as an empty item; keep it a hairline, not a blank row. */
+.g-root .g-dropdown-menu__menu-item_separator {
+    min-height: 0;
+    height: 0;
+    margin: 4px 8px;
+    padding: 0;
+    border-block-start: 1px solid var(--line);
+    border-radius: 0;
+    line-height: 0;
+}
+
+/* One hairline, inset, only where a group ends. */
+.g-root .g-menu__list-group-item + .g-menu__list-group-item,
+.g-root .g-menu__list-item + .g-menu__list-group-item,
+.g-root .g-menu__list-group-item + .g-menu__list-item {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-block-start: 0;
+    background: linear-gradient(var(--line), var(--line)) no-repeat 8px 0 / calc(100% - 16px) 1px;
+}
+
+/* A chord beside a menu label. Not the mono face: ⌘⇧⌫↵ come from a fallback there and land
+   visibly smaller than the Latin around them. */
+.g-root .gn-menu-hint {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--text-3);
+}
+
+.g-root .g-menu__item_theme_danger .gn-menu-hint {
+    color: inherit;
+    opacity: 0.75;
+}
+
+.g-root .g-menu__group-label {
+    font-size: var(--fs-label);
+    font-weight: 600;
+    color: var(--text-3);
+}
+
+.g-root .g-select-list__option {
+    border-radius: var(--r-sm);
+}
+
+/* ── Dialog ────────────────────────────────────────────────────────────────────────────────────
+   Radius 12, one hairline, shadow-4, over a shallow scrim (set via `--g-color-sfx-veil` above):
+   these are settings and pickers, not interruptions. Gravity clips the card with `clip-path`,
+   which would also clip the shadow, so the clip becomes `overflow`. */
+.g-root .g-modal__content {
+    --g-modal-border-radius: var(--r-lg);
+    clip-path: none;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-4);
+    color: var(--text-1);
+}
+
+.g-root .g-modal__content_has-scroll {
+    overflow: auto;
+}
+
+.g-root .g-dialog-header {
+    padding-block: 18px 0;
+    padding-inline: 22px;
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+}
+
+/* Gravity sizes a dialog with a fixed width and no max-width, so on a phone it ran off the screen.
+   Subtract Gravity's own `--g-modal-margin` (which `.g-modal__content` reserves on each side):
+   any wider and the content box scrolls sideways. */
+.g-root .g-dialog {
+    box-sizing: border-box;
+    max-width: calc(
+        100vw - 2 * var(--g-modal-margin, 20px) - env(safe-area-inset-left, 0px) -
+            env(safe-area-inset-right, 0px)
+    );
+}
+
+/* Gravity's caption is `subheader-3`, whose own 24px line-height outranks the header's. */
+.g-root .g-dialog-header__caption {
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+}
+
+.g-root .g-dialog-body {
+    padding-block: 14px 18px;
+    padding-inline: 22px;
+    font-size: var(--fs-menu);
+    line-height: 19px;
+    color: var(--text-2);
+}
+
+.g-root .g-dialog-footer {
+    padding: 0 22px 18px;
+}
+
+.g-root .g-dialog-footer__bts-wrapper {
+    gap: 8px;
+}
+
+.g-root .g-dialog-footer .g-button:not(.g-button_view_flat),
+.g-root .g-dialog-footer__button {
+    min-width: 76px;
+}
+
+/* A destructive confirm (`preset="danger"`) is the one place danger is a surface, not a word. */
+.g-root .g-dialog-footer__button-apply_preset_danger {
+    --g-button-background-color: var(--danger);
+    --g-button-background-color-hover: color-mix(in oklab, var(--danger), black 12%);
+    --g-button-text-color: white;
+    --g-button-text-color-hover: white;
+}
+
+/* ── Switch ────────────────────────────────────────────────────────────────────────────────────
+   30×18 with a 14px white thumb; on is the accent. */
+.g-root .g-switch_size_m .g-switch__indicator,
+.g-root .g-switch_size_m .g-switch__indicator::before,
+.g-root .g-switch_size_m .g-switch__outline {
+    width: 30px;
+    height: 18px;
+    border-radius: 9px;
+}
+
+.g-root .g-switch_size_m .g-switch__slider {
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    box-shadow: var(--shadow-1);
+}
+
+.g-root .g-switch_checked .g-switch__indicator::before,
+.g-root .g-switch_checked:hover .g-switch__indicator::before {
+    background-color: var(--accent);
+}
+
+/* ── Segmented control ─────────────────────────────────────────────────────────────────────────
+   A track at a neutral wash with a raised pill on the chosen segment, equal columns. The pill is
+   NOT the accent: a strip of accent-capable segments would put it everywhere the eye lands. */
+.g-root .g-segmented-radio-group {
+    display: inline-grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--r-md);
+    background: var(--bg-selected);
+}
+
+.g-root .g-segmented-radio-group_width_max {
+    display: grid;
+}
+
+.g-root .g-segmented-radio-group__option,
+.g-root .g-segmented-radio-group__option:first-child,
+.g-root .g-segmented-radio-group__option:last-child {
+    border-radius: var(--r-sm);
+}
+
+.g-root .g-segmented-radio-group__option::before {
+    display: none;
+}
+
+.g-root .g-segmented-radio-group__option::after,
+.g-root .g-segmented-radio-group__option:first-child::after,
+.g-root .g-segmented-radio-group__option:last-child::after {
+    border: 0;
+    border-radius: var(--r-sm);
+}
+
+.g-root .g-segmented-radio-group_size_m .g-segmented-radio-group__option,
+.g-root .g-segmented-radio-group_size_s .g-segmented-radio-group__option {
+    height: 24px;
+    line-height: 24px;
+    font-size: var(--fs-ui-sm);
+}
+
+.g-root .g-segmented-radio-group_size_m .g-segmented-radio-group__option-text,
+.g-root .g-segmented-radio-group_size_s .g-segmented-radio-group__option-text {
+    margin: 0 6px;
+    white-space: nowrap;
+}
+
+.g-root .g-segmented-radio-group__option-text {
+    color: var(--text-2);
+}
+
+.g-root
+    .g-segmented-radio-group__option:not(.g-segmented-radio-group__option_checked):not(
+        .g-segmented-radio-group__option_disabled
+    ):hover::after {
+    background: none;
+}
+
+.g-root .g-segmented-radio-group__option_checked::after {
+    background: var(--bg-paper);
+    box-shadow: 0 1px 2px rgba(52, 44, 32, 0.12);
+}
+
+.g-root .g-segmented-radio-group__option_checked .g-segmented-radio-group__option-text {
+    color: var(--text-1);
+    font-weight: 500;
+}
+
+/* Dark raises by going LIGHTER than the track; a pill darker than it read as a hole. */
+[data-theme='dark'] .g-root .g-segmented-radio-group__option_checked::after {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow:
+        0 0.5px 1px rgba(0, 0, 0, 0.35),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
+}
+
+.g-root
+    .g-segmented-radio-group__option:has(.g-segmented-radio-group__option-control:focus-visible) {
+    outline-color: var(--accent);
+    outline-offset: 0;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────────────────────────────────
+   The floating material, not a coloured slab: failures are rare here and say so in words. */
+.g-root .g-toast {
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--bg-paper);
+    box-shadow: var(--shadow-3);
+    color: var(--text-1);
+    font-size: var(--fs-menu);
+}
+
+.g-root .g-toast_theme_danger .g-toast__icon-container {
+    color: var(--danger);
+}
+
+/* ── Odds and ends ─────────────────────────────────────────────────────────────────────────── */
+.g-root .g-label {
+    --g-label-border-radius: var(--r-xs);
+}
+
+.g-root .g-hotkey {
+    font-family: var(--font-ui);
+}

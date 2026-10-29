@@ -1,42 +1,66 @@
 /* "Linked references" drawer beneath the editor. Lives in the .workspace__editor flex column as a
    sibling below .workspace__panes, so it sits at the bottom; the editor pane gives up the height.
-   Shares the editor's horizontal gutter so its text lines up with the note body. */
+   Shares the editor's horizontal gutter so its text lines up with the note body. Closed it is the
+   40px header; open it grows to at most 300px and scrolls inside itself. */
 .backlinks {
-    flex-shrink: 0;
+    flex: none;
     display: flex;
     flex-direction: column;
-    max-height: 33%;
+    max-height: 300px;
     overflow: hidden;
-    padding: 0 var(--editor-gutter, 16px);
-    border-top: 1px solid var(--g-color-line-generic);
+    border-top: 1px solid var(--line);
+    background: color-mix(in oklab, var(--bg-paper), var(--bg-panel-2) 45%);
+    font-family: var(--font-ui);
 }
 
 .backlinks__header {
     display: flex;
+    flex: none;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
+    box-sizing: border-box;
     width: 100%;
-    padding: 8px 0;
+    height: 40px;
+    padding: 0 var(--editor-gutter, 16px);
     border: none;
     background: none;
-    color: var(--g-color-text-secondary);
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
     text-align: left;
-    cursor: pointer;
 }
+
 /* Pointer-only (see NoteList.css): on touch, :hover eats the first tap — and this header is the
    collapse toggle, so a swallowed tap reads as "the panel won't open". */
 @media (hover: hover) {
     .backlinks__header:hover {
-        color: var(--g-color-text-primary);
+        color: var(--text-1);
     }
+}
+
+.backlinks__caret {
+    flex: none;
+    opacity: 0.6;
+    transition: transform var(--dur-1) var(--ease);
+}
+
+.backlinks__header[aria-expanded='true'] .backlinks__caret {
+    transform: rotate(90deg);
+}
+
+.backlinks__count {
+    font-weight: 550;
+    color: var(--text-1);
 }
 
 .backlinks__list {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    min-height: 0;
     margin: 0;
-    padding: 0 0 12px;
+    padding: 0 var(--editor-gutter, 16px) 14px;
     overflow-y: auto;
     list-style: none;
 }
@@ -52,18 +76,23 @@
     padding: 0;
     border: none;
     background: none;
-    cursor: pointer;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: var(--fs-menu);
+    line-height: 18px;
+    letter-spacing: -0.003em;
+    text-align: left;
 }
-.backlinks__title {
-    color: var(--g-color-text-link);
-}
+
 @media (hover: hover) {
-    .backlinks__source:hover .backlinks__title {
-        color: var(--g-color-text-link-hover);
+    .backlinks__source:hover {
         text-decoration: underline;
     }
 }
 
 .backlinks__context {
     padding-left: 2px;
+    font-size: var(--fs-preview);
+    line-height: var(--lh-preview);
+    color: var(--text-3);
 }
