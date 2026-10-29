@@ -271,7 +271,12 @@
 /* The ⋯ menu: the appearance strips, then the rows. */
 .note-menu {
     width: 320px;
+    max-height: calc(100vh - 8px);
+    max-height: calc(100dvh - 8px);
     box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 4px;
     font-size: var(--fs-menu);
     line-height: var(--lh-menu);

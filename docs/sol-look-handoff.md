@@ -3,8 +3,9 @@
 State as of 2026-10-29, in the `sol-look` worktree and branch. This continues the Claude session
 `604520af-a6e7-4d29-8a72-444a8054de6a` and the reference branch's
 `sol-design:docs/sol-design-handoff.md`. The editor port and the three restyling branches are already
-combined in `sol-look`; integration into `main`, a pull request and publication are outside this
-handoff. The main checkout was not changed during this continuation.
+combined in `sol-look`. The user authorized final review, five P2 repairs and a draft pull request;
+integration into `main` and release publication remain separate. The main checkout was not changed
+during this continuation.
 
 ## Decisions carried forward
 
@@ -310,6 +311,54 @@ test file retains five failures on the byte-verified baseline. The new bundle is
 `/private/tmp/sol-block-drag-20261029/Gravity Notes Dev.app`, with the existing dev identity and
 without developer signing, notarization or updater artifacts. Close the earlier dev app before
 opening this one. Manual drag-with-scroll acceptance in WKWebView remains pending.
+
+## Full branch review and five P2 repairs
+
+The full branch review compared `0e8a4b3` with `main` at `6e345b0`. It combined a native Codex
+review, ten independent finder angles, fresh candidate verification and a gap sweep. The frozen
+diff, adjudication and report are under `/private/tmp/sol-branch-review-20261029/`. The user then
+approved fixing the five P2 findings and opening a draft PR.
+
+- Copy link verifies both parsing and resolution before writing the clipboard. Ordinary links
+  retain their spelling; a title such as `Topic.md` uses `[[/Topic.md.md]]` to address its actual
+  file. A name containing wiki syntax delimiters, or an unaddressable case-only duplicate, reports
+  an error instead of copying a broken link or a link to another note. The parser and autocomplete
+  retain their existing rules.
+- Converting a text block to Code strips wiki-chip decoration immediately, including after syntax
+  highlighting; converting back to text restores it without requiring a keystroke.
+- The open-note menu has a viewport height cap and scrolls, keeping Delete reachable by wheel and
+  keyboard in short windows, including the desktop-only Reveal row.
+- Legacy `{violet}` preview markup uses its existing colour token again in both themes. `{purple}`
+  keeps its existing appearance.
+- Cross-block vertical selection reveals the destination before caret hit testing. Its first/last
+  text line accounts for block padding, preserving the horizontal position in code and toggle
+  blocks. The grapheme-safe fallback remains available when native hit testing cannot resolve a
+  position; this does not remove all possible fallback scans.
+
+Targeted regressions failed before the repairs and pass afterwards. Fresh isolated Chromium probes
+cover the actual syntax highlighter, caret column and selection endpoints, large offscreen blocks,
+and menu scrolling and violet preview across both themes. Menu checks use web and mocked desktop
+actions; they do not exercise WKWebView. Detailed repair evidence lives under
+`/private/tmp/sol-p2-links-20261029/`, `/private/tmp/sol-p2-editor-20261029/` and
+`/private/tmp/sol-p2-visual-20261029/`.
+
+The final repair passes all 1639 tests in 70 files, typecheck, formatting, both frontend builds and
+`git diff --check`. ESLint reports zero errors and 534 warnings, including 16 additional warnings
+in the new regression tests. The fresh normal frontend bundle also builds into an offline, locked
+arm64 Tauri debug app. Coordinator logs and the rebuilt
+`Gravity Notes Dev.app` are under `/private/tmp/sol-p2-pr-20261029/`. It retains the existing dev
+identity and omits developer signing, notarization and updater artifacts.
+An independent closing review found no introduced regression in these repairs; its focused
+207-test run also passed. Chromium's empty `Selection.toString()` across editing hosts was checked
+against the old operation order: the behaviour is inherited, while the range text and selection
+endpoints remain intact.
+
+The review's P3 items remain separate: clipboard feature detection in ErrorBoundary, superseded
+per-block drag handlers, duplicate Trash confirms, an unused appearance layout, stale two-Undo
+wording in `docs/shortcuts.md`, literal Gravity recipe values and declaration-label comments.
+Inherited Shift+Enter and bulk text-insertion behaviours were excluded after baseline controls.
+The exact-path creation race described above also remains outside this repair. Manual WKWebView
+acceptance of the latest drag, scrolling and editor repairs is still pending.
 
 ## Desktop acceptance checklist
 

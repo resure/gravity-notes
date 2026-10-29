@@ -1,14 +1,15 @@
 import {Toaster, ToasterComponent, ToasterProvider} from '@gravity-ui/uikit';
-import {fireEvent, screen, waitFor} from '@testing-library/react';
+import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {IDBFactory} from 'fake-indexeddb';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
+import * as clipboard from '../clipboard';
 import {FakeDirectoryHandle, asDirectoryHandle} from '../storage/fakeFileSystem';
 import {FileSystemNoteStore} from '../storage/fileSystemStore';
 import {IndexedDbNoteStore} from '../storage/indexedDbStore';
 import type {Note, NoteStore} from '../storage/types';
 import {renderWithProviders} from '../test/render';
-import {resolveWikiLink} from '../wikiLinks';
+import {extractWikiLinks, resolveWikiLink} from '../wikiLinks';
 
 import {Workspace} from './Workspace';
 
@@ -39,6 +40,7 @@ vi.mock('./EditorPane', async () => {
 afterEach(() => {
     localStorage.clear();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
 });
 
 async function setup(target: string, rootExists = false) {
@@ -50,7 +52,8 @@ async function setup(target: string, rootExists = false) {
     return {dir, ...(await setupStore(store))};
 }
 
-async function setupStore(store: NoteStore) {
+async function setupStore(store: NoteStore, restoreId?: string) {
+    if (restoreId) await store.writeMetadata({...(await store.readMetadata()), active: restoreId});
     const create = vi.spyOn(store, 'create');
     renderWithProviders(
         <ToasterProvider toaster={new Toaster()}>
@@ -74,9 +77,9 @@ async function setupStore(store: NoteStore) {
             <ToasterComponent />
         </ToasterProvider>,
     );
-    fireEvent.click(await screen.findByRole('option', {name: /Other/}));
+    if (!restoreId) fireEvent.click(await screen.findByRole('option', {name: /Other/}));
     await waitFor(() =>
-        expect(screen.getByLabelText('Open note')).toHaveTextContent('Work/Other.md'),
+        expect(screen.getByLabelText('Open note').textContent).toBe(restoreId ?? 'Work/Other.md'),
     );
     return {store, create};
 }
@@ -84,6 +87,61 @@ async function setupStore(store: NoteStore) {
 function followWikiLink() {
     fireEvent.click(screen.getByRole('button', {name: 'Follow wiki link'}));
 }
+
+describe('Workspace copy wiki link', () => {
+    async function copyLink(id: string, otherId: string) {
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile(id, 'copy source', 100);
+        dir.seedFile(otherId, 'other note', 200);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        await setupStore(store, id);
+        fireEvent.click(
+            within(screen.getByRole('banner')).getByRole('button', {name: 'Note actions'}),
+        );
+        fireEvent.click(await screen.findByRole('menuitem', {name: 'Copy link to note'}));
+        return store;
+    }
+
+    it.each([
+        ['Plan.md', 'Other.md', '[[Plan]]'],
+        ['Topic.md.md', 'Topic.md', '[[/Topic.md.md]]'],
+        ['Work/Topic.md.md', 'Work/Topic.md', '[[/Work/Topic.md.md]]'],
+        ['Shared.md', 'Work/Shared.md', '[[/Shared]]'],
+        ['Work/Shared.md', 'Shared.md', '[[Work/Shared]]'],
+    ])('copies a link that opens %s rather than %s', async (id, otherId, expected) => {
+        const write = vi.spyOn(clipboard, 'writeClipboardText').mockResolvedValue(undefined);
+        const store = await copyLink(id, otherId);
+        await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith(expected));
+        expect(await screen.findByText('Link copied')).toBeInTheDocument();
+        const links = extractWikiLinks(expected);
+        expect(links).toHaveLength(1);
+        const notes = await store.list();
+        for (const from of ['Elsewhere.md', 'Work/Elsewhere.md']) {
+            expect(resolveWikiLink(links[0].target, from, notes)).toBe(id);
+        }
+    });
+
+    it.each([
+        ['C#.md', 'C.md'],
+        ['A[B].md', 'A.md'],
+        ['Work/C#.md', 'Work/C.md'],
+    ])(
+        'reports an unsupported name instead of copying the wrong link for %s',
+        async (id, otherId) => {
+            const write = vi.spyOn(clipboard, 'writeClipboardText').mockResolvedValue(undefined);
+            const store = await copyLink(id, otherId);
+            expect(
+                await screen.findByText('This note name cannot be represented as a wiki link'),
+            ).toBeInTheDocument();
+            expect(write).not.toHaveBeenCalled();
+            expect(screen.queryByText('Link copied')).not.toBeInTheDocument();
+            expect((await store.list()).map((note) => note.id).sort()).toEqual(
+                [id, otherId].sort(),
+            );
+            expect((await store.get(id)).content).toBe('copy source');
+        },
+    );
+});
 
 describe('Workspace wiki-link navigation', () => {
     describe.each(['fsa', 'indexeddb'])('exact root path preflight (%s)', (backend) => {

@@ -242,13 +242,17 @@ function caretRangeIn(el: HTMLElement, x: number, y: number): Range | null {
     return character;
 }
 
+function edgeLineY(el: HTMLElement, rect: DOMRect, edge: 'top' | 'bottom'): number {
+    const style = getComputedStyle(el);
+    const padding = parseFloat(edge === 'top' ? style.paddingTop : style.paddingBottom) || 0;
+    const inset = Math.min(padding + lineHeightOf(el) / 2, rect.height / 2);
+    return edge === 'top' ? rect.top + inset : rect.bottom - inset;
+}
+
 /** Place caret on the first/last line of `el`, as close to viewport x as possible. */
 function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void {
     const rect = el.getBoundingClientRect();
-    const lh = lineHeightOf(el);
-    const inset = Math.min(lh / 2, rect.height / 2);
-    const y = edge === 'top' ? rect.top + inset : rect.bottom - inset;
-    setCaretAtPoint(el, x, y, edge === 'top' ? 'start' : 'end');
+    setCaretAtPoint(el, x, edgeLineY(el, rect, edge), edge === 'top' ? 'start' : 'end');
 }
 
 /**
@@ -257,13 +261,10 @@ function setCaretNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): void
  */
 export function positionNearX(el: HTMLElement, x: number, edge: 'top' | 'bottom'): [Node, number] {
     const rect = el.getBoundingClientRect();
-    const lh = lineHeightOf(el);
-    const inset = Math.min(lh / 2, rect.height / 2);
-    const y = edge === 'top' ? rect.top + inset : rect.bottom - inset;
     const range = caretRangeIn(
         el,
         Math.min(Math.max(x, rect.left + 2), Math.max(rect.left + 2, rect.right - 2)),
-        y,
+        edgeLineY(el, rect, edge),
     );
     if (range) return outsideAtoms(el, [range.startContainer, range.startOffset]);
     return edgePosition(el, edge === 'top' ? 'start' : 'end');

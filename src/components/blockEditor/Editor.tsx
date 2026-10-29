@@ -1421,11 +1421,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             acrossBlocks(host, () => sel.extend(target, offset));
             return true;
         }
+        nextEl.scrollIntoView({block: 'nearest'});
         const [target, offset] = vertical
             ? positionNearX(nextEl, x, forward ? 'top' : 'bottom')
             : edgePosition(nextEl, forward ? 'start' : 'end');
         acrossBlocks(host, () => sel.extend(target, offset));
-        nextEl.scrollIntoView({block: 'nearest'});
         return true;
     };
 
@@ -1830,24 +1830,28 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         }
     };
 
-    const retyped = (b: BlockData, type: BlockType): BlockData => ({
-        ...b,
-        type,
-        html:
-            type === 'divider' || type === 'table'
-                ? ''
-                : b.type === 'table'
-                  ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
-                  : oneLineIfHeading(type, b.html),
-        table:
-            type === 'table'
-                ? b.type === 'table'
-                    ? normalizeTableData(b.table)
-                    : newTableData(b.html)
-                : undefined,
-        checked: undefined,
-        collapsed: undefined,
-    });
+    const retyped = (b: BlockData, type: BlockType): BlockData =>
+        decorateBlock(
+            {
+                ...b,
+                type,
+                html:
+                    type === 'divider' || type === 'table'
+                        ? ''
+                        : b.type === 'table'
+                          ? (b.table?.cells.flat().filter(Boolean).join('<br>') ?? '')
+                          : oneLineIfHeading(type, b.html),
+                table:
+                    type === 'table'
+                        ? b.type === 'table'
+                            ? normalizeTableData(b.table)
+                            : newTableData(b.html)
+                        : undefined,
+                checked: undefined,
+                collapsed: undefined,
+            },
+            decorateRef.current,
+        );
 
     const turnInto = (id: string, type: BlockType) => {
         setBlocks((bs) =>

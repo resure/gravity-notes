@@ -168,7 +168,9 @@ Key modules:
   `search.ts`): `extractWikiLinks`, `resolveWikiLink` (match by title case-insensitively, or an explicit
   `Folder/Note` path; a leading `/` resolves exactly from the vault root without title fallback;
   `|alias`/`#heading` ignored; same-folder ≫ shallowest ≫ lexicographic tiebreak for bare titles),
-  `suggestWikiTargets` (the `[[`-autocomplete ranking). Backlinks invert in **two stages** so a corpus
+  `suggestWikiTargets` (the `[[`-autocomplete ranking). `copyableWikiLinkTargetFor` verifies copied
+  links against the same resolver, tries an exact root-relative filename if needed, and refuses an
+  unrepresentable target without writing to the clipboard. Backlinks invert in **two stages** so a corpus
   change stays cheap: `buildBacklinkInversion` (resolve + group, NO snippets, once per graph change)
   then `materializeBacklinks` (slice context snippets + sort for ONE bucket, lazily — only the open
   note's). `buildBacklinks`/`buildBacklinkIndex` are the eager forms kept for direct/test callers. Notes

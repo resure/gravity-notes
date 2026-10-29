@@ -75,6 +75,10 @@
     --yfm-colorify-violet: var(--yfm-color-text-violet);
 }
 
+.yfm-colorify--violet {
+    color: var(--yfm-colorify-violet);
+}
+
 /* Dark: the same hues, lifted off the ink so they stay legible rather than merely present. */
 [data-theme='dark'] {
     --yfm-green: oklch(0.75 0.14 150);

@@ -51,7 +51,7 @@ import {
 import {exportNotes, importNotes} from '../storage/transfer';
 import type {NoteAppearanceOverride, NoteStore} from '../storage/types';
 import {type FolderRow, buildFolderTree, notesInFolder} from '../tree';
-import {normalizeTarget, resolveWikiLink, wikiLinkTargetFor} from '../wikiLinks';
+import {copyableWikiLinkTargetFor, normalizeTarget, resolveWikiLink} from '../wikiLinks';
 
 import {AboutDialog} from './AboutDialog';
 import {AttachmentsDialog} from './AttachmentsDialog';
@@ -1431,7 +1431,12 @@ export function Workspace({
     const handleCopyNoteLink = useCallback(() => {
         const open = notes.note;
         if (!open) return;
-        void writeClipboardText(`[[${wikiLinkTargetFor(open, notes.notes)}]]`)
+        const target = copyableWikiLinkTargetFor(open, notes.notes);
+        if (target === null) {
+            onError('This note name cannot be represented as a wiki link');
+            return;
+        }
+        void writeClipboardText(`[[${target}]]`)
             .then(() => notify('Link copied'))
             .catch(() => onError('Could not copy to the clipboard'));
     }, [notes.note, notes.notes, notify, onError]);

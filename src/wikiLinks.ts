@@ -63,6 +63,26 @@ export function wikiLinkTargetFor(note: NoteMeta, notes: readonly NoteMeta[]): s
     return path.includes('/') ? path : `/${path}`;
 }
 
+export function copyableWikiLinkTargetFor(
+    note: NoteMeta,
+    notes: readonly NoteMeta[],
+): string | null {
+    const resolve = createWikiLinkResolver([...notes]);
+    for (const target of [wikiLinkTargetFor(note, notes), `/${note.id}`]) {
+        const text = `[[${target}]]`;
+        const links = extractWikiLinks(text);
+        if (
+            links.length === 1 &&
+            links[0].index === 0 &&
+            links[0].length === text.length &&
+            resolve(links[0].target, '') === note.id
+        ) {
+            return target;
+        }
+    }
+    return null;
+}
+
 /**
  * Pre-indexed note list, so a batch of resolutions (e.g. {@link buildBacklinks}) is O(1) per link
  * instead of re-scanning every note. `byId` maps a lowercased id → its note; `byTitle` maps a

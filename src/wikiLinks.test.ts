@@ -4,6 +4,7 @@ import type {NoteMeta} from './storage/types';
 import {
     buildBacklinkInversion,
     buildBacklinks,
+    copyableWikiLinkTargetFor,
     createWikiLinkResolver,
     extractWikiLinks,
     materializeBacklinks,
@@ -121,6 +122,52 @@ describe('wikiLinkTargetFor', () => {
                 notes.map((note) => note.id),
             );
         }
+    });
+});
+
+describe('copyableWikiLinkTargetFor', () => {
+    it.each([
+        ['Plan.md', 'Other.md', 'Plan'],
+        ['Work/Plan.md', 'Other.md', 'Plan'],
+        ['Shared.md', 'Work/Shared.md', '/Shared'],
+        ['Work/shared.md', 'Shared.md', 'Work/shared'],
+        ['Topic.md.md', 'Topic.md', '/Topic.md.md'],
+        ['Work/Topic.md.md', 'Work/Topic.md', '/Work/Topic.md.md'],
+        ['Folder#section/Plan.md', 'Other.md', 'Plan'],
+    ])('copies an extractable, context-independent target for %s', (id, otherId, expected) => {
+        const notes = notesFrom([id, otherId]);
+        const target = copyableWikiLinkTargetFor(notes[0], notes);
+        expect(target).toBe(expected);
+        const text = `[[${target}]]`;
+        const links = extractWikiLinks(text);
+        expect(links).toEqual([{target: expected, index: 0, length: text.length}]);
+        for (const from of ['Other.md', 'Work/Other.md', 'Archive/Other.md']) {
+            expect(resolveWikiLink(links[0].target, from, notes)).toBe(id);
+        }
+    });
+
+    it.each(['C#.md', 'A[B].md', 'A]B.md', 'A|B.md', 'A\nB.md'])(
+        'refuses a filename that wiki syntax cannot represent: %s',
+        (id) => {
+            const notes = notesFrom([id, 'C.md', 'A.md']);
+            expect(copyableWikiLinkTargetFor(notes[0], notes)).toBeNull();
+        },
+    );
+
+    it('refuses an ambiguous title when its explicit path cannot be represented', () => {
+        const notes = notesFrom(['Folder#section/Plan.md', 'Plan.md']);
+        expect(copyableWikiLinkTargetFor(notes[0], notes)).toBeNull();
+    });
+
+    it('refuses a case-only duplicate that the resolver cannot address', () => {
+        const notes = notesFrom(['Work/Plan.md', 'work/plan.md']);
+        expect(copyableWikiLinkTargetFor(notes[0], notes)).toBe('Work/Plan');
+        expect(copyableWikiLinkTargetFor(notes[1], notes)).toBeNull();
+    });
+
+    it('refuses to copy a target absent from the note list', () => {
+        const [note] = notesFrom(['Plan.md']);
+        expect(copyableWikiLinkTargetFor(note, notesFrom(['Other.md']))).toBeNull();
     });
 });
 

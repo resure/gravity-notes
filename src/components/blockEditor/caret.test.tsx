@@ -1,6 +1,13 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
-import {htmlToText, positionNearX, setCaretAtPoint, splitHtmlAtCaret, textOffsetOf} from './caret';
+import {
+    htmlToText,
+    positionNearX,
+    setCaret,
+    setCaretAtPoint,
+    splitHtmlAtCaret,
+    textOffsetOf,
+} from './caret';
 
 type Box = {start: number; end: number; rect: DOMRect};
 
@@ -123,6 +130,27 @@ describe('fallback caret hit testing', () => {
         setCaretAtPoint(el, 44, 10, 'start');
 
         expect(caretOffset(el)).toBe(2);
+        expect(measure).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['top', 26],
+        ['bottom', 78],
+    ] as const)('hits the %s text line inside a padded block', (edge, y) => {
+        const el = content('ABC', 100);
+        el.style.paddingTop = '16px';
+        el.style.paddingBottom = '12px';
+        const measure = layout(el, []);
+        const hit = document.createRange();
+        hit.setStart(el.firstChild!, 2);
+        vi.mocked(document.caretRangeFromPoint).mockReturnValue(hit);
+
+        const [node, offset] = positionNearX(el, 44, edge);
+        expect(textOffsetOf(el, node, offset)).toBe(2);
+        expect(document.caretRangeFromPoint).toHaveBeenLastCalledWith(44, y);
+        setCaret(el, {x: 44, edge});
+        expect(caretOffset(el)).toBe(2);
+        expect(document.caretRangeFromPoint).toHaveBeenLastCalledWith(44, y);
         expect(measure).not.toHaveBeenCalled();
     });
 

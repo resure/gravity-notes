@@ -104,7 +104,9 @@ drags the window; the native unified toolbar leaves traffic-light placement to m
   its menu.
 - The **note’s `⋯` menu** (`⌘⇧I`) combines live font/width controls with preview, source mode,
   pin, rename, move, duplicate, reveal, copy wiki link and delete. It targets the open note even
-  when search filters its row out. The list row’s menu targets that row instead.
+  when search filters its row out. The list row’s menu targets that row instead. Copy link verifies
+  that its output resolves to the same note, falling back to an exact root-relative filename when
+  needed. A name the wiki syntax cannot represent reports an error without replacing the clipboard.
 - The **note list** keeps a folder toggle, sort control and raised “New” button in its toolbar.
   Virtualized rows are **48px**, or **64px** when a third line shows the folder in All Notes or
   search. The title sits above the timestamp and preview; row actions appear at the title’s right
