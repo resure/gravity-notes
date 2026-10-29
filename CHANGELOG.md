@@ -4,6 +4,41 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2026-10-29
+
+### Added
+
+- **Wiki-link chips** show the note name or display text without visible brackets. Their popup
+  opens the note, changes its target or text, or removes the link. Files keep literal `[[…]]` Markdown.
+- **Text selections across blocks** — select part of one text block through part of another with
+  the mouse or Shift-arrows, then type, delete, press Enter, copy or cut just the selected text.
+  Unselected text stays intact.
+
+### Changed
+
+- **The Sol look** — refreshed panels, dialogs, icons and typography, with centred search and a
+  save-state orb. Existing app and workspace appearance settings still apply.
+- **Reorganised menus** — recent workspaces and app actions live in the orb menu; the note's **⋯**
+  menu combines font and width controls with note actions, even when search hides its list row.
+  Trash is also available in the folder rail.
+- **Smoother scrolling through large note lists.**
+
+### Fixed
+
+- Pasting over a selection across text blocks preserves surrounding text and formatting and takes
+  one Undo/Redo step. Failed clipboard reads or attachment writes leave the selection intact.
+- Dragging a block after scrolling, into gaps, or while scrolling at the editor's edge now drops it
+  at the indicated position.
+- Shift-arrow selection keeps its horizontal position across code and toggle blocks, including
+  offscreen text. Caret placement respects emoji and combining characters.
+- Switching a block to Code shows wiki syntax literally; switching back restores link chips
+  immediately.
+- The note menu scrolls in short windows so every action stays reachable. Rename also works from
+  read-only preview.
+- **Copy link to note** addresses the intended note when titles repeat and reports names that cannot
+  form a valid link or clipboard failures.
+- Violet text in Markdown preview renders correctly in light and dark themes.
+
 ## [0.12.0] - 2026-10-21
 
 ### Added
