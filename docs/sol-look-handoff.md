@@ -222,6 +222,54 @@ dev bundle identity, without developer signing, notarization or updater artifact
 bundle for the follow-up manual pass. The agent did not run the repaired app through WKWebView;
 the earlier manual acceptance does not verify these later editor changes.
 
+On 2026-10-29 the user launched this repaired bundle and reported that it looked fine, with note-list
+scroll performance as the remaining concern. This is general hands-on acceptance, without a
+separate result for each checklist item.
+
+## Note-list scroll continuation
+
+The scroll pass starts from `9fb3bcd`. The virtualizer's state previously lived in `NoteList`, so
+every visible-range change also executed the toolbar, sort control, closed menus and whole-list
+selection lookups. `NoteViewport` now owns that state. The parent retains note actions and selection;
+the child notifies it after rows mount so an imperative focus request still lands on the new row.
+The selected row and open menu/icon anchors remain mounted outside the visible range. Row heights,
+overscan, DOM markup and styling are unchanged.
+
+A production React profiling bundle of the actual component was compared with the saved pre-change
+bundle in isolated headless Chromium profiles. The table gives medians of three real browser scroll
+gestures, each moving 12,000px at 6,000px/s through 10,000 synthetic notes with icons and mixed 48/64px
+rows, using Chromium's 4x CPU slowdown:
+
+| Measurement                          | Before | After  |
+| ------------------------------------ | ------ | ------ |
+| Outer `NoteList` render executions   | 122    | 0      |
+| React render duration across commits | 159 ms | 80 ms  |
+| Main-thread task time across gesture | 605 ms | 466 ms |
+| Mounted rows at the end              | 33     | 33     |
+| Row render executions during gesture | 214    | 214    |
+
+Additional 120-frame scroll runs covered 1,000/10,000 notes, icons on/off and CPU rates 1x/4x.
+Their p95 frame interval stayed around 16.7ms before and after; total task timing was noisier,
+including a slower unthrottled no-icons result. These measurements demonstrate reduced React work,
+not a measured native FPS improvement. They do not profile the user's folder or WKWebView.
+The fixture, build/measurement scripts, CPU profiles and raw results are under
+`/private/tmp/sol-list-scroll-20261029/`.
+
+Five regressions use a bounded 240px viewport and the real virtualizer. They cover note/file
+windowing, scroll leaving the toolbar untouched, focus into an unmounted row and subsequent
+keyboard navigation, retained popup anchors and filtering, and height/order changes. The toolbar
+regression fails against the previous component with two extra sort-control renders and passes
+with zero. All 82 new and existing NoteList tests pass. A fresh Chromium probe also confirms
+`focusRow` for note 2000, ArrowDown, and the 560,000px to 480,000px total-height transition when folder
+lines are disabled. Independent focused code verification found no defects in the lifecycle move.
+
+The full suite passes 1601 tests in 68 files. Typecheck, formatting, normal/single-file frontend
+builds and the offline, locked arm64 Tauri debug build pass; lint reports 0 errors and the same
+518 warnings. The final profiling fixture is byte-identical to the measured optimized fixture.
+The new app is `/private/tmp/sol-list-scroll-20261029/Gravity Notes Dev.app`, with the existing dev
+identity and without developer signing, notarization or updater artifacts. Close the older running
+dev app before opening this one. Manual scroll acceptance in WKWebView remains pending.
+
 ## Desktop acceptance checklist
 
 Accepted by the user on 2026-10-28. Retain these checks for future desktop regressions, using a

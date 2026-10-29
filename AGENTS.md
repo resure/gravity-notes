@@ -516,8 +516,9 @@ Key modules:
   `onOpenInNewWindow` prop); right-click and ⌘-click deliberately NEVER move the selection (the menu
   acts via its own payload, and a row `onMouseDown` blocks the focus grab); a **folder-scope chip**
   names the filter when a folder is selected while the rail is closed (click opens the rail, ✕ clears
-  to All Notes without switching notes); **virtualized** via `@tanstack/react-virtual`, with a
-  `rangeExtractor` that keeps the
+  to All Notes without switching notes); **virtualized** via `@tanstack/react-virtual` inside
+  `NoteViewport`, so scrolling updates the row window without re-rendering the toolbar or menus.
+  Its `rangeExtractor` keeps the
   keyboard-focused row and any open row popover's anchor row (⋯ menu / icon picker) mounted; rows
   render only an `IconPickerButton` glyph and share ONE `IconPickerPopup` — like the one shared row
   menu — so a closed picker costs nothing per row and scrolling can't unmount an open one), `MoveToDialog` (the ⌘⇧M move-to-folder picker — the chord is
