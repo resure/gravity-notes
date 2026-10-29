@@ -270,6 +270,47 @@ The new app is `/private/tmp/sol-list-scroll-20261029/Gravity Notes Dev.app`, wi
 identity and without developer signing, notarization or updater artifacts. Close the older running
 dev app before opening this one. Manual scroll acceptance in WKWebView remains pending.
 
+## Block drag continuation
+
+On 2026-10-29 the user reported that a dragged block tilts at its original position and that a
+drop fails after scrolling. This pass starts from `5952433` and retains the note-list optimization.
+The tilt was an explicit `rotate(2deg)` on the source `.block.dragging`, rather than on its drag
+image. The source now stays upright with reduced opacity, without the lifted background/shadow.
+
+Previously only individual blocks accepted dragover/drop. Gaps could reject a drop while leaving
+the old indicator visible. Native Chromium probes also reproduced cancelled drops when scrolling
+or moving across child elements changed the browser's current drag destination before release.
+The root now captures internal `dragenter`, `dragover` and `drop`. Accepting `dragenter` is necessary
+for the reproduced transition: root dragover/drop handling alone still failed it. Geometry is
+resolved from the current visible block rectangles, including the left gutter, inter-block gaps
+and space below the final block; a stale event target or indicator does not choose the destination.
+The pane bounds reject drops outside the editor viewport. Scroll updates the indicator under the
+last pointer position, and the edge scroller stops on completion, outside-editor dragover, hiding or
+unmounting. Deferred source styling is cancelled on early drop/end and unmount, preventing a
+completed drag from becoming active again. External-file handling remains covered by its existing
+tests.
+
+Six DOM regressions cover a 25px scroll with a stationary pointer and stale event target, gutter/
+bottom gaps, early drop/end, viewport rejection, selected subtrees and one Undo/Redo, and teardown.
+On a byte-verified copy of `5952433` they give five failures and one pass. Focused independent
+verification of the repaired lifecycle found no defects.
+
+Fresh Chromium probes use actual mouse-driven HTML drag events, a translated scrolling pane and
+the production editor bundle. A 40-block note passes direct-body drop, manual 48px scrolling,
+gutter/gap drops and edge autoscroll (603px). Every case produces one change, all 40 unique blocks
+survive, the source transform stays `none`, and no dragging state remains. A 250-block note also
+passes a 1008px edge scroll with its lazily mounted source handle retained and all 250 unique blocks
+preserved. The failing browser traces and repaired results, fixture and scripts are under
+`/private/tmp/sol-block-drag-20261029/`; these are Chromium observations, not WKWebView acceptance.
+
+Verification passes 1607 tests in 69 files, typecheck, formatting, both frontend builds and the
+offline, locked arm64 Tauri debug build. Lint retains 518 warnings with no errors. The six final
+drag regressions also pass after the explicit `dragenter` assertion was added, and the same final
+test file retains five failures on the byte-verified baseline. The new bundle is
+`/private/tmp/sol-block-drag-20261029/Gravity Notes Dev.app`, with the existing dev identity and
+without developer signing, notarization or updater artifacts. Close the earlier dev app before
+opening this one. Manual drag-with-scroll acceptance in WKWebView remains pending.
+
 ## Desktop acceptance checklist
 
 Accepted by the user on 2026-10-28. Retain these checks for future desktop regressions, using a

@@ -1,5 +1,6 @@
 import {
     forwardRef,
+    useCallback,
     useEffect,
     useImperativeHandle,
     useLayoutEffect,
@@ -59,6 +60,7 @@ import type {EdgeScroller} from './autoScroll';
 import {colorSelection} from './blockColors';
 import type {MenuItemDef} from './blockConfig';
 import {MARKDOWN_RULES, filterMenuItems, placeholderFor} from './blockConfig';
+import {findBlockDropTarget} from './blockDropTarget';
 import {CALLOUT_ITEMS} from './callouts';
 import type {CaretPos} from './caret';
 import {
@@ -823,6 +825,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     } | null>(null);
     // The subtree ROOTS being dragged — several when the drag started inside a block selection.
     const [draggingRoots, setDraggingRoots] = useState<string[] | null>(null);
+    const blockDragRef = useRef<{
+        roots: string[];
+        point: {x: number; y: number} | null;
+        pending: number | null;
+    } | null>(null);
     const [dropTarget, setDropTarget] = useState<{id: string; edge: 'before' | 'after'} | null>(
         null,
     );
@@ -4416,19 +4423,66 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         setHandleFocusId(e.type === 'focus' ? handleOf(e.target) : handleOf(e.relatedTarget));
     };
 
-    // `dragover` on the document, not on each block: the pointer spends a good part of a drag over
-    // the gap below the last block (or over another block's furniture), and those frames are
-    // exactly the ones that need to keep scrolling.
+    const endDrag = useCallback(() => {
+        const drag = blockDragRef.current;
+        if (drag && drag.pending !== null) clearTimeout(drag.pending);
+        blockDragRef.current = null;
+        edgeScroller.stop();
+        setDraggingRoots(null);
+        setDropTarget(null);
+    }, [edgeScroller]);
+
+    const dragTargetAt = (x: number, y: number) => {
+        const root = rootRef.current;
+        if (!root) return null;
+        const pane = scrollContainerRef?.current?.getBoundingClientRect();
+        if (pane && (x < pane.left || x > pane.right || y < pane.top || y > pane.bottom))
+            return null;
+        return findBlockDropTarget(root, x, y);
+    };
+    const dragTargetAtRef = useRef(dragTargetAt);
+    dragTargetAtRef.current = dragTargetAt;
+
     useEffect(() => {
         if (!draggingRoots) return undefined;
-        const scroller = edgeScroller;
-        const onDragOverDocument = (e: globalThis.DragEvent) => scroller.to(e.clientY);
+        const onDragOverDocument = () => {
+            if (blockDragRef.current) blockDragRef.current.point = null;
+            edgeScroller.stop();
+            setDropTarget(null);
+        };
+        const onScroll = () => {
+            const point = blockDragRef.current?.point;
+            if (point) {
+                const target = dragTargetAtRef.current(point.x, point.y);
+                setDropTarget((current) =>
+                    current?.id === target?.id && current?.edge === target?.edge ? current : target,
+                );
+            }
+        };
         document.addEventListener('dragover', onDragOverDocument);
+        document.addEventListener('dragend', endDrag, true);
+        window.addEventListener('scroll', onScroll, true);
         return () => {
             document.removeEventListener('dragover', onDragOverDocument);
-            scroller.stop();
+            document.removeEventListener('dragend', endDrag, true);
+            window.removeEventListener('scroll', onScroll, true);
+            edgeScroller.stop();
         };
-    }, [draggingRoots]);
+    }, [draggingRoots, edgeScroller, endDrag]);
+
+    useEffect(() => {
+        if (hidden) endDrag();
+    }, [hidden, endDrag]);
+
+    useEffect(
+        () => () => {
+            const drag = blockDragRef.current;
+            if (drag && drag.pending !== null) clearTimeout(drag.pending);
+            blockDragRef.current = null;
+            edgeScroller.stop();
+        },
+        [edgeScroller],
+    );
 
     const onDragStart = (e: DragEvent<HTMLButtonElement>, id: string) => {
         // A handle inside the current block SELECTION drags the whole selection — what the reader
@@ -4440,8 +4494,44 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         e.dataTransfer.effectAllowed = 'move';
         const blockEl = (e.currentTarget as HTMLElement).closest('.block');
         if (blockEl) e.dataTransfer.setDragImage(blockEl, 20, 10);
+        const previous = blockDragRef.current;
+        if (previous && previous.pending !== null) clearTimeout(previous.pending);
+        const drag: NonNullable<typeof blockDragRef.current> = {roots, point: null, pending: null};
+        blockDragRef.current = drag;
         // Defer: mutating the DOM inside dragstart cancels the drag in Chrome.
-        setTimeout(() => setDraggingRoots(roots), 0);
+        drag.pending = window.setTimeout(() => {
+            drag.pending = null;
+            if (blockDragRef.current === drag) setDraggingRoots(roots);
+        }, 0);
+    };
+
+    const onInternalDragOver = (e: DragEvent<HTMLDivElement>) => {
+        const drag = blockDragRef.current;
+        if (!drag) return;
+        e.stopPropagation();
+        const target = dragTargetAt(e.clientX, e.clientY);
+        drag.point = target ? {x: e.clientX, y: e.clientY} : null;
+        setDropTarget((current) =>
+            current?.id === target?.id && current?.edge === target?.edge ? current : target,
+        );
+        if (!target) {
+            edgeScroller.stop();
+            return;
+        }
+        e.preventDefault();
+        const transfer = e.dataTransfer;
+        transfer.dropEffect = 'move';
+        edgeScroller.to(e.clientY);
+    };
+
+    const onInternalDrop = (e: DragEvent<HTMLDivElement>) => {
+        const drag = blockDragRef.current;
+        if (!drag) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const target = dragTargetAt(e.clientX, e.clientY);
+        endDrag();
+        if (target) moveBlocks(drag.roots, target.id, target.edge);
     };
 
     const onDragOver = (e: DragEvent<HTMLDivElement>, id: string) => {
@@ -4451,12 +4541,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         const edge = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
         setDropTarget((t) => (t && t.id === id && t.edge === edge ? t : {id, edge}));
-    };
-
-    const endDrag = () => {
-        edgeScroller.stop();
-        setDraggingRoots(null);
-        setDropTarget(null);
     };
 
     const onDrop = (e: DragEvent<HTMLDivElement>, id: string) => {
@@ -4469,8 +4553,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             if (others.length) void insertAttachmentFiles(id, others);
             return;
         }
-        // The state is set on a deferred tick (see above), so a very fast drag can drop before it
-        // lands — the ids ride on the dataTransfer for exactly that case.
         const src =
             draggingRoots ?? e.dataTransfer.getData('text/plain').split('\n').filter(Boolean);
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -4784,6 +4866,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
             onMouseLeave={() => hover.set(null)}
             onFocus={onRootFocusChange}
             onBlur={onRootFocusChange}
+            onDragEnterCapture={onInternalDragOver}
+            onDragOverCapture={onInternalDragOver}
+            onDropCapture={onInternalDrop}
         >
             <main
                 className="page"

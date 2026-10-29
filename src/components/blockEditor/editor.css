@@ -636,20 +636,8 @@
     border-radius: 3px;
 }
 
-/* One of the three moments in the app that move for effect (§03): a dragged block lifts off the
-   paper at 2° under the floating-surface shadow. */
 .gn-block-editor .block.dragging {
-    opacity: 0.75;
-    transform: rotate(2deg);
-    box-shadow: var(--shadow-3);
-    border-radius: 4px;
-    background: var(--bg-paper);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .gn-block-editor .block.dragging {
-        transform: none;
-    }
+    opacity: 0.45;
 }
 
 .gn-block-editor .block.drop-before::before,

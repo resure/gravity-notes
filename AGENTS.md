@@ -433,6 +433,9 @@ Key modules:
   An image/table endpoint, mixed code/text endpoints, or an ending toggle
   hiding children falls back to whole blocks (`'exact'` in `removeBlocks`); a selection starting
   in a collapsed toggle's summary keeps its hidden children. A BLOCK selection acts on whole subtrees.
+  Internal block drag captures `dragenter`/`dragover`/`drop` at the editor root, resolving the current
+  block rectangles through `blockDropTarget.ts`, including gutters and gaps. Scroll refreshes the
+  indicator under a stationary pointer; completion and teardown cancel the deferred drag styling.
   Keyboard selection crosses blocks via `extendSelectionAcross` (WebKit clamps `extend` to the
   editing host, so `acrossBlocks` makes the root editable for the call — WebKit only, gated by
   `CLAMPS_SELECTION_TO_HOST`, since in Chromium it drops focus), and is painted per block with the

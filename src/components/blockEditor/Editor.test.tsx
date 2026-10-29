@@ -1882,16 +1882,23 @@ describe('dragging a block', () => {
             setData: (type: string, value: string) => store.set(type, value),
             setDragImage: vi.fn(),
         };
+        const elements = blocks();
+        const root = document.querySelector<HTMLElement>('.gn-block-editor');
+        if (!root) throw new Error('Missing block editor');
+        root.getBoundingClientRect = () => new DOMRect(0, 0, 400, elements.length * 100);
+        elements.forEach((block, index) => {
+            block.getBoundingClientRect = () => new DOMRect(0, index * 100, 400, 100);
+        });
         const target = blocks()[targetIndex];
         act(() => {
             fireEvent.dragStart(blocks()[sourceIndex].querySelector('.drag-btn')!, {dataTransfer});
         });
         act(() => {
-            // The handler picks the edge by comparing the pointer against the target's midpoint,
-            // which jsdom reports as 0 — and a `clientY` passed in the event init never reaches the
-            // event, so it has to be defined on it.
             const event = createEvent.drop(target, {dataTransfer});
-            Object.defineProperty(event, 'clientY', {value: edge === 'before' ? -1 : 1});
+            Object.defineProperties(event, {
+                clientX: {value: 50},
+                clientY: {value: targetIndex * 100 + (edge === 'before' ? 25 : 75)},
+            });
             fireEvent(target, event);
         });
     }
