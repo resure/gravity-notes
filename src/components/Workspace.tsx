@@ -32,6 +32,7 @@ import {
     effectiveTextFileMode,
     noteAppearanceOf,
     readLegacyNoteAppearances,
+    useNewFileSettings,
     useSettings,
     useWorkspaceSettings,
 } from '../hooks/useSettings';
@@ -39,6 +40,7 @@ import {useShortcuts} from '../hooks/useShortcuts';
 import {useSwipeBack} from '../hooks/useSwipeBack';
 import {Eye} from '../icons/icons';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
+import {resolveNewFileCreation} from '../newFiles';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {
     MD_EXT,
@@ -268,6 +270,7 @@ export function Workspace({
     const notes = useNotes(store, onError, initialNoteId);
     const {settings, setSetting} = useSettings();
     const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
+    const {newFileSettings, setNewFileSetting} = useNewFileSettings(workspaceId);
     const textFileMode = effectiveTextFileMode(settings, workspaceSettings);
 
     // One attachment URL cache per store: resolves `Attachments/…` refs to object URLs for the
@@ -1228,19 +1231,34 @@ export function Workspace({
 
     const handleCreate = useCallback(
         (title?: string, parentPath?: string) => {
-            nav.prepareCreate(); // arm the title to focus + select on the new note's mount
-            // ⌘N / the New button create into the selected folder; an explicit parentPath (the
-            // search box's root '') overrides that.
-            const dest = parentPath ?? selectedFolder ?? '';
+            const creation = resolveNewFileCreation(newFileSettings, {
+                title,
+                parentPath,
+                selectedFolder,
+            });
+            if (newFileSettings.folder && !notes.folders.includes(creation.parentPath)) {
+                onError(
+                    `The default folder “${creation.parentPath}” is unavailable. Choose a folder in Settings.`,
+                );
+                return;
+            }
+            nav.prepareCreate();
             void (async () => {
-                const id = await notes.create(title, dest);
+                const id = await notes.create(
+                    creation.title,
+                    creation.parentPath,
+                    creation.extension,
+                );
                 if (id) {
+                    if (newFileSettings.folder !== null && selectedFolder !== null) {
+                        setSelectedFolder(creation.parentPath);
+                    }
                     nav.setSelected(id);
                     revealNote(id); // mobile: reveal the new note's editor once it's created + loaded
                 }
             })();
         },
-        [notes, nav, selectedFolder, revealNote],
+        [notes, nav, selectedFolder, revealNote, newFileSettings, onError],
     );
 
     // Duplicate a note: copy it (shared attachments), then select the copy with its title armed for
@@ -1983,6 +2001,9 @@ export function Workspace({
                     workspaceSettings={workspaceSettings}
                     setWorkspaceSetting={setWorkspaceSetting}
                     workspaceLabel={storageLabel}
+                    newFileSettings={newFileSettings}
+                    setNewFileSetting={setNewFileSetting}
+                    folders={notes.folders}
                 />
 
                 <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />

@@ -108,6 +108,58 @@ describe('Workspace — nvALT navigation', () => {
         },
     );
 
+    it.each(['.txt', ''])(
+        'creates and reveals a new file in the configured folder with extension %s',
+        async (extension) => {
+            localStorage.setItem(
+                'gravity-notes:test-ws:new-files',
+                JSON.stringify({folder: 'Inbox', extension, defaultName: 'Capture'}),
+            );
+            const user = userEvent.setup();
+            const dir = new FakeDirectoryHandle();
+            dir.seedFile('Inbox/Keep.md', 'keep', 100);
+            dir.seedFile('Work/Project.md', 'project', 100);
+            const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+            renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
+            await screen.findByRole('option', {name: /Project/});
+            await user.click(screen.getByRole('button', {name: 'Folders'}));
+            await user.click(await screen.findByRole('treeitem', {name: /Work/}));
+            await user.click(screen.getByRole('button', {name: 'New'}));
+            await waitFor(async () =>
+                expect((await store.get(`Inbox/Capture${extension}`)).content).toBe(''),
+            );
+            expect(await screen.findByRole('option', {name: /Capture/})).toBeInTheDocument();
+        },
+    );
+
+    it('uses the configured root and preserves an explicit search name', async () => {
+        localStorage.setItem(
+            'gravity-notes:test-ws:new-files',
+            JSON.stringify({folder: '', extension: '.txt', nameFormat: 'date-name'}),
+        );
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        const search = screen.getByRole('textbox', {name: 'Search or create a note'});
+        await user.type(search, 'Meeting');
+        await user.keyboard('{Enter}');
+        await waitFor(async () => expect((await store.get('Meeting.txt')).content).toBe(''));
+    });
+
+    it('blocks creation when the configured folder is unavailable', async () => {
+        localStorage.setItem(
+            'gravity-notes:test-ws:new-files',
+            JSON.stringify({folder: 'Missing', defaultName: 'Capture'}),
+        );
+        const user = userEvent.setup();
+        const {store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        const create = vi.spyOn(store, 'create');
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        expect(create).not.toHaveBeenCalled();
+        expect(await store.listFolders()).not.toContain('Missing');
+    });
+
     it('captures imported files before clearing the live file input', async () => {
         const {store} = renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});

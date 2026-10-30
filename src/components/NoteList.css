@@ -275,9 +275,21 @@
 .note-list__heading {
     display: flex;
     flex: 0 1 auto;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     min-width: 0;
+    height: var(--row-title-lh);
+}
+
+@supports (text-box: trim-both cap alphabetic) {
+    .note-list__title {
+        padding-block: 0.25em;
+        text-box: trim-both cap alphabetic;
+    }
+
+    .note-list__heading .file-type-badge {
+        text-box: trim-both cap alphabetic;
+    }
 }
 
 .note-list__pin {

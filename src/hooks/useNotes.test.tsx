@@ -109,6 +109,30 @@ describe('useNotes — single note', () => {
         await waitFor(async () => expect((await store.readMetadata()).active).toBe(id));
     });
 
+    it.each(['.txt', ''])('creates and renames a new plain text file (%s)', async (extension) => {
+        const {hook, dir, store, onError} = await setup();
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        let id: string | null = null;
+        await act(async () => {
+            id = await hook.result.current.create('Note', 'Work', extension);
+        });
+        expect(id).toBe(`Work/Note${extension}`);
+        expect(hook.result.current.activeId).toBe(id);
+        const folder = await dir.getDirectoryHandle('Work');
+        const file = await (await folder.getFileHandle(`Note${extension}`)).getFile();
+        expect(await file.text()).toBe('');
+
+        const content = '# literal *text*\r\nlast\n';
+        act(() => hook.result.current.edit(content));
+        let renamed: string | null = null;
+        await act(async () => {
+            renamed = await hook.result.current.rename(id!, `Renamed${extension}`);
+        });
+        expect(renamed).toBe(`Work/Renamed${extension}`);
+        expect((await store.get(renamed!)).content).toBe(content);
+        expect(onError).not.toHaveBeenCalled();
+    });
+
     it('duplicates a note, copying its body (shared attachment refs) into "<Title> copy"', async () => {
         const body = '![pie](Attachments/pie.png)\n\nyum';
         const {hook, store} = await setup((dir) => dir.seedFile('Recipe.md', body, 100));

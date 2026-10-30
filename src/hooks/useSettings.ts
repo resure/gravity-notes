@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useState} from 'react';
 
+import {DEFAULT_NEW_FILE_SETTINGS, type NewFileSettings, parseNewFileSettings} from '../newFiles';
 import type {NoteAppearanceOverride} from '../storage/types';
 
 /**
@@ -84,6 +85,7 @@ const NOTE_DEFAULTS: NoteAppearance = {
 const SETTINGS_KEY = 'gravity-notes:settings';
 /** Namespaced like the other per-workspace layout keys in `Workspace` (`gravity-notes:<wsId>:*`). */
 const workspaceSettingsKey = (workspaceId: string) => `gravity-notes:${workspaceId}:settings`;
+const newFileSettingsKey = (workspaceId: string) => `gravity-notes:${workspaceId}:new-files`;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
     return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -133,6 +135,14 @@ function loadWorkspaceOverrides(key: string): WorkspaceSettings {
         };
     } catch {
         return WORKSPACE_DEFAULTS;
+    }
+}
+
+function loadNewFileSettings(key: string): NewFileSettings {
+    try {
+        return parseNewFileSettings(JSON.parse(localStorage.getItem(key) ?? '{}'));
+    } catch {
+        return {...DEFAULT_NEW_FILE_SETTINGS};
     }
 }
 
@@ -214,6 +224,19 @@ export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings 
         loadWorkspaceOverrides,
     );
     return {workspaceSettings, setWorkspaceSetting};
+}
+
+export interface UseNewFileSettings {
+    newFileSettings: NewFileSettings;
+    setNewFileSetting: <K extends keyof NewFileSettings>(key: K, value: NewFileSettings[K]) => void;
+}
+
+export function useNewFileSettings(workspaceId: string): UseNewFileSettings {
+    const [newFileSettings, setNewFileSetting] = usePersistedSettings(
+        newFileSettingsKey(workspaceId),
+        loadNewFileSettings,
+    );
+    return {newFileSettings, setNewFileSetting};
 }
 
 export function effectiveTextFileMode(app: Settings, workspace: WorkspaceSettings): TextFileMode {

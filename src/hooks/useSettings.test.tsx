@@ -1,6 +1,8 @@
 import {act, renderHook} from '@testing-library/react';
 import {beforeEach, describe, expect, it} from 'vitest';
 
+import {DEFAULT_NEW_FILE_SETTINGS} from '../newFiles';
+
 import {
     type NoteAppearance,
     type Settings,
@@ -12,6 +14,7 @@ import {
     noteAppearanceOf,
     noteAppearanceToOverride,
     readLegacyNoteAppearances,
+    useNewFileSettings,
     useSettings,
     useWorkspaceSettings,
 } from './useSettings';
@@ -40,6 +43,64 @@ const NOTE_DEFAULT: NoteAppearance = {
 
 beforeEach(() => {
     localStorage.clear();
+});
+
+describe('useNewFileSettings', () => {
+    it('keeps each workspace separate and restores its defaults after reopening', () => {
+        const first = renderHook(() => useNewFileSettings('one'));
+        const second = renderHook(() => useNewFileSettings('two'));
+        expect(first.result.current.newFileSettings).toEqual(DEFAULT_NEW_FILE_SETTINGS);
+        act(() => first.result.current.setNewFileSetting('folder', 'Inbox'));
+        act(() => first.result.current.setNewFileSetting('extension', '.txt'));
+        expect(second.result.current.newFileSettings).toEqual(DEFAULT_NEW_FILE_SETTINGS);
+        first.unmount();
+        const reopened = renderHook(() => useNewFileSettings('one'));
+        expect(reopened.result.current.newFileSettings).toEqual({
+            ...DEFAULT_NEW_FILE_SETTINGS,
+            folder: 'Inbox',
+            extension: '.txt',
+        });
+    });
+
+    it('merges concurrent fields and adopts cross-window writes', () => {
+        const {result} = renderHook(() => useNewFileSettings('one'));
+        localStorage.setItem(
+            'gravity-notes:one:new-files',
+            JSON.stringify({folder: '', extension: '.txt'}),
+        );
+        act(() => result.current.setNewFileSetting('nameFormat', 'date-name'));
+        expect(result.current.newFileSettings).toEqual({
+            ...DEFAULT_NEW_FILE_SETTINGS,
+            folder: '',
+            extension: '.txt',
+            nameFormat: 'date-name',
+        });
+        act(() => {
+            localStorage.setItem(
+                'gravity-notes:one:new-files',
+                JSON.stringify({defaultName: 'Quick note'}),
+            );
+            window.dispatchEvent(new StorageEvent('storage', {key: 'gravity-notes:one:new-files'}));
+        });
+        expect(result.current.newFileSettings).toEqual({
+            ...DEFAULT_NEW_FILE_SETTINGS,
+            defaultName: 'Quick note',
+        });
+    });
+
+    it('falls back safely for corrupt or invalid persisted values', () => {
+        localStorage.setItem('gravity-notes:one:new-files', '{invalid');
+        localStorage.setItem(
+            'gravity-notes:two:new-files',
+            JSON.stringify({folder: '.trash', extension: '.exe', nameFormat: false}),
+        );
+        expect(renderHook(() => useNewFileSettings('one')).result.current.newFileSettings).toEqual(
+            DEFAULT_NEW_FILE_SETTINGS,
+        );
+        expect(renderHook(() => useNewFileSettings('two')).result.current.newFileSettings).toEqual(
+            DEFAULT_NEW_FILE_SETTINGS,
+        );
+    });
 });
 
 describe('text file mode', () => {
