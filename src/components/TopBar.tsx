@@ -11,7 +11,11 @@ import {Button, DropdownMenu, Menu, Popup, SegmentedRadioGroup, TextInput} from 
 import {useHasHover} from '../hooks/useIsNarrow';
 import type {SaveState} from '../hooks/useNotes';
 import type {WorkspaceInfo} from '../hooks/useNotesStorage';
-import {type NoteAppearance, isNoteAppearanceOverridden} from '../hooks/useSettings';
+import {
+    type NoteAppearance,
+    type TextFileMode,
+    isNoteAppearanceOverridden,
+} from '../hooks/useSettings';
 import {
     ArrowRight,
     Check,
@@ -43,6 +47,7 @@ import {
 } from '../icons/icons';
 import {isDesktopTauri} from '../isTauri';
 import {isOpenInNewWindowChord, shortcutChords, shortcutHint} from '../shortcuts';
+import {isMarkdownFile} from '../storage/noteText';
 import type {NoteMeta} from '../storage/types';
 
 import {FONT_OPTIONS_WS, WIDTH_OPTIONS_WS} from './appearanceControls';
@@ -82,9 +87,7 @@ export interface TopBarProps {
     mobilePane?: 'list' | 'editor';
     /** Mobile: return from the editor pane to the notes list (the Back button). */
     onMobileBack?: () => void;
-    /** Export all notes as a .md zip. */
     onExport: () => void;
-    /** Import .md files / a zip into the current store. */
     onImport: () => void;
     /** Open the media-attachments manager. */
     onManageAttachments: () => void;
@@ -143,6 +146,7 @@ export interface TopBarProps {
 
     /** The open note, or null — the ⋯ menu acts on it. */
     note: NoteMeta | null;
+    textFileMode?: TextFileMode;
     /** Open state of the note menu (Workspace-owned, so ⌘⇧I can toggle it too). */
     noteMenuOpen: boolean;
     onNoteMenuOpenChange: (open: boolean) => void;
@@ -233,6 +237,7 @@ export function TopBar({
     onEnterList,
     onFocusList,
     note,
+    textFileMode = 'text',
     noteMenuOpen,
     onNoteMenuOpenChange,
     noteAppearance,
@@ -412,7 +417,7 @@ export function TopBar({
         ],
         [
             {text: 'Export all notes…', iconStart: <Export size={16} />, action: onExport},
-            {text: 'Import .md files…', iconStart: <Import size={16} />, action: onImport},
+            {text: 'Import text files…', iconStart: <Import size={16} />, action: onImport},
             {
                 text: 'Manage attachments…',
                 iconStart: <Paperclip size={16} />,
@@ -608,6 +613,8 @@ export function TopBar({
 
                 {mobile || noteMenuActive ? (
                     <NoteMenu
+                        note={note}
+                        textFileMode={textFileMode}
                         active={noteMenuActive}
                         open={noteMenuOpen && noteMenuActive}
                         onOpenChange={onNoteMenuOpenChange}
@@ -634,6 +641,8 @@ export function TopBar({
 
 type NoteMenuProps = Pick<
     TopBarProps,
+    | 'note'
+    | 'textFileMode'
     | 'noteAppearance'
     | 'onSetNoteAppearance'
     | 'onResetNoteAppearance'
@@ -661,6 +670,8 @@ type NoteMenuProps = Pick<
  * DropdownMenu can't hold anything but rows.
  */
 function NoteMenu({
+    note,
+    textFileMode,
     active,
     open,
     onOpenChange,
@@ -795,13 +806,16 @@ function NoteMenu({
                                 >
                                     Read-only preview
                                 </Menu.Item>
-                                <Menu.Item
-                                    iconStart={<Code size={16} />}
-                                    iconEnd={hint('mod+shift+;')}
-                                    onClick={() => run(onToggleSource)}
-                                >
-                                    Markup instead of blocks
-                                </Menu.Item>
+                                {note &&
+                                (isMarkdownFile(note.id) || textFileMode === 'markdown') ? (
+                                    <Menu.Item
+                                        iconStart={<Code size={16} />}
+                                        iconEnd={hint('mod+shift+;')}
+                                        onClick={() => run(onToggleSource)}
+                                    >
+                                        Markup instead of blocks
+                                    </Menu.Item>
+                                ) : null}
                             </Menu.Group>
                             <Menu.Group>
                                 <Menu.Item

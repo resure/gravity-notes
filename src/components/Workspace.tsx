@@ -29,6 +29,7 @@ import {
     type NoteAppearance,
     clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
+    effectiveTextFileMode,
     noteAppearanceOf,
     readLegacyNoteAppearances,
     useSettings,
@@ -265,6 +266,9 @@ export function Workspace({
     );
 
     const notes = useNotes(store, onError, initialNoteId);
+    const {settings, setSetting} = useSettings();
+    const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
+    const textFileMode = effectiveTextFileMode(settings, workspaceSettings);
 
     // One attachment URL cache per store: resolves `Attachments/…` refs to object URLs for the
     // editor NodeView and preview. `useMemo` keeps a stable cache per store; the previous cache's
@@ -370,6 +374,7 @@ export function Workspace({
         notes.activeId !== null || queryLive,
         queryLive,
         notes.note,
+        textFileMode,
     );
     // Debounce by corpus WEIGHT (bytes), not just note count — see SEARCH_DEBOUNCE_BYTES.
     const heavyCorpus =
@@ -531,8 +536,6 @@ export function Workspace({
     }, [railOpen, pendingRailFocus]);
     const [helpOpen, setHelpOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const {settings, setSetting} = useSettings();
-    const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings(workspaceId);
     // Per-note overrides for the OPEN note (the innermost appearance layer), read from the metadata
     // sidecar — stored like icons, so a rename/move re-keys them and they travel with the folder.
     // With no note open the override is undefined, so the effective appearance is app+workspace.
@@ -1195,6 +1198,7 @@ export function Workspace({
     const handleImportFiles = useCallback(
         (files: FileList | null) => {
             if (!files || files.length === 0) return;
+            const selectedFiles = Array.from(files);
             void (async () => {
                 try {
                     // Hold the watcher/focus pipelines off while the bulk write runs — imports
@@ -1202,7 +1206,9 @@ export function Workspace({
                     // a full mid-import re-list. reload() (not refresh()) afterwards: an import
                     // can overwrite the OPEN note, which must surface as a conflict, not a
                     // silent reconcile.
-                    const count = await notes.withBulkWrites(() => importNotes(store, files));
+                    const count = await notes.withBulkWrites(() =>
+                        importNotes(store, selectedFiles),
+                    );
                     await notes.reload();
                     notify(count === 1 ? 'Imported 1 note' : `Imported ${count} notes`);
                 } catch (err) {
@@ -1615,7 +1621,6 @@ export function Workspace({
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".md,.zip"
                     multiple
                     hidden
                     onChange={(event) => {
@@ -1703,6 +1708,7 @@ export function Workspace({
                         else listRef.current?.focusSelected();
                     }}
                     note={notes.note}
+                    textFileMode={textFileMode}
                     noteMenuOpen={noteMenuOpen}
                     onNoteMenuOpenChange={setNoteMenuOpen}
                     noteAppearance={noteAppearance}
@@ -1920,6 +1926,7 @@ export function Workspace({
                                         spellcheck={settings.spellcheck}
                                         showToolbar={settings.showEditorToolbar}
                                         showNoteIcons={settings.showNoteIcons}
+                                        textFileMode={textFileMode}
                                     />
                                 </div>
                                 <BacklinksPanel

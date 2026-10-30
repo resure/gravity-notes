@@ -10,7 +10,7 @@
  * swaps stay drop-in.
  */
 
-/** A visible file that the app cannot edit as a Markdown note. */
+/** A visible file that the app cannot edit. */
 export interface OtherFile {
     /** POSIX-relative path. Display-only: never passed to note editing or persistence. */
     id: string;
@@ -22,7 +22,7 @@ export interface OtherFile {
 export interface NoteMeta {
     /** Stable identifier. For the FS store this is the file name (e.g. `Ideas.md`). */
     id: string;
-    /** Human-readable title (file name without the `.md` extension). */
+    /** Filename without `.md` for Markdown; full filename for plain text. */
     title: string;
     /** Last-modified time in epoch milliseconds, when the backend can provide it. */
     updatedAt?: number;
@@ -30,9 +30,8 @@ export interface NoteMeta {
     preview?: string;
 }
 
-/** A full note, including its markdown body. */
+/** A full editable file. */
 export interface Note extends NoteMeta {
-    /** Markdown source. */
     content: string;
 }
 
@@ -166,7 +165,7 @@ export interface NoteStore {
      *   root. The collision probe is scoped to that folder, so the same title is free in different
      *   folders.
      */
-    create(title: string, parentPath?: string): Promise<NoteMeta>;
+    create(title: string, parentPath?: string, extension?: string): Promise<NoteMeta>;
     /**
      * Persist the body of an existing note using optimistic concurrency, where
      * `baseUpdatedAt` is the `updatedAt` the caller last saw for this note.
@@ -259,7 +258,6 @@ export interface NoteStore {
      * implied by a note's path are included alongside explicitly-created empty ones.
      */
     listFolders(): Promise<string[]>;
-    /** Visible non-Markdown files, recursively, without reading their contents. Absent for virtual stores. */
     listFiles?(): Promise<OtherFile[]>;
     /**
      * Reveal a note, folder, or attachment in the OS file manager (macOS Finder), by its store id,

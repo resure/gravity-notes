@@ -31,6 +31,27 @@ async function setup(seed?: (dir: FakeDirectoryHandle) => void) {
 }
 
 describe('useNotes — single note', () => {
+    it.each(['plain.txt', 'plain'])('autosaves and duplicates %s as literal text', async (id) => {
+        const content = '# literal *text*\r\nlast\n';
+        const {hook, store} = await setup((dir) => dir.seedFile(id, content, 100));
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await act(async () => {
+            await hook.result.current.open(id);
+        });
+        expect(hook.result.current.note?.content).toBe(content);
+        act(() => hook.result.current.edit(content + '\n'));
+        let copyId: string | null = null;
+        await act(async () => {
+            copyId = await hook.result.current.duplicate(id);
+        });
+        expect(copyId).toBe(id === 'plain.txt' ? 'plain copy.txt' : 'plain copy');
+        expect((await store.get(id)).content).toBe(content + '\n');
+        expect((await store.get(copyId!)).content).toBe(content + '\n');
+        expect(hook.result.current.notes.find((note) => note.id === id)?.preview).toBe(
+            '# literal *text* last',
+        );
+    });
+
     it('opens a note as the active note and persists it', async () => {
         const {hook, store} = await setup((dir) => dir.seedFile('A.md', 'a', 100));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));
@@ -367,6 +388,65 @@ async function setupConflict() {
 }
 
 describe('useNotes — conflict resolvers', () => {
+    it('saves a conflicted text copy with its extension and exact body', async () => {
+        const {hook, dir, store, onError} = await setup((d) =>
+            d.seedFile('pass.junk.txt', 'original\r\n', 100),
+        );
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await act(async () => {
+            await hook.result.current.open('pass.junk.txt');
+        });
+        const content = '\uFEFF# literal [[Beta]]\r\n\r\n';
+        act(() => hook.result.current.edit(content));
+        dir.seedFile('pass.junk.txt', 'external\r\n', 200);
+        await act(async () => {
+            await hook.result.current.flushPending();
+        });
+        expect(hook.result.current.conflict).toMatchObject({
+            id: 'pass.junk.txt',
+            deleted: false,
+        });
+
+        let copyId: string | null = null;
+        await act(async () => {
+            copyId = await hook.result.current.saveAsCopy();
+        });
+
+        expect(copyId).toBe('pass.junk (conflicted copy).txt');
+        expect((await store.get('pass.junk (conflicted copy).txt')).content).toBe(content);
+        expect((await store.get('pass.junk.txt')).content).toBe('external\r\n');
+        expect(hook.result.current.activeId).toBe(copyId);
+        expect(hook.result.current.conflict).toBeNull();
+        expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('recreates a deleted extensionless file with its exact name and body', async () => {
+        const {hook, dir, store, onError} = await setup((d) =>
+            d.seedFile('money', 'original\n', 100),
+        );
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await act(async () => {
+            await hook.result.current.open('money');
+        });
+        await dir.removeEntry('money');
+        const content = '# literal *text*\r\n\r\n';
+        act(() => hook.result.current.edit(content));
+        await act(async () => {
+            await hook.result.current.flushPending();
+        });
+        expect(hook.result.current.conflict).toMatchObject({id: 'money', deleted: true});
+
+        await act(async () => {
+            await hook.result.current.keepMine();
+        });
+
+        expect(hook.result.current.activeId).toBe('money');
+        expect(hook.result.current.conflict).toBeNull();
+        expect((await store.get('money')).content).toBe(content);
+        expect(dir.paths()).not.toContain('money.md');
+        expect(onError).not.toHaveBeenCalled();
+    });
+
     it('detects an external change on refocus', async () => {
         const {hook} = await setupConflict();
         expect(hook.result.current.conflict).toMatchObject({id: 'Note.md', deleted: false});
@@ -1665,6 +1745,48 @@ async function setupWatched(seed?: (dir: FakeDirectoryHandle) => void) {
 }
 
 describe('useNotes — live watch', () => {
+    it.each(['note.txt', 'money'])(
+        'patches a known text file %s without a full snapshot',
+        async (id) => {
+            const {hook, dir, store, watchState, snapshotSpy} = await setupWatched((d) =>
+                d.seedFile(id, 'old body', 100),
+            );
+            const snapshots = snapshotSpy.mock.calls.length;
+            const headsSpy = vi.spyOn(store, 'heads');
+            dir.seedFile(id, '# new *literal*\r\n', 200);
+
+            act(() => watchState.onChange?.([id]));
+
+            await waitFor(() =>
+                expect(hook.result.current.notes[0]).toMatchObject({
+                    id,
+                    updatedAt: 200,
+                    preview: '# new *literal*',
+                }),
+            );
+            expect(headsSpy).toHaveBeenCalledWith([id]);
+            expect(snapshotSpy.mock.calls.length).toBe(snapshots);
+        },
+    );
+
+    it('refreshes the full snapshot when an unknown extensionless path is a directory', async () => {
+        const {hook, dir, store, watchState, snapshotSpy} = await setupWatched((d) =>
+            d.seedFile('A.md', 'a', 100),
+        );
+        const snapshots = snapshotSpy.mock.calls.length;
+        const headsSpy = vi.spyOn(store, 'heads');
+        dir.seedFile('Work/money', 'new text\n', 200);
+
+        act(() => watchState.onChange?.(['Work']));
+
+        await waitFor(() =>
+            expect(hook.result.current.notes.map((note) => note.id)).toContain('Work/money'),
+        );
+        expect(snapshotSpy.mock.calls.length).toBe(snapshots + 1);
+        expect(headsSpy).not.toHaveBeenCalled();
+        expect(hook.result.current.folders).toContain('Work');
+    });
+
     it('refreshes the list when the watcher reports an external change', async () => {
         const {hook, dir, watchState} = await setupWatched((d) => d.seedFile('A.md', 'a', 100));
         await waitFor(() => expect(hook.result.current.notes).toHaveLength(1));

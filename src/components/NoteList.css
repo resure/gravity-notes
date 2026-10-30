@@ -261,7 +261,7 @@
 }
 
 .note-list__title {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     font-size: var(--fs-ui);
@@ -270,6 +270,14 @@
     letter-spacing: -0.003em;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+.note-list__heading {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
 }
 
 .note-list__pin {
@@ -331,6 +339,7 @@
     flex-shrink: 0;
     align-items: center;
     height: var(--row-title-lh);
+    margin-inline-start: auto;
 }
 
 .note-list__actions.g-button {

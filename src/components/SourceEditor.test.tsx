@@ -1,5 +1,6 @@
 import {createRef} from 'react';
 
+import {EditorView} from '@codemirror/view';
 import {fireEvent, render} from '@testing-library/react';
 import {act} from 'react-dom/test-utils';
 import {describe, expect, it, vi} from 'vitest';
@@ -40,6 +41,53 @@ describe('SourceEditor', () => {
         expect(help.defaultPrevented).toBe(false);
         const moveLine = createEventFor(content, {key: 'ArrowDown', altKey: true});
         expect(moveLine.defaultPrevented).toBe(true);
+    });
+});
+
+describe('SourceEditor — plain text', () => {
+    it('keeps Markdown punctuation literal and does not continue lists', () => {
+        const ref = createRef<SourceHandle>();
+        const onChange = vi.fn();
+        render(
+            <SourceEditor
+                ref={ref}
+                plainText
+                readValue={() => '# Title\n[[Target]]\n- item'}
+                onChange={onChange}
+            />,
+        );
+        const content = document.querySelector<HTMLElement>('.cm-content')!;
+        expect(content).toHaveAttribute('aria-label', 'Plain text');
+        expect(content.querySelector('.cm-wiki-link')).toBeNull();
+        act(() => {
+            ref.current!.focus();
+            ref.current!.moveCursor('end');
+        });
+        createEventFor(content, {key: 'Enter'});
+        expect(onChange).toHaveBeenLastCalledWith('# Title\n[[Target]]\n- item\n');
+    });
+
+    it('preserves BOM, mixed line endings and trailing blank lines across edits', () => {
+        const onChange = vi.fn();
+        render(
+            <SourceEditor
+                plainText
+                readValue={() => '\uFEFFone\r\ntwo\nthree\r\n\r\n'}
+                onChange={onChange}
+            />,
+        );
+        const view = EditorView.findFromDOM(document.querySelector('.cm-content')!)!;
+        act(() => {
+            view.dispatch({
+                changes: [
+                    {from: 1, to: 4, insert: 'ONE'},
+                    {from: 9, to: 14, insert: 'THREE'},
+                ],
+            });
+        });
+        expect(onChange).toHaveBeenLastCalledWith('\uFEFFONE\r\ntwo\nTHREE\r\n\r\n');
+        act(() => view.dispatch({changes: {from: view.state.doc.length, insert: 'tail\n'}}));
+        expect(onChange).toHaveBeenLastCalledWith('\uFEFFONE\r\ntwo\nTHREE\r\n\r\ntail\r\n');
     });
 });
 

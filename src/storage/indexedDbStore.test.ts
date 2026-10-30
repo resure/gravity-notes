@@ -23,6 +23,31 @@ describe('IndexedDbNoteStore', () => {
     });
 
     describe('create / get / list', () => {
+        it.each(['.txt', ''])(
+            'preserves plain text through its lifecycle (%s)',
+            async (extension) => {
+                const content = '\uFEFF# literal *text*\r\n\r\nlast\n';
+                const meta = await store.create('plain', 'Work', extension);
+                const saved = await store.save(meta.id, content, meta.updatedAt ?? 0);
+                expect((await store.get(meta.id)).content).toBe(content);
+                expect((await store.getAll()).find((note) => note.id === meta.id)?.content).toBe(
+                    content,
+                );
+                expect((await store.list())[0].preview).toBe('# literal *text* last');
+                await expect(
+                    store.save(meta.id, 'stale', meta.updatedAt ?? 0),
+                ).rejects.toBeInstanceOf(ConflictError);
+                const renamed = await store.rename(saved.id, `renamed${extension}`);
+                expect(renamed.id).toBe(`Work/renamed${extension}`);
+                const moved = await store.move(renamed.id, 'Archive');
+                const trashId = await store.trash(moved.id);
+                expect(trashId).toBe(`.trash/renamed${extension}`);
+                const restored = await store.restore(trashId, 'Work');
+                expect(restored.id).toBe(`Work/renamed${extension}`);
+                expect((await store.get(restored.id)).content).toBe(content);
+            },
+        );
+
         it('creates an empty note with the given title', async () => {
             const meta = await store.create('Shopping');
 

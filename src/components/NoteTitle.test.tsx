@@ -9,6 +9,26 @@ import {NoteTitle, type NoteTitleHandle} from './NoteTitle';
 function noop() {}
 
 describe('NoteTitle', () => {
+    it.each([
+        ['hello.txt', 'TXT'],
+        ['hello.txt.md', null],
+        ['hello', 'TEXT'],
+    ])('shows the actual file type for %s', (fileId, badge) => {
+        render(
+            <NoteTitle
+                title="hello.txt"
+                fileId={fileId}
+                onCommit={noop}
+                onLeaveToBody={noop}
+                onEnter={noop}
+                onEscape={noop}
+            />,
+        );
+        if (badge) expect(screen.getByLabelText('Plain text file')).toHaveTextContent(badge);
+        else expect(screen.queryByLabelText('Plain text file')).toBeNull();
+        expect(screen.getByLabelText('Note title')).toHaveValue('hello.txt');
+    });
+
     it('shows the title and an Untitled placeholder', () => {
         render(
             <NoteTitle

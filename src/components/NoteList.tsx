@@ -42,6 +42,7 @@ import {isOpenInNewWindowChord, shortcutHint} from '../shortcuts';
 import {dirname, formatCrumb} from '../storage/noteText';
 import type {NoteMeta, OtherFile, SortMode} from '../storage/types';
 
+import {FileTypeBadge} from './FileTypeBadge';
 import {IconPickerButton, IconPickerPopup} from './IconPicker';
 
 import './NoteList.css';
@@ -342,8 +343,11 @@ const NoteRow = memo(function NoteRow({
                     ) : (
                         <>
                             {pinned ? <PinFill size={12} className="note-list__pin" /> : null}
-                            <span className="note-list__title">
-                                {highlightTerms(note.title, terms)}
+                            <span className="note-list__heading">
+                                <span className="note-list__title">
+                                    {highlightTerms(note.title, terms)}
+                                </span>
+                                <FileTypeBadge id={note.id} />
                             </span>
                             <span className="note-list__trailing">
                                 <Button
@@ -361,7 +365,9 @@ const NoteRow = memo(function NoteRow({
                                         onOpenMenu(note, e.currentTarget);
                                     }}
                                 >
-                                    <Ellipsis size={15} />
+                                    <Button.Icon>
+                                        <Ellipsis size={15} />
+                                    </Button.Icon>
                                 </Button>
                             </span>
                         </>

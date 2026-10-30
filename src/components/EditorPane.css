@@ -99,3 +99,22 @@
     font-size: var(--fs-preview);
     line-height: 1.4;
 }
+
+.plain-text-preview {
+    min-height: 60vh;
+    padding: 4px calc(var(--editor-gutter, 16px) + 4px) 30vh;
+    color: var(--text-1);
+    font-family: var(--gn-editor-font, var(--font-ui));
+    font-size: var(--gn-editor-font-size, 15px);
+    line-height: var(--gn-editor-line-height, 1.6);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    outline: none;
+}
+
+.block-editor-source_plain-text .block-editor-markup {
+    padding-inline: calc(var(--editor-gutter, 16px) + 4px);
+    font-family: var(--gn-editor-font, var(--font-ui));
+    font-size: var(--gn-editor-font-size, 15px);
+    line-height: var(--gn-editor-line-height, 1.6);
+}

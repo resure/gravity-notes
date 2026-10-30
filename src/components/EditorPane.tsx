@@ -1,6 +1,8 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef} from 'react';
 
+import type {TextFileMode} from '../hooks/useSettings';
 import {isRoundTripStable} from '../markdown';
+import {isMarkdownFile} from '../storage/noteText';
 import type {Note, NoteMeta} from '../storage/types';
 
 import {BlockEditorBody, type BlockEditorBodyHandle} from './BlockEditorBody';
@@ -20,6 +22,7 @@ export interface EditorPaneHandle {
 
 interface EditorPaneProps {
     note: Note;
+    textFileMode?: TextFileMode;
     /**
      * Focus intent on a note switch: the body (a commit), the title (a new note), or none (a browse).
      * Honored once per {@link sessionId} change (the shell no longer remounts, so focus is driven by
@@ -72,6 +75,7 @@ interface EditorPaneProps {
 export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function EditorPane(
     {
         note,
+        textFileMode = 'text',
         autofocus,
         sessionId,
         preview = false,
@@ -109,7 +113,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
      * checked where it belongs, on the way back into blocks — see `toggleMode` in BlockEditorBody.
      */
     const blocksSafe = useMemo(
-        () => isRoundTripStable(note.content),
+        () => !isMarkdownFile(note.id) || isRoundTripStable(note.content),
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [sessionId],
     );
@@ -196,6 +200,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 ref={titleRef}
                 key={sessionId}
                 title={note.title}
+                fileId={note.id}
                 icon={icon}
                 onSetIcon={onSetIcon}
                 showIcon={showNoteIcons}
@@ -272,6 +277,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, EditorPaneProps>(function
                 <BlockEditorBody
                     ref={bodyRef}
                     note={note}
+                    textFileMode={textFileMode}
                     sessionId={sessionId}
                     preview={preview}
                     autofocus={autofocus}

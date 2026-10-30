@@ -12,6 +12,292 @@ function note(id: string, content: string): Note {
     return {id, title: id.replace(/\.md$/, ''), content, updatedAt: 1};
 }
 
+describe('BlockEditorBody — ordinary text files', () => {
+    const props = {
+        preview: false,
+        onUploadFile: async () => '',
+        onOpenWikiLink: () => {},
+        wikiNotes: [],
+        showToolbar: true,
+    };
+
+    it.each(['memo.txt', 'root'])('renders %s as Markdown when requested', (id) => {
+        const onChange = vi.fn();
+        render(
+            <BlockEditorBody
+                note={note(id, '# Heading\n\nbody')}
+                textFileMode="markdown"
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        expect(document.querySelector('[aria-label="Plain text"]')).toBeNull();
+        expect(document.querySelector('.block[data-type="heading1"] .content')).toHaveTextContent(
+            'Heading',
+        );
+        expect(document.querySelector('.editor-toolbar')).not.toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('preserves unsaved text when switching modes and does not save a setting change', () => {
+        const onChange = vi.fn();
+        const current = note('memo.txt', '# Original');
+        const view = (textFileMode: 'text' | 'markdown') => (
+            <BlockEditorBody
+                note={current}
+                textFileMode={textFileMode}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />
+        );
+        const {rerender} = render(view('text'));
+        fireEvent.change(document.querySelector('[aria-label="Plain text"]')!, {
+            target: {value: '# Unsaved\n\nbody'},
+        });
+        onChange.mockClear();
+        rerender(view('markdown'));
+        expect(document.querySelector('.block[data-type="heading1"] .content')).toHaveTextContent(
+            'Unsaved',
+        );
+        rerender(view('text'));
+        expect(document.querySelector('[aria-label="Plain text"]')).toHaveValue(
+            '# Unsaved\n\nbody',
+        );
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('guards the live unsaved text when changing from text to Markdown', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const onChange = vi.fn();
+        const current = note('memo.txt', 'safe original');
+        const view = (textFileMode: 'text' | 'markdown') => (
+            <BlockEditorBody
+                ref={ref}
+                note={current}
+                textFileMode={textFileMode}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />
+        );
+        const {rerender} = render(view('text'));
+        const unsafe = '---\ntitle: Keep me\n---\n\nbody';
+        fireEvent.change(document.querySelector('[aria-label="Plain text"]')!, {
+            target: {value: unsafe},
+        });
+        onChange.mockClear();
+        rerender(view('markdown'));
+        expect(document.querySelector('.gn-block-editor')).toBeNull();
+        expect(document.querySelector('[aria-label="Markdown source"]')).toHaveValue(unsafe);
+        expect(document.querySelector('.block-editor-source__notice')).not.toBeNull();
+        act(() => ref.current!.toggleMode());
+        expect(document.querySelector('[aria-label="Markdown source"]')).toHaveValue(unsafe);
+        rerender(view('text'));
+        expect(document.querySelector('[aria-label="Plain text"]')).toHaveValue(unsafe);
+        expect(document.querySelector('.block-editor-source__notice')).toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('carries unsaved block edits into text mode and back without saving again', () => {
+        const onChange = vi.fn();
+        const current = note('memo.txt', 'original');
+        const view = (textFileMode: 'text' | 'markdown') => (
+            <BlockEditorBody
+                note={current}
+                textFileMode={textFileMode}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />
+        );
+        const {rerender} = render(view('markdown'));
+        const content = document.querySelector<HTMLElement>('.content')!;
+        act(() => {
+            content.textContent = 'unsaved block';
+            content.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+        expect(onChange).toHaveBeenLastCalledWith('unsaved block');
+        onChange.mockClear();
+        rerender(view('text'));
+        expect(document.querySelector('[aria-label="Plain text"]')).toHaveValue('unsaved block');
+        rerender(view('markdown'));
+        expect(document.querySelector('.content')).toHaveTextContent('unsaved block');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('opens an unsafe text file in Markdown source without rewriting it', () => {
+        const onChange = vi.fn();
+        const unsafe = '---\ntitle: Keep me\n---\n\nbody';
+        render(
+            <BlockEditorBody
+                note={note('memo.txt', unsafe)}
+                textFileMode="markdown"
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        expect(document.querySelector('[aria-label="Markdown source"]')).toHaveValue(unsafe);
+        expect(document.querySelector('.gn-block-editor')).toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('switches a live preview between literal text and rendered Markdown', async () => {
+        const onChange = vi.fn();
+        const current = note('memo.txt', '# Original');
+        const view = (textFileMode: 'text' | 'markdown') => (
+            <BlockEditorBody
+                note={current}
+                textFileMode={textFileMode}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+                preview
+            />
+        );
+        const {rerender} = render(view('text'));
+        expect(document.querySelector('.plain-text-preview')).toHaveTextContent('# Original');
+        rerender(view('markdown'));
+        await waitFor(() =>
+            expect(document.querySelector('.note-preview h1')).toHaveTextContent('Original'),
+        );
+        expect(document.querySelector('.plain-text-preview')).toBeNull();
+        rerender(view('text'));
+        expect(document.querySelector('.plain-text-preview')).toHaveTextContent('# Original');
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it.each(['memo.txt', 'root'])(
+        'edits %s as literal text and ignores the Markdown toggle',
+        (id) => {
+            const ref = createRef<BlockEditorBodyHandle>();
+            const onChange = vi.fn();
+            const value = '# Heading\n\n[[literal]]\n- item\n\n';
+            render(
+                <BlockEditorBody
+                    ref={ref}
+                    note={note(id, value)}
+                    sessionId={1}
+                    onChange={onChange}
+                    {...props}
+                />,
+            );
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+                '[aria-label="Plain text"]',
+            )!;
+            expect(textarea.value).toBe(value);
+            expect(document.querySelector('.gn-block-editor')).toBeNull();
+            expect(document.querySelector('.editor-toolbar')).toBeNull();
+            expect(document.querySelector('.block-editor-source__notice')).toBeNull();
+            act(() => ref.current!.toggleMode());
+            expect(document.querySelector('[aria-label="Plain text"]')).toBe(textarea);
+            fireEvent.change(textarea, {target: {value: value + 'tail'}});
+            expect(onChange).toHaveBeenLastCalledWith(value + 'tail');
+        },
+    );
+
+    it('previews the live text literally and restores the editing surface', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const current = note('memo.txt', '# Original\n[[literal]]');
+        const onChange = vi.fn();
+        const {rerender} = render(
+            <BlockEditorBody
+                ref={ref}
+                note={current}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        const textarea = document.querySelector<HTMLTextAreaElement>('[aria-label="Plain text"]')!;
+        fireEvent.change(textarea, {target: {value: '# Unsaved\n**literal**'}});
+        rerender(
+            <BlockEditorBody
+                ref={ref}
+                note={current}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+                preview
+            />,
+        );
+        const preview = document.querySelector('[aria-label="Plain text preview"]')!;
+        expect(preview.textContent).toBe('# Unsaved\n**literal**');
+        expect(preview.querySelector('h1, strong, a')).toBeNull();
+        expect(textarea).not.toBeVisible();
+        act(() => ref.current!.focus());
+        expect(preview).toHaveFocus();
+        rerender(
+            <BlockEditorBody
+                ref={ref}
+                note={current}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        expect(textarea).toBeVisible();
+        expect(textarea.value).toBe('# Unsaved\n**literal**');
+    });
+
+    it('keeps surrounding CRLF and trailing newlines in the loading textarea', () => {
+        const onChange = vi.fn();
+        render(
+            <BlockEditorBody
+                note={note('memo.txt', '\uFEFFone\r\ntwo\r\n\r\n')}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        const textarea = document.querySelector<HTMLTextAreaElement>('[aria-label="Plain text"]')!;
+        fireEvent.change(textarea, {target: {value: '\uFEFFONE\ntwo\n\n'}});
+        expect(onChange).toHaveBeenLastCalledWith('\uFEFFONE\r\ntwo\r\n\r\n');
+    });
+
+    it('switches between Markdown and text without leaking either live buffer', () => {
+        const ref = createRef<BlockEditorBodyHandle>();
+        const onChange = vi.fn();
+        const {rerender} = render(
+            <BlockEditorBody
+                ref={ref}
+                note={note('memo.txt', '# Literal')}
+                sessionId={1}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        const textarea = document.querySelector<HTMLTextAreaElement>('[aria-label="Plain text"]')!;
+        fireEvent.change(textarea, {target: {value: '# Edited'}});
+        rerender(
+            <BlockEditorBody
+                ref={ref}
+                note={note('note.md', '# Heading')}
+                sessionId={2}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        expect(document.querySelector('[aria-label="Plain text"]')).toBeNull();
+        expect(document.querySelector('.gn-block-editor')?.textContent).toContain('Heading');
+        rerender(
+            <BlockEditorBody
+                ref={ref}
+                note={note('root', '# Other literal')}
+                sessionId={3}
+                onChange={onChange}
+                {...props}
+            />,
+        );
+        expect(
+            document.querySelector<HTMLTextAreaElement>('[aria-label="Plain text"]')?.value,
+        ).toBe('# Other literal');
+        expect(onChange).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('BlockEditorBody — the raw-Markdown escape hatch', () => {
     it.each([true, false])(
         'previews the live source buffer (forced source: %s)',

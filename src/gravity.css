@@ -440,6 +440,10 @@
     box-shadow: var(--shadow-1);
 }
 
+.g-root .g-switch_size_m.g-switch_checked .g-switch__slider {
+    transform: translateX(calc(12px * var(--g-flow-direction)));
+}
+
 .g-root .g-switch_checked .g-switch__indicator::before,
 .g-root .g-switch_checked:hover .g-switch__indicator::before {
     background-color: var(--accent);

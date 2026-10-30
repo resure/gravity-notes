@@ -2,7 +2,7 @@ import type {ReactNode} from 'react';
 
 import {Dialog, Switch} from '@gravity-ui/uikit';
 
-import type {Settings, WorkspaceSettings} from '../hooks/useSettings';
+import type {Settings, TextFileMode, WorkspaceSettings} from '../hooks/useSettings';
 
 import {
     ACCENT_OPTIONS,
@@ -15,6 +15,15 @@ import {
 } from './appearanceControls';
 
 import './SettingsDialog.css';
+
+const TEXT_FILE_OPTIONS: {value: TextFileMode; content: string}[] = [
+    {value: 'text', content: 'Plain text'},
+    {value: 'markdown', content: 'Markdown'},
+];
+const TEXT_FILE_OPTIONS_WS: {value: 'default' | TextFileMode; content: string}[] = [
+    {value: 'default', content: 'Default'},
+    ...TEXT_FILE_OPTIONS,
+];
 
 interface SettingsDialogProps {
     open: boolean;
@@ -43,7 +52,7 @@ export function SettingsDialog({
     setWorkspaceSetting,
     workspaceLabel,
 }: SettingsDialogProps) {
-    const workspaceDescription = `Override the app appearance for ${
+    const workspaceDescription = `Override the app settings for ${
         workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
     }. “Default” inherits it.`;
     return (
@@ -75,6 +84,16 @@ export function SettingsDialog({
                         checked={settings.spellcheck}
                         onUpdate={(value) => setSetting('spellcheck', value)}
                     />
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Open text files as"
+                        options={TEXT_FILE_OPTIONS}
+                        value={settings.textFileMode}
+                        onUpdate={(value) => setSetting('textFileMode', value)}
+                    />
+                    <p className="settings__note">
+                        Applies to .txt files and files without an extension.
+                    </p>
                 </Section>
 
                 <Section title="Appearance">
@@ -127,6 +146,13 @@ export function SettingsDialog({
                         A single note can depart from these in its own ⋯ menu, where “Default”
                         inherits what is set here.
                     </p>
+                    <AppearanceChoiceRow
+                        layout="row"
+                        label="Open text files as"
+                        options={TEXT_FILE_OPTIONS_WS}
+                        value={workspaceSettings.textFileMode}
+                        onUpdate={(value) => setWorkspaceSetting('textFileMode', value)}
+                    />
                 </Section>
             </Dialog.Body>
         </Dialog>

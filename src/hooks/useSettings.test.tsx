@@ -7,6 +7,7 @@ import {
     type WorkspaceSettings,
     clearLegacyNoteAppearanceKeys,
     effectiveAppearance,
+    effectiveTextFileMode,
     isNoteAppearanceOverridden,
     noteAppearanceOf,
     noteAppearanceToOverride,
@@ -22,12 +23,14 @@ const APP: Settings = {
     editorFont: 'serif',
     accentColor: 'blue',
     textWidth: 'wide',
+    textFileMode: 'text',
 };
 
 const WS_DEFAULT: WorkspaceSettings = {
     editorFont: 'default',
     accentColor: 'default',
     textWidth: 'default',
+    textFileMode: 'default',
 };
 
 const NOTE_DEFAULT: NoteAppearance = {
@@ -37,6 +40,57 @@ const NOTE_DEFAULT: NoteAppearance = {
 
 beforeEach(() => {
     localStorage.clear();
+});
+
+describe('text file mode', () => {
+    it('opens text files as plain text unless a setting opts into Markdown', () => {
+        const {result: app} = renderHook(() => useSettings());
+        const {result: workspace} = renderHook(() => useWorkspaceSettings('ws-1'));
+        expect(
+            effectiveTextFileMode(app.current.settings, workspace.current.workspaceSettings),
+        ).toBe('text');
+        act(() => app.current.setSetting('textFileMode', 'markdown'));
+        expect(
+            effectiveTextFileMode(app.current.settings, workspace.current.workspaceSettings),
+        ).toBe('markdown');
+        act(() => workspace.current.setWorkspaceSetting('textFileMode', 'text'));
+        expect(
+            effectiveTextFileMode(app.current.settings, workspace.current.workspaceSettings),
+        ).toBe('text');
+        act(() => workspace.current.setWorkspaceSetting('textFileMode', 'default'));
+        expect(
+            effectiveTextFileMode(app.current.settings, workspace.current.workspaceSettings),
+        ).toBe('markdown');
+    });
+
+    it('validates stored modes and retains them across unrelated and cross-window updates', () => {
+        localStorage.setItem('gravity-notes:settings', JSON.stringify({textFileMode: 'invalid'}));
+        localStorage.setItem(
+            'gravity-notes:ws-1:settings',
+            JSON.stringify({textFileMode: 'invalid'}),
+        );
+        const {result: app, unmount} = renderHook(() => useSettings());
+        const {result: workspace} = renderHook(() => useWorkspaceSettings('ws-1'));
+        expect(app.current.settings.textFileMode).toBe('text');
+        expect(workspace.current.workspaceSettings.textFileMode).toBe('default');
+        act(() => {
+            localStorage.setItem(
+                'gravity-notes:settings',
+                JSON.stringify({textFileMode: 'markdown'}),
+            );
+            app.current.setSetting('showNoteIcons', true);
+        });
+        expect(app.current.settings.textFileMode).toBe('markdown');
+        act(() => {
+            localStorage.setItem('gravity-notes:settings', JSON.stringify({textFileMode: 'text'}));
+            window.dispatchEvent(new StorageEvent('storage', {key: 'gravity-notes:settings'}));
+        });
+        expect(app.current.settings.textFileMode).toBe('text');
+        act(() => app.current.setSetting('textFileMode', 'markdown'));
+        unmount();
+        const {result: reopened} = renderHook(() => useSettings());
+        expect(reopened.current.settings.textFileMode).toBe('markdown');
+    });
 });
 
 describe('effectiveAppearance', () => {
@@ -50,6 +104,7 @@ describe('effectiveAppearance', () => {
 
     it('lets a workspace override beat the app value, field by field', () => {
         const ws: WorkspaceSettings = {
+            ...WS_DEFAULT,
             editorFont: 'mono',
             accentColor: 'default',
             textWidth: 'narrow',
@@ -63,6 +118,7 @@ describe('effectiveAppearance', () => {
 
     it('lets a note override beat both workspace and app (note wins; accent has no note layer)', () => {
         const ws: WorkspaceSettings = {
+            ...WS_DEFAULT,
             editorFont: 'mono',
             accentColor: 'gray',
             textWidth: 'narrow',

@@ -6,6 +6,55 @@
 
 export const MD_EXT = '.md';
 
+export function isMarkdownFile(id: string): boolean {
+    return basename(id).toLowerCase().endsWith(MD_EXT);
+}
+
+export function isEditableFileName(name: string): boolean {
+    const leaf = basename(name);
+    return (
+        leaf !== '' &&
+        !leaf.startsWith('.') &&
+        (isMarkdownFile(leaf) || leaf.toLowerCase().endsWith('.txt') || !leaf.includes('.'))
+    );
+}
+
+export function assertPlainText(content: string): void {
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) {
+        throw new Error('This file contains binary data and cannot be edited as text');
+    }
+}
+
+export function readNoteContent(id: string, content: string): string {
+    if (isMarkdownFile(id)) return stripTrailingNewlines(content);
+    assertPlainText(content);
+    return content;
+}
+
+export function writeNoteContent(id: string, content: string): string {
+    if (isMarkdownFile(id)) return canonicalBody(content);
+    assertPlainText(content);
+    return content;
+}
+
+export function previewForFile(id: string, content: string): string {
+    return isMarkdownFile(id)
+        ? previewFromContent(content)
+        : content.replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+export function renamedFileName(id: string, nextTitle: string): string {
+    const base = sanitizeTitle(nextTitle);
+    if (isMarkdownFile(id)) return base + MD_EXT;
+    const [, extension] = splitExt(basename(id));
+    const next = extension && !base.includes('.') ? base + extension : base;
+    if (!isEditableFileName(next) || isMarkdownFile(next)) {
+        throw new Error('Keep the .txt extension or use a filename without an extension');
+    }
+    return next;
+}
+
 /**
  * Marker file that keeps a deliberately-empty folder alive (it counts as folder *content*, so the
  * empty-ancestor prune leaves the folder in place). Git-familiar and visible in Finder. Not used
@@ -271,16 +320,17 @@ export function sanitizeImportDir(relDir: string): string {
     return clean ? clean.split('/').map(dereserveSegment).join('/') : '';
 }
 
-/**
- * Resolve `<base>.md`, appending " 2", " 3", … until `exists` reports the candidate is free.
- * Bounded so a pathological store (every candidate taken) can't spin forever.
- */
 export async function uniqueName(
     base: string,
     exists: (candidate: string) => Promise<boolean>,
+    extension = MD_EXT,
 ): Promise<string> {
+    if (extension !== '' && !['.md', '.txt'].includes(extension.toLowerCase())) {
+        throw new Error('Unsupported text file extension');
+    }
     for (let i = 1; i <= 100000; i++) {
-        const candidate = (i === 1 ? base : `${base} ${i}`) + MD_EXT;
+        const candidate = (i === 1 ? base : `${base} ${i}`) + extension;
+        if (!isEditableFileName(candidate)) throw new Error('Unsupported text filename');
         if (!(await exists(candidate))) {
             return candidate;
         }

@@ -11,7 +11,9 @@ import {
 } from 'react';
 import type {MutableRefObject} from 'react';
 
+import type {TextFileMode} from '../hooks/useSettings';
 import {isRoundTripStable} from '../markdown';
+import {isMarkdownFile} from '../storage/noteText';
 import type {Note, NoteMeta} from '../storage/types';
 
 import {EditorToolbar} from './EditorToolbar';
@@ -63,6 +65,7 @@ export interface BlockEditorBodyHandle {
 
 export interface BlockEditorBodyProps {
     note: Note;
+    textFileMode?: TextFileMode;
     sessionId: number;
     preview: boolean;
     onChange: (markup: string) => void;
@@ -147,6 +150,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
     function BlockEditorBody(
         {
             note,
+            textFileMode = 'text',
             sessionId,
             preview,
             autofocus,
@@ -186,7 +190,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
          * because this component is NOT keyed and outlives one (same reason `markup` persists).
          */
         const [stuckOnSource, setStuckOnSource] = useState(false);
-        const source = markup || forceSource || stuckOnSource;
+        const plainText = !isMarkdownFile(note.id) && textFileMode === 'text';
 
         // Per-note scroll + caret, keyed by note id: the editor is REBUILT per note (see the class
         // comment), so without this every switch back to a note reopened it at the top with the
@@ -233,6 +237,32 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         }
         noteIdRef.current = note.id;
 
+        const modeGuardRef = useRef<{
+            sessionId: number;
+            plainText: boolean;
+            unsafe: boolean;
+        } | null>(null);
+        if (
+            modeGuardRef.current?.sessionId !== sessionId ||
+            modeGuardRef.current.plainText !== plainText
+        ) {
+            if (modeGuardRef.current?.sessionId === sessionId) {
+                focusOnToggleRef.current.current = Boolean(
+                    rootRef.current?.contains(document.activeElement),
+                );
+            }
+            modeGuardRef.current = {
+                sessionId,
+                plainText,
+                unsafe:
+                    !plainText && !isMarkdownFile(note.id) && !isRoundTripStable(bufferRef.current),
+            };
+            if (stuckOnSource) setStuckOnSource(false);
+        }
+        const forcedSource = forceSource || modeGuardRef.current.unsafe;
+        const source = plainText || markup || forcedSource || stuckOnSource;
+        const surfaceKey = `${sessionId}:${plainText ? 'text' : 'markdown'}`;
+
         // Restore the scroll after the remounted editor has laid out. The caret is restored by the
         // editor itself (it owns focus), from `initialCaret` below.
         useLayoutEffect(() => {
@@ -254,7 +284,7 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
         );
 
         const toggleSourceMode = () => {
-            if (forceSource) return;
+            if (plainText || forcedSource) return;
             const bodyHasFocus = Boolean(rootRef.current?.contains(document.activeElement));
             if (markup && !isRoundTripStable(bufferRef.current)) {
                 setStuckOnSource(true);
@@ -385,20 +415,35 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                 readValue: () => bufferRef.current,
                 onChange: handleChange,
                 focusOnMount: focusOnToggleRef.current,
+                plainText,
             };
             return (
                 <>
-                    {preview ? (
+                    {preview && plainText ? (
+                        <div
+                            ref={previewRef}
+                            className="plain-text-preview"
+                            aria-label="Plain text preview"
+                            tabIndex={-1}
+                        >
+                            {bufferRef.current}
+                        </div>
+                    ) : null}
+                    {preview && !plainText ? (
                         <Suspense fallback={null}>
                             <NotePreview ref={previewRef} markup={bufferRef.current} />
                         </Suspense>
                     ) : null}
                     <div
                         ref={rootRef}
-                        className="block-editor-source"
+                        className={
+                            plainText
+                                ? 'block-editor-source block-editor-source_plain-text'
+                                : 'block-editor-source'
+                        }
                         style={preview ? {display: 'none'} : undefined}
                     >
-                        {forceSource || stuckOnSource ? (
+                        {!plainText && (forcedSource || stuckOnSource) ? (
                             <p className="block-editor-source__notice">
                                 {stuckOnSource
                                     ? 'Your edits here are Markdown the block editor can’t represent — staying on source, so nothing else in the file is rewritten.'
@@ -406,11 +451,11 @@ export const BlockEditorBody = forwardRef<BlockEditorBodyHandle, BlockEditorBody
                             </p>
                         ) : null}
                         {CODEMIRROR ? (
-                            <Suspense fallback={<TextareaSource key={sessionId} {...surface} />}>
-                                <SourceEditor key={sessionId} {...surface} />
+                            <Suspense fallback={<TextareaSource key={surfaceKey} {...surface} />}>
+                                <SourceEditor key={surfaceKey} {...surface} />
                             </Suspense>
                         ) : (
-                            <TextareaSource key={sessionId} {...surface} />
+                            <TextareaSource key={surfaceKey} {...surface} />
                         )}
                     </div>
                 </>

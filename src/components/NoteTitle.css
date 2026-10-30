@@ -12,9 +12,19 @@
     padding: 30px var(--editor-gutter, 16px) 4px var(--editor-gutter, 16px);
 }
 
-.note-title {
+.note-title-field {
+    position: relative;
     flex: 1;
     min-width: 0;
+}
+
+.note-title-field_typed {
+    flex: 0 1 auto;
+    margin-right: 6px;
+}
+
+.note-title,
+.note-title__measure {
     box-sizing: border-box;
     border: none;
     outline: none;
@@ -34,8 +44,22 @@
     letter-spacing: -0.01em;
 }
 
-[data-editor-font='serif'] .note-title {
+[data-editor-font='serif'] .note-title,
+[data-editor-font='serif'] .note-title__measure {
     font-weight: 400;
+}
+
+.note-title {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+}
+
+.note-title__measure {
+    display: block;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: pre;
 }
 
 .note-title::placeholder {

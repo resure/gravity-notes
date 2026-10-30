@@ -5,18 +5,20 @@ import {
     PREVIEW_SCAN_BYTES,
     TRASH_DIR,
     basename,
-    canonicalBody,
     dirname,
     isReservedSegment,
     joinPath,
-    previewFromContent,
+    previewForFile,
+    readNoteContent,
+    renamedFileName,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
-    stripTrailingNewlines,
+    splitExt,
     titleFromFileName,
     uniqueAttachmentName,
     uniqueName,
+    writeNoteContent,
 } from './noteText';
 import {
     type AttachmentMeta,
@@ -91,8 +93,9 @@ export class IndexedDbNoteStore implements NoteStore {
             id: record.id,
             title: titleFromFileName(record.id),
             updatedAt: record.updatedAt,
-            preview: previewFromContent(
-                stripTrailingNewlines(record.content).slice(0, PREVIEW_SCAN_BYTES),
+            preview: previewForFile(
+                record.id,
+                readNoteContent(record.id, record.content).slice(0, PREVIEW_SCAN_BYTES),
             ),
         }));
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -109,8 +112,7 @@ export class IndexedDbNoteStore implements NoteStore {
             id: record.id,
             title: titleFromFileName(record.id),
             updatedAt: record.updatedAt,
-            // Stripped to match get()/the editor's serialized shape (parity for the search corpus).
-            content: stripTrailingNewlines(record.content),
+            content: readNoteContent(record.id, record.content),
         }));
     }
 
@@ -121,21 +123,22 @@ export class IndexedDbNoteStore implements NoteStore {
             id,
             title: titleFromFileName(id),
             updatedAt: record.updatedAt,
-            // Strip so the in-memory body matches what the editor serializes (parity with FS get()).
-            content: stripTrailingNewlines(record.content),
+            content: readNoteContent(id, record.content),
         };
     }
 
-    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
         const dir = sanitizeDir(parentPath);
         // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
-        const leaf = await uniqueName(sanitizeTitle(title), (name) =>
-            this.exists(joinPath(dir, name)),
+        const leaf = await uniqueName(
+            sanitizeTitle(title),
+            (name) => this.exists(joinPath(dir, name)),
+            extension,
         );
         const id = joinPath(dir, leaf);
         const updatedAt = Date.now();
         await this.run(NOTES_STORE, 'readwrite', (store) =>
-            store.add({id, content: canonicalBody(''), updatedAt} satisfies NoteRecord),
+            store.add({id, content: writeNoteContent(id, ''), updatedAt} satisfies NoteRecord),
         );
         return {id, title: titleFromFileName(id), updatedAt};
     }
@@ -148,7 +151,7 @@ export class IndexedDbNoteStore implements NoteStore {
         }
         const updatedAt = nextTimestamp(record.updatedAt);
         await this.run(NOTES_STORE, 'readwrite', (store) =>
-            store.put({id, content: canonicalBody(content), updatedAt} satisfies NoteRecord),
+            store.put({id, content: writeNoteContent(id, content), updatedAt} satisfies NoteRecord),
         );
         return {id, title: titleFromFileName(id), updatedAt};
     }
@@ -159,9 +162,7 @@ export class IndexedDbNoteStore implements NoteStore {
     }
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
-        const base = sanitizeTitle(nextTitle);
-        // Rename is leaf-only: re-join the new leaf onto the note's own folder so it stays put.
-        const nextId = joinPath(dirname(id), base + MD_EXT);
+        const nextId = joinPath(dirname(id), renamedFileName(id, nextTitle));
         if (nextId === id) {
             return {id, title: titleFromFileName(id)};
         }
@@ -175,7 +176,7 @@ export class IndexedDbNoteStore implements NoteStore {
         await this.addThenDelete(
             {id: nextId, content: record.content, updatedAt},
             id,
-            () => new NameCollisionError(id, base),
+            () => new NameCollisionError(id, titleFromFileName(nextId)),
         );
         return {id: nextId, title: titleFromFileName(nextId), updatedAt};
     }
@@ -208,8 +209,11 @@ export class IndexedDbNoteStore implements NoteStore {
         const record = await this.getRecord(id);
         if (!record) throw notFound(id);
         // Uniquify within the trash keyspace so two same-named notes can both be trashed.
-        const leaf = await uniqueName(titleFromFileName(id), (name) =>
-            this.keyExists(TRASH_STORE, joinPath(TRASH_DIR, name)),
+        const [base, extension] = splitExt(basename(id));
+        const leaf = await uniqueName(
+            base,
+            (name) => this.keyExists(TRASH_STORE, joinPath(TRASH_DIR, name)),
+            extension,
         );
         const trashId = joinPath(TRASH_DIR, leaf);
         // Move the row from notes → trash in one transaction (content + mtime preserved).
@@ -249,9 +253,8 @@ export class IndexedDbNoteStore implements NoteStore {
         if (!record) throw notFound(trashId);
         const dir = sanitizeDir(destFolder);
         // The original leaf may be taken now — uniquify against the live notes in that folder.
-        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
-            this.exists(joinPath(dir, name)),
-        );
+        const [base, extension] = splitExt(basename(trashId));
+        const leaf = await uniqueName(base, (name) => this.exists(joinPath(dir, name)), extension);
         const newId = joinPath(dir, leaf);
         const updatedAt = record.updatedAt;
         // `add()` (not `put()`) so a note that appeared at `newId` since the uniqueness probe can't be

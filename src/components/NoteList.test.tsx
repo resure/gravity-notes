@@ -54,6 +54,25 @@ function setup(overrides: Partial<NoteListProps> = {}) {
     return {props, ref};
 }
 
+describe('NoteList — file types', () => {
+    it('distinguishes real text files from Markdown notes with the same displayed title', () => {
+        setup({
+            notes: [
+                {id: 'hello.txt', title: 'hello.txt'},
+                {id: 'hello.txt.md', title: 'hello.txt'},
+                {id: 'scratchpad', title: 'scratchpad'},
+            ],
+            selectedId: 'hello.txt',
+        });
+        const matchingRows = screen.getAllByRole('option', {name: /hello\.txt/});
+        expect(matchingRows).toHaveLength(2);
+        expect(within(matchingRows[0]).getByText('TXT')).toHaveAttribute('title', 'hello.txt');
+        expect(within(matchingRows[1]).queryByText('TXT')).not.toBeInTheDocument();
+        const extensionless = screen.getByRole('option', {name: /scratchpad/});
+        expect(within(extensionless).getByText('TEXT')).toHaveAttribute('title', 'scratchpad');
+    });
+});
+
 describe('NoteList — other files', () => {
     it('shows full filenames separately and never opens them as notes', async () => {
         const user = userEvent.setup();

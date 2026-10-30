@@ -1,7 +1,6 @@
 import {forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef} from 'react';
 import type {MutableRefObject} from 'react';
 
-/** What the pane asks of the raw-Markdown surface, whichever editor draws it. */
 export interface SourceHandle {
     focus(): void;
     blur(): void;
@@ -11,6 +10,7 @@ export interface SourceHandle {
 }
 
 export interface SourceSurfaceProps {
+    plainText?: boolean;
     /**
      * The text to start from, read once at mount (the surface is keyed per editing session). A
      * getter, not a value: CodeMirror replaces the loading textarea later, after edits made in it
@@ -25,12 +25,34 @@ export interface SourceSurfaceProps {
     focusOnMount?: MutableRefObject<boolean>;
 }
 
+export function replaceSourceText(
+    source: string,
+    from: number,
+    to: number,
+    insert: string,
+): string {
+    const offset = (position: number) => {
+        let raw = 0;
+        for (let i = 0; i < position && raw < source.length; i++, raw++) {
+            if (source[raw] === '\r' && source[raw + 1] === '\n') raw++;
+        }
+        return raw;
+    };
+    const separator = source.match(/\r\n|\r|\n/)?.[0] ?? '\n';
+    return (
+        source.slice(0, offset(from)) +
+        insert.replace(/\r\n?|\n/g, separator) +
+        source.slice(offset(to))
+    );
+}
+
 /** The plain textarea: what source mode shows while CodeMirror loads, and in tests. */
 export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(function TextareaSource(
-    {readValue, onChange, focusOnMount},
+    {readValue, onChange, focusOnMount, plainText = false},
     ref,
 ) {
     const markupRef = useRef<HTMLTextAreaElement>(null);
+    const textRef = useRef(readValue());
 
     /**
      * Grow the textarea to its content, so the PANE scrolls it — exactly as it scrolls the blocks.
@@ -103,12 +125,32 @@ export const TextareaSource = forwardRef<SourceHandle, SourceSurfaceProps>(funct
         <textarea
             ref={markupRef}
             className="block-editor-markup"
-            aria-label="Markdown source"
+            aria-label={plainText ? 'Plain text' : 'Markdown source'}
             // Unset so it inherits Settings › Check spelling from the pane wrapper, the way the
             // blocks surface does — the setting covers both modes.
-            defaultValue={readValue()}
+            defaultValue={textRef.current}
             onChange={(event) => {
-                onChange(event.target.value);
+                const next = event.target.value;
+                if (plainText) {
+                    const previous = textRef.current.replace(/\r\n?/g, '\n');
+                    let from = 0;
+                    while (from < previous.length && previous[from] === next[from]) from++;
+                    let to = previous.length;
+                    let end = next.length;
+                    while (to > from && end > from && previous[to - 1] === next[end - 1]) {
+                        to--;
+                        end--;
+                    }
+                    textRef.current = replaceSourceText(
+                        textRef.current,
+                        from,
+                        to,
+                        next.slice(from, end),
+                    );
+                } else {
+                    textRef.current = next;
+                }
+                onChange(textRef.current);
                 autosize();
             }}
         />

@@ -23,6 +23,7 @@ import {tags} from '@lezer/highlight';
 import {GLOBAL_CHORDS, normalizeChord} from '../shortcuts';
 
 import type {SourceHandle, SourceSurfaceProps} from './SourceSurface';
+import {replaceSourceText} from './SourceSurface';
 
 // The app's global chords win: CodeMirror's defaults include ⌘/ (help here), ⌘⇧\ (the folder
 // rail)…
@@ -83,54 +84,59 @@ const wikiLinks = ViewPlugin.fromClass(
     {decorations: (plugin) => plugin.decorations},
 );
 
-const theme = EditorView.theme({
-    '&': {
-        color: 'var(--text-1)',
-        backgroundColor: 'transparent',
-        fontSize: '14px',
-    },
-    '&.cm-focused': {outline: 'none'},
-    // The PANE scrolls source mode, exactly as it scrolls the blocks: no inner scrollbar.
-    '.cm-scroller': {
-        overflow: 'visible',
-        fontFamily: 'var(--font-mono)',
-        lineHeight: '1.6',
-    },
-    '.cm-content': {
-        minHeight: '60vh',
-        padding: '4px 0 30vh',
-        caretColor: 'var(--text-1)',
-    },
-    '.cm-line': {padding: '0 var(--editor-gutter, 16px)'},
-    '.cm-cursor': {borderLeftColor: 'var(--text-1)'},
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-        backgroundColor: 'var(--accent-selection) !important',
-    },
-    '.cm-selectionMatch': {backgroundColor: 'var(--bg-hover)'},
-    '.cm-matchingBracket': {backgroundColor: 'var(--bg-hover)', outline: 'none'},
-    '.cm-wiki-link': {color: 'var(--link)'},
-    '.cm-searchMatch': {backgroundColor: 'var(--accent-selection)'},
-    '.cm-searchMatch-selected': {backgroundColor: 'var(--accent-strong-wash)'},
-    '.cm-panels': {
-        backgroundColor: 'var(--bg-paper)',
-        color: 'var(--text-1)',
-    },
-    '.cm-panels-bottom': {borderTop: '1px solid var(--line)'},
-    '.cm-panels-top': {borderBottom: '1px solid var(--line)'},
-    '.cm-textfield': {
-        backgroundColor: 'var(--bg-hover)',
-        border: '1px solid var(--line)',
-        borderRadius: '4px',
-        color: 'inherit',
-    },
-    '.cm-button': {
-        backgroundImage: 'none',
-        backgroundColor: 'var(--bg-hover)',
-        border: '1px solid var(--line)',
-        borderRadius: '4px',
-        color: 'inherit',
-    },
-});
+const theme = (plainText: boolean) =>
+    EditorView.theme({
+        '&': {
+            color: 'var(--text-1)',
+            backgroundColor: 'transparent',
+            fontSize: plainText ? 'var(--gn-editor-font-size, 15px)' : '14px',
+        },
+        '&.cm-focused': {outline: 'none'},
+        // The PANE scrolls source mode, exactly as it scrolls the blocks: no inner scrollbar.
+        '.cm-scroller': {
+            overflow: 'visible',
+            fontFamily: plainText ? 'var(--gn-editor-font, var(--font-ui))' : 'var(--font-mono)',
+            lineHeight: plainText ? 'var(--gn-editor-line-height, 1.6)' : '1.6',
+        },
+        '.cm-content': {
+            minHeight: '60vh',
+            padding: '4px 0 30vh',
+            caretColor: 'var(--text-1)',
+        },
+        '.cm-line': {
+            padding: plainText
+                ? '0 calc(var(--editor-gutter, 16px) + 4px)'
+                : '0 var(--editor-gutter, 16px)',
+        },
+        '.cm-cursor': {borderLeftColor: 'var(--text-1)'},
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+            backgroundColor: 'var(--accent-selection) !important',
+        },
+        '.cm-selectionMatch': {backgroundColor: 'var(--bg-hover)'},
+        '.cm-matchingBracket': {backgroundColor: 'var(--bg-hover)', outline: 'none'},
+        '.cm-wiki-link': {color: 'var(--link)'},
+        '.cm-searchMatch': {backgroundColor: 'var(--accent-selection)'},
+        '.cm-searchMatch-selected': {backgroundColor: 'var(--accent-strong-wash)'},
+        '.cm-panels': {
+            backgroundColor: 'var(--bg-paper)',
+            color: 'var(--text-1)',
+        },
+        '.cm-panels-bottom': {borderTop: '1px solid var(--line)'},
+        '.cm-panels-top': {borderBottom: '1px solid var(--line)'},
+        '.cm-textfield': {
+            backgroundColor: 'var(--bg-hover)',
+            border: '1px solid var(--line)',
+            borderRadius: '4px',
+            color: 'inherit',
+        },
+        '.cm-button': {
+            backgroundImage: 'none',
+            backgroundColor: 'var(--bg-hover)',
+            border: '1px solid var(--line)',
+            borderRadius: '4px',
+            color: 'inherit',
+        },
+    });
 
 function emptyFirstLine(view: EditorView): boolean {
     const {main} = view.state.selection;
@@ -138,7 +144,7 @@ function emptyFirstLine(view: EditorView): boolean {
 }
 
 const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function SourceEditor(
-    {readValue, onChange, focusOnMount},
+    {readValue, onChange, focusOnMount, plainText = false},
     ref,
 ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -152,6 +158,7 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
     useEffect(() => {
         const host = hostRef.current;
         if (!host) return undefined;
+        let text = readValue();
         // Settings › Check spelling is an attribute on the pane, which the textarea simply inherited.
         const spellcheckHost = host.closest('[spellcheck]');
         const spellcheck = new Compartment();
@@ -162,26 +169,30 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
         const view = new EditorView({
             parent: host,
             state: EditorState.create({
-                doc: readValue(),
+                doc: text,
                 extensions: [
                     history(),
                     drawSelection(),
                     EditorState.allowMultipleSelections.of(true),
                     EditorView.lineWrapping,
-                    closeBrackets(),
-                    bracketMatching(),
+                    ...(plainText ? [] : [closeBrackets(), bracketMatching()]),
                     highlightSelectionMatches(),
                     search({top: true}),
-                    markdown({base: markdownLanguage, codeLanguages: languages}),
-                    syntaxHighlighting(markdownStyle),
-                    wikiLinks,
-                    theme,
-                    EditorView.contentAttributes.of({'aria-label': 'Markdown source'}),
+                    ...(plainText
+                        ? []
+                        : [
+                              markdown({base: markdownLanguage, codeLanguages: languages}),
+                              syntaxHighlighting(markdownStyle),
+                              wikiLinks,
+                          ]),
+                    theme(plainText),
+                    EditorView.contentAttributes.of({
+                        'aria-label': plainText ? 'Plain text' : 'Markdown source',
+                    }),
                     spellcheck.of(spellcheckAttribute()),
                     keymap.of(
                         withoutAppChords([
-                            ...closeBracketsKeymap,
-                            ...markdownKeymap,
+                            ...(plainText ? [] : [...closeBracketsKeymap, ...markdownKeymap]),
                             ...defaultKeymap,
                             ...searchKeymap,
                             ...historyKeymap,
@@ -189,7 +200,24 @@ const SourceEditor = forwardRef<SourceHandle, SourceSurfaceProps>(function Sourc
                         ]),
                     ),
                     EditorView.updateListener.of((update) => {
-                        if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+                        if (!update.docChanged) return;
+                        if (plainText) {
+                            const changes: {from: number; to: number; insert: string}[] = [];
+                            update.changes.iterChanges((from, to, _from, _to, inserted) => {
+                                changes.push({from, to, insert: inserted.toString()});
+                            });
+                            for (const change of changes.reverse()) {
+                                text = replaceSourceText(
+                                    text,
+                                    change.from,
+                                    change.to,
+                                    change.insert,
+                                );
+                            }
+                        } else {
+                            text = update.state.doc.toString();
+                        }
+                        onChangeRef.current(text);
                     }),
                 ],
             }),

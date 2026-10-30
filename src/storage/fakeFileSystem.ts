@@ -54,6 +54,9 @@ class FakeFileHandle {
                     async text() {
                         return new TextDecoder().decode(file.bytes.subarray(start ?? 0, end));
                     },
+                    async arrayBuffer() {
+                        return file.bytes.slice(start ?? 0, end).buffer;
+                    },
                 };
             },
         };

@@ -14,6 +14,118 @@ describe('FileSystemNoteStore', () => {
         store = new FileSystemNoteStore(asDirectoryHandle(dir));
     });
 
+    describe('plain text files', () => {
+        it('lists nested .txt and extensionless text with literal previews', async () => {
+            dir.seedFile('Work/pass.junk.TXT', '# literal *text*\r\n', 2);
+            dir.seedFile('money', '0. _value_\n', 1);
+
+            const snapshot = await store.snapshot();
+
+            expect(snapshot.notes).toEqual([
+                {
+                    id: 'Work/pass.junk.TXT',
+                    title: 'pass.junk.TXT',
+                    updatedAt: 2,
+                    preview: '# literal *text*',
+                },
+                {id: 'money', title: 'money', updatedAt: 1, preview: '0. _value_'},
+            ]);
+            expect(snapshot.files).toEqual([]);
+            expect(await store.list()).toEqual(snapshot.notes);
+            expect(await store.listFiles()).toEqual([]);
+            expect((await store.getAll()).map((note) => note.content)).toEqual([
+                '0. _value_\n',
+                '# literal *text*\r\n',
+            ]);
+        });
+
+        it.each(['note.txt', 'money'])('preserves BOM, CRLF and EOF when saving %s', async (id) => {
+            const original = '\uFEFF# literal *text*\r\n\r\n';
+            dir.seedFile(id, original, 1);
+            const note = await store.get(id);
+            expect(note.content).toBe(original);
+
+            const content = note.content.replace('text', 'edited');
+            await store.save(id, content, note.updatedAt ?? 0);
+
+            const file = await (await dir.getFileHandle(id)).getFile();
+            expect(new Uint8Array(await file.arrayBuffer())).toEqual(
+                new TextEncoder().encode(content),
+            );
+            expect((await store.get(id)).content).toBe(content);
+        });
+
+        it('rejects binary and invalid UTF-8 without affecting other notes', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {});
+            dir.seedBytes('binary', new Uint8Array([0, 1, 2]), 1);
+            dir.seedBytes('invalid.txt', new Uint8Array([0xff]), 2);
+            dir.seedFile('valid.txt', 'valid', 3);
+
+            const snapshot = await store.snapshot();
+            expect(snapshot.notes.map((note) => note.id)).toEqual(['valid.txt']);
+            expect(snapshot.files.map((file) => file.id)).toEqual(['binary', 'invalid.txt']);
+            expect(await store.listFiles()).toEqual(snapshot.files);
+            expect((await store.getAll()).map((note) => note.id)).toEqual(['valid.txt']);
+            await expect(store.get('binary')).rejects.toThrow('binary');
+            await expect(store.get('invalid.txt')).rejects.toThrow('UTF-8');
+            expect(await store.heads(['binary', 'invalid.txt'])).toEqual([null, null]);
+        });
+
+        it('accepts a preview ending inside a valid UTF-8 character', async () => {
+            dir.seedFile('note.txt', 'a'.repeat(499) + 'я', 1);
+            expect((await store.snapshot()).notes.map((note) => note.id)).toEqual(['note.txt']);
+            expect((await store.get('note.txt')).content).toBe('a'.repeat(499) + 'я');
+        });
+
+        it('skips a binary extensionless file before reading its full body for search', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {});
+            dir.seedBytes('database', new Uint8Array(1024 * 1024), 1);
+            dir.seedFile('valid.txt', 'searchable text', 2);
+            const handle = await dir.getFileHandle('database');
+            const file = await handle.getFile();
+            const fullRead = vi.spyOn(file, 'arrayBuffer');
+            vi.spyOn(handle, 'getFile').mockResolvedValue(file);
+            const values = dir.values.bind(dir);
+            vi.spyOn(dir, 'values').mockImplementation(async function* () {
+                for await (const entry of values()) {
+                    yield entry.name === 'database' ? handle : entry;
+                }
+            });
+
+            expect((await store.getAll()).map((note) => note.id)).toEqual(['valid.txt']);
+            expect(fullRead).not.toHaveBeenCalled();
+        });
+
+        it.each(['note.txt', 'money'])(
+            'keeps the file type through rename, move, trash and restore for %s',
+            async (id) => {
+                dir.seedFile(id, 'body\r\n', 1);
+                const renamed = await store.rename(id, 'renamed');
+                const expectedLeaf = id.endsWith('.txt') ? 'renamed.txt' : 'renamed';
+                expect(renamed.id).toBe(expectedLeaf);
+                const moved = await store.move(renamed.id, 'Work');
+                const trashId = await store.trash(moved.id);
+                expect(trashId).toBe(`.trash/${expectedLeaf}`);
+                expect((await store.listTrash()).map((note) => note.id)).toEqual([trashId]);
+                const restored = await store.restore(trashId, 'Work');
+                expect(restored.id).toBe(`Work/${expectedLeaf}`);
+                expect((await store.get(restored.id)).content).toBe('body\r\n');
+            },
+        );
+
+        it('creates numbered text copies and keeps conflict protection', async () => {
+            const first = await store.create('note', '', '.txt');
+            const second = await store.create('note', '', '.txt');
+            expect([first.id, second.id]).toEqual(['note.txt', 'note 2.txt']);
+            expect((await store.get(first.id)).content).toBe('');
+            dir.seedFile(first.id, 'external', 9000);
+            await expect(store.save(first.id, 'mine', first.updatedAt ?? 0)).rejects.toBeInstanceOf(
+                ConflictError,
+            );
+            expect((await store.get(first.id)).content).toBe('external');
+        });
+    });
+
     describe('folders: recursive listing', () => {
         it('snapshots notes, folders and display files from one walk', async () => {
             dir.seedFile('A.md', 'a', 1);
@@ -78,7 +190,7 @@ describe('FileSystemNoteStore', () => {
         });
     });
 
-    it('lists visible non-Markdown files without exposing dotfiles, internals, or notes', async () => {
+    it('lists unsupported files without exposing dotfiles, internals, or editable text', async () => {
         for (const path of [
             'README',
             'Work/report.pdf',
@@ -96,12 +208,11 @@ describe('FileSystemNoteStore', () => {
             dir.seedFile(path, 'contents', 1);
         }
         expect(await store.listFiles()).toEqual([
-            {id: 'README', name: 'README'},
             {id: 'Work/report.pdf', name: 'report.pdf'},
             {id: 'Work/Sub/photo.png', name: 'photo.png'},
         ]);
-        expect((await store.list()).map((note) => note.id)).toEqual(['Work/Note.MD']);
-        expect((await store.getAll()).map((note) => note.id)).toEqual(['Work/Note.MD']);
+        expect((await store.list()).map((note) => note.id)).toEqual(['README', 'Work/Note.MD']);
+        expect((await store.getAll()).map((note) => note.id)).toEqual(['README', 'Work/Note.MD']);
     });
 
     it('removes a folder containing only housekeeping files', async () => {
@@ -456,7 +567,7 @@ describe('FileSystemNoteStore', () => {
             expect(metas[0]).toMatchObject({id: 'Beta.md', title: 'Beta', updatedAt: 300});
         });
 
-        it('ignores non-markdown files and directories', async () => {
+        it('includes plain text while ignoring unsupported files and directories', async () => {
             dir.seedFile('note.md', 'hi', 1);
             dir.seedFile('image.png', 'x', 2);
             dir.seedFile('README.txt', 'x', 3);
@@ -464,7 +575,7 @@ describe('FileSystemNoteStore', () => {
 
             const metas = await store.list();
 
-            expect(metas.map((m) => m.id)).toEqual(['note.md']);
+            expect(metas.map((m) => m.id)).toEqual(['README.txt', 'note.md']);
         });
 
         it('flows the body into one snippet with Markdown stripped', async () => {

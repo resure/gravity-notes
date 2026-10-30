@@ -3,14 +3,16 @@ import {strFromU8, strToU8, unzipSync, zipSync} from 'fflate';
 import {
     ATTACHMENTS_DIR,
     FOLDER_MARKER,
-    MD_EXT,
-    canonicalBody,
+    assertPlainText,
     dirname,
     isAttachmentRef,
+    isEditableFileName,
+    isMarkdownFile,
     joinPath,
     sanitizeImportDir,
     sanitizeSegment,
-    titleFromFileName,
+    splitExt,
+    writeNoteContent,
 } from './noteText';
 import type {NoteStore} from './types';
 
@@ -48,19 +50,14 @@ function downloadBlob(bytes: Uint8Array, filename: string, type: string): void {
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/**
- * Bundle every note as a `.md` file into a zip (pure — no DOM), returning the bytes and count.
- * Split out from {@link exportNotes} so it's testable without a browser download.
- */
 export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array; count: number}> {
     const metas = await store.list();
     const files: Record<string, Uint8Array> = {};
     const noteIds: string[] = [];
     for (const meta of metas) {
         const note = await store.get(meta.id);
-        const name = note.id.toLowerCase().endsWith(MD_EXT) ? note.id : note.id + MD_EXT;
-        files[name] = strToU8(canonicalBody(note.content));
-        noteIds.push(name);
+        files[note.id] = strToU8(writeNoteContent(note.id, note.content));
+        noteIds.push(note.id);
     }
     // Preserve deliberately-empty folders: a `.gnkeep` marker per empty branch, so an
     // export → import roundtrip rebuilds the same tree. Folders that hold notes are already implied
@@ -78,10 +75,6 @@ export async function buildExportZip(store: NoteStore): Promise<{zip: Uint8Array
     return {zip: zipSync(files), count: metas.length};
 }
 
-/**
- * Export every note as a `.md` file in a single downloaded zip. Works for any backend, and is the
- * way to get plain files out of in-browser storage. Returns the number of notes exported.
- */
 export async function exportNotes(
     store: NoteStore,
     filename = 'gravity-notes.zip',
@@ -97,20 +90,16 @@ async function importOne(
     content: string,
     parentPath = '',
 ): Promise<void> {
-    const title = titleFromFileName(baseName(filename));
+    const [title, extension] = splitExt(baseName(filename));
+    if (!isMarkdownFile(filename)) assertPlainText(content);
     // create() sanitizes the title + folder path, creates the folder if needed, and resolves
     // collisions; save() writes the body. Note: the zip carries no per-note `created` stamp, so
     // import doesn't preserve creation time/ordering — `create()` stamps each note "now". A
     // 'created'-sorted list of imported notes reflects import order, not the original order.
-    const meta = await store.create(title, parentPath || undefined);
+    const meta = await store.create(title, parentPath || undefined, extension);
     await store.save(meta.id, content, meta.updatedAt ?? 0);
 }
 
-/**
- * Import `.md` files (and/or `.zip` archives of them) into the given store as new notes. Title is
- * derived from each file name; collisions are auto-numbered by the store. Returns the number
- * imported. Callers should refresh the note list afterward.
- */
 export async function importNotes(store: NoteStore, files: FileList | File[]): Promise<number> {
     let count = 0;
     // Don't clobber attachments already in the target: a ref present here is left as-is (an imported
@@ -145,14 +134,22 @@ export async function importNotes(store: NoteStore, files: FileList | File[]): P
                     }
                     continue;
                 }
-                if (!path.toLowerCase().endsWith(MD_EXT)) continue; // skip dir entries / non-md
+                if (path.endsWith('/') || !isEditableFileName(path)) continue;
                 // Preserve the entry's subfolder path (sanitized: drops `.`/`..`), so a zip exported
                 // with nested folders re-imports into the same structure instead of flattening.
-                await importOne(store, path, strFromU8(bytes), sanitizeImportDir(dirname(path)));
+                const content = isMarkdownFile(path)
+                    ? strFromU8(bytes)
+                    : new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes);
+                await importOne(store, path, content, sanitizeImportDir(dirname(path)));
                 count += 1;
             }
-        } else if (lower.endsWith(MD_EXT)) {
-            await importOne(store, file.name, await file.text());
+        } else if (isEditableFileName(file.name)) {
+            const content = isMarkdownFile(file.name)
+                ? await file.text()
+                : new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(
+                      await file.arrayBuffer(),
+                  );
+            await importOne(store, file.name, content);
             count += 1;
         }
     }

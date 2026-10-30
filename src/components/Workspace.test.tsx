@@ -71,6 +71,65 @@ describe('Workspace — nvALT navigation', () => {
         );
     }
 
+    it('opens and saves a plain text file without converting Markdown-looking text', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('demo.txt', '# literal *text*\r\nlast', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
+        await user.click(await screen.findByRole('option', {name: /demo.txt/}));
+        const editor = await screen.findByRole('textbox', {name: 'Plain text'});
+        expect(editor).toHaveValue('# literal *text*\nlast');
+        expect(document.querySelector('.gn-block-editor')).toBeNull();
+        fireEvent.change(editor, {target: {value: '# literal *text*\nlast edited'}});
+        await waitFor(async () =>
+            expect((await store.get('demo.txt')).content).toBe('# literal *text*\r\nlast edited'),
+        );
+    });
+
+    it.each(['demo.txt', 'demo'])(
+        'opens %s as Markdown when the workspace overrides the default',
+        async (id) => {
+            localStorage.setItem(
+                'gravity-notes:test-ws:settings',
+                JSON.stringify({textFileMode: 'markdown'}),
+            );
+            const user = userEvent.setup();
+            const dir = new FakeDirectoryHandle();
+            dir.seedFile(id, '# Text heading\n\nbody', 100);
+            const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+            renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
+            await user.click(await screen.findByRole('option', {name: new RegExp(id)}));
+            expect(await screen.findByRole('textbox', {name: 'Heading 1 block'})).toHaveTextContent(
+                'Text heading',
+            );
+            expect(screen.queryByRole('textbox', {name: 'Plain text'})).toBeNull();
+            expect((await store.list()).map((note) => note.id)).toEqual([id]);
+        },
+    );
+
+    it('captures imported files before clearing the live file input', async () => {
+        const {store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+        const file = new File([], 'imported.txt');
+        Object.defineProperty(file, 'arrayBuffer', {
+            value: async () => new TextEncoder().encode('literal text\r\n').buffer,
+        });
+        const selected = [file];
+        Object.defineProperty(input, 'files', {get: () => selected});
+        Object.defineProperty(input, 'value', {
+            set: () => {
+                selected.splice(0);
+            },
+        });
+        fireEvent.change(input);
+        expect(selected).toHaveLength(0);
+        await waitFor(async () =>
+            expect((await store.get('imported.txt')).content).toBe('literal text\r\n'),
+        );
+    });
+
     it('scopes other files to the chosen folder and excludes them from note search', async () => {
         const user = userEvent.setup();
         const dir = new FakeDirectoryHandle();

@@ -311,7 +311,7 @@ describe('TopBar — orb menu', () => {
         expect(props.onExport).toHaveBeenCalledTimes(1);
 
         await user.click(screen.getByRole('button', {name: 'Menu'}));
-        await user.click(await screen.findByRole('menuitem', {name: /Import \.md files/}));
+        await user.click(await screen.findByRole('menuitem', {name: /Import text files/}));
         expect(props.onImport).toHaveBeenCalledTimes(1);
 
         await user.click(screen.getByRole('button', {name: 'Menu'}));
@@ -515,6 +515,23 @@ describe('TopBar — note menu', () => {
         expect(screen.getByRole('menuitem', {name: /Markup instead of blocks/})).toHaveFocus();
         fireEvent.keyDown(document.activeElement!, {key: 'ArrowUp'});
         expect(preview).toHaveFocus();
+    });
+
+    it('hides the Markdown mode action for plain text files', async () => {
+        setup({note: {id: 'plain.txt', title: 'plain.txt'}, noteMenuOpen: true});
+        expect(await screen.findByRole('menuitem', {name: /Read-only preview/})).toBeVisible();
+        expect(screen.queryByRole('menuitem', {name: /Markup instead of blocks/})).toBeNull();
+    });
+
+    it('offers the Markdown mode action for text files opened as Markdown', async () => {
+        setup({
+            note: {id: 'plain.txt', title: 'plain.txt'},
+            noteMenuOpen: true,
+            textFileMode: 'markdown',
+        });
+        expect(
+            await screen.findByRole('menuitem', {name: /Markup instead of blocks/}),
+        ).toBeVisible();
     });
 
     it('has no ⋯ at all with no note open', () => {

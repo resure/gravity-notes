@@ -24,6 +24,26 @@ beforeEach(() => {
 });
 
 describe('transfer — export', () => {
+    it('round-trips plain text with filenames, BOM and line endings intact', async () => {
+        const source = seedStore();
+        const content = '\uFEFF# literal *text*\r\n\r\nlast\n';
+        for (const extension of ['.txt', '']) {
+            const meta = await source.create('plain', 'Work', extension);
+            await source.save(meta.id, content, meta.updatedAt ?? 0);
+        }
+        const {zip, count} = await buildExportZip(source);
+        expect(count).toBe(2);
+        const entries = unzipSync(zip);
+        expect(Object.keys(entries).sort()).toEqual(['Work/plain', 'Work/plain.txt']);
+        expect(entries['Work/plain.txt']).toEqual(new TextEncoder().encode(content));
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const target = seedStore();
+        const imported = await importNotes(target, [new File([zip as BlobPart], 'notes.zip')]);
+        expect(imported).toBe(2);
+        expect((await target.get('Work/plain.txt')).content).toBe(content);
+        expect((await target.get('Work/plain')).content).toBe(content);
+    });
+
     it('zips every note as a canonical .md file', async () => {
         const store = seedStore();
         await withContent(store, 'Alpha', 'hello alpha');

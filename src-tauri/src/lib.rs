@@ -74,13 +74,87 @@ fn is_md(name: &str) -> bool {
     name.to_lowercase().ends_with(MD_EXT)
 }
 
+fn is_editable_file(name: &str) -> bool {
+    let leaf = Path::new(name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    !leaf.is_empty()
+        && !leaf.starts_with('.')
+        && (is_md(leaf) || leaf.to_lowercase().ends_with(".txt") || !leaf.contains('.'))
+}
+
+fn has_binary_controls(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|byte| (*byte < 0x20 && !matches!(byte, b'\t' | b'\n' | b'\r')) || *byte == 0x7f)
+}
+
+fn decode_plain_text(bytes: &[u8], truncated: bool) -> Option<String> {
+    if has_binary_controls(bytes) {
+        return None;
+    }
+    let text = match std::str::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(error) if truncated && error.error_len().is_none() => {
+            std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap()
+        }
+        Err(_) => return None,
+    };
+    Some(text.to_string())
+}
+
+fn read_plain_text(
+    mut reader: impl Read,
+    file_size: u64,
+    full: bool,
+) -> std::io::Result<Option<String>> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take(PREVIEW_SCAN_BYTES)
+        .read_to_end(&mut bytes)?;
+    let Some(head) = decode_plain_text(&bytes, file_size > bytes.len() as u64) else {
+        return Ok(None);
+    };
+    if !full {
+        return Ok(Some(head));
+    }
+    reader.read_to_end(&mut bytes)?;
+    Ok(decode_plain_text(&bytes, false))
+}
+
+fn read_note_body(
+    path: &Path,
+    name: &str,
+    meta: &fs::Metadata,
+    full: bool,
+) -> std::io::Result<Option<String>> {
+    if is_dataless(meta) {
+        return Ok(Some(String::new()));
+    }
+    if !is_md(name) {
+        return read_plain_text(fs::File::open(path)?, meta.len(), full);
+    }
+    let bytes = if full {
+        fs::read(path)?
+    } else {
+        let mut bytes = Vec::new();
+        fs::File::open(path)?
+            .take(PREVIEW_SCAN_BYTES)
+            .read_to_end(&mut bytes)?;
+        bytes
+    };
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
+
 /// Directory names never descended during the note/folder walks, at any depth: heavy non-note
 /// trees a user can pull in by accidentally picking a project folder. Dot-directories (`.git`,
 /// `.obsidian`, the `.trash`, …) are excluded by the leading-dot check in {@link is_skipped_dir}.
 const SKIP_DIRS: &[&str] = &["node_modules"];
 
 /// Whether a directory `name` should be skipped (not descended) by the recursive walks. Centralises
-/// the dot-directory and {@link SKIP_DIRS} exclusions shared by `collect_md` and `collect_folders`.
+/// the dot-directory and {@link SKIP_DIRS} exclusions shared by `collect_notes` and `collect_folders`.
 /// Case-insensitive on `SKIP_DIRS`, mirroring the TS `isSkippedDir`/`isReservedSegment` (macOS and
 /// the web Chromium target both sit on case-insensitive filesystems).
 fn is_skipped_dir(name: &str) -> bool {
@@ -245,19 +319,13 @@ fn rename_or_copy(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// One markdown note found by the recursive walk: its forward-slash path relative to the root,
-/// mtime, and the requested slice of its body (head for previews, or the whole file).
 struct Found {
     rel: String,
     modified_ms: f64,
     body: String,
 }
 
-/// Recursively collect `.md` files under `current`, returning ids relative to `root` with `/`
-/// separators. Skips dot-directories (`.git`, `.obsidian`, …) and never follows symlinks (so the
-/// walk can't escape the folder or loop). Non-`.md` entries — the sidecar, `.gnkeep`, `*.gn-tmp`,
-/// `*.rename-tmp` — are filtered by `is_md`. `full` reads the whole body; otherwise just the head.
-fn collect_md(
+fn collect_notes(
     root: &Path,
     current: &Path,
     full: bool,
@@ -278,8 +346,8 @@ fn collect_md(
             if current == root && name == ATTACHMENTS_DIR {
                 continue;
             }
-            collect_md(root, &entry.path(), full, out)?;
-        } else if file_type.is_file() && !name.starts_with('.') && is_md(&name) {
+            collect_notes(root, &entry.path(), full, out)?;
+        } else if file_type.is_file() && is_editable_file(&name) {
             let path = entry.path();
             let meta = entry.metadata()?;
             let rel = path
@@ -287,20 +355,8 @@ fn collect_md(
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            // A not-yet-downloaded iCloud file: list it by name/mtime but DON'T read its content —
-            // that would block until the system downloads it, turning a walk over a non-downloaded
-            // folder into a hang. Its preview/corpus body stays empty until it lands on disk
-            // (the focus-driven refresh picks it up); explicitly opening the note still reads it.
-            let body = if is_dataless(&meta) {
-                String::new()
-            } else if full {
-                String::from_utf8_lossy(&fs::read(&path)?).into_owned()
-            } else {
-                let mut buf = Vec::new();
-                fs::File::open(&path)?
-                    .take(PREVIEW_SCAN_BYTES)
-                    .read_to_end(&mut buf)?;
-                String::from_utf8_lossy(&buf).into_owned()
+            let Some(body) = read_note_body(&path, &name, &meta, full)? else {
+                continue;
             };
             out.push(Found {
                 rel,
@@ -312,11 +368,10 @@ fn collect_md(
     Ok(())
 }
 
-/// List every `.md` file (recursively, with subfolder paths) with its mtime and a head slice.
 #[tauri::command(async)]
 fn notes_list(dir: String) -> Result<Vec<NoteHead>, String> {
     let mut found = Vec::new();
-    collect_md(Path::new(&dir), Path::new(&dir), false, &mut found).map_err(stringify)?;
+    collect_notes(Path::new(&dir), Path::new(&dir), false, &mut found).map_err(stringify)?;
     Ok(found
         .into_iter()
         .map(|f| NoteHead {
@@ -327,11 +382,10 @@ fn notes_list(dir: String) -> Result<Vec<NoteHead>, String> {
         .collect())
 }
 
-/// Read every `.md` file (recursively) with full content — feeds the full-text search corpus.
 #[tauri::command(async)]
 fn notes_read_all(dir: String) -> Result<Vec<NoteFull>, String> {
     let mut found = Vec::new();
-    collect_md(Path::new(&dir), Path::new(&dir), true, &mut found).map_err(stringify)?;
+    collect_notes(Path::new(&dir), Path::new(&dir), true, &mut found).map_err(stringify)?;
     Ok(found
         .into_iter()
         .map(|f| NoteFull {
@@ -381,25 +435,17 @@ fn collect_snapshot(root: &Path, current: &Path, out: &mut NoteSnapshot) -> std:
             out.folders.push(rel());
             collect_snapshot(root, &path, out)?;
         } else if file_type.is_file() && !name.starts_with('.') {
-            // Dot-named files stay hidden from both the note walk and the display-only file list.
-            if is_md(&name) {
+            if is_editable_file(&name) {
                 let meta = entry.metadata()?;
-                // A not-yet-downloaded iCloud file: list it by name/mtime without reading its
-                // content (the read would block on the download) — mirrors `collect_md`.
-                let head = if is_dataless(&meta) {
-                    String::new()
+                if let Some(head) = read_note_body(&path, &name, &meta, false)? {
+                    out.notes.push(NoteHead {
+                        name: rel(),
+                        modified_ms: modified_ms(&meta),
+                        head,
+                    });
                 } else {
-                    let mut buf = Vec::new();
-                    fs::File::open(&path)?
-                        .take(PREVIEW_SCAN_BYTES)
-                        .read_to_end(&mut buf)?;
-                    String::from_utf8_lossy(&buf).into_owned()
-                };
-                out.notes.push(NoteHead {
-                    name: rel(),
-                    modified_ms: modified_ms(&meta),
-                    head,
-                });
+                    out.files.push(rel());
+                }
             } else if !name.ends_with(WRITE_TMP_SUFFIX) && !name.ends_with(RENAME_TMP_SUFFIX) {
                 out.files.push(rel());
             }
@@ -427,6 +473,9 @@ fn notes_heads(dir: String, names: Vec<String>) -> Result<Vec<Option<NoteHead>>,
     names
         .into_iter()
         .map(|name| {
+            if !is_editable_file(&name) {
+                return Ok(None);
+            }
             let path = resolve_within(&dir, &name)?;
             let meta = match fs::symlink_metadata(&path) {
                 Ok(meta) => meta,
@@ -439,14 +488,8 @@ fn notes_heads(dir: String, names: Vec<String>) -> Result<Vec<Option<NoteHead>>,
             if !meta.is_file() {
                 return Err(format!("\"{name}\" is not a file"));
             }
-            let head = if is_dataless(&meta) {
-                String::new()
-            } else {
-                let mut buf = Vec::new();
-                fs::File::open(&path)
-                    .and_then(|file| file.take(PREVIEW_SCAN_BYTES).read_to_end(&mut buf))
-                    .map_err(stringify)?;
-                String::from_utf8_lossy(&buf).into_owned()
+            let Some(head) = read_note_body(&path, &name, &meta, false).map_err(stringify)? else {
+                return Ok(None);
             };
             Ok(Some(NoteHead {
                 name,
@@ -469,11 +512,6 @@ fn notes_probe(dir: String) -> Result<bool, String> {
     }
 }
 
-/// List the `.md` files directly inside `dir/sub` (non-recursive), each with its name and mtime.
-/// Backs the trash view: the `.trash/` area is a dot-directory the recursive note walk deliberately
-/// skips, so it needs its own lister. Ids are returned relative to the root (`sub/<leaf>`, or just
-/// `<leaf>` when `sub` is empty), matching `notes_list`. Bodies are NOT read (the trash view shows
-/// only title/folder/age). An absent folder yields an empty list, not an error.
 #[tauri::command]
 fn notes_list_dir(dir: String, sub: String) -> Result<Vec<NoteHead>, String> {
     let base = resolve_within(&dir, &sub)?;
@@ -491,7 +529,7 @@ fn notes_list_dir(dir: String, sub: String) -> Result<Vec<NoteHead>, String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !is_md(&name) {
+        if !is_editable_file(&name) {
             continue;
         }
         let meta = entry.metadata().map_err(stringify)?;
@@ -533,11 +571,9 @@ fn notes_read_opt(dir: String, name: String) -> Result<Option<NoteFull>, String>
         Err(err) => return Err(err.to_string()),
     };
     let bytes = fs::read(&path).map_err(stringify)?;
-    // Strict UTF-8 decode for a single-note load: a lossy decode would silently replace invalid
-    // bytes with U+FFFD, and the next autosave would then write that corruption back over the
-    // original file. Surfacing an error instead keeps the note from opening-then-clobbering. (The
-    // recursive corpus/preview reads stay lossy — they're search-only and never written back, and a
-    // preview head slice can legitimately cut a multi-byte char at the byte boundary.)
+    if is_editable_file(&name) && !is_md(&name) && has_binary_controls(&bytes) {
+        return Err(format!("\"{name}\" is not plain text"));
+    }
     let content =
         String::from_utf8(bytes).map_err(|_| format!("\"{name}\" is not valid UTF-8 text"))?;
     Ok(Some(NoteFull {
@@ -770,7 +806,6 @@ fn notes_remove_dir(dir: String, path: String) -> Result<(), String> {
     result.map_err(stringify)
 }
 
-/// Display-only files: names/paths only, so binary and iCloud-dataless files are never read.
 #[tauri::command(async)]
 fn notes_list_files(dir: String) -> Result<Vec<String>, String> {
     fn walk(root: &Path, current: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
@@ -791,6 +826,11 @@ fn notes_list_files(dir: String) -> Result<Vec<String>, String> {
                 && !name.ends_with(WRITE_TMP_SUFFIX)
                 && !name.ends_with(RENAME_TMP_SUFFIX)
             {
+                if is_editable_file(&name)
+                    && read_note_body(&entry.path(), &name, &entry.metadata()?, false)?.is_some()
+                {
+                    continue;
+                }
                 out.push(
                     entry
                         .path()
@@ -2081,13 +2121,14 @@ mod tests {
     }
 
     #[test]
-    fn lists_md_files_in_a_named_subdir_and_excludes_it_from_the_main_walk() {
+    fn lists_editable_files_in_a_named_subdir_and_excludes_it_from_the_main_walk() {
         let dir = temp_dir();
         // The trash op is just a rename into `.trash/` (a dot-directory).
         notes_write(s(&dir), ".trash/A.md".into(), "aaa".into()).unwrap();
         notes_write(s(&dir), ".trash/B.md".into(), "bbb".into()).unwrap();
-        // A non-.md file in the same folder is ignored by the lister.
         fs::write(dir.join(".trash").join("note.txt"), "x").unwrap();
+        fs::write(dir.join(".trash").join("money"), "x").unwrap();
+        fs::write(dir.join(".trash").join("data.csv"), "x").unwrap();
         // A root note, to exercise the empty-`sub` (no leading slash) path.
         notes_write(s(&dir), "Root.md".into(), "r".into()).unwrap();
 
@@ -2097,7 +2138,15 @@ mod tests {
             .map(|n| n.name)
             .collect();
         ids.sort();
-        assert_eq!(ids, vec![".trash/A.md", ".trash/B.md"]);
+        assert_eq!(
+            ids,
+            vec![
+                ".trash/A.md",
+                ".trash/B.md",
+                ".trash/money",
+                ".trash/note.txt"
+            ]
+        );
 
         // Empty `sub` lists the root directly, with NO leading slash on the ids.
         assert_eq!(
@@ -2432,7 +2481,7 @@ mod tests {
     }
 
     #[test]
-    fn list_files_shows_visible_files_without_reading_bodies() {
+    fn list_files_keeps_binary_and_unsupported_files_display_only() {
         let dir = temp_dir();
         fs::create_dir_all(dir.join("Work/Sub")).unwrap();
         fs::create_dir_all(dir.join(".git")).unwrap();
@@ -2524,6 +2573,123 @@ mod tests {
         // next save would write that corruption back. We surface an error instead.
         fs::write(dir.join("Latin1.md"), [0x68, 0x69, 0xff]).unwrap();
         assert!(notes_read_opt(s(&dir), "Latin1.md".into()).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn text_files_share_listing_search_and_targeted_refresh_without_rewriting_content() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join("db")).unwrap();
+        let content = "\u{feff}# literal heading\r\n[[literal link]]\r\n\r\n";
+        for name in ["db/meme.txt", "db/pass.junk.TXT", "money", "root"] {
+            fs::write(dir.join(name), content).unwrap();
+        }
+        fs::write(dir.join("Note.md"), "markdown").unwrap();
+        fs::write(dir.join("data.csv"), "a,b").unwrap();
+        fs::write(dir.join(".hidden.txt"), "hidden").unwrap();
+
+        let mut expected = vec![
+            "Note.md",
+            "db/meme.txt",
+            "db/pass.junk.TXT",
+            "money",
+            "root",
+        ];
+        expected.sort();
+        let snap = notes_snapshot(s(&dir)).unwrap();
+        let mut listed: Vec<_> = snap.notes.iter().map(|note| note.name.as_str()).collect();
+        listed.sort();
+        assert_eq!(listed, expected);
+        assert_eq!(snap.files, vec!["data.csv"]);
+        assert_eq!(notes_list_files(s(&dir)).unwrap(), snap.files);
+
+        let all = notes_read_all(s(&dir)).unwrap();
+        assert_eq!(all.len(), expected.len());
+        assert_eq!(notes_list(s(&dir)).unwrap().len(), expected.len());
+        for name in ["db/meme.txt", "db/pass.junk.TXT", "money", "root"] {
+            let read = notes_read_opt(s(&dir), name.into()).unwrap().unwrap();
+            assert_eq!(read.content, content);
+            assert_eq!(
+                all.iter().find(|note| note.name == name).unwrap().content,
+                content
+            );
+            let heads = notes_heads(s(&dir), vec![name.into()]).unwrap();
+            assert_eq!(heads[0].as_ref().unwrap().head, content);
+            notes_write(s(&dir), name.into(), read.content).unwrap();
+            assert_eq!(fs::read(dir.join(name)).unwrap(), content.as_bytes());
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn binary_text_candidates_stay_display_only_and_cannot_open() {
+        let dir = temp_dir();
+        for (name, bytes) in [
+            ("archive", vec![0, 1, 2]),
+            ("invalid.txt", vec![b'a', 0xff]),
+            ("incomplete.txt", vec![b'a', 0xe2, 0x82]),
+            ("controls.TXT", vec![b'a', 0x1b]),
+        ] {
+            fs::write(dir.join(name), bytes).unwrap();
+            assert!(notes_read_opt(s(&dir), name.into()).is_err());
+            let heads = notes_heads(s(&dir), vec![name.into()]).unwrap();
+            assert!(heads[0].is_none());
+        }
+        let snap = notes_snapshot(s(&dir)).unwrap();
+        assert!(snap.notes.is_empty());
+        assert_eq!(
+            snap.files,
+            vec!["archive", "controls.TXT", "incomplete.txt", "invalid.txt"]
+        );
+        assert_eq!(notes_list_files(s(&dir)).unwrap(), snap.files);
+        assert!(notes_read_all(s(&dir)).unwrap().is_empty());
+        assert!(notes_list(s(&dir)).unwrap().is_empty());
+
+        let late_binary = format!("{}\0", "a".repeat(600));
+        fs::write(dir.join("late.txt"), late_binary).unwrap();
+        assert!(notes_read_opt(s(&dir), "late.txt".into()).is_err());
+        assert!(notes_read_all(s(&dir)).unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corpus_rejects_binary_headers_before_reading_the_rest_of_the_file() {
+        struct UnreadableTail;
+
+        impl Read for UnreadableTail {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("read beyond the preview"))
+            }
+        }
+
+        for byte in [0, 0xff] {
+            let reader =
+                std::io::Cursor::new(vec![byte; PREVIEW_SCAN_BYTES as usize]).chain(UnreadableTail);
+            assert!(read_plain_text(reader, 1_000_000_000, true)
+                .unwrap()
+                .is_none());
+        }
+        let reader =
+            std::io::Cursor::new(vec![b'a'; PREVIEW_SCAN_BYTES as usize]).chain(UnreadableTail);
+        assert!(read_plain_text(reader, 1_000_000_000, true).is_err());
+    }
+
+    #[test]
+    fn text_preview_may_end_inside_a_utf8_character() {
+        let dir = temp_dir();
+        let content = format!("{}€", "a".repeat(PREVIEW_SCAN_BYTES as usize - 1));
+        fs::write(dir.join("unicode.txt"), &content).unwrap();
+        let snap = notes_snapshot(s(&dir)).unwrap();
+        assert!(snap.files.is_empty());
+        assert_eq!(snap.notes.len(), 1);
+        assert_eq!(
+            snap.notes[0].head,
+            "a".repeat(PREVIEW_SCAN_BYTES as usize - 1)
+        );
+        assert_eq!(notes_read_all(s(&dir)).unwrap()[0].content, content);
 
         let _ = fs::remove_dir_all(&dir);
     }

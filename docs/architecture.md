@@ -37,7 +37,8 @@ A notes folder is meant to be shared with other tools — Obsidian, scripts, `gr
 format, in full:
 
 - **A note is a file.** Its id is its POSIX relative path (`Inbox.md`, `Work/Sub/Title.md`); the
-  file name without `.md` is the title. Folders are real directories.
+  file name without `.md` is the title. Plain-text `.txt` and extensionless files use their full
+  filename as the title. Folders are real directories.
 - **`.gravity-notes.json`** — one metadata sidecar at the root: sort mode, pins (notes and
   folders), created stamps, note icons, per-note appearance overrides, the open note, and the
   trash registry. Losing it loses pins and icons, never notes.
@@ -49,9 +50,22 @@ format, in full:
   ordinary link (`[report.pdf](Attachments/report.pdf)`), which `⌘-click` reveals in Finder and which
   other Markdown tools render as a working link. The stored Markdown never contains `blob:` URLs.
 - **`.gnkeep`** — a marker file that keeps a deliberately-empty folder alive (Git-style).
-- **Other files** (including extensionless files) appear as muted, non-editable rows alongside notes.
-  Folder stores expose names and paths through optional `listFiles()` without reading file bodies;
-  these entries have separate counts and never enter note search, editing, autosave, or export.
+- **Plain text** — visible `.txt` (case-insensitive) and extensionless regular files join the editable
+  list and full-text search. A `TXT` or `TEXT` badge in the list and title identifies the actual file
+  type, so `hello.txt` differs from a Markdown note named `hello.txt.md`. By default their editor and
+  preview show literal text, without Markdown formatting or outgoing wiki-link parsing; UTF-8 text,
+  BOM, line endings and trailing newlines are preserved. Settings → Editor → Open text files as can
+  opt into Markdown, with a per-workspace override. That mode enables the usual block/source editor,
+  Markdown preview and wiki links, retaining the round-trip guard and the original filename.
+  Switching modes preserves the live buffer and does not itself save or rewrite the file. Both
+  modes follow the note's font and text-width settings and align with its title.
+  Rename, move, duplicate, conflict copies, trash, restore and zip transfer
+  retain the file type. Creating a new note still creates Markdown. Binary controls and invalid UTF-8
+  block plain-text opening; bulk previews classify detectable binary content as non-editable, and
+  corpus loading skips it. Other encodings are unsupported.
+- **Other files** appear as muted, non-editable rows alongside notes. Folder stores expose names and
+  paths through optional `listFiles()`; supported plain-text candidates additionally have their head
+  checked for text. These entries have separate counts and never enter editing, autosave, or export.
   Dotfiles (including dot-named `.md` files), dot-directories, write temporaries, `node_modules`,
   and the managed root `Attachments/` stay hidden. New note titles have leading dots removed so
   creating or renaming a note cannot hide it.

@@ -6,19 +6,24 @@ import {
     PREVIEW_SCAN_BYTES,
     SKIP_DIR_NAMES,
     TRASH_DIR,
+    assertPlainText,
     basename,
-    canonicalBody,
     dirname,
+    isEditableFileName,
+    isMarkdownFile,
     isReservedSegment,
     joinPath,
-    previewFromContent,
+    previewForFile,
+    readNoteContent,
+    renamedFileName,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
-    stripTrailingNewlines,
+    splitExt,
     titleFromFileName,
     uniqueAttachmentName,
     uniqueName,
+    writeNoteContent,
 } from './noteText';
 import {
     type AttachmentMeta,
@@ -50,6 +55,22 @@ async function writeFile(handle: FileSystemFileHandle, data: string | Blob): Pro
         }
         throw err;
     }
+}
+
+async function readFileText(id: string, file: File, headOnly = false): Promise<string> {
+    const slice = headOnly ? file.slice(0, PREVIEW_SCAN_BYTES) : file;
+    if (isMarkdownFile(id)) return slice.text();
+    let text: string;
+    try {
+        text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(
+            await slice.arrayBuffer(),
+            {stream: headOnly && file.size > PREVIEW_SCAN_BYTES},
+        );
+    } catch {
+        throw new Error('This file is not valid UTF-8 and cannot be edited as text');
+    }
+    assertPlainText(text);
+    return text;
 }
 
 /** Mirror the other backends' deleted-note signal so `useNotes` maps it to a "deleted" conflict. */
@@ -96,14 +117,6 @@ async function mapPool<T, R>(
     return results;
 }
 
-/**
- * Notes stored as individual `.md` files in a user-picked directory, accessed through the File
- * System Access API. A note id is its POSIX-relative path from the picked folder (`Work/Sub/Title.md`
- * for a nested note, `Title.md` at the root); the leaf without `.md` is the title. Folders are real
- * directories — created empty with a `.gnkeep` marker, listed recursively, and auto-pruned when a
- * move/delete empties them (a marked folder survives). Semantics match `IndexedDbNoteStore` and
- * `TauriNoteStore`, so everything above the `NoteStore` seam is backend-agnostic.
- */
 export class FileSystemNoteStore implements NoteStore {
     /** list()/getAll() descend every subdirectory, so nested (slash-bearing) ids are always seen. */
     readonly listsRecursively = true;
@@ -123,12 +136,12 @@ export class FileSystemNoteStore implements NoteStore {
                     try {
                         const file = await handle.getFile();
                         // Read only the head of each file — enough for a one-line list preview.
-                        const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+                        const head = await readFileText(id, file, true);
                         return {
                             id,
                             title: titleFromFileName(id),
                             updatedAt: file.lastModified,
-                            preview: previewFromContent(head),
+                            preview: previewForFile(id, head),
                         };
                     } catch (err) {
                         // One unreadable file (deleted mid-scan, permission glitch) must not blank the
@@ -164,7 +177,7 @@ export class FileSystemNoteStore implements NoteStore {
                     await recurse(handle, `${path}/`);
                 } else if (!handle.name.startsWith('.')) {
                     const id = `${prefix}${handle.name}`;
-                    if (handle.name.toLowerCase().endsWith(MD_EXT)) {
+                    if (isEditableFileName(handle.name)) {
                         entries.push({id, handle});
                     } else if (
                         !handle.name.endsWith('.gn-tmp') &&
@@ -184,14 +197,15 @@ export class FileSystemNoteStore implements NoteStore {
                 async ({id, handle}): Promise<NoteMeta | null> => {
                     try {
                         const file = await handle.getFile();
-                        const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+                        const head = await readFileText(id, file, true);
                         return {
                             id,
                             title: titleFromFileName(id),
                             updatedAt: file.lastModified,
-                            preview: previewFromContent(head),
+                            preview: previewForFile(id, head),
                         };
                     } catch (err) {
+                        if (!isMarkdownFile(id)) files.push({id, name: basename(id)});
                         console.warn(`Skipping unreadable note "${id}":`, err);
                         return null;
                     }
@@ -204,15 +218,21 @@ export class FileSystemNoteStore implements NoteStore {
 
     async heads(ids: string[]): Promise<(NoteMeta | null)[]> {
         return mapPool(ids, READ_CONCURRENCY, async (id): Promise<NoteMeta | null> => {
+            if (!isEditableFileName(id)) return null;
             const handle = await this.fileHandle(id);
             if (!handle) return null;
             const file = await handle.getFile();
-            const head = await file.slice(0, PREVIEW_SCAN_BYTES).text();
+            let head: string;
+            try {
+                head = await readFileText(id, file, true);
+            } catch {
+                return null;
+            }
             return {
                 id,
                 title: titleFromFileName(id),
                 updatedAt: file.lastModified,
-                preview: previewFromContent(head),
+                preview: previewForFile(id, head),
             };
         });
     }
@@ -226,12 +246,12 @@ export class FileSystemNoteStore implements NoteStore {
             await mapPool(entries, READ_CONCURRENCY, async ({id, handle}): Promise<Note | null> => {
                 try {
                     const file = await handle.getFile();
+                    if (!isMarkdownFile(id)) await readFileText(id, file, true);
                     return {
                         id,
                         title: titleFromFileName(id),
                         updatedAt: file.lastModified,
-                        // Stripped to match get()/the editor's serialized shape (corpus parity).
-                        content: stripTrailingNewlines(await file.text()),
+                        content: readNoteContent(id, await readFileText(id, file)),
                     };
                 } catch (err) {
                     // Skip an unreadable file so the search corpus still gets every readable note.
@@ -250,26 +270,24 @@ export class FileSystemNoteStore implements NoteStore {
             id,
             title: titleFromFileName(id),
             updatedAt: file.lastModified,
-            // Stripped so the in-memory body matches what the editor serializes (it emits no
-            // trailing newline); save() re-adds a trailing blank line. Without this the editor
-            // sees a diff on open and re-saves the note every time it's opened.
-            content: stripTrailingNewlines(await file.text()),
+            content: readNoteContent(id, await readFileText(id, file)),
         };
     }
 
-    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
         const folder = sanitizeDir(parentPath);
         const dir = await this.resolveDir(folder, true);
         if (!dir) throw new Error(`Could not open folder "${folder}"`);
         // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
         // The probe-then-create is not atomic, but the FSA gives no atomic create-if-absent; this is
         // a single-user, single-tab store, so the window for a racing create is effectively nil.
-        const leaf = await uniqueName(sanitizeTitle(title), (name) => this.existsIn(dir, name));
+        const leaf = await uniqueName(
+            sanitizeTitle(title),
+            (name) => this.existsIn(dir, name),
+            extension,
+        );
         const handle = await dir.getFileHandle(leaf, {create: true});
-        // Write the canonical "blank line at EOF" shape save() produces, so a brand-new note has a
-        // consistent on-disk shape for external tools rather than a zero-byte file. get() strips it
-        // back to an empty body, so the editor still opens to a blank note with no spurious save.
-        await writeFile(handle, canonicalBody(''));
+        await writeFile(handle, writeNoteContent(leaf, ''));
         const id = joinPath(folder, leaf);
         const updatedAt = (await handle.getFile()).lastModified;
         return {id, title: titleFromFileName(id), updatedAt};
@@ -282,8 +300,7 @@ export class FileSystemNoteStore implements NoteStore {
         if (current !== baseUpdatedAt) {
             throw new ConflictError(id, current);
         }
-        // End the file with a blank line at EOF (the editor serializes no trailing newline).
-        await writeFile(handle, canonicalBody(content));
+        await writeFile(handle, writeNoteContent(id, content));
         const updatedAt = (await handle.getFile()).lastModified;
         return {id, title: titleFromFileName(id), updatedAt};
     }
@@ -318,10 +335,10 @@ export class FileSystemNoteStore implements NoteStore {
     }
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
-        const base = sanitizeTitle(nextTitle);
+        const nextLeaf = renamedFileName(id, nextTitle);
         const folder = dirname(id);
         // Rename is leaf-only: re-join the new leaf onto the note's own folder so it stays put.
-        const nextName = joinPath(folder, base + MD_EXT);
+        const nextName = joinPath(folder, nextLeaf);
         if (nextName === id) {
             return {id, title: titleFromFileName(id)};
         }
@@ -332,7 +349,6 @@ export class FileSystemNoteStore implements NoteStore {
         const dir = await this.resolveDir(folder);
         if (!dir) throw notFound(id);
         const oldLeaf = basename(id);
-        const nextLeaf = base + MD_EXT;
         const srcHandle = await this.existingFileHandle(dir, oldLeaf);
         if (!srcHandle) throw notFound(id);
         // The leaf `nextLeaf` resolves to on disk: `null` when the name is free, the source's own
@@ -344,7 +360,7 @@ export class FileSystemNoteStore implements NoteStore {
         // case-SENSITIVE FS (`note.md`→`Note.md` where a separate `Note.md` exists) — the original
         // guard skipped that path entirely, risking an overwrite.
         if (existingLeaf !== null && existingLeaf !== oldLeaf) {
-            throw new NameCollisionError(id, base);
+            throw new NameCollisionError(id, titleFromFileName(nextLeaf));
         }
         // The File System Access API has no atomic rename: this is a raw-byte copy-then-delete
         // (mirroring move()/trash()), so a note carrying non-UTF-8 content survives byte-for-byte
@@ -425,7 +441,8 @@ export class FileSystemNoteStore implements NoteStore {
         const dest = await this.resolveDir(TRASH_DIR, true);
         if (!dest) throw new Error('Could not open the trash folder');
         // Uniquify within `.trash/` so two same-named notes from different folders can coexist there.
-        const leaf = await uniqueName(titleFromFileName(id), (name) => this.existsIn(dest, name));
+        const [base, extension] = splitExt(basename(id));
+        const leaf = await uniqueName(base, (name) => this.existsIn(dest, name), extension);
         await this.copyFileBytes(srcHandle, dest, leaf);
         const srcDir = await this.resolveDir(dirname(id));
         if (srcDir) await srcDir.removeEntry(basename(id));
@@ -438,7 +455,7 @@ export class FileSystemNoteStore implements NoteStore {
         if (!dir) return [];
         const out: NoteMeta[] = [];
         for await (const handle of dir.values()) {
-            if (handle.kind !== 'file' || !handle.name.toLowerCase().endsWith(MD_EXT)) continue;
+            if (handle.kind !== 'file' || !isEditableFileName(handle.name)) continue;
             // The trash view shows only title + folder + age, so don't read each file's body.
             const file = await (handle as FileSystemFileHandle).getFile();
             out.push({
@@ -458,9 +475,8 @@ export class FileSystemNoteStore implements NoteStore {
         const dest = await this.resolveDir(folder, true); // re-create the folder if it was removed
         if (!dest) throw new Error(`Could not open folder "${folder}"`);
         // The original name may be taken now (another note, or a second restore) — uniquify it.
-        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
-            this.existsIn(dest, name),
-        );
+        const [base, extension] = splitExt(basename(trashId));
+        const leaf = await uniqueName(base, (name) => this.existsIn(dest, name), extension);
         const handle = await this.copyFileBytes(srcHandle, dest, leaf);
         // The FSA has no atomic rename, so this is a copy: the write bumps mtime to "now" (the Tauri /
         // IndexedDB backends preserve it). A restored note therefore surfaces at the top of the
@@ -611,12 +627,20 @@ export class FileSystemNoteStore implements NoteStore {
                     if (isSkippedDir(handle.name) || (!prefix && handle.name === ATTACHMENTS_DIR))
                         continue;
                     await walk(handle, `${prefix}${handle.name}/`);
-                } else if (
-                    !handle.name.toLowerCase().endsWith(MD_EXT) &&
-                    !handle.name.endsWith('.gn-tmp') &&
-                    !handle.name.endsWith('.rename-tmp')
-                ) {
-                    out.push({id: `${prefix}${handle.name}`, name: handle.name});
+                } else if (!isMarkdownFile(handle.name)) {
+                    if (handle.name.endsWith('.gn-tmp') || handle.name.endsWith('.rename-tmp'))
+                        continue;
+                    const id = `${prefix}${handle.name}`;
+                    if (isEditableFileName(handle.name)) {
+                        try {
+                            await readFileText(id, await handle.getFile(), true);
+                            continue;
+                        } catch {
+                            out.push({id, name: handle.name});
+                        }
+                    } else {
+                        out.push({id, name: handle.name});
+                    }
                 }
             }
         };
@@ -683,10 +707,6 @@ export class FileSystemNoteStore implements NoteStore {
         return out.sort();
     }
 
-    /**
-     * Every `.md` file in the tree (recursively), with its POSIX path id and file handle.
-     * @yields each note file as `{id, handle}`.
-     */
     private async *walkNotes(): AsyncGenerator<{id: string; handle: FileSystemFileHandle}> {
         const recurse = async function* (
             dir: FileSystemDirectoryHandle,
@@ -698,10 +718,7 @@ export class FileSystemNoteStore implements NoteStore {
                     // Don't descend the root Attachments/ folder — its files aren't notes.
                     if (prefix === '' && handle.name === ATTACHMENTS_DIR) continue;
                     yield* recurse(handle, `${prefix}${handle.name}/`);
-                } else if (
-                    !handle.name.startsWith('.') &&
-                    handle.name.toLowerCase().endsWith(MD_EXT)
-                ) {
+                } else if (isEditableFileName(handle.name)) {
                     yield {id: `${prefix}${handle.name}`, handle};
                 }
             }

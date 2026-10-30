@@ -10,9 +10,13 @@ import {
     canonicalBody,
     dirname,
     isAttachmentRef,
+    isEditableFileName,
+    isMarkdownFile,
     joinPath,
     mimeFromName,
     previewFromContent,
+    readNoteContent,
+    renamedFileName,
     sanitizeDir,
     sanitizeImportDir,
     sanitizeSegment,
@@ -22,7 +26,45 @@ import {
     titleFromFileName,
     uniqueAttachmentName,
     uniqueName,
+    writeNoteContent,
 } from './noteText';
+
+describe('editable file formats', () => {
+    it('accepts only Markdown, txt and visible extensionless filenames', () => {
+        for (const name of ['note.md', 'Work/pass.junk.TXT', 'money']) {
+            expect(isEditableFileName(name)).toBe(true);
+        }
+        for (const name of [
+            '',
+            '.env',
+            'Work/.hidden.txt',
+            'data.csv',
+            'note.md.gn-tmp',
+            'note.rename-tmp',
+        ]) {
+            expect(isEditableFileName(name)).toBe(false);
+        }
+        expect(isMarkdownFile('Work/Note.MD')).toBe(true);
+        expect(isMarkdownFile('note.txt')).toBe(false);
+    });
+
+    it('keeps plain text byte shape while retaining Markdown normalization', () => {
+        const content = '\uFEFF# literal\r\n\r\n';
+        expect(readNoteContent('note.txt', content)).toBe(content);
+        expect(writeNoteContent('money', content)).toBe(content);
+        expect(readNoteContent('note.md', 'body\n\n')).toBe('body');
+        expect(writeNoteContent('note.md', 'body')).toBe('body\n\n');
+        expect(() => readNoteContent('binary', '\u0000')).toThrow('binary');
+    });
+
+    it('preserves text filename conventions when renaming', () => {
+        expect(renamedFileName('Work/note.txt', 'renamed')).toBe('renamed.txt');
+        expect(renamedFileName('Work/note.txt', 'pass.junk.txt')).toBe('pass.junk.txt');
+        expect(renamedFileName('Work/money', 'budget')).toBe('budget');
+        expect(() => renamedFileName('note.txt', 'data.csv')).toThrow();
+        expect(() => renamedFileName('money', 'data.csv')).toThrow();
+    });
+});
 
 describe('FOLDER_MARKER', () => {
     it('is a dotfile that is not a note (so list() which filters to .md ignores it)', () => {

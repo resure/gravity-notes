@@ -18,7 +18,15 @@ import {
     withTrashedAppearance,
     withoutTrashEntry,
 } from '../storage/metadata';
-import {MD_EXT, dirname, previewFromContent, titleFromFileName} from '../storage/noteText';
+import {
+    basename,
+    dirname,
+    isEditableFileName,
+    isMarkdownFile,
+    previewForFile,
+    splitExt,
+    titleFromFileName,
+} from '../storage/noteText';
 import {
     ConflictError,
     NameCollisionError,
@@ -534,7 +542,9 @@ export function useNotes(
         async (paths: string[]): Promise<boolean> => {
             const ids = new Set<string>();
             for (const path of paths) {
-                if (!path.toLowerCase().endsWith(MD_EXT)) return false;
+                if (!isEditableFileName(path)) return false;
+                if (!isMarkdownFile(path) && !notesRef.current.some((row) => row.id === path))
+                    return false;
                 // The stores stage writes through temp siblings; their churn is not a note.
                 if (path.endsWith('.gn-tmp') || path.endsWith('.rename-tmp')) continue;
                 ids.add(path);
@@ -599,7 +609,7 @@ export function useNotes(
                     if (n.id !== id) return n;
                     const next = {...n, updatedAt};
                     // Refresh the list snippet from the just-saved body, so an edit shows in the list.
-                    if (content !== undefined) next.preview = previewFromContent(content);
+                    if (content !== undefined) next.preview = previewForFile(id, content);
                     return next;
                 }),
             );
@@ -616,7 +626,7 @@ export function useNotes(
     /** Append a freshly-created note to the list (preview derived from its initial body). */
     const addNote = useCallback((meta: NoteMeta, content = '') => {
         setNotes((prev) => {
-            const row = {...meta, preview: previewFromContent(content)};
+            const row = {...meta, preview: previewForFile(meta.id, content)};
             // A concurrent watcher/focus refresh may already have listed the just-created file
             // (create awaits a metadata write before patching the list) — replace, don't append,
             // or the row (and its React key) would double until the next full refresh.
@@ -832,7 +842,8 @@ export function useNotes(
             try {
                 // Copy the body verbatim so the copy shares the original's attachment refs.
                 const source = await store.get(id);
-                const meta = await store.create(`${titleFromFileName(id)} copy`, dirname(id));
+                const [base, extension] = splitExt(basename(id));
+                const meta = await store.create(`${base} copy`, dirname(id), extension);
                 stampLocalWrite(meta.id); // our writes (create + save below) — not external
                 const saved = await store.save(meta.id, source.content, meta.updatedAt ?? 0);
                 await persistMetadata(
@@ -1301,7 +1312,8 @@ export function useNotes(
                 // The file was deleted on disk — recreate it with our content rather than abandoning
                 // the user to "Save as copy". create() reuses the same name when it's free, so the
                 // id usually survives; adopt the resulting id in place if it differs.
-                const recreated = await store.create(note?.title ?? 'Note', dirname(conflict.id));
+                const [base, extension] = splitExt(basename(conflict.id));
+                const recreated = await store.create(base, dirname(conflict.id), extension);
                 stampLocalWrite(recreated.id); // our recreate + save — not external
                 const meta = await store.save(recreated.id, content, recreated.updatedAt ?? 0);
                 baselineRef.current = meta.updatedAt ?? null;
@@ -1343,10 +1355,14 @@ export function useNotes(
     const saveAsCopy = useCallback(async (): Promise<string | null> => {
         if (!conflict) return null;
         const content = pendingRef.current?.content ?? note?.content ?? '';
-        const title = note?.title ?? 'Note';
         pendingRef.current = null;
         try {
-            const copy = await store.create(`${title} (conflicted copy)`, dirname(conflict.id));
+            const [base, extension] = splitExt(basename(conflict.id));
+            const copy = await store.create(
+                `${base} (conflicted copy)`,
+                dirname(conflict.id),
+                extension,
+            );
             stampLocalWrite(copy.id); // our copy write — not an external change
             await store.save(copy.id, content, copy.updatedAt ?? 0);
             await persistMetadata(

@@ -11,6 +11,7 @@ export type EditorFont = 'sans' | 'serif' | 'mono';
 export type AccentColor = 'amber' | 'blue' | 'gray';
 /** Max text measure of the editor/preview column. `unlimited` = no cap (fills the pane). */
 export type TextWidth = 'narrow' | 'normal' | 'wide' | 'unlimited';
+export type TextFileMode = 'text' | 'markdown';
 
 /** Override variants add `'default'` — inherit the wider scope's value instead of overriding it. */
 export type EditorFontPref = 'default' | EditorFont;
@@ -20,6 +21,7 @@ export type TextWidthPref = 'default' | TextWidth;
 export const EDITOR_FONTS: readonly EditorFont[] = ['sans', 'serif', 'mono'];
 export const ACCENT_COLORS: readonly AccentColor[] = ['amber', 'blue', 'gray'];
 export const TEXT_WIDTHS: readonly TextWidth[] = ['narrow', 'normal', 'wide', 'unlimited'];
+const TEXT_FILE_MODES: readonly TextFileMode[] = ['text', 'markdown'];
 
 /** App-wide user preferences (persisted in localStorage, like theme/sidebar). */
 export interface Settings {
@@ -35,6 +37,7 @@ export interface Settings {
     accentColor: AccentColor;
     /** Editor/preview text column width. Default `normal` (a readable measure). */
     textWidth: TextWidth;
+    textFileMode: TextFileMode;
 }
 
 const DEFAULTS: Settings = {
@@ -44,19 +47,22 @@ const DEFAULTS: Settings = {
     editorFont: 'sans',
     accentColor: 'amber',
     textWidth: 'normal',
+    textFileMode: 'text',
 };
 
-/** Per-workspace overrides of the appearance settings; `'default'` inherits the app-wide value. */
+/** Per-workspace settings overrides; `'default'` inherits the app-wide value. */
 export interface WorkspaceSettings {
     editorFont: EditorFontPref;
     accentColor: AccentColorPref;
     textWidth: TextWidthPref;
+    textFileMode: 'default' | TextFileMode;
 }
 
 const WORKSPACE_DEFAULTS: WorkspaceSettings = {
     editorFont: 'default',
     accentColor: 'default',
     textWidth: 'default',
+    textFileMode: 'default',
 };
 
 /**
@@ -104,6 +110,7 @@ function loadSettings(key: string): Settings {
             editorFont: oneOf(raw.editorFont, EDITOR_FONTS, DEFAULTS.editorFont),
             accentColor: oneOf(raw.accentColor, ACCENT_COLORS, DEFAULTS.accentColor),
             textWidth: oneOf(raw.textWidth, TEXT_WIDTHS, DEFAULTS.textWidth),
+            textFileMode: oneOf(raw.textFileMode, TEXT_FILE_MODES, DEFAULTS.textFileMode),
         };
     } catch {
         return DEFAULTS;
@@ -118,6 +125,11 @@ function loadWorkspaceOverrides(key: string): WorkspaceSettings {
             editorFont: oneOf(raw.editorFont, FONT_PREFS, 'default'),
             accentColor: oneOf(raw.accentColor, ACCENT_PREFS, 'default'),
             textWidth: oneOf(raw.textWidth, WIDTH_PREFS, 'default'),
+            textFileMode: oneOf<'default' | TextFileMode>(
+                raw.textFileMode,
+                TEXT_FILE_MODES,
+                'default',
+            ),
         };
     } catch {
         return WORKSPACE_DEFAULTS;
@@ -192,7 +204,7 @@ export interface UseWorkspaceSettings {
 }
 
 /**
- * Per-workspace appearance overrides, persisted under a workspace-namespaced key. `App` remounts
+ * Per-workspace settings overrides, persisted under a workspace-namespaced key. `App` remounts
  * `Workspace` keyed by workspace, so this hook mounts fresh per workspace and `workspaceId` (hence
  * the storage key) is constant for its lifetime — no cross-workspace reconcile to worry about.
  */
@@ -202,6 +214,10 @@ export function useWorkspaceSettings(workspaceId: string): UseWorkspaceSettings 
         loadWorkspaceOverrides,
     );
     return {workspaceSettings, setWorkspaceSetting};
+}
+
+export function effectiveTextFileMode(app: Settings, workspace: WorkspaceSettings): TextFileMode {
+    return workspace.textFileMode === 'default' ? app.textFileMode : workspace.textFileMode;
 }
 
 /**

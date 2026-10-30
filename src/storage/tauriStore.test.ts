@@ -1,5 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {isEditableFileName} from './noteText';
 import {ConflictError, NameCollisionError} from './types';
 
 // Holder the hoisted mock reads at call time; the fake FS is (re)created per test in beforeEach.
@@ -183,11 +184,10 @@ class FakeFs {
         return mtime;
     }
 
-    /** `.md` files NOT inside any dot-directory — the Rust walk skips `.git`/`.trash`/… subtrees. */
     private mdFiles() {
         return [...this.files.values()].filter(
             (f) =>
-                f.name.toLowerCase().endsWith('.md') &&
+                isEditableFileName(f.name) &&
                 !f.name
                     .split('/')
                     .slice(0, -1)
@@ -203,13 +203,12 @@ class FakeFs {
         }));
     }
 
-    /** The `.md` files directly inside `sub/` (non-recursive) — backs `notes_list_dir` / the trash. */
     private listDir(sub: string) {
         const prefix = `${this.key(sub)}/`;
         return [...this.files.values()]
             .filter(
                 (f) =>
-                    f.name.toLowerCase().endsWith('.md') &&
+                    isEditableFileName(f.name) &&
                     this.key(f.name).startsWith(prefix) &&
                     !this.key(f.name).slice(prefix.length).includes('/'),
             )
@@ -251,6 +250,51 @@ describe('TauriNoteStore', () => {
 
     beforeEach(() => {
         ({store, fs} = newStore());
+    });
+
+    describe('plain text files', () => {
+        it.each(['note.txt', 'money'])(
+            'preserves literal contents and file type for %s',
+            async (id) => {
+                const content = '\uFEFF# literal *text*\r\n\r\n';
+                fs.write(id, content);
+                const note = await store.get(id);
+                expect(note.content).toBe(content);
+                expect((await store.getAll())[0].content).toBe(content);
+                expect((await store.snapshot()).notes[0].preview).toBe('# literal *text*');
+                expect((await store.heads([id]))[0]?.preview).toBe('# literal *text*');
+
+                await store.save(id, content + 'changed', note.updatedAt ?? 0);
+                expect(fs.raw(id)).toBe(content + 'changed');
+                const renamed = await store.rename(id, 'renamed');
+                const expectedLeaf = id.endsWith('.txt') ? 'renamed.txt' : 'renamed';
+                expect(renamed.id).toBe(expectedLeaf);
+                const moved = await store.move(renamed.id, 'Work');
+                const trashId = await store.trash(moved.id);
+                expect(trashId).toBe(`.trash/${expectedLeaf}`);
+                expect((await store.listTrash())[0].id).toBe(trashId);
+                const restored = await store.restore(trashId, 'Work');
+                expect(restored.id).toBe(`Work/${expectedLeaf}`);
+                expect((await store.get(restored.id)).content).toBe(content + 'changed');
+            },
+        );
+
+        it('creates numbered text copies and preserves conflict protection', async () => {
+            const first = await store.create('note', '', '.txt');
+            const second = await store.create('note', '', '.txt');
+            expect([first.id, second.id]).toEqual(['note.txt', 'note 2.txt']);
+            expect(fs.raw(first.id)).toBe('');
+            fs.write(first.id, 'external');
+            await expect(store.save(first.id, 'mine', first.updatedAt ?? 0)).rejects.toBeInstanceOf(
+                ConflictError,
+            );
+            expect(fs.raw(first.id)).toBe('external');
+        });
+
+        it('rejects binary strings received through the native bridge', async () => {
+            fs.write('binary', '\u0000bad');
+            await expect(store.get('binary')).rejects.toThrow('binary');
+        });
     });
 
     it('returns the list, folder tree and files from one snapshot command', async () => {

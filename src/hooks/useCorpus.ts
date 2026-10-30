@@ -1,8 +1,10 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 
-import {stripTrailingNewlines} from '../storage/noteText';
+import {isMarkdownFile, readNoteContent} from '../storage/noteText';
 import type {Note, NoteMeta, NoteStore} from '../storage/types';
 import {type WikiLinkRef, extractWikiLinks} from '../wikiLinks';
+
+import type {TextFileMode} from './useSettings';
 
 /**
  * The lazily-loaded full-text body corpus, shared by full-text search and backlinks. Both features
@@ -99,7 +101,7 @@ function mergeLinkIndex(
     }
     if (!changed) {
         for (const [id, extracted] of fetchedLinks) {
-            if (!sameLinks(cachedLinks.get(id), extracted)) {
+            if (!cachedLinks.has(id) || !sameLinks(cachedLinks.get(id), extracted)) {
                 changed = true;
                 break;
             }
@@ -153,12 +155,13 @@ export function useCorpus(
      * round-trip per autosave). Used only while its `updatedAt` still matches the list row.
      */
     openNote?: Note | null,
+    textFileMode: TextFileMode = 'text',
 ): Corpus {
     // content/lower entries (search indices). Fresh identity on every update — search needs that.
     const [corpus, setCorpus] = useState<Map<string, CorpusEntry>>(() => new Map());
     // The wiki-link index is held SEPARATELY so it can keep a stable identity across an update that
     // touches only prose (no `[[…]]` change): the backlink inversion keys on this map's identity.
-    const [linksById, setLinksById] = useState<Map<string, WikiLinkRef[]>>(() => new Map());
+    const [rawLinksById, setRawLinksById] = useState<Map<string, WikiLinkRef[]>>(() => new Map());
     // The signature the corpus reflects; drives both the reload guard and the `loading` flag.
     const [loadedSignature, setLoadedSignature] = useState<string | null>(null);
     const loadingRef = useRef(false);
@@ -171,8 +174,8 @@ export function useCorpus(
     notesRef.current = notes;
     const corpusRef = useRef(corpus);
     corpusRef.current = corpus;
-    const linksRef = useRef(linksById);
-    linksRef.current = linksById;
+    const linksRef = useRef(rawLinksById);
+    linksRef.current = rawLinksById;
     const urgentRef = useRef(urgent);
     urgentRef.current = urgent;
     const openNoteRef = useRef(openNote);
@@ -187,7 +190,7 @@ export function useCorpus(
         loadingRef.current = false;
         setLoadedSignature(null);
         setCorpus(new Map());
-        setLinksById(new Map());
+        setRawLinksById(new Map());
     }, [store]);
 
     // (Re)load the corpus while active. Deps are intentionally just activation, the list signature,
@@ -284,7 +287,7 @@ export function useCorpus(
                     if (saved) {
                         const row = currentNotes.find((n) => n.id === saved.id);
                         if (row && (row.updatedAt ?? 0) === (saved.updatedAt ?? 0)) {
-                            const content = stripTrailingNewlines(saved.content);
+                            const content = readNoteContent(saved.id, saved.content);
                             const cached = nextCorpus.get(saved.id);
                             if (
                                 !cached ||
@@ -304,7 +307,7 @@ export function useCorpus(
                     // else: leave linksById untouched (stable identity) — the graph didn't change.
                 }
                 setCorpus(nextCorpus);
-                if (nextLinks) setLinksById(nextLinks);
+                if (nextLinks) setRawLinksById(nextLinks);
                 setLoadedSignature(signature);
             } catch {
                 // A corpus read failure degrades both features (title-only search, no backlinks).
@@ -320,6 +323,20 @@ export function useCorpus(
             loadingRef.current = false;
         };
     }, [active, signature, store, loadedSignature]);
+
+    const selectedLinksRef = useRef<Map<string, WikiLinkRef[]>>(new Map());
+    const linksById = useMemo(() => {
+        const selected = new Map<string, WikiLinkRef[]>();
+        for (const [id, links] of rawLinksById) {
+            selected.set(
+                id,
+                isMarkdownFile(id) || textFileMode === 'markdown' ? links : EMPTY_LINKS,
+            );
+        }
+        const next = mergeLinkIndex(selectedLinksRef.current, new Set(selected.keys()), selected);
+        if (next) selectedLinksRef.current = next;
+        return selectedLinksRef.current;
+    }, [rawLinksById, textFileMode]);
 
     const contentById = useMemo(() => {
         const map = new Map<string, string>();

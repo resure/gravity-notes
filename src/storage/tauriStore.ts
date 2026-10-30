@@ -8,19 +8,21 @@ import {
     MD_EXT,
     TRASH_DIR,
     basename,
-    canonicalBody,
     dirname,
     isReservedSegment,
     joinPath,
     mimeFromName,
-    previewFromContent,
+    previewForFile,
+    readNoteContent,
+    renamedFileName,
     sanitizeDir,
     sanitizeSegment,
     sanitizeTitle,
-    stripTrailingNewlines,
+    splitExt,
     titleFromFileName,
     uniqueAttachmentName,
     uniqueName,
+    writeNoteContent,
 } from './noteText';
 import {
     type AttachmentMeta,
@@ -105,17 +107,6 @@ function notFound(id: string): DOMException {
     return new DOMException(`"${id}" not found`, 'NotFoundError');
 }
 
-/**
- * Notes stored as individual `.md` files in a user-picked directory, read and written through
- * native Rust commands (the File System Access API is unavailable in macOS WKWebView). The file
- * name (with extension) is the note id; the name without `.md` is the title.
- *
- * Semantics intentionally match `FileSystemNoteStore` — `<Title>.md` ids, canonical body
- * shape, `updatedAt`-based optimistic concurrency (`ConflictError`), `NotFoundError` on a missing
- * note, and case-only rename via a temp name — so `useNotes` is unaffected by which backend runs.
- * Real atomic `fs::rename` (Rust side) replaces the web backend's copy-then-delete rename; the
- * write helper is atomic there too, preserving the same crash-safety guarantee.
- */
 export class TauriNoteStore implements NoteStore {
     /** The Rust `notes_list`/`notes_read_all` commands recurse subdirectories. */
     readonly listsRecursively = true;
@@ -128,7 +119,7 @@ export class TauriNoteStore implements NoteStore {
             id: entry.name,
             title: titleFromFileName(entry.name),
             updatedAt: entry.modifiedMs,
-            preview: previewFromContent(entry.head),
+            preview: previewForFile(entry.name, entry.head),
         }));
         metas.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return metas;
@@ -144,7 +135,7 @@ export class TauriNoteStore implements NoteStore {
             id: entry.name,
             title: titleFromFileName(entry.name),
             updatedAt: entry.modifiedMs,
-            preview: previewFromContent(entry.head),
+            preview: previewForFile(entry.name, entry.head),
         }));
         notes.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
         return {
@@ -165,7 +156,7 @@ export class TauriNoteStore implements NoteStore {
                       id: entry.name,
                       title: titleFromFileName(entry.name),
                       updatedAt: entry.modifiedMs,
-                      preview: previewFromContent(entry.head),
+                      preview: previewForFile(entry.name, entry.head),
                   }
                 : null,
         );
@@ -182,8 +173,7 @@ export class TauriNoteStore implements NoteStore {
             id: entry.name,
             title: titleFromFileName(entry.name),
             updatedAt: entry.modifiedMs,
-            // Stripped to match get()/the editor's serialized shape (parity for the search corpus).
-            content: stripTrailingNewlines(entry.content),
+            content: readNoteContent(entry.name, entry.content),
         }));
     }
 
@@ -194,21 +184,20 @@ export class TauriNoteStore implements NoteStore {
             id,
             title: titleFromFileName(id),
             updatedAt: entry.modifiedMs,
-            // Strip so the in-memory body matches what the editor serializes (parity with FS get()).
-            content: stripTrailingNewlines(entry.content),
+            content: readNoteContent(id, entry.content),
         };
     }
 
-    async create(title: string, parentPath = ''): Promise<NoteMeta> {
+    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
         const dir = sanitizeDir(parentPath);
         // Scope the collision probe to the target folder; notes_write create_dir_all's the parent.
-        const leaf = await uniqueName(sanitizeTitle(title), (name) =>
-            this.exists(joinPath(dir, name)),
+        const leaf = await uniqueName(
+            sanitizeTitle(title),
+            (name) => this.exists(joinPath(dir, name)),
+            extension,
         );
         const id = joinPath(dir, leaf);
-        // Write the canonical "blank line at EOF" shape save() produces (get() strips it back),
-        // so a brand-new note has a consistent on-disk shape for external tools.
-        const updatedAt = await this.write(id, canonicalBody(''));
+        const updatedAt = await this.write(id, writeNoteContent(id, ''));
         return {id, title: titleFromFileName(id), updatedAt};
     }
 
@@ -219,7 +208,7 @@ export class TauriNoteStore implements NoteStore {
         if (current !== baseUpdatedAt) {
             throw new ConflictError(id, current);
         }
-        const updatedAt = await this.write(id, canonicalBody(content));
+        const updatedAt = await this.write(id, writeNoteContent(id, content));
         return {id, title: titleFromFileName(id), updatedAt};
     }
 
@@ -228,9 +217,9 @@ export class TauriNoteStore implements NoteStore {
     }
 
     async rename(id: string, nextTitle: string): Promise<NoteMeta> {
-        const base = sanitizeTitle(nextTitle);
+        const nextLeaf = renamedFileName(id, nextTitle);
         // Rename is leaf-only: re-join the new leaf onto the note's own folder so it stays put.
-        const nextName = joinPath(dirname(id), base + MD_EXT);
+        const nextName = joinPath(dirname(id), nextLeaf);
         if (nextName === id) {
             return {id, title: titleFromFileName(id)};
         }
@@ -241,7 +230,7 @@ export class TauriNoteStore implements NoteStore {
         // Renaming onto another note's name is rejected (no auto-numbered copy); the caller surfaces
         // it to the user. Skipped for a case-only rename (the only "match" is itself).
         if (!caseOnlyRename && (await this.exists(nextName))) {
-            throw new NameCollisionError(id, base);
+            throw new NameCollisionError(id, titleFromFileName(nextLeaf));
         }
         if (caseOnlyRename) {
             // Go through a distinct temp name so the case actually changes on a case-insensitive FS.
@@ -299,8 +288,11 @@ export class TauriNoteStore implements NoteStore {
     async trash(id: string): Promise<string> {
         // Uniquify within `.trash/`, then move the file there (notes_rename creates `.trash/` and
         // prunes the source's now-empty ancestors — a pure relocation, mtime preserved).
-        const leaf = await uniqueName(titleFromFileName(id), (name) =>
-            this.exists(joinPath(TRASH_DIR, name)),
+        const [base, extension] = splitExt(basename(id));
+        const leaf = await uniqueName(
+            base,
+            (name) => this.exists(joinPath(TRASH_DIR, name)),
+            extension,
         );
         const trashId = joinPath(TRASH_DIR, leaf);
         await invoke('notes_rename', {dir: this.dir, from: id, to: trashId});
@@ -325,9 +317,8 @@ export class TauriNoteStore implements NoteStore {
         // A vanished trash entry maps to a "deleted" conflict, matching the FS/IDB backends.
         if ((await this.stat(trashId)) === null) throw notFound(trashId);
         // The original leaf may be taken now — uniquify against the destination folder.
-        const leaf = await uniqueName(titleFromFileName(trashId), (name) =>
-            this.exists(joinPath(dir, name)),
-        );
+        const [base, extension] = splitExt(basename(trashId));
+        const leaf = await uniqueName(base, (name) => this.exists(joinPath(dir, name)), extension);
         const newId = joinPath(dir, leaf);
         // notes_rename create_dir_all's the destination (re-creating a removed folder) and prunes the
         // now-empty `.trash/`, returning the post-move mtime so the baseline re-seeds.

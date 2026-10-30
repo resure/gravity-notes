@@ -90,6 +90,22 @@ beforeEach(() => {
 });
 
 describe('EditorPane — the surface a note opens on', () => {
+    it('passes the configured text-file mode to the body without changing its identity', () => {
+        renderPane({
+            note: {...NOTE, id: 'readme.txt'},
+            textFileMode: 'markdown',
+        });
+        expect(bodyProps.current?.textFileMode).toBe('markdown');
+        expect(bodyProps.current?.note).toMatchObject({id: 'readme.txt'});
+    });
+
+    it('does not label ordinary text as unrepresentable Markdown', () => {
+        renderPane({
+            note: {...NOTE, id: 'readme.txt', content: '---\n[[literal]]\n---'},
+        });
+        expect(bodyProps.current?.forceSource).toBe(false);
+    });
+
     it('hands the body a plain note as blocks', () => {
         renderPane();
         expect(bodyProps.current?.forceSource).toBe(false);

@@ -1,0 +1,12 @@
+.file-type-badge {
+    flex-shrink: 0;
+    padding: 1px 2px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-xs);
+    color: var(--text-3);
+    font-family: var(--font-ui);
+    font-size: calc(var(--fs-label) - 2px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.04em;
+}
