@@ -9,7 +9,7 @@ import {SettingsDialog} from './SettingsDialog';
 
 beforeEach(() => localStorage.clear());
 
-function SettingsHarness() {
+function SettingsHarness({folders = ['Work', 'Work/Sub']}: {folders?: readonly string[]}) {
     const {settings, setSetting} = useSettings();
     const {workspaceSettings, setWorkspaceSetting} = useWorkspaceSettings('settings-test');
     const {newFileSettings, setNewFileSetting} = useNewFileSettings('settings-test');
@@ -24,7 +24,7 @@ function SettingsHarness() {
             workspaceLabel="Test"
             newFileSettings={newFileSettings}
             setNewFileSetting={setNewFileSetting}
-            folders={['Work', 'Work/Sub']}
+            folders={folders}
         />
     );
 }
@@ -98,6 +98,49 @@ it('keeps an unavailable folder visible until another destination is chosen', as
         JSON.parse(localStorage.getItem('gravity-notes:settings-test:new-files') ?? '{}').folder,
     ).toBe('');
 });
+
+it('keeps a selected nested Attachments folder after another preference changes and reloads', async () => {
+    const user = userEvent.setup();
+    const folders = ['Work', 'Work/Attachments'];
+    const {unmount} = renderWithProviders(<SettingsHarness folders={folders} />);
+    await user.click(screen.getByRole('combobox', {name: 'New file folder'}));
+    await user.click(await screen.findByRole('option', {name: 'Work / Attachments'}));
+    await waitFor(() => expect(screen.queryByRole('listbox', {hidden: true})).toBeNull());
+    await user.type(screen.getByRole('textbox', {name: 'New file default name'}), 'Meeting');
+    expect(
+        JSON.parse(localStorage.getItem('gravity-notes:settings-test:new-files') ?? '{}'),
+    ).toMatchObject({folder: 'Work/Attachments', defaultName: 'Meeting'});
+
+    unmount();
+    renderWithProviders(<SettingsHarness folders={folders} />);
+    expect(screen.getByRole('combobox', {name: 'New file folder'})).toHaveTextContent(
+        'Work / Attachments',
+    );
+    expect(screen.getByText(/^Example:/)).toHaveTextContent('Work/Attachments/Meeting.md');
+});
+
+it.each(['Q1?', 'Work/Q1?', 'Attachments', 'attachments/Inbox', 'Work/node_modules', '.hidden'])(
+    'shows the unsupported folder %j without allowing it to replace the saved destination',
+    async (folder) => {
+        localStorage.setItem(
+            'gravity-notes:settings-test:new-files',
+            JSON.stringify({folder: 'Work'}),
+        );
+        const user = userEvent.setup();
+        renderWithProviders(<SettingsHarness folders={['Work', folder]} />);
+        await user.click(screen.getByRole('combobox', {name: 'New file folder'}));
+        const option = await screen.findByRole('option', {
+            name: `${folder.replaceAll('/', ' / ')} (unsupported folder name)`,
+        });
+        expect(option).toHaveAttribute('aria-disabled', 'true');
+        await user.click(option);
+        expect(
+            JSON.parse(localStorage.getItem('gravity-notes:settings-test:new-files') ?? '{}')
+                .folder,
+        ).toBe('Work');
+        expect(screen.getByRole('combobox', {name: 'New file folder'})).toHaveTextContent('Work');
+    },
+);
 
 it('disables the default name for date-only filenames without discarding it', async () => {
     localStorage.setItem(

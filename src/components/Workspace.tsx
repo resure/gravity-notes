@@ -1236,29 +1236,24 @@ export function Workspace({
                 parentPath,
                 selectedFolder,
             });
-            if (newFileSettings.folder && !notes.folders.includes(creation.parentPath)) {
-                onError(
-                    `The default folder “${creation.parentPath}” is unavailable. Choose a folder in Settings.`,
-                );
-                return;
-            }
             nav.prepareCreate();
             void (async () => {
                 const id = await notes.create(
                     creation.title,
                     creation.parentPath,
                     creation.extension,
+                    newFileSettings.folder !== null ? {requireExistingFolder: true} : undefined,
                 );
                 if (id) {
                     if (newFileSettings.folder !== null && selectedFolder !== null) {
                         setSelectedFolder(creation.parentPath);
                     }
                     nav.setSelected(id);
-                    revealNote(id); // mobile: reveal the new note's editor once it's created + loaded
+                    revealNote(id);
                 }
             })();
         },
-        [notes, nav, selectedFolder, revealNote, newFileSettings, onError],
+        [notes, nav, selectedFolder, revealNote, newFileSettings],
     );
 
     // Duplicate a note: copy it (shared attachments), then select the copy with its title armed for

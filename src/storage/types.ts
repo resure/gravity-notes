@@ -130,6 +130,10 @@ export interface StoreSnapshot {
     files: OtherFile[];
 }
 
+export interface NoteCreateOptions {
+    requireExistingFolder?: boolean;
+}
+
 export interface NoteStore {
     /** List all notes, typically sorted by most-recently-updated. */
     list(): Promise<NoteMeta[]>;
@@ -165,7 +169,12 @@ export interface NoteStore {
      *   root. The collision probe is scoped to that folder, so the same title is free in different
      *   folders.
      */
-    create(title: string, parentPath?: string, extension?: string): Promise<NoteMeta>;
+    create(
+        title: string,
+        parentPath?: string,
+        extension?: string,
+        options?: NoteCreateOptions,
+    ): Promise<NoteMeta>;
     /**
      * Persist the body of an existing note using optimistic concurrency, where
      * `baseUpdatedAt` is the `updatedAt` the caller last saw for this note.
@@ -289,6 +298,13 @@ export interface NoteStore {
      * once its listing recurses.
      */
     readonly listsRecursively: boolean;
+}
+
+export class MissingFolderError extends Error {
+    constructor(readonly folder: string) {
+        super(`The folder “${folder || '/'}” is unavailable.`);
+        this.name = 'MissingFolderError';
+    }
 }
 
 /** Thrown by {@link NoteStore.save} when the file changed on disk since the baseline. */

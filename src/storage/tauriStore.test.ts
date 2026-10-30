@@ -1,10 +1,17 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {isEditableFileName} from './noteText';
-import {ConflictError, NameCollisionError} from './types';
+import {ConflictError, MissingFolderError, NameCollisionError} from './types';
 
 // Holder the hoisted mock reads at call time; the fake FS is (re)created per test in beforeEach.
 const {fsHolder} = vi.hoisted(() => ({fsHolder: {current: null as FakeFs | null}}));
+const {platformHolder} = vi.hoisted(() => ({platformHolder: {isIos: false}}));
+
+vi.mock('../isTauri', () => ({
+    get isIos() {
+        return platformHolder.isIos;
+    },
+}));
 
 vi.mock('@tauri-apps/api/core', () => ({
     // `async` so a thrown dispatch (e.g. renaming a missing file) surfaces as a rejected promise,
@@ -63,6 +70,8 @@ class FakeFs {
                 return this.list();
             case 'notes_list_dir':
                 return this.listDir(args.sub as string);
+            case 'notes_list_folders':
+                return this.folders();
             case 'notes_read_all':
                 return this.readAll();
             case 'notes_snapshot':
@@ -81,6 +90,21 @@ class FakeFs {
                 return this.readOpt(name);
             case 'notes_write':
                 return this.write(name, args.content as string);
+            case 'notes_write_existing_parent': {
+                const parent = name.slice(0, name.lastIndexOf('/'));
+                if (name.includes('/') && !this.exists(parent)) {
+                    throw new Error('GRAVITY_NOTES_MISSING_FOLDER');
+                }
+                return this.write(name, args.content as string);
+            }
+            case 'plugin:icloud-fs|write_note': {
+                const payload = args.payload as Record<string, unknown>;
+                const modifiedMs = this.dispatch(
+                    payload.requireExistingParent ? 'notes_write_existing_parent' : 'notes_write',
+                    {name: payload.name, content: payload.contents},
+                );
+                return {modifiedMs};
+            }
             case 'notes_rename':
                 return this.rename(args.from as string, args.to as string);
             case 'notes_remove':
@@ -249,6 +273,7 @@ describe('TauriNoteStore', () => {
     let fs: FakeFs;
 
     beforeEach(() => {
+        platformHolder.isIos = false;
         ({store, fs} = newStore());
     });
 
@@ -326,6 +351,96 @@ describe('TauriNoteStore', () => {
     });
 
     describe('folders', () => {
+        it.each([false, true])(
+            'requires an existing parent at the native write boundary (iOS: %s)',
+            async (ios) => {
+                platformHolder.isIos = ios;
+                fs.write('Work/.gnkeep', '');
+                const dispatch = fs.dispatch.bind(fs);
+                const calls = vi.spyOn(fs, 'dispatch').mockImplementation((cmd, args) => {
+                    if (
+                        cmd ===
+                        (ios ? 'plugin:icloud-fs|write_note' : 'notes_write_existing_parent')
+                    ) {
+                        dispatch('notes_remove_dir_all', {path: 'Work'});
+                    }
+                    return dispatch(cmd, args);
+                });
+
+                const result = store.create('Roadmap', 'Work', '.md', {
+                    requireExistingFolder: true,
+                });
+                await expect(result).rejects.toBeInstanceOf(MissingFolderError);
+                await expect(result).rejects.toMatchObject({folder: 'Work'});
+                expect(fs.raw('Work/Roadmap.md')).toBeUndefined();
+                expect(await store.listFolders()).not.toContain('Work');
+                if (ios) {
+                    expect(calls).toHaveBeenCalledWith('plugin:icloud-fs|write_note', {
+                        payload: {
+                            dir: '/notes',
+                            name: 'Work/Roadmap.md',
+                            contents: '\n\n',
+                            requireExistingParent: true,
+                        },
+                    });
+                } else {
+                    expect(calls).toHaveBeenCalledWith('notes_write_existing_parent', {
+                        dir: '/notes',
+                        name: 'Work/Roadmap.md',
+                        content: '\n\n',
+                    });
+                }
+            },
+        );
+
+        it.each([false, true])(
+            'keeps native write failures distinct from a missing folder (iOS: %s)',
+            async (ios) => {
+                platformHolder.isIos = ios;
+                const dispatch = fs.dispatch.bind(fs);
+                const failure = new Error('Permission denied: /notes/GRAVITY_NOTES_MISSING_FOLDER');
+                vi.spyOn(fs, 'dispatch').mockImplementation((cmd, args) => {
+                    if (
+                        cmd ===
+                        (ios ? 'plugin:icloud-fs|write_note' : 'notes_write_existing_parent')
+                    ) {
+                        throw failure;
+                    }
+                    return dispatch(cmd, args);
+                });
+                await expect(
+                    store.create('Roadmap', 'Work', '.md', {requireExistingFolder: true}),
+                ).rejects.toBe(failure);
+            },
+        );
+
+        it.each([false, true])(
+            'preserves native parent creation by default (iOS: %s)',
+            async (ios) => {
+                platformHolder.isIos = ios;
+                const calls = vi.spyOn(fs, 'dispatch');
+                await store.create('Roadmap', 'Work');
+                expect(fs.raw('Work/Roadmap.md')).toBe('\n\n');
+                if (ios) {
+                    expect(calls).toHaveBeenCalledWith('plugin:icloud-fs|write_note', {
+                        payload: {dir: '/notes', name: 'Work/Roadmap.md', contents: '\n\n'},
+                    });
+                } else {
+                    expect(calls).toHaveBeenCalledWith('notes_write', {
+                        dir: '/notes',
+                        name: 'Work/Roadmap.md',
+                        content: '\n\n',
+                    });
+                }
+            },
+        );
+
+        it('creates in an existing folder when required', async () => {
+            fs.write('Work/.gnkeep', '');
+            await store.create('Roadmap', 'Work', '.md', {requireExistingFolder: true});
+            expect(fs.raw('Work/Roadmap.md')).toBe('\n\n');
+        });
+
         it('creates a note inside a subfolder with a basename title', async () => {
             const meta = await store.create('Roadmap', 'Work');
             expect(meta).toMatchObject({id: 'Work/Roadmap.md', title: 'Roadmap'});

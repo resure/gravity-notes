@@ -601,6 +601,24 @@ fn notes_write(dir: String, name: String, content: String) -> Result<f64, String
     Ok(modified_ms(&meta))
 }
 
+const MISSING_FOLDER: &str = "GRAVITY_NOTES_MISSING_FOLDER";
+
+#[tauri::command]
+fn notes_write_existing_parent(dir: String, name: String, content: String) -> Result<f64, String> {
+    let missing_folder = |error: std::io::Error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            MISSING_FOLDER.to_string()
+        } else {
+            stringify(error)
+        }
+    };
+    fs::metadata(&dir).map_err(missing_folder)?;
+    let path = resolve_within(&dir, &name)?;
+    write_atomic(&path, content.as_bytes()).map_err(missing_folder)?;
+    let meta = fs::metadata(&path).map_err(stringify)?;
+    Ok(modified_ms(&meta))
+}
+
 /// Rename/move `from` to `to` (creating `to`'s parent folders) and return `to`'s mtime. Both
 /// paths are containment-checked. `from` and `to` may live in different folders — this also backs
 /// a cross-folder move. Collision and case-only-rename handling lives in TS; here they're distinct.
@@ -1931,6 +1949,7 @@ pub fn run() {
             notes_probe,
             notes_read_opt,
             notes_write,
+            notes_write_existing_parent,
             notes_rename,
             notes_remove,
             attachment_write,
@@ -2000,6 +2019,43 @@ mod tests {
 
     fn s(p: &Path) -> String {
         p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn write_existing_parent_does_not_recreate_a_removed_folder() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join("Work/Sub")).unwrap();
+        fs::remove_dir_all(dir.join("Work")).unwrap();
+        let result = notes_write_existing_parent(s(&dir), "Work/Sub/Note.md".into(), "body".into());
+        assert_eq!(result.unwrap_err(), MISSING_FOLDER);
+        assert!(!dir.join("Work").exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_existing_parent_writes_in_existing_folder_and_root() {
+        let dir = temp_dir();
+        fs::create_dir_all(dir.join("Work/Sub")).unwrap();
+        for name in ["Work/Sub/Note.md", "Root.md"] {
+            let modified =
+                notes_write_existing_parent(s(&dir), name.into(), "body".into()).unwrap();
+            assert!(modified > 0.0);
+            assert_eq!(fs::read_to_string(dir.join(name)).unwrap(), "body");
+            assert!(!tmp_sibling(&dir.join(name)).exists());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_existing_parent_preserves_other_errors() {
+        let dir = temp_dir();
+        fs::write(dir.join("Work"), "file").unwrap();
+        let error =
+            notes_write_existing_parent(s(&dir), "Work/Note.md".into(), "body".into()).unwrap_err();
+        assert_ne!(error, MISSING_FOLDER);
+        assert_eq!(fs::read_to_string(dir.join("Work")).unwrap(), "file");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

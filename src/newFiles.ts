@@ -1,4 +1,4 @@
-import {isReservedSegment, sanitizeDir} from './storage/noteText';
+import {ATTACHMENTS_DIR, SKIP_DIR_NAMES, sanitizeDir} from './storage/noteText';
 
 export interface NewFileSettings {
     folder: string | null;
@@ -22,6 +22,17 @@ const NAME_FORMATS: readonly NewFileSettings['nameFormat'][] = [
     'datetime-name',
 ];
 
+export function isValidNewFileFolder(folder: string): boolean {
+    if (sanitizeDir(folder) !== folder) return false;
+    const segments = folder.split('/');
+    return (
+        segments[0].toLowerCase() !== ATTACHMENTS_DIR.toLowerCase() &&
+        !segments.some(
+            (segment) => segment.startsWith('.') || SKIP_DIR_NAMES.includes(segment.toLowerCase()),
+        )
+    );
+}
+
 export function parseNewFileSettings(value: unknown): NewFileSettings {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return {...DEFAULT_NEW_FILE_SETTINGS};
@@ -29,12 +40,7 @@ export function parseNewFileSettings(value: unknown): NewFileSettings {
     const raw = value as Partial<NewFileSettings>;
     const folder = raw.folder;
     return {
-        folder:
-            typeof folder === 'string' &&
-            sanitizeDir(folder) === folder &&
-            !folder.split('/').some(isReservedSegment)
-                ? folder
-                : null,
+        folder: typeof folder === 'string' && isValidNewFileFolder(folder) ? folder : null,
         extension: EXTENSIONS.includes(raw.extension as NewFileSettings['extension'])
             ? (raw.extension as NewFileSettings['extension'])
             : DEFAULT_NEW_FILE_SETTINGS.extension,

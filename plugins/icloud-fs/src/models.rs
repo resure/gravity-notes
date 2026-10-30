@@ -62,13 +62,15 @@ pub struct ReadNoteResponse {
 }
 
 /// Write a single note relative to the workspace folder, `NSFileCoordinator`-coordinated and atomic
-/// (creating parent folders like `notes_write`'s `create_dir_all`).
+/// (creating parent folders unless `require_existing_parent` is set).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteNoteRequest {
     pub dir: String,
     pub name: String,
     pub contents: String,
+    #[serde(default)]
+    pub require_existing_parent: bool,
 }
 
 /// Coordinated-write result: the file's new mtime in epoch ms (re-seeds the autosave baseline).

@@ -28,8 +28,10 @@ import {
 import {
     type AttachmentMeta,
     ConflictError,
+    MissingFolderError,
     NameCollisionError,
     type Note,
+    type NoteCreateOptions,
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
@@ -274,10 +276,16 @@ export class FileSystemNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
+    async create(
+        title: string,
+        parentPath = '',
+        extension = MD_EXT,
+        options?: NoteCreateOptions,
+    ): Promise<NoteMeta> {
         const folder = sanitizeDir(parentPath);
-        const dir = await this.resolveDir(folder, true);
-        if (!dir) throw new Error(`Could not open folder "${folder}"`);
+        const requireExistingFolder = options?.requireExistingFolder ?? false;
+        const dir = await this.resolveDir(folder, !requireExistingFolder);
+        if (!dir) throw new MissingFolderError(folder);
         // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
         // The probe-then-create is not atomic, but the FSA gives no atomic create-if-absent; this is
         // a single-user, single-tab store, so the window for a racing create is effectively nil.
@@ -286,7 +294,21 @@ export class FileSystemNoteStore implements NoteStore {
             (name) => this.existsIn(dir, name),
             extension,
         );
-        const handle = await dir.getFileHandle(leaf, {create: true});
+        const targetDir = requireExistingFolder ? await this.resolveDir(folder) : dir;
+        if (!targetDir) throw new MissingFolderError(folder);
+        let handle: FileSystemFileHandle;
+        try {
+            handle = await targetDir.getFileHandle(leaf, {create: true});
+        } catch (err) {
+            if (
+                requireExistingFolder &&
+                err instanceof DOMException &&
+                err.name === 'NotFoundError'
+            ) {
+                throw new MissingFolderError(folder);
+            }
+            throw err;
+        }
         await writeFile(handle, writeNoteContent(leaf, ''));
         const id = joinPath(folder, leaf);
         const updatedAt = (await handle.getFile()).lastModified;

@@ -17,6 +17,7 @@ class WriteNoteArgs: Decodable {
   let dir: String
   let name: String
   let contents: String
+  let requireExistingParent: Bool?
 }
 
 class ReadAttachmentArgs: Decodable {
@@ -183,9 +184,10 @@ class IcloudFsPlugin: Plugin {
     }
     let data = Data(args.contents.utf8)
     DispatchQueue.global(qos: .userInitiated).async {
-      // Create intermediate folders, mirroring notes_write's create_dir_all.
-      try? FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      if args.requireExistingParent != true {
+        try? FileManager.default.createDirectory(
+          at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      }
       var coordError: NSError?
       var writeFailure: String?
       var mtime: Double = 0
@@ -196,12 +198,16 @@ class IcloudFsPlugin: Plugin {
           try data.write(to: writingURL, options: .atomic)
           mtime = Self.modifiedMs(writingURL)
         } catch {
-          writeFailure = error.localizedDescription
+          writeFailure = Self.writeFailure(
+            error, url: writingURL, requireExistingParent: args.requireExistingParent == true)
         }
       }
       DispatchQueue.main.async {
         if let coordError = coordError {
-          invoke.reject("Coordinated write failed: \(coordError.localizedDescription)")
+          invoke.reject(
+            Self.writeFailure(
+              coordError, url: url, requireExistingParent: args.requireExistingParent == true,
+              prefix: "Coordinated write failed: "))
         } else if let writeFailure = writeFailure {
           invoke.reject(writeFailure)
         } else {
@@ -209,6 +215,24 @@ class IcloudFsPlugin: Plugin {
         }
       }
     }
+  }
+
+  private static func writeFailure(
+    _ error: Error, url: URL, requireExistingParent: Bool, prefix: String = ""
+  ) -> String {
+    if requireExistingParent {
+      do {
+        _ = try FileManager.default.attributesOfItem(atPath: url.deletingLastPathComponent().path)
+      } catch let parentError as NSError {
+        if parentError.domain == NSCocoaErrorDomain
+          && (parentError.code == NSFileNoSuchFileError
+            || parentError.code == NSFileReadNoSuchFileError)
+        {
+          return "GRAVITY_NOTES_MISSING_FOLDER"
+        }
+      }
+    }
+    return prefix + error.localizedDescription
   }
 
   /// Coordinated + download-on-demand read of one attachment (an image under `Attachments/`). Mirrors

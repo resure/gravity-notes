@@ -156,8 +156,80 @@ describe('Workspace — nvALT navigation', () => {
         await screen.findByRole('option', {name: /Beta/});
         const create = vi.spyOn(store, 'create');
         await user.click(screen.getByRole('button', {name: 'New'}));
-        expect(create).not.toHaveBeenCalled();
+        await waitFor(() =>
+            expect(create).toHaveBeenCalledWith('Capture', 'Missing', '.md', {
+                requireExistingFolder: true,
+            }),
+        );
+        await expect(create.mock.results[0].value).rejects.toThrow('unavailable');
         expect(await store.listFolders()).not.toContain('Missing');
+    });
+
+    it('does not recreate a configured folder removed before the list refreshes', async () => {
+        localStorage.setItem(
+            'gravity-notes:test-ws:new-files',
+            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
+        );
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Inbox/Keep.md', 'keep', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <>
+                <Workspace store={store} {...workspaceProps()} />
+                <ToasterComponent />
+            </>,
+        );
+        await screen.findByRole('option', {name: /Keep/});
+        await dir.removeEntry('Inbox', {recursive: true});
+        const create = vi.spyOn(store, 'create');
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        expect(
+            await screen.findByText(
+                'The default folder “Inbox” is unavailable. Choose a folder in Settings.',
+            ),
+        ).toBeVisible();
+        expect(create).toHaveBeenCalledWith('Capture', 'Inbox', '.md', {
+            requireExistingFolder: true,
+        });
+        expect(await store.listFolders()).not.toContain('Inbox');
+    });
+
+    it('uses a configured folder that appeared before the list refreshes', async () => {
+        localStorage.setItem(
+            'gravity-notes:test-ws:new-files',
+            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
+        );
+        const user = userEvent.setup();
+        const {dir, store} = renderWorkspace();
+        await screen.findByRole('option', {name: /Beta/});
+        dir.seedFile('Inbox/Keep.md', 'keep', 300);
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        await waitFor(async () => expect((await store.get('Inbox/Capture.md')).content).toBe(''));
+    });
+
+    it('reports a destination permission failure without creating a file', async () => {
+        localStorage.setItem(
+            'gravity-notes:test-ws:new-files',
+            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
+        );
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Inbox/Keep.md', 'keep', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(
+            <>
+                <Workspace store={store} {...workspaceProps()} />
+                <ToasterComponent />
+            </>,
+        );
+        await screen.findByRole('option', {name: /Keep/});
+        vi.spyOn(store, 'create').mockRejectedValue(
+            new DOMException('Folder permission lost', 'NotAllowedError'),
+        );
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        expect(await screen.findByText('Folder permission lost')).toBeVisible();
+        await expect(store.get('Inbox/Capture.md')).rejects.toThrow();
     });
 
     it('captures imported files before clearing the live file input', async () => {

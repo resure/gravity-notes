@@ -27,8 +27,10 @@ import {
 import {
     type AttachmentMeta,
     ConflictError,
+    MissingFolderError,
     NameCollisionError,
     type Note,
+    type NoteCreateOptions,
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
@@ -188,16 +190,33 @@ export class TauriNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
+    async create(
+        title: string,
+        parentPath = '',
+        extension = MD_EXT,
+        options: NoteCreateOptions = {},
+    ): Promise<NoteMeta> {
         const dir = sanitizeDir(parentPath);
-        // Scope the collision probe to the target folder; notes_write create_dir_all's the parent.
         const leaf = await uniqueName(
             sanitizeTitle(title),
             (name) => this.exists(joinPath(dir, name)),
             extension,
         );
         const id = joinPath(dir, leaf);
-        const updatedAt = await this.write(id, writeNoteContent(id, ''));
+        let updatedAt: number;
+        try {
+            updatedAt = await this.write(
+                id,
+                writeNoteContent(id, ''),
+                options.requireExistingFolder,
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (options.requireExistingFolder && message === 'GRAVITY_NOTES_MISSING_FOLDER') {
+                throw new MissingFolderError(dir);
+            }
+            throw error;
+        }
         return {id, title: titleFromFileName(id), updatedAt};
     }
 
@@ -525,13 +544,25 @@ export class TauriNoteStore implements NoteStore {
      * NSFileCoordinator-coordinated atomic write (safe against iCloud sync racing the file); on the
      * desktop it's the Rust notes_write (temp + rename).
      */
-    private write(name: string, content: string): Promise<number> {
+    private write(name: string, content: string, requireExistingParent = false): Promise<number> {
         if (isIos) {
             return invoke<WriteNoteResponse>('plugin:icloud-fs|write_note', {
-                payload: {dir: this.dir, name, contents: content},
+                payload: {
+                    dir: this.dir,
+                    name,
+                    contents: content,
+                    ...(requireExistingParent ? {requireExistingParent: true} : {}),
+                },
             }).then((r) => r.modifiedMs);
         }
-        return invoke<number>('notes_write', {dir: this.dir, name, content});
+        return invoke<number>(
+            requireExistingParent ? 'notes_write_existing_parent' : 'notes_write',
+            {
+                dir: this.dir,
+                name,
+                content,
+            },
+        );
     }
 
     /**

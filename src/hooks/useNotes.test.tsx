@@ -31,6 +31,43 @@ async function setup(seed?: (dir: FakeDirectoryHandle) => void) {
 }
 
 describe('useNotes — single note', () => {
+    it('does not recreate a fixed destination removed during the pending save', async () => {
+        const {hook, dir, store, onError} = await setup((directory) => {
+            directory.seedFile('A.md', 'original', 100);
+            directory.seedFile('Inbox/Keep.md', 'keep', 200);
+        });
+        await waitFor(() => expect(hook.result.current.ready).toBe(true));
+        await act(async () => hook.result.current.open('A.md'));
+        act(() => hook.result.current.edit('edited'));
+        let releaseSave!: () => void;
+        const pendingSave = new Promise<void>((resolve) => {
+            releaseSave = resolve;
+        });
+        const save = store.save.bind(store);
+        const saveSpy = vi.spyOn(store, 'save').mockImplementation(async (...args) => {
+            await pendingSave;
+            return save(...args);
+        });
+        let creation!: Promise<string | null>;
+        act(() => {
+            creation = hook.result.current.create('Capture', 'Inbox', '.txt', {
+                requireExistingFolder: true,
+            });
+        });
+        await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+        await dir.removeEntry('Inbox', {recursive: true});
+        await act(async () => {
+            releaseSave();
+            expect(await creation).toBeNull();
+        });
+        expect(onError).toHaveBeenCalledWith(
+            'The default folder “Inbox” is unavailable. Choose a folder in Settings.',
+        );
+        expect(await store.listFolders()).not.toContain('Inbox');
+        expect((await store.get('A.md')).content).toBe('edited');
+        expect(hook.result.current.activeId).toBe('A.md');
+    });
+
     it.each(['plain.txt', 'plain'])('autosaves and duplicates %s as literal text', async (id) => {
         const content = '# literal *text*\r\nlast\n';
         const {hook, store} = await setup((dir) => dir.seedFile(id, content, 100));

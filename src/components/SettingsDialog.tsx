@@ -1,9 +1,9 @@
-import type {ReactNode} from 'react';
+import {type ReactNode, useMemo} from 'react';
 
 import {Dialog, Select, Switch, TextInput} from '@gravity-ui/uikit';
 
 import type {Settings, TextFileMode, WorkspaceSettings} from '../hooks/useSettings';
-import {type NewFileSettings, resolveNewFileCreation} from '../newFiles';
+import {type NewFileSettings, isValidNewFileFolder, resolveNewFileCreation} from '../newFiles';
 import {formatCrumb, joinPath, sanitizeTitle} from '../storage/noteText';
 
 import {
@@ -74,20 +74,28 @@ export function SettingsDialog({
     const workspaceDescription = `Override the app settings for ${
         workspaceLabel ? `“${workspaceLabel}”` : 'this workspace'
     }. “Default” inherits it.`;
-    const folderOptions = [
-        {value: 'current', content: 'Current folder'},
-        {value: 'path:', content: 'Workspace root'},
-        ...folders.filter(Boolean).map((folder) => ({
-            value: `path:${folder}`,
-            content: formatCrumb(folder),
-        })),
-    ];
-    if (newFileSettings.folder && !folders.includes(newFileSettings.folder)) {
-        folderOptions.push({
-            value: `path:${newFileSettings.folder}`,
-            content: `${formatCrumb(newFileSettings.folder)} (unavailable)`,
-        });
-    }
+    const folderOptions = useMemo(() => {
+        const options: {value: string; content: string; disabled?: boolean}[] = [
+            {value: 'current', content: 'Current folder'},
+            {value: 'path:', content: 'Workspace root'},
+            ...folders.filter(Boolean).map((folder) => {
+                const disabled = !isValidNewFileFolder(folder);
+                return {
+                    value: `path:${folder}`,
+                    content: `${formatCrumb(folder)}${disabled ? ' (unsupported folder name)' : ''}`,
+                    disabled,
+                };
+            }),
+        ];
+        if (newFileSettings.folder && !folders.includes(newFileSettings.folder)) {
+            options.push({
+                value: `path:${newFileSettings.folder}`,
+                content: `${formatCrumb(newFileSettings.folder)} (unavailable)`,
+                disabled: !isValidNewFileFolder(newFileSettings.folder),
+            });
+        }
+        return options;
+    }, [folders, newFileSettings.folder]);
     const newFileExample = resolveNewFileCreation(newFileSettings, {});
     return (
         // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
@@ -145,6 +153,8 @@ export function SettingsDialog({
                                     : `path:${newFileSettings.folder}`,
                             ]}
                             onUpdate={([value]) => {
+                                const option = folderOptions.find((item) => item.value === value);
+                                if (!option || option.disabled) return;
                                 if (value === 'current') setNewFileSetting('folder', null);
                                 else if (value?.startsWith('path:'))
                                     setNewFileSetting('folder', value.slice(5));

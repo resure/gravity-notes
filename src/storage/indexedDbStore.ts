@@ -23,8 +23,10 @@ import {
 import {
     type AttachmentMeta,
     ConflictError,
+    MissingFolderError,
     NameCollisionError,
     type Note,
+    type NoteCreateOptions,
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
@@ -127,7 +129,12 @@ export class IndexedDbNoteStore implements NoteStore {
         };
     }
 
-    async create(title: string, parentPath = '', extension = MD_EXT): Promise<NoteMeta> {
+    async create(
+        title: string,
+        parentPath = '',
+        extension = MD_EXT,
+        options?: NoteCreateOptions,
+    ): Promise<NoteMeta> {
         const dir = sanitizeDir(parentPath);
         // Scope the collision probe to the target folder, so the same leaf title is free elsewhere.
         const leaf = await uniqueName(
@@ -137,9 +144,12 @@ export class IndexedDbNoteStore implements NoteStore {
         );
         const id = joinPath(dir, leaf);
         const updatedAt = Date.now();
-        await this.run(NOTES_STORE, 'readwrite', (store) =>
-            store.add({id, content: writeNoteContent(id, ''), updatedAt} satisfies NoteRecord),
-        );
+        const record = {id, content: writeNoteContent(id, ''), updatedAt} satisfies NoteRecord;
+        if (options?.requireExistingFolder && dir) {
+            await this.addInExistingFolder(record, dir);
+        } else {
+            await this.run(NOTES_STORE, 'readwrite', (store) => store.add(record));
+        }
         return {id, title: titleFromFileName(id), updatedAt};
     }
 
@@ -433,6 +443,47 @@ export class IndexedDbNoteStore implements NoteStore {
             store.get(FOLDERS_KEY),
         );
         return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    }
+
+    private async addInExistingFolder(record: NoteRecord, folder: string): Promise<void> {
+        const db = await this.openDb();
+        return new Promise<void>((resolve, reject) => {
+            const transaction = db.transaction([NOTES_STORE, KV_STORE], 'readwrite');
+            const notes = transaction.objectStore(NOTES_STORE);
+            const markers = transaction.objectStore(KV_STORE).get(FOLDERS_KEY);
+            const prefix = `${folder}/`;
+            let missingFolder: MissingFolderError | undefined;
+            markers.onsuccess = () => {
+                const folders: unknown = markers.result;
+                if (
+                    Array.isArray(folders) &&
+                    folders.some(
+                        (path: unknown) =>
+                            typeof path === 'string' &&
+                            (path === folder || path.startsWith(prefix)),
+                    )
+                ) {
+                    notes.add(record);
+                    return;
+                }
+                const key = notes.getKey(IDBKeyRange.lowerBound(prefix));
+                key.onsuccess = () => {
+                    if (typeof key.result === 'string' && key.result.startsWith(prefix)) {
+                        notes.add(record);
+                    } else {
+                        missingFolder = new MissingFolderError(folder);
+                        transaction.abort();
+                    }
+                };
+            };
+            transaction.oncomplete = () => resolve();
+            transaction.onabort = () =>
+                reject(
+                    missingFolder ??
+                        transaction.error ??
+                        new DOMException('IndexedDB transaction aborted', 'AbortError'),
+                );
+        });
     }
 
     private openDb(): Promise<IDBDatabase> {

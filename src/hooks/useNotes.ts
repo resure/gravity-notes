@@ -29,9 +29,11 @@ import {
 } from '../storage/noteText';
 import {
     ConflictError,
+    MissingFolderError,
     NameCollisionError,
     type Note,
     type NoteAppearanceOverride,
+    type NoteCreateOptions,
     type NoteMeta,
     type NoteStore,
     type NotesMetadata,
@@ -208,7 +210,12 @@ export interface UseNotes {
      * Create a new note (titled, or "Untitled") inside `parentPath` (omitted = root), open it, and
      * return its id (null on failure).
      */
-    create(title?: string, parentPath?: string, extension?: string): Promise<string | null>;
+    create(
+        title?: string,
+        parentPath?: string,
+        extension?: string,
+        options?: NoteCreateOptions,
+    ): Promise<string | null>;
     /**
      * Duplicate a note: copy its body verbatim into a new "<Title> copy" in the same folder, open it,
      * and return its id (null on error). Attachments are *shared* — the copy keeps the same
@@ -816,14 +823,20 @@ export function useNotes(
     }, [flush, persistMetadata]);
 
     const create = useCallback(
-        async (title?: string, parentPath?: string, extension?: string): Promise<string | null> => {
+        async (
+            title?: string,
+            parentPath?: string,
+            extension?: string,
+            options?: NoteCreateOptions,
+        ): Promise<string | null> => {
             await flush();
             try {
                 const name = title?.trim() || 'Untitled';
-                const meta =
-                    extension === undefined
-                        ? await store.create(name, parentPath)
-                        : await store.create(name, parentPath, extension);
+                const meta = options
+                    ? await store.create(name, parentPath, extension, options)
+                    : extension === undefined
+                      ? await store.create(name, parentPath)
+                      : await store.create(name, parentPath, extension);
                 stampLocalWrite(meta.id); // our write — not an external change for the watcher
                 await persistMetadata(
                     withCreatedStamp(metadataRef.current, meta.id, meta.updatedAt ?? 0),
@@ -833,7 +846,13 @@ export function useNotes(
                 await open(meta.id);
                 return meta.id;
             } catch (err) {
-                onError(err instanceof Error ? err.message : 'Failed to create note');
+                onError(
+                    err instanceof MissingFolderError && options?.requireExistingFolder
+                        ? `The default folder “${err.folder || '/'}” is unavailable. Choose a folder in Settings.`
+                        : err instanceof Error || err instanceof DOMException
+                          ? err.message
+                          : 'Failed to create note',
+                );
                 return null;
             }
         },

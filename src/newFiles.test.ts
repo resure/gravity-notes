@@ -65,12 +65,30 @@ describe('new file settings', () => {
             'Work//Ideas',
             ' Work ',
             'Attachments',
+            'attachments/Inbox',
+            'ATTACHMENTS',
             'Work/node_modules',
+            'Work/NODE_MODULES/Sub',
+            'Q1?',
+            'Work/Q1?',
             'Work\\Ideas',
         ]) {
             expect(parseNewFileSettings({folder}).folder).toBeNull();
         }
     });
+
+    it.each(['Work/Attachments', 'Work/attachments/Ideas'])(
+        'preserves an existing nested media-named folder %j across settings writes and reloads',
+        (folder) => {
+            const loaded = parseNewFileSettings({folder});
+            expect(loaded.folder).toBe(folder);
+            const reloaded = parseNewFileSettings(
+                JSON.parse(JSON.stringify({...loaded, defaultName: 'Meeting'})),
+            );
+            expect(reloaded).toMatchObject({folder, defaultName: 'Meeting'});
+            expect(resolveNewFileCreation(reloaded)).toMatchObject({parentPath: folder});
+        },
+    );
 
     it.each(['', 'Inbox/Quick notes'])(
         'lets the configured folder %j override the selected folder and caller destination',

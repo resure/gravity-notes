@@ -3,7 +3,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {FakeDirectoryHandle, asDirectoryHandle} from './fakeFileSystem';
 import {FileSystemNoteStore} from './fileSystemStore';
 import {DEFAULT_METADATA} from './metadata';
-import {ConflictError, NameCollisionError} from './types';
+import {ConflictError, MissingFolderError, NameCollisionError} from './types';
 
 describe('FileSystemNoteStore', () => {
     let dir: FakeDirectoryHandle;
@@ -277,6 +277,64 @@ describe('FileSystemNoteStore', () => {
         it('creates in a deeply nested folder', async () => {
             const meta = await store.create('Deep', 'Work/Sub/Folder');
             expect(meta.id).toBe('Work/Sub/Folder/Deep.md');
+        });
+
+        it('does not recreate a missing required folder', async () => {
+            dir.seedSubdir('Work');
+
+            await expect(
+                store.create('Note', 'Work/Missing/Sub', '.md', {requireExistingFolder: true}),
+            ).rejects.toThrow(MissingFolderError);
+
+            expect(await store.listFolders()).toEqual(['Work']);
+            expect(dir.paths()).toEqual([]);
+        });
+
+        it('creates in an existing required folder with collision numbering', async () => {
+            dir.seedFile('Work/Sub/Note.md', 'existing');
+
+            const meta = await store.create('Note', 'Work/Sub', '.md', {
+                requireExistingFolder: true,
+            });
+
+            expect(meta.id).toBe('Work/Sub/Note 2.md');
+            expect((await store.get(meta.id)).content).toBe('');
+            expect((await store.get('Work/Sub/Note.md')).content).toBe('existing');
+        });
+
+        it('rejects when a required folder disappears during collision probing', async () => {
+            dir.seedSubdir('Work');
+            const target = await dir.getDirectoryHandle('Work');
+            const original = target.getFileHandle.bind(target);
+            const spy = vi
+                .spyOn(target, 'getFileHandle')
+                .mockImplementation(async (name, options) => {
+                    if (!options?.create) await dir.removeEntry('Work');
+                    return original(name, options);
+                });
+
+            try {
+                await expect(
+                    store.create('Note', 'Work', '.md', {requireExistingFolder: true}),
+                ).rejects.toThrow(MissingFolderError);
+                expect(await store.listFolders()).toEqual([]);
+                expect(target.paths()).toEqual([]);
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
+        it('preserves permission failures when a required folder cannot be opened', async () => {
+            const error = new DOMException('Permission denied', 'NotAllowedError');
+            const spy = vi.spyOn(dir, 'getDirectoryHandle').mockRejectedValue(error);
+
+            try {
+                await expect(
+                    store.create('Note', 'Work', '.md', {requireExistingFolder: true}),
+                ).rejects.toBe(error);
+            } finally {
+                spy.mockRestore();
+            }
         });
 
         it('sanitizes the parent path so it cannot escape the root', async () => {

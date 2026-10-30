@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {IndexedDbNoteStore} from './indexedDbStore';
-import {ConflictError, NameCollisionError} from './types';
+import {ConflictError, MissingFolderError, NameCollisionError} from './types';
 
 describe('IndexedDbNoteStore', () => {
     let store: IndexedDbNoteStore;
@@ -280,6 +280,106 @@ describe('IndexedDbNoteStore', () => {
     });
 
     describe('empty folders', () => {
+        it('creates in an existing empty folder when the parent is required', async () => {
+            await store.createFolder('', 'Inbox');
+
+            const created = await store.create('New', 'Inbox', '.md', {
+                requireExistingFolder: true,
+            });
+
+            expect(created.id).toBe('Inbox/New.md');
+            expect((await store.get(created.id)).content).toBe('');
+        });
+
+        it.each(['note', 'marker'])('accepts a folder implied by a descendant %s', async (kind) => {
+            if (kind === 'note') await store.create('Existing', 'Inbox/Sub');
+            else await store.createFolder('Inbox', 'Sub');
+
+            const created = await store.create('New', 'Inbox', '.md', {
+                requireExistingFolder: true,
+            });
+
+            expect(created.id).toBe('Inbox/New.md');
+        });
+
+        it('rejects a missing required parent without recreating it', async () => {
+            await store.createFolder('', 'InboxExtra');
+            await store.create('Existing', 'InboxExtra');
+
+            await expect(
+                store.create('New', 'Inbox', '.md', {requireExistingFolder: true}),
+            ).rejects.toBeInstanceOf(MissingFolderError);
+
+            expect(await store.stat('Inbox/New.md')).toBeNull();
+            expect(await store.listFolders()).toEqual(['InboxExtra']);
+        });
+
+        it.each(['note', 'marker'])(
+            'rejects a required folder whose last %s disappears during the uniqueness probe',
+            async (kind) => {
+                if (kind === 'note') await store.create('Existing', 'Inbox');
+                else await store.createFolder('', 'Inbox');
+                const probingStore = store as unknown as {exists(id: string): Promise<boolean>};
+                const exists = probingStore.exists.bind(store);
+                vi.spyOn(probingStore, 'exists').mockImplementationOnce(async (id) => {
+                    const taken = await exists(id);
+                    if (kind === 'note') await store.remove('Inbox/Existing.md');
+                    else await store.removeFolder('Inbox');
+                    return taken;
+                });
+
+                await expect(
+                    store.create('New', 'Inbox', '.md', {requireExistingFolder: true}),
+                ).rejects.toBeInstanceOf(MissingFolderError);
+
+                expect(await store.list()).toEqual([]);
+                expect(await store.listFolders()).toEqual([]);
+            },
+        );
+
+        it('keeps collision numbering in a required parent', async () => {
+            await store.create('New', 'Inbox');
+
+            const created = await store.create('New', 'Inbox', '.md', {
+                requireExistingFolder: true,
+            });
+
+            expect(created.id).toBe('Inbox/New 2.md');
+        });
+
+        it('preserves a colliding note created after the uniqueness probe', async () => {
+            await store.createFolder('', 'Inbox');
+            const probingStore = store as unknown as {exists(id: string): Promise<boolean>};
+            const exists = probingStore.exists.bind(store);
+            vi.spyOn(probingStore, 'exists').mockImplementationOnce(async (id) => {
+                const taken = await exists(id);
+                const concurrent = await store.create('New', 'Inbox');
+                await store.save(concurrent.id, 'keep me', concurrent.updatedAt ?? 0);
+                return taken;
+            });
+
+            await expect(
+                store.create('New', 'Inbox', '.md', {requireExistingFolder: true}),
+            ).rejects.toMatchObject({name: 'ConstraintError'});
+
+            expect((await store.get('Inbox/New.md')).content).toBe('keep me');
+        });
+
+        it('allows the root when an existing parent is required', async () => {
+            const created = await store.create('New', '', '.md', {
+                requireExistingFolder: true,
+            });
+
+            expect(created.id).toBe('New.md');
+        });
+
+        it('continues creating implicit parents without the requirement', async () => {
+            const created = await store.create('New', 'Missing/Nested');
+
+            expect(created.id).toBe('Missing/Nested/New.md');
+            expect(await store.listFolders()).toEqual(['Missing', 'Missing/Nested']);
+        });
+
         it('lists folders implied by notes plus deliberately-created empty ones', async () => {
             await store.create('Note', 'Work/Sub');
             await store.createFolder('', 'Projects');

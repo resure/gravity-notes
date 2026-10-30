@@ -71,7 +71,8 @@ format, in full:
   The default destination preserves existing behavior: New / ⌘N uses the selected folder and
   creation from search uses the root. Choosing a fixed destination applies it to both paths and
   reveals the new file there. An unavailable configured folder blocks creation with a Settings
-  error instead of silently changing the destination. Name collisions use the stores' existing
+  error instead of silently changing the destination. The creation operation requires that folder
+  to exist after pending edits finish saving and does not recreate missing parents. Name collisions use the stores' existing
   numeric suffixes. These defaults apply to explicit new-file creation; wiki-link creation,
   duplication, conflict copies, import and restore retain their own names, types and destinations.
 - **Other files** appear as muted, non-editable rows alongside notes. Folder stores expose names and
