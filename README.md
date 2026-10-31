@@ -27,9 +27,8 @@ Screenshot of the earlier interface; this branch uses the Sol design described a
 - **Edit plain text too** — `.txt` and extensionless UTF-8 files open in a text editor, with
   autosave, search, rename, move and trash; filenames and text line endings are preserved.
   Settings can open these files as Markdown instead, with a per-workspace override
-- **New-file defaults per workspace** — choose the destination folder (including the root),
-  `.md`, `.txt` or no extension, and a default name with optional local date or date-and-time.
-  A name typed into search takes precedence over the template
+- **New-file folder per workspace** — choose the current folder, workspace root or an existing
+  subfolder for new Markdown notes
 - **One box, keyboard-first** (nvALT-style): type to search or create, `Enter` to open, `Esc` to
   step back — every action has a key (`⌘/` for the sheet, or [docs/shortcuts.md](docs/shortcuts.md))
 - **A block editor** for the body: slash menu, drag-to-reorder, block selection, tables, to-dos,

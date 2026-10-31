@@ -64,10 +64,6 @@
     min-width: 0;
 }
 
-.settings__new-file-example {
-    overflow-wrap: anywhere;
-}
-
 @media (max-width: 480px) {
     .settings__row_new-file {
         grid-template-columns: minmax(0, 1fr);

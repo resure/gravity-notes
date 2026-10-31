@@ -60,20 +60,17 @@ format, in full:
   Switching modes preserves the live buffer and does not itself save or rewrite the file. Both
   modes follow the note's font and text-width settings and align with its title.
   Rename, move, duplicate, conflict copies, trash, restore and zip transfer
-  retain the file type. New files default to Markdown. Binary controls and invalid UTF-8
+  retain the file type. New files use Markdown. Binary controls and invalid UTF-8
   block plain-text opening; bulk previews classify detectable binary content as non-editable, and
   corpus loading skips it. Other encodings are unsupported.
-- **New-file defaults** — Settings → New files stores separate defaults for each workspace:
-  destination (current folder, workspace root, or an existing subfolder), `.md` / `.txt` / no
-  extension, a default name, and an optional local-date or local-date-and-time template. An empty
-  default name keeps `Untitled`; the date spelling is `YYYY-MM-DD`, and time uses `HHmmss` so
-  filenames remain portable. A name explicitly entered in search always wins over the template.
-  The default destination preserves existing behavior: New / ⌘N uses the selected folder and
-  creation from search uses the root. Choosing a fixed destination applies it to both paths and
+- **New-file folder** — Settings → New files stores a destination for each workspace: current
+  folder, workspace root, or an existing subfolder. New notes use `Untitled.md`, or the name
+  explicitly entered in search with a `.md` extension. The default destination preserves existing
+  behavior: New / ⌘N uses the selected folder and creation from search uses the root. Choosing a fixed destination applies it to both paths and
   reveals the new file there. An unavailable configured folder blocks creation with a Settings
   error instead of silently changing the destination. The creation operation requires that folder
-  to exist after pending edits finish saving and does not recreate missing parents. Name collisions use the stores' existing
-  numeric suffixes. These defaults apply to explicit new-file creation; wiki-link creation,
+  to exist after pending edits finish saving and does not recreate missing parents. Name collisions
+  use the stores' existing numeric suffixes. This destination applies to explicit new-file creation; wiki-link creation,
   duplication, conflict copies, import and restore retain their own names, types and destinations.
 - **Other files** appear as muted, non-editable rows alongside notes. Folder stores expose names and
   paths through optional `listFiles()`; supported plain-text candidates additionally have their head

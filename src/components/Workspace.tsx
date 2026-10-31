@@ -40,7 +40,6 @@ import {useShortcuts} from '../hooks/useShortcuts';
 import {useSwipeBack} from '../hooks/useSwipeBack';
 import {Eye} from '../icons/icons';
 import {isDesktopTauri, isMainWindow, isNoteWindow, isTauri} from '../isTauri';
-import {resolveNewFileCreation} from '../newFiles';
 import {orderNotes, trashEntryOriginalId} from '../storage/metadata';
 import {
     MD_EXT,
@@ -1231,22 +1230,18 @@ export function Workspace({
 
     const handleCreate = useCallback(
         (title?: string, parentPath?: string) => {
-            const creation = resolveNewFileCreation(newFileSettings, {
-                title,
-                parentPath,
-                selectedFolder,
-            });
+            const destination = newFileSettings.folder ?? parentPath ?? selectedFolder ?? '';
             nav.prepareCreate();
             void (async () => {
                 const id = await notes.create(
-                    creation.title,
-                    creation.parentPath,
-                    creation.extension,
+                    title,
+                    destination,
+                    MD_EXT,
                     newFileSettings.folder !== null ? {requireExistingFolder: true} : undefined,
                 );
                 if (id) {
                     if (newFileSettings.folder !== null && selectedFolder !== null) {
-                        setSelectedFolder(creation.parentPath);
+                        setSelectedFolder(destination);
                     }
                     nav.setSelected(id);
                     revealNote(id);

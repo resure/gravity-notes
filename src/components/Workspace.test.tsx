@@ -108,12 +108,38 @@ describe('Workspace — nvALT navigation', () => {
         },
     );
 
+    it('uses the selected folder for New and the root for search with the current-folder preference', async () => {
+        const user = userEvent.setup();
+        const dir = new FakeDirectoryHandle();
+        dir.seedFile('Work/Project.md', 'project', 100);
+        const store = new FileSystemNoteStore(asDirectoryHandle(dir));
+        renderWithProviders(<Workspace store={store} {...workspaceProps()} />);
+        await screen.findByRole('option', {name: /Project/});
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        await waitFor(async () => expect((await store.get('Untitled.md')).content).toBe(''));
+        await user.click(screen.getByRole('button', {name: 'Folders'}));
+        await user.click(await screen.findByRole('treeitem', {name: /Work/}));
+        await user.click(screen.getByRole('button', {name: 'New'}));
+        await waitFor(async () => expect((await store.get('Work/Untitled.md')).content).toBe(''));
+        await user.type(
+            screen.getByRole('textbox', {name: 'Search or create a note'}),
+            'Root note',
+        );
+        await user.keyboard('{Enter}');
+        await waitFor(async () => expect((await store.get('Root note.md')).content).toBe(''));
+    });
+
     it.each(['.txt', ''])(
-        'creates and reveals a new file in the configured folder with extension %s',
+        'creates Untitled.md in the configured folder despite the removed extension preference %j',
         async (extension) => {
             localStorage.setItem(
                 'gravity-notes:test-ws:new-files',
-                JSON.stringify({folder: 'Inbox', extension, defaultName: 'Capture'}),
+                JSON.stringify({
+                    folder: 'Inbox',
+                    extension,
+                    nameFormat: 'date-name',
+                    defaultName: 'Capture',
+                }),
             );
             const user = userEvent.setup();
             const dir = new FakeDirectoryHandle();
@@ -126,9 +152,9 @@ describe('Workspace — nvALT navigation', () => {
             await user.click(await screen.findByRole('treeitem', {name: /Work/}));
             await user.click(screen.getByRole('button', {name: 'New'}));
             await waitFor(async () =>
-                expect((await store.get(`Inbox/Capture${extension}`)).content).toBe(''),
+                expect((await store.get('Inbox/Untitled.md')).content).toBe(''),
             );
-            expect(await screen.findByRole('option', {name: /Capture/})).toBeInTheDocument();
+            expect(await screen.findByRole('option', {name: /Untitled/})).toBeInTheDocument();
         },
     );
 
@@ -143,13 +169,13 @@ describe('Workspace — nvALT navigation', () => {
         const search = screen.getByRole('textbox', {name: 'Search or create a note'});
         await user.type(search, 'Meeting');
         await user.keyboard('{Enter}');
-        await waitFor(async () => expect((await store.get('Meeting.txt')).content).toBe(''));
+        await waitFor(async () => expect((await store.get('Meeting.md')).content).toBe(''));
     });
 
     it('blocks creation when the configured folder is unavailable', async () => {
         localStorage.setItem(
             'gravity-notes:test-ws:new-files',
-            JSON.stringify({folder: 'Missing', defaultName: 'Capture'}),
+            JSON.stringify({folder: 'Missing'}),
         );
         const user = userEvent.setup();
         const {store} = renderWorkspace();
@@ -157,7 +183,7 @@ describe('Workspace — nvALT navigation', () => {
         const create = vi.spyOn(store, 'create');
         await user.click(screen.getByRole('button', {name: 'New'}));
         await waitFor(() =>
-            expect(create).toHaveBeenCalledWith('Capture', 'Missing', '.md', {
+            expect(create).toHaveBeenCalledWith('Untitled', 'Missing', '.md', {
                 requireExistingFolder: true,
             }),
         );
@@ -166,10 +192,7 @@ describe('Workspace — nvALT navigation', () => {
     });
 
     it('does not recreate a configured folder removed before the list refreshes', async () => {
-        localStorage.setItem(
-            'gravity-notes:test-ws:new-files',
-            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
-        );
+        localStorage.setItem('gravity-notes:test-ws:new-files', JSON.stringify({folder: 'Inbox'}));
         const user = userEvent.setup();
         const dir = new FakeDirectoryHandle();
         dir.seedFile('Inbox/Keep.md', 'keep', 100);
@@ -189,30 +212,24 @@ describe('Workspace — nvALT navigation', () => {
                 'The default folder “Inbox” is unavailable. Choose a folder in Settings.',
             ),
         ).toBeVisible();
-        expect(create).toHaveBeenCalledWith('Capture', 'Inbox', '.md', {
+        expect(create).toHaveBeenCalledWith('Untitled', 'Inbox', '.md', {
             requireExistingFolder: true,
         });
         expect(await store.listFolders()).not.toContain('Inbox');
     });
 
     it('uses a configured folder that appeared before the list refreshes', async () => {
-        localStorage.setItem(
-            'gravity-notes:test-ws:new-files',
-            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
-        );
+        localStorage.setItem('gravity-notes:test-ws:new-files', JSON.stringify({folder: 'Inbox'}));
         const user = userEvent.setup();
         const {dir, store} = renderWorkspace();
         await screen.findByRole('option', {name: /Beta/});
         dir.seedFile('Inbox/Keep.md', 'keep', 300);
         await user.click(screen.getByRole('button', {name: 'New'}));
-        await waitFor(async () => expect((await store.get('Inbox/Capture.md')).content).toBe(''));
+        await waitFor(async () => expect((await store.get('Inbox/Untitled.md')).content).toBe(''));
     });
 
     it('reports a destination permission failure without creating a file', async () => {
-        localStorage.setItem(
-            'gravity-notes:test-ws:new-files',
-            JSON.stringify({folder: 'Inbox', defaultName: 'Capture'}),
-        );
+        localStorage.setItem('gravity-notes:test-ws:new-files', JSON.stringify({folder: 'Inbox'}));
         const user = userEvent.setup();
         const dir = new FakeDirectoryHandle();
         dir.seedFile('Inbox/Keep.md', 'keep', 100);
@@ -229,7 +246,7 @@ describe('Workspace — nvALT navigation', () => {
         );
         await user.click(screen.getByRole('button', {name: 'New'}));
         expect(await screen.findByText('Folder permission lost')).toBeVisible();
-        await expect(store.get('Inbox/Capture.md')).rejects.toThrow();
+        await expect(store.get('Inbox/Untitled.md')).rejects.toThrow();
     });
 
     it('captures imported files before clearing the live file input', async () => {

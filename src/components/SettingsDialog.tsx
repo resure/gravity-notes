@@ -1,10 +1,10 @@
 import {type ReactNode, useMemo} from 'react';
 
-import {Dialog, Select, Switch, TextInput} from '@gravity-ui/uikit';
+import {Dialog, Select, Switch} from '@gravity-ui/uikit';
 
 import type {Settings, TextFileMode, WorkspaceSettings} from '../hooks/useSettings';
-import {type NewFileSettings, isValidNewFileFolder, resolveNewFileCreation} from '../newFiles';
-import {formatCrumb, joinPath, sanitizeTitle} from '../storage/noteText';
+import {type NewFileSettings, isValidNewFileFolder} from '../newFiles';
+import {formatCrumb} from '../storage/noteText';
 
 import {
     ACCENT_OPTIONS,
@@ -25,17 +25,6 @@ const TEXT_FILE_OPTIONS: {value: TextFileMode; content: string}[] = [
 const TEXT_FILE_OPTIONS_WS: {value: 'default' | TextFileMode; content: string}[] = [
     {value: 'default', content: 'Default'},
     ...TEXT_FILE_OPTIONS,
-];
-const EXTENSION_OPTIONS: {value: NewFileSettings['extension']; content: string}[] = [
-    {value: '.md', content: 'Markdown (.md)'},
-    {value: '.txt', content: 'Plain text (.txt)'},
-    {value: '', content: 'No extension'},
-];
-const NAME_FORMAT_OPTIONS: {value: NewFileSettings['nameFormat']; content: string}[] = [
-    {value: 'name', content: 'Name only'},
-    {value: 'date', content: 'Date'},
-    {value: 'date-name', content: 'Date + name'},
-    {value: 'datetime-name', content: 'Date and time + name'},
 ];
 
 interface SettingsDialogProps {
@@ -96,7 +85,6 @@ export function SettingsDialog({
         }
         return options;
     }, [folders, newFileSettings.folder]);
-    const newFileExample = resolveNewFileCreation(newFileSettings, {});
     return (
         // Matches ShortcutsDialog: the app shell already locks scroll, so skip the modal's own lock.
         <Dialog
@@ -161,62 +149,6 @@ export function SettingsDialog({
                             }}
                         />
                     </div>
-                    <div className="settings__row settings__row_new-file">
-                        <span className="settings__label">Extension</span>
-                        <Select
-                            className="settings__new-file-control"
-                            size="s"
-                            width="max"
-                            aria-label="New file extension"
-                            options={EXTENSION_OPTIONS}
-                            value={[newFileSettings.extension]}
-                            onUpdate={([value]) => {
-                                const option = EXTENSION_OPTIONS.find(
-                                    (item) => item.value === value,
-                                );
-                                if (option) setNewFileSetting('extension', option.value);
-                            }}
-                        />
-                    </div>
-                    <div className="settings__row settings__row_new-file">
-                        <span className="settings__label">Filename format</span>
-                        <Select
-                            className="settings__new-file-control"
-                            size="s"
-                            width="max"
-                            aria-label="New file name format"
-                            options={NAME_FORMAT_OPTIONS}
-                            value={[newFileSettings.nameFormat]}
-                            onUpdate={([value]) => {
-                                const option = NAME_FORMAT_OPTIONS.find(
-                                    (item) => item.value === value,
-                                );
-                                if (option) setNewFileSetting('nameFormat', option.value);
-                            }}
-                        />
-                    </div>
-                    <div className="settings__row settings__row_new-file">
-                        <span className="settings__label">Default name</span>
-                        <TextInput
-                            className="settings__new-file-control"
-                            size="s"
-                            value={newFileSettings.defaultName}
-                            placeholder="Untitled"
-                            disabled={newFileSettings.nameFormat === 'date'}
-                            controlProps={{'aria-label': 'New file default name'}}
-                            onUpdate={(value) => setNewFileSetting('defaultName', value)}
-                        />
-                    </div>
-                    <p className="settings__note settings__new-file-example">
-                        Example:{' '}
-                        {joinPath(
-                            newFileExample.parentPath,
-                            sanitizeTitle(newFileExample.title) + newFileSettings.extension,
-                        )}
-                    </p>
-                    <p className="settings__note">
-                        A name entered in search overrides the default name and template.
-                    </p>
                 </Section>
 
                 <Section title="Appearance">

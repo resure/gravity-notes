@@ -48,7 +48,7 @@ it('lets app and workspace select how text files open', async () => {
     ).toBe('text');
 });
 
-it('persists the new-file folder, extension, name format and default name', async () => {
+it('persists the new-file folder', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SettingsHarness />);
     const saved = () =>
@@ -68,21 +68,6 @@ it('persists the new-file folder, extension, name format and default name', asyn
     expect(saved().folder).toBeNull();
     await select('New file folder', 'Work / Sub');
     expect(saved().folder).toBe('Work/Sub');
-    await select('New file extension', 'Plain text (.txt)');
-    expect(saved().extension).toBe('.txt');
-    await select('New file extension', 'No extension');
-    expect(saved().extension).toBe('');
-    expect(screen.getByRole('combobox', {name: 'New file extension'})).toHaveTextContent(
-        'No extension',
-    );
-    await select('New file name format', 'Date + name');
-    expect(saved().nameFormat).toBe('date-name');
-    await user.type(screen.getByRole('textbox', {name: 'New file default name'}), 'Meeting');
-    expect(saved().defaultName).toBe('Meeting');
-    expect(screen.getByText(/^Example:/)).toHaveTextContent(/\d{4}-\d{2}-\d{2} - Meeting/);
-    expect(
-        screen.getByText('A name entered in search overrides the default name and template.'),
-    ).toBeVisible();
 });
 
 it('keeps an unavailable folder visible until another destination is chosen', async () => {
@@ -99,24 +84,22 @@ it('keeps an unavailable folder visible until another destination is chosen', as
     ).toBe('');
 });
 
-it('keeps a selected nested Attachments folder after another preference changes and reloads', async () => {
+it('keeps a selected nested Attachments folder after reopening settings', async () => {
     const user = userEvent.setup();
     const folders = ['Work', 'Work/Attachments'];
     const {unmount} = renderWithProviders(<SettingsHarness folders={folders} />);
     await user.click(screen.getByRole('combobox', {name: 'New file folder'}));
     await user.click(await screen.findByRole('option', {name: 'Work / Attachments'}));
     await waitFor(() => expect(screen.queryByRole('listbox', {hidden: true})).toBeNull());
-    await user.type(screen.getByRole('textbox', {name: 'New file default name'}), 'Meeting');
     expect(
         JSON.parse(localStorage.getItem('gravity-notes:settings-test:new-files') ?? '{}'),
-    ).toMatchObject({folder: 'Work/Attachments', defaultName: 'Meeting'});
+    ).toEqual({folder: 'Work/Attachments'});
 
     unmount();
     renderWithProviders(<SettingsHarness folders={folders} />);
     expect(screen.getByRole('combobox', {name: 'New file folder'})).toHaveTextContent(
         'Work / Attachments',
     );
-    expect(screen.getByText(/^Example:/)).toHaveTextContent('Work/Attachments/Meeting.md');
 });
 
 it.each(['Q1?', 'Work/Q1?', 'Attachments', 'attachments/Inbox', 'Work/node_modules', '.hidden'])(
@@ -142,15 +125,29 @@ it.each(['Q1?', 'Work/Q1?', 'Attachments', 'attachments/Inbox', 'Work/node_modul
     },
 );
 
-it('disables the default name for date-only filenames without discarding it', async () => {
+it('ignores legacy naming preferences and saves only the selected folder', async () => {
     localStorage.setItem(
         'gravity-notes:settings-test:new-files',
-        JSON.stringify({defaultName: 'Meeting'}),
+        JSON.stringify({
+            folder: 'Work',
+            extension: '.txt',
+            nameFormat: 'datetime-name',
+            defaultName: 'Meeting',
+        }),
     );
     const user = userEvent.setup();
     renderWithProviders(<SettingsHarness />);
-    await user.click(screen.getByRole('combobox', {name: 'New file name format'}));
-    await user.click(await screen.findByRole('option', {name: 'Date'}));
-    expect(screen.getByRole('textbox', {name: 'New file default name'})).toBeDisabled();
-    expect(screen.getByRole('textbox', {name: 'New file default name'})).toHaveValue('Meeting');
+    expect(screen.getByRole('combobox', {name: 'New file folder'})).toHaveTextContent('Work');
+    expect(screen.queryByRole('combobox', {name: 'New file extension'})).toBeNull();
+    expect(screen.queryByRole('combobox', {name: 'New file name format'})).toBeNull();
+    expect(screen.queryByRole('textbox', {name: 'New file default name'})).toBeNull();
+    expect(screen.queryByText(/^Example:/)).toBeNull();
+    expect(
+        screen.queryByText('A name entered in search overrides the default name and template.'),
+    ).toBeNull();
+    await user.click(screen.getByRole('combobox', {name: 'New file folder'}));
+    await user.click(await screen.findByRole('option', {name: 'Workspace root'}));
+    expect(
+        JSON.parse(localStorage.getItem('gravity-notes:settings-test:new-files') ?? '{}'),
+    ).toEqual({folder: ''});
 });
