@@ -29,27 +29,40 @@ build, or a "this looks wrong" after actually trying the app, leaves only throwa
    (`~/.cargo/bin/cargo --version` ≥ 1.88 — the Homebrew rust 1.87 is too old; see the
    `rust-toolchain-tauri` memory). The build script prepends `~/.cargo/bin` to PATH itself, so a
    Homebrew cargo sitting first on PATH no longer breaks the build.
-3. **Signing credentials** — these live in **`~/.localrc`**, NOT in the agent's default
-   environment. The Bash tool starts a **fresh shell on every call** and does not persist env vars
-   between calls, so you must `source ~/.localrc` **in the same command** as anything that reads the
-   credentials — both this check **and** the build in Step 3 (a bare `source` in an earlier call is
-   gone by the next). The vars (the build script reads these; **never print their values**): the
-   Apple set — `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`, which the build
-   script aliases to it), `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (the `.p8` file is readable) —
-   **and** the updater key `TAURI_SIGNING_PRIVATE_KEY` (path to / content of the passwordless
-   `~/Documents/Apple Connect Keys/gravity-notes-updater.key`; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-   may be empty). Verify each is set (names only, never values) — without the updater key the build
-   can't sign the auto-update bundle and fails:
+3. **Signing credentials** — follow `~/rt/vault/README.md` (Shell env). `rt-env sync`
+   generates `~/.config/rt/env.sh` with mode 600. Shared interactive shell startup loads it, but
+   non-interactive build commands must source it explicitly **in the same invocation** as the
+   preflight or build. `~/.localrc` is a legacy migration source, not the release credential source.
+   If the generated file is missing or stale, use `rt-env sync` according to the rt documentation;
+   stop if credentials remain unavailable. Do not edit the vault or copy secrets into the project.
+
+   `rt-env keys` lists names but decrypts the vault and may require an interactive passphrase.
+   When the generated env file already exists, use the presence checks below without re-decrypting
+   the vault. Never print the generated env file, key contents, tokens, or
+   variable values; do not enable shell tracing around credentials. Required variables are
+   `APPLE_SIGNING_IDENTITY`, `APPLE_API_ISSUER`, `APPLE_API_KEY` (or `APPLE_API_KEY_ID`), a readable
+   `APPLE_API_KEY_PATH`, and `TAURI_SIGNING_PRIVATE_KEY` (a path or key content accepted by Tauri).
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may be empty for a passwordless updater key.
 
    ```bash
-   # The Bash tool runs zsh, so this stays POSIX (no `${!v}` indirect expansion — that's a bash-ism).
-   test -f ~/.localrc || echo "MISSING ~/.localrc — signing creds live here"
-   source ~/.localrc
-   [ -n "$APPLE_SIGNING_IDENTITY" ] || echo "MISSING: APPLE_SIGNING_IDENTITY"
-   [ -n "$APPLE_API_ISSUER" ] || echo "MISSING: APPLE_API_ISSUER"
-   [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || echo "MISSING: TAURI_SIGNING_PRIVATE_KEY"
-   [ -n "$APPLE_API_KEY" ] || [ -n "$APPLE_API_KEY_ID" ] || echo "MISSING: APPLE_API_KEY"
-   [ -r "$APPLE_API_KEY_PATH" ] || echo "MISSING/unreadable: APPLE_API_KEY_PATH"
+   test -r "$HOME/.config/rt/env.sh" || { echo "MISSING/unreadable: rt env"; exit 1; }
+   source "$HOME/.config/rt/env.sh"
+   python3 - <<'PYTHON'
+   import os
+   import sys
+
+   missing = [name for name in (
+       "APPLE_SIGNING_IDENTITY", "APPLE_API_ISSUER", "TAURI_SIGNING_PRIVATE_KEY"
+   ) if not os.environ.get(name)]
+   if not (os.environ.get("APPLE_API_KEY") or os.environ.get("APPLE_API_KEY_ID")):
+       missing.append("APPLE_API_KEY or APPLE_API_KEY_ID")
+   key_path = os.environ.get("APPLE_API_KEY_PATH", "")
+   if not os.path.isfile(key_path) or not os.access(key_path, os.R_OK):
+       missing.append("APPLE_API_KEY_PATH (missing/unreadable)")
+   for name in missing:
+       print("MISSING:", name)
+   sys.exit(bool(missing))
+   PYTHON
    ```
 
 4. **GitHub CLI.** `gh auth status` is logged in.
@@ -87,7 +100,8 @@ lockstep (leave them **uncommitted** for now). Capture `$NEW` — every later st
    - …
    ```
 
-   Use `date +%F` for the date. If CHANGELOG.md is empty, start it with a
+   Use the user's current date/timezone (for this workspace, `TZ=Europe/Moscow date +%F`).
+   If CHANGELOG.md is empty, start it with a
    `# Changelog` title + the "format follows Keep a Changelog / SemVer" blurb, then the
    section.
 
@@ -98,12 +112,15 @@ lockstep (leave them **uncommitted** for now). Capture `$NEW` — every later st
 
 ## Step 3 — Build, sign, notarize (the slow step)
 
-**Source the credentials in the same command as the build** — the Bash tool's shell doesn't carry
-env vars over from the Step 0 check (fresh shell per call), so the build needs its own `source`:
+**Load the rt-generated environment in the build invocation**; a previous tool call does not
+persist its environment into the next one:
 
 ```bash
-source ~/.localrc && ./scripts/build-mac-release.sh
+source "$HOME/.config/rt/env.sh" && ./scripts/build-mac-release.sh
 ```
+
+Use the default `src-tauri/target` location: the release script and its DMG helpers resolve bundle
+paths there. Do not override `CARGO_TARGET_DIR` for this command.
 
 Tauri builds + signs the `.app` (hardened runtime, Developer ID) and notarizes+staples
 it; the script then notarizes + staples the **DMG** too. Because `createUpdaterArtifacts` is on,
@@ -154,11 +171,12 @@ commit/tag/publish.
 
 ## Step 5 — Commit the release
 
-Stage only the release files (the bump touched these; the build refreshed `Cargo.lock`):
+Stage only the release files (the bump touched these; the build refreshed `Cargo.lock`). Include
+any runbook edit explicitly requested as part of this release after reviewing its diff:
 
 ```bash
 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock CHANGELOG.md
-git commit -m "release: v$NEW" -m "Co-Authored-By: Codex Opus 4.8 (1M context) <noreply@anthropic.com>"
+git commit -m "release: v$NEW"
 ```
 
 ## Step 6 — Tag and push

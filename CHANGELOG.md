@@ -4,6 +4,30 @@ All notable changes to Gravity Notes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to adhere to
 [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] - 2026-10-31
+
+### Added
+
+- **Plain-text editing** — UTF-8 `.txt` and extensionless files support autosave, search, rename,
+  move, trash and zip import/export, preserving filenames and text line endings.
+- **Open text files as Markdown** in Settings, app-wide or for one workspace. Switch between plain
+  text and Markdown without losing unsaved text; Markdown mode offers blocks, source, preview and
+  wiki links while keeping the original filename.
+- **New-note folder per workspace** — choose the current folder, workspace root or an existing
+  subfolder for new Markdown notes. An unavailable destination reports an error instead of creating
+  the note elsewhere.
+
+### Changed
+
+- **TXT and TEXT badges** identify plain-text files in the list and title. Their editor and preview
+  follow the note's font and text-width settings.
+- Settings section headings are clearer and more widely spaced.
+
+### Fixed
+
+- Switch thumbs, to-do checkboxes and note-list menu icons align correctly.
+- Import keeps the selected files while pending edits finish saving.
+
 ## [0.13.0] - 2026-10-29
 
 ### Added
